@@ -82,7 +82,9 @@ echo "启动隔离沙箱 Science（虚拟登录）"
 echo "  HOME     = $SANDBOX_HOME"
 echo "  data-dir = $DATA_DIR"
 echo "  端口     = $PORT   （真实实例 8765 不受影响）"
-echo "  推理指向 = $PROXY_URL"
+# 掩掉 proxy-url 里的 path secret（一次性鉴权令牌不入日志）
+_masked_proxy="$(printf '%s' "$PROXY_URL" | sed -E 's#(://[^/]+/).+#\1****#')"
+echo "  推理指向 = $_masked_proxy"
 echo "  账号     = $EMAIL （假账号，零 Anthropic 接触）"
 echo
 
