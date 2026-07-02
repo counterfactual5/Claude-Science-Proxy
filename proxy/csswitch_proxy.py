@@ -314,6 +314,13 @@ class H(BaseHTTPRequestHandler):
         chunk = f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n".encode()
         self.wfile.write(hex(len(chunk))[2:].encode() + b"\r\n" + chunk + b"\r\n")
 
+    def _sse_error_and_terminate(self, msg):
+        frame = ("event: error\ndata: " + json.dumps(
+            {"type": "error", "error": {"type": "api_error", "message": msg}},
+            ensure_ascii=False) + "\n\n").encode()
+        self.wfile.write(hex(len(frame))[2:].encode() + b"\r\n" + frame + b"\r\n")
+        self.wfile.write(b"0\r\n\r\n")
+
     def _auth_ok(self):
         if not AUTH_SECRET:
             return True
@@ -399,6 +406,7 @@ class H(BaseHTTPRequestHandler):
             f"msgs={len(body.get('messages') or [])}  (入站鉴权已剥离, 直连 {PROV_NAME})")
         headers = {"x-api-key": KEY, "content-type": "application/json", "anthropic-version": "2023-06-01"}
         data = json.dumps(body).encode()
+        headers_sent = False
         try:
             if stream:
                 r, first, ct = open_stream(PROV["url"], data, headers)
@@ -408,9 +416,15 @@ class H(BaseHTTPRequestHandler):
                     self.send_header("Cache-Control", "no-cache")
                     self.send_header("Transfer-Encoding", "chunked")
                     self.end_headers()
+                    headers_sent = True
                     self.wfile.write(hex(len(first))[2:].encode() + b"\r\n" + first + b"\r\n")
                     while True:
-                        chunk = r.read(4096)
+                        try:
+                            chunk = r.read(4096)
+                        except Exception as e:
+                            log(f"  !! 流中断（头已发），SSE error 收尾: {e}")
+                            self._sse_error_and_terminate(str(e))
+                            return
                         if not chunk:
                             break
                         self.wfile.write(hex(len(chunk))[2:].encode() + b"\r\n" + chunk + b"\r\n")
@@ -422,16 +436,25 @@ class H(BaseHTTPRequestHandler):
                 self.send_header("Content-Type", ct)
                 self.send_header("Content-Length", str(len(body_bytes)))
                 self.end_headers()
+                headers_sent = True
                 self.wfile.write(body_bytes)
                 log(f"  <- {PROV_NAME} 非流式透传 OK")
         except urllib.error.HTTPError as e:
             detail = e.read().decode("utf-8", "replace")[:400]
             log(f"  !! 上游 HTTP {e.code}: {detail}")
-            self._send_json(502, {"type": "error", "error": {"type": "api_error",
-                                  "message": f"upstream {e.code}: {detail}"}})
+            if not headers_sent:
+                self._send_json(502, {"type": "error", "error": {
+                    "type": "api_error", "message": f"upstream {e.code}: {detail}"}})
         except Exception as e:
             log(f"  !! 代理异常: {e}")
-            self._send_json(502, {"type": "error", "error": {"type": "api_error", "message": str(e)}})
+            if headers_sent:
+                try:
+                    self._sse_error_and_terminate(str(e))
+                except Exception:
+                    pass
+            else:
+                self._send_json(502, {"type": "error", "error": {
+                    "type": "api_error", "message": str(e)}})
 
     # ---- Qwen：翻译到 OpenAI，非流式取全再按需 SSE 回放 ----
     def _handle_openai(self, areq):
