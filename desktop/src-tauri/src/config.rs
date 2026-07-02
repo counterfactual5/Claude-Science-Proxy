@@ -181,12 +181,8 @@ mod tests {
     use std::os::unix::fs::symlink;
 
     fn tmpdir() -> PathBuf {
-        let base = std::env::temp_dir().join(format!(
-            "csswitch-cfg-test-{}-{:p}",
-            std::process::id(),
-            &default_provider as *const _
-        ));
-        // 每个测试用独立子目录，避免相互踩。
+        // 每个测试用「进程 id + 线程 id」独立子目录，避免并行测试相互踩。
+        let base = std::env::temp_dir().join(format!("csswitch-cfg-test-{}", std::process::id()));
         let d = base.join(format!("{:?}", std::thread::current().id()));
         let _ = fs::remove_dir_all(&d);
         fs::create_dir_all(&d).unwrap();
@@ -289,7 +285,7 @@ mod tests {
 
     #[test]
     fn mask_hides_all_but_last4() {
-        assert_eq!(mask("sk-1234567890ab"), "••••••••••90ab");
+        assert_eq!(mask("sk-1234567890ab"), "•".repeat(11) + "90ab"); // 15 字符 → 11 掩 + 末4
         assert_eq!(mask(""), "");
         assert_eq!(mask("abc"), "•••");
         assert_eq!(mask("abcd"), "••••");

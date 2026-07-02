@@ -1,6 +1,31 @@
 // CSSwitch 菜单栏面板前端。只调用后端 Tauri command，绝不碰任何密钥落盘逻辑。
 // 后端只把 key 的【掩码】回显给这里；完整 key 永不进前端。
-const { invoke } = window.__TAURI__.core;
+//
+// 预览兜底：在普通浏览器里打开（没有 Tauri 后端）时，用 mockInvoke 返回假数据，
+// 让界面能完整渲染、不报错。真实 app 里 window.__TAURI__ 存在，走真后端，此兜底不生效。
+const PREVIEW = !window.__TAURI__;
+const invoke = PREVIEW
+  ? (cmd, args) => mockInvoke(cmd, args)
+  : window.__TAURI__.core.invoke;
+
+function mockInvoke(cmd, args) {
+  switch (cmd) {
+    case "get_config":
+      return Promise.resolve({ provider: "deepseek", proxy_port: 18991, sandbox_port: 8990, keys: { deepseek: "", qwen: "" } });
+    case "status":
+      return Promise.resolve({ proxy: "amber", sandbox: "amber", upstream: "amber" });
+    case "save_provider_key":
+      return Promise.resolve("••••••••••" + String((args && args.key) || "").slice(-4));
+    case "start_proxy":
+      return Promise.resolve({ port: 18991 });
+    case "one_click_login":
+      return Promise.resolve({ url: "http://127.0.0.1:8990" });
+    case "run_doctor":
+      return Promise.resolve("（预览模式：后端未运行，这里是占位文本）");
+    default:
+      return Promise.resolve(null);
+  }
+}
 
 const $ = (id) => document.getElementById(id);
 const els = {};
@@ -189,5 +214,9 @@ window.addEventListener("DOMContentLoaded", async () => {
   wire();
   await loadConfig();
   await refreshStatus();
-  statusTimer = setInterval(refreshStatus, 2500);
+  if (PREVIEW) {
+    setMsg("预览模式：仅看界面，按钮不连后端（真实 app 里会连进程管家）。");
+  } else {
+    statusTimer = setInterval(refreshStatus, 2500);
+  }
 });
