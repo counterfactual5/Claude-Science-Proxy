@@ -13,6 +13,15 @@ __pycache__/
 *secret*
 *token*
 
+# Rust / Tauri 构建产物
+target/
+**/target/
+
+# 前端依赖与构建产物（Tauri / py2app）
+node_modules/
+dist/
+build/
+
 # macOS 与工作区杂物
 .DS_Store
 .superpowers/
