@@ -54,21 +54,18 @@ fn upstream_host(provider: &str) -> &'static str {
 /// 否则从可执行文件与当前目录逐级上溯。找不到返回 None。
 fn repo_root() -> Option<PathBuf> {
     let marker = Path::new("proxy/csswitch_proxy.py");
+    // 显式指定优先：规范化后再判定，避免相对/软链歧义。
     if let Some(r) = std::env::var_os("CSSWITCH_REPO") {
-        let p = PathBuf::from(r);
-        if p.join(marker).is_file() {
-            return Some(p);
+        if let Ok(p) = std::fs::canonicalize(PathBuf::from(r)) {
+            if p.join(marker).is_file() {
+                return Some(p);
+            }
         }
     }
-    let mut roots: Vec<PathBuf> = Vec::new();
+    // 否则只从【可执行文件位置】上溯。刻意不看 current_dir：启动目录可被影响，
+    // 若据此找到别处的 csswitch_proxy.py，会把带 key 的环境交给来路不明的脚本。
     if let Ok(exe) = std::env::current_exe() {
-        roots.push(exe);
-    }
-    if let Ok(cwd) = std::env::current_dir() {
-        roots.push(cwd);
-    }
-    for start in roots {
-        let mut dir: Option<&Path> = Some(start.as_path());
+        let mut dir: Option<&Path> = exe.parent();
         while let Some(d) = dir {
             if d.join(marker).is_file() {
                 return Some(d.to_path_buf());
@@ -83,13 +80,32 @@ fn log_path(name: &str) -> PathBuf {
     config::default_dir().join("logs").join(name)
 }
 
-/// 打开（truncate）一个子进程日志文件，父目录自动建。
+/// 打开（truncate）一个子进程日志文件，父目录 0700、文件 0600（防同机其它用户读到 secret 尾巴）。
 fn open_log(name: &str) -> std::io::Result<std::fs::File> {
+    use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
     let p = log_path(name);
     if let Some(parent) = p.parent() {
         std::fs::create_dir_all(parent)?;
+        let _ = std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700));
     }
-    std::fs::File::create(&p)
+    let f = std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .mode(0o600)
+        .open(&p)?;
+    // 文件已存在时 mode() 不复位，显式再夹一次。
+    let _ = std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o600));
+    Ok(f)
+}
+
+/// 把字符串里的 secret 明文替换成 ****，用于任何要回显给前端的错误尾巴。
+fn redact<'a>(s: &str, secret: &str) -> String {
+    if secret.is_empty() {
+        s.to_string()
+    } else {
+        s.replace(secret, "****")
+    }
 }
 
 fn tail_file(path: &Path, max: usize) -> String {
@@ -107,6 +123,11 @@ fn kill_child(slot: &mut Option<Child>) {
         let _ = c.kill();
         let _ = c.wait();
     }
+}
+
+/// 取锁并从 poison 中恢复：某线程持锁时 panic 不应把整个 app 卡死。
+fn lock(m: &Mutex<AppState>) -> std::sync::MutexGuard<'_, AppState> {
+    m.lock().unwrap_or_else(|e| e.into_inner())
 }
 
 /// 用系统浏览器打开 URL（macOS `open`）。
@@ -132,8 +153,11 @@ fn ensure_proxy(state: &State<'_, Mutex<AppState>>) -> Result<(u16, String), Str
         .ok_or("找不到 CSSwitch 仓库根（含 proxy/csswitch_proxy.py）。可设 CSSWITCH_REPO 环境变量。")?;
     let py = proc::which("python3").ok_or("缺少依赖 python3。")?;
 
+    // 整个「检查 → 清残留 → 起进程 → 记账」在同一把锁内完成，避免并发双击时
+    // 两路都判定「没健康代理」各起一个、后者覆盖前者的 Child 句柄导致前者被孤儿泄漏。
+    let secret;
     {
-        let mut st = state.lock().unwrap();
+        let mut st = lock(state);
         // 幂等：已在跑且健康且同端口则复用。
         if st.proxy.is_some()
             && st.proxy_port == port
@@ -143,36 +167,33 @@ fn ensure_proxy(state: &State<'_, Mutex<AppState>>) -> Result<(u16, String), Str
         }
         // 清残留（换端口/不健康）。
         kill_child(&mut st.proxy);
-    }
 
-    let secret = proc::gen_secret();
-    let script = root.join("proxy/csswitch_proxy.py");
-    let logf = open_log("proxy.log").map_err(|e| format!("建日志失败：{e}"))?;
-    let logf2 = logf.try_clone().map_err(|e| e.to_string())?;
-    let child = Command::new(&py)
-        .arg(&script)
-        .arg("--provider")
-        .arg(&provider)
-        .arg("--port")
-        .arg(port.to_string())
-        .arg("--auth-token")
-        .arg(&secret)
-        // key 经环境变量注入，绝不作为命令行参数（避免 ps 泄露）。
-        .env(key_env(&provider), &key)
-        .stdout(Stdio::from(logf))
-        .stderr(Stdio::from(logf2))
-        .spawn()
-        .map_err(|e| format!("启动代理失败：{e}"))?;
-
-    {
-        let mut st = state.lock().unwrap();
+        let new_secret = proc::gen_secret().map_err(|e| format!("无法生成安全 secret：{e}"))?;
+        let script = root.join("proxy/csswitch_proxy.py");
+        let logf = open_log("proxy.log").map_err(|e| format!("建日志失败：{e}"))?;
+        let logf2 = logf.try_clone().map_err(|e| e.to_string())?;
+        let child = Command::new(&py)
+            .arg(&script)
+            .arg("--provider")
+            .arg(&provider)
+            .arg("--port")
+            .arg(port.to_string())
+            .arg("--auth-token")
+            .arg(&new_secret)
+            // key 经环境变量注入，绝不作为命令行参数（避免 ps 泄露）。
+            .env(key_env(&provider), &key)
+            .stdout(Stdio::from(logf))
+            .stderr(Stdio::from(logf2))
+            .spawn()
+            .map_err(|e| format!("启动代理失败：{e}"))?;
         st.proxy = Some(child);
         st.proxy_port = port;
-        st.secret = secret.clone();
+        st.secret = new_secret.clone();
         st.provider = provider;
+        secret = new_secret;
     }
 
-    // 探活最多 ~4s。
+    // 探活最多 ~4s（锁外，不阻塞 status 等命令）。
     let mut ok = false;
     for _ in 0..40 {
         std::thread::sleep(Duration::from_millis(100));
@@ -182,9 +203,12 @@ fn ensure_proxy(state: &State<'_, Mutex<AppState>>) -> Result<(u16, String), Str
         }
     }
     if !ok {
-        let mut st = state.lock().unwrap();
-        kill_child(&mut st.proxy);
-        let tail = tail_file(&log_path("proxy.log"), 500);
+        let mut st = lock(state);
+        // 只在仍是本次起的代理时才清（secret 匹配），避免误杀并发重启起来的新代理。
+        if st.secret == secret {
+            kill_child(&mut st.proxy);
+        }
+        let tail = redact(&tail_file(&log_path("proxy.log"), 500), &secret);
         return Err(format!(
             "代理起后探活超时（端口 {port} 可能被占用，或 key 无效）。\n{tail}"
         ));
@@ -236,20 +260,28 @@ struct UiSettings {
 
 #[tauri::command]
 fn set_config(cfg: UiSettings) -> Result<(), String> {
+    // 铁律防御：代理/沙箱端口都不许用真实实例保留端口 8765。
+    if cfg.proxy_port == 8765 || cfg.sandbox_port == 8765 {
+        return Err("端口 8765 是真实 Science 实例保留端口，不能用。".into());
+    }
     let dir = config::default_dir();
-    let mut c = config::load_from(&dir).map_err(|e| e.to_string())?;
-    c.provider = cfg.provider;
-    c.proxy_port = cfg.proxy_port;
-    c.sandbox_port = cfg.sandbox_port;
-    config::save_to(&dir, &c).map_err(|e| e.to_string())
+    config::update(&dir, move |c| {
+        c.provider = cfg.provider;
+        c.proxy_port = cfg.proxy_port;
+        c.sandbox_port = cfg.sandbox_port;
+    })
+    .map(|_| ())
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn save_provider_key(provider: String, key: String) -> Result<String, String> {
     let dir = config::default_dir();
-    let mut c = config::load_from(&dir).map_err(|e| e.to_string())?;
-    c.providers.entry(provider).or_default().key = key.clone();
-    config::save_to(&dir, &c).map_err(|e| e.to_string())?;
+    let key2 = key.clone();
+    config::update(&dir, move |c| {
+        c.providers.entry(provider).or_default().key = key2;
+    })
+    .map_err(|e| e.to_string())?;
     Ok(config::mask(&key))
 }
 
@@ -261,7 +293,7 @@ fn start_proxy(state: State<'_, Mutex<AppState>>) -> Result<serde_json::Value, S
 
 #[tauri::command]
 fn stop_all(state: State<'_, Mutex<AppState>>) -> Result<(), String> {
-    let mut st = state.lock().unwrap();
+    let mut st = lock(&state);
     stop_sandbox_inner(&mut st);
     kill_child(&mut st.proxy);
     st.secret.clear();
@@ -301,7 +333,7 @@ fn one_click_login(state: State<'_, Mutex<AppState>>) -> Result<serde_json::Valu
         .status()
         .map_err(|e| format!("起沙箱失败：{e}"))?;
     if !status.success() {
-        let tail = tail_file(&log_path("sandbox.log"), 600);
+        let tail = redact(&tail_file(&log_path("sandbox.log"), 600), &secret);
         return Err(format!("起沙箱脚本失败。\n{tail}"));
     }
 
@@ -315,14 +347,14 @@ fn one_click_login(state: State<'_, Mutex<AppState>>) -> Result<serde_json::Valu
         }
     }
     if !ok {
-        let tail = tail_file(&log_path("sandbox.log"), 600);
+        let tail = redact(&tail_file(&log_path("sandbox.log"), 600), &secret);
         return Err(format!("沙箱起后探活超时（端口 {sport}）。\n{tail}"));
     }
 
     // 6. 取 UI URL（登录态），交系统浏览器打开。
     let url = sandbox_url(&root, sport);
     {
-        let mut st = state.lock().unwrap();
+        let mut st = lock(&state);
         st.sandbox_port = sport;
         st.sandbox_url = Some(url.clone());
     }
@@ -356,7 +388,7 @@ fn sandbox_url(root: &Path, port: u16) -> String {
 fn status(state: State<'_, Mutex<AppState>>) -> serde_json::Value {
     // 只在锁内取值，锁外做阻塞探活。
     let (pport, secret, sport, provider) = {
-        let st = state.lock().unwrap();
+        let st = lock(&state);
         let cfg = config::load_from(&config::default_dir()).unwrap_or_default();
         let pport = if st.proxy_port != 0 { st.proxy_port } else { cfg.proxy_port };
         let sport = if st.sandbox_port != 0 { st.sandbox_port } else { cfg.sandbox_port };
@@ -378,7 +410,7 @@ fn status(state: State<'_, Mutex<AppState>>) -> serde_json::Value {
 
 #[tauri::command]
 fn open_url(state: State<'_, Mutex<AppState>>) -> Result<(), String> {
-    let url = { state.lock().unwrap().sandbox_url.clone() };
+    let url = { lock(&state).sandbox_url.clone() };
     let url = url.ok_or("还没有沙箱 URL，请先「一键越过登录」。")?;
     open_in_browser(&url)
 }
@@ -393,9 +425,9 @@ fn run_doctor() -> Result<String, String> {
         .env("CSSWITCH_PROVIDER", &cfg.provider)
         .env("CSSWITCH_PROXY_PORT", cfg.proxy_port.to_string())
         .env("CSSWITCH_SANDBOX_PORT", cfg.sandbox_port.to_string());
-    // doctor 只报 key 有无、绝不打印值。给它对应 env 才能报 present。
-    if let Some(k) = cfg.key_for(&cfg.provider) {
-        cmd.env(key_env(&cfg.provider), k);
+    // doctor 只做 -n 判空来报 key 有无。只让它知道「存在」，绝不把真实 key 传进其环境。
+    if cfg.key_for(&cfg.provider).is_some() {
+        cmd.env(key_env(&cfg.provider), "***present***");
     }
     let out = cmd.output().map_err(|e| e.to_string())?;
     let mut text = String::from_utf8_lossy(&out.stdout).to_string();
@@ -411,12 +443,25 @@ fn run_doctor() -> Result<String, String> {
 fn quit_app(app: tauri::AppHandle, state: State<'_, Mutex<AppState>>) -> Result<(), String> {
     // 默认：退 app 停代理、保留沙箱运行（spec §5.1）。
     {
-        let mut st = state.lock().unwrap();
+        let mut st = lock(&state);
         kill_child(&mut st.proxy);
         st.secret.clear();
     }
     app.exit(0);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::redact;
+
+    #[test]
+    fn redact_scrubs_secret_and_is_noop_when_empty() {
+        assert_eq!(redact("推理指向 http://127.0.0.1:18991/abcd1234 尾巴", "abcd1234"),
+                   "推理指向 http://127.0.0.1:18991/**** 尾巴");
+        assert_eq!(redact("原样返回", ""), "原样返回");
+        assert!(!redact("leak abcd1234 leak abcd1234", "abcd1234").contains("abcd1234"));
+    }
 }
 
 // ---------- 入口 ----------

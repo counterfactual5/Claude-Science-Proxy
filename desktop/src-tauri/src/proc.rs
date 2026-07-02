@@ -43,7 +43,8 @@ pub fn http_health(port: u16, secret: Option<&str>, timeout_ms: u64) -> bool {
     }
     let head = String::from_utf8_lossy(&buf);
     let status_line = head.lines().next().unwrap_or("");
-    status_line.contains(" 200")
+    // 形如 "HTTP/1.1 200 OK"：严格取第二段等于 200，避免 contains 误配 reason phrase。
+    status_line.split_whitespace().nth(1) == Some("200")
 }
 
 /// 上游主机可达性（仅 TCP 连通，不校验 key）。绿灯=可达，黄灯=不可达。
@@ -88,20 +89,13 @@ fn is_exec(p: &std::path::Path) -> bool {
 }
 
 /// 生成一次性 path-secret：从 /dev/urandom 取 16 字节，hex 编码为 32 字符。
-/// 失败时退回一个基于 pid 与时间的弱值（仅避免 panic；正常路径永远走 urandom）。
-pub fn gen_secret() -> String {
+/// 失败关闭：urandom 不可用时返回 Err，绝不退回可猜的弱 secret（宁可起代理失败）。
+pub fn gen_secret() -> std::io::Result<String> {
     use std::fs::File;
     let mut b = [0u8; 16];
-    if let Ok(mut f) = File::open("/dev/urandom") {
-        if f.read_exact(&mut b).is_ok() {
-            return hex(&b);
-        }
-    }
-    let t = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
-    format!("s{}{}", std::process::id(), t)
+    let mut f = File::open("/dev/urandom")?;
+    f.read_exact(&mut b)?;
+    Ok(hex(&b))
 }
 
 fn hex(bytes: &[u8]) -> String {
@@ -138,8 +132,8 @@ mod tests {
 
     #[test]
     fn gen_secret_is_32_hex_and_varies() {
-        let a = gen_secret();
-        let b = gen_secret();
+        let a = gen_secret().unwrap();
+        let b = gen_secret().unwrap();
         assert_eq!(a.len(), 32, "urandom 路径应是 32 hex 字符");
         assert!(a.chars().all(|c| c.is_ascii_hexdigit()));
         assert_ne!(a, b, "两次生成应不同");

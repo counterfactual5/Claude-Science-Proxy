@@ -136,7 +136,12 @@ pub fn save_to(dir: &Path, cfg: &Config) -> io::Result<()> {
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, format!("config 序列化失败：{e}")))?;
 
     // 临时文件与目标同目录（保证 rename 在同一文件系统上原子）。
-    let tmp = dir.join(format!(".config.json.tmp-{}", std::process::id()));
+    // 名字带 pid + 线程 id，避免同进程并发写者撞同一个 O_EXCL 临时名。
+    let tmp = dir.join(format!(
+        ".config.json.tmp-{}-{:?}",
+        std::process::id(),
+        std::thread::current().id()
+    ));
     // O_CREAT|O_EXCL + 0600：拒绝复用已有临时文件，创建即定权限。
     let write_res = (|| -> io::Result<()> {
         let mut f = fs::OpenOptions::new()
@@ -159,6 +164,17 @@ pub fn save_to(dir: &Path, cfg: &Config) -> io::Result<()> {
     }
     fs::set_permissions(&path, fs::Permissions::from_mode(0o600))?;
     Ok(())
+}
+
+/// 序列化的「读-改-写」：进程内全局写锁下 load → apply → save，避免并发命令
+/// （set_config / save_provider_key）各读一份旧 config、各改一个字段、互相覆盖。
+pub fn update<F: FnOnce(&mut Config)>(dir: &Path, f: F) -> io::Result<Config> {
+    static WRITE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _g = WRITE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let mut cfg = load_from(dir)?;
+    f(&mut cfg);
+    save_to(dir, &cfg)?;
+    Ok(cfg)
 }
 
 /// 掩码：只保留末 4 位，其余用 • 遮蔽。空 key 返回空串。
@@ -281,6 +297,20 @@ mod tests {
             .filter(|e| e.file_name().to_string_lossy().starts_with(".config.json.tmp"))
             .collect();
         assert!(leftovers.is_empty(), "临时文件应已 rename 掉");
+    }
+
+    #[test]
+    fn update_applies_and_persists() {
+        let d = tmpdir().join(".csswitch");
+        save_to(&d, &Config::default()).unwrap();
+        update(&d, |c| {
+            c.provider = "qwen".into();
+            c.providers.insert("qwen".into(), ProviderCfg { key: "k-xyz".into() });
+        })
+        .unwrap();
+        let got = load_from(&d).unwrap();
+        assert_eq!(got.provider, "qwen");
+        assert_eq!(got.key_for("qwen").as_deref(), Some("k-xyz"));
     }
 
     #[test]
