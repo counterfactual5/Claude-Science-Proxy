@@ -4,6 +4,7 @@
 use std::io::{Read, Write};
 use std::net::{TcpStream, ToSocketAddrs};
 use std::path::PathBuf;
+use std::process::{Command, Stdio};
 use std::time::Duration;
 
 /// 对本地回环代理做 HTTP 探活：`GET /<secret>/health`，响应状态行含 200 即视为健康。
@@ -108,21 +109,123 @@ pub fn tcp_reachable(host: &str, port: u16, timeout_ms: u64) -> bool {
     }
 }
 
-/// 在 PATH 里找可执行文件（简易 which）。找不到返回 None。
+/// 在 PATH 里找可执行文件（简易 which），并对 macOS GUI 最小 PATH 做兜底。
+///
+/// 从访达 / .app 启动的 GUI 进程拿到的是最小 PATH（`/usr/bin:/bin:/usr/sbin:/sbin`），
+/// **不含** Homebrew(`/usr/local/bin`、`/opt/homebrew/bin`)、nvm / volta / asdf 等
+/// node 常见安装位置 → `which("node")` 在正常 PATH 里查不到（`python3` 因
+/// `/usr/bin/python3` 在系统 PATH 里才没事）。故 PATH 未命中时，再扫一遍
+/// [`common_bin_dirs`] 里的常见安装目录（修 #2）。找不到返回 None。
 pub fn which(name: &str) -> Option<PathBuf> {
     // 绝对/相对路径直接判定。
     let p = PathBuf::from(name);
     if p.is_absolute() {
         return if is_exec(&p) { Some(p) } else { None };
     }
-    let path = std::env::var_os("PATH")?;
-    for dir in std::env::split_paths(&path) {
+    // 1) 正常 PATH（从终端启动时够用）。PATH 缺失也不早退，继续走兜底。
+    if let Some(path) = std::env::var_os("PATH") {
+        if let Some(hit) = find_in_dirs(name, std::env::split_paths(&path)) {
+            return Some(hit);
+        }
+    }
+    // 2) GUI/.app 最小 PATH 兜底：扫常见安装目录。
+    find_in_dirs(name, common_bin_dirs())
+}
+
+/// 在给定目录序列里找可执行文件（第一个命中即返回）。
+fn find_in_dirs(name: &str, dirs: impl IntoIterator<Item = PathBuf>) -> Option<PathBuf> {
+    for dir in dirs {
         let cand = dir.join(name);
         if is_exec(&cand) {
             return Some(cand);
         }
     }
     None
+}
+
+/// macOS 上 node/python 等的常见安装目录（不含系统最小 PATH 已覆盖的 `/usr/bin` 等）：
+/// Homebrew(Apple Silicon / Intel)、MacPorts、volta、asdf、`~/.local/bin`，
+/// 以及 nvm 各版本 `~/.nvm/versions/node/<ver>/bin`（目录枚举）。
+fn common_bin_dirs() -> Vec<PathBuf> {
+    let mut dirs = vec![
+        PathBuf::from("/opt/homebrew/bin"), // Homebrew（Apple Silicon）
+        PathBuf::from("/usr/local/bin"),    // Homebrew（Intel）/ 手动安装
+        PathBuf::from("/opt/local/bin"),    // MacPorts
+    ];
+    if let Some(home) = std::env::var_os("HOME") {
+        let home = PathBuf::from(home);
+        dirs.push(home.join(".volta/bin"));
+        dirs.push(home.join(".asdf/shims"));
+        dirs.push(home.join(".local/bin"));
+        // nvm：版本目录动态，枚举 ~/.nvm/versions/node/*/bin。
+        if let Ok(entries) = std::fs::read_dir(home.join(".nvm/versions/node")) {
+            for e in entries.flatten() {
+                dirs.push(e.path().join("bin"));
+            }
+        }
+    }
+    dirs
+}
+
+/// [`which`] 找不到时的最后兜底：用登录 shell 解析用户的**真实 PATH**。
+///
+/// GUI/.app 从访达启动只有最小 PATH，且用户可能用 fnm / nvm / asdf 等在 `.zshrc`
+/// 里配置的版本管理器（[`common_bin_dirs`] 的静态枚举覆盖不到）。这里跑
+/// `zsh -lic 'command -v <name>'`（登录 + 交互 shell，会 source 用户 rc）拿其真实
+/// 解析路径。用独立线程 + `recv_timeout` 兜底，病态 rc 不会卡死调用方。
+pub fn which_via_login_shell(name: &str) -> Option<PathBuf> {
+    // name 出自本代码（"node"/"python3"），仍做白名单，杜绝拼进 shell 的注入面。
+    if name.is_empty()
+        || !name.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.' | '+'))
+    {
+        return None;
+    }
+    let arg = format!("command -v {name} 2>/dev/null");
+    // spawn + 轮询 + 超时 kill：病态 rc 卡死时**终止** zsh，绝不泄漏线程/进程（修 P3）。
+    let mut child = Command::new("zsh")
+        .args(["-lic", &arg])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .ok()?;
+    // 3s 足够 command -v。到点未退则 kill 后放弃。
+    let deadline = std::time::Instant::now() + Duration::from_secs(3);
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => break,
+            Ok(None) => {
+                if std::time::Instant::now() >= deadline {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return None;
+                }
+                std::thread::sleep(Duration::from_millis(30));
+            }
+            Err(_) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return None;
+            }
+        }
+    }
+    let out = child.wait_with_output().ok()?;
+    // rc 可能往 stdout 打噪声：从后往前取第一条「绝对路径且可执行」的行。
+    let text = String::from_utf8_lossy(&out.stdout);
+    for line in text.lines().rev() {
+        let p = PathBuf::from(line.trim());
+        if p.is_absolute() && is_exec(&p) {
+            return Some(p);
+        }
+    }
+    None
+}
+
+/// 定位可执行文件（含登录 shell 兜底）：[`which`]（PATH + 常见安装目录）未命中时，
+/// 再用 [`which_via_login_shell`] 解析用户真实 PATH。node / python3 都走这个，覆盖
+/// 「GUI 最小 PATH + 版本管理器」这类多位客户反馈的「已装 node 却报缺依赖」（修 #2）。
+pub fn find_exe(name: &str) -> Option<PathBuf> {
+    which(name).or_else(|| which_via_login_shell(name))
 }
 
 fn is_exec(p: &std::path::Path) -> bool {
@@ -173,6 +276,58 @@ mod tests {
     #[test]
     fn which_absent_returns_none() {
         assert!(which("definitely-not-a-real-binary-xyzzy").is_none());
+    }
+
+    #[test]
+    fn find_in_dirs_locates_exec() {
+        // /bin/sh 几乎肯定存在且可执行。
+        let hit = find_in_dirs("sh", vec![PathBuf::from("/usr/bin"), PathBuf::from("/bin")]);
+        assert!(hit.is_some(), "应在 /usr/bin 或 /bin 里找到 sh");
+        assert!(is_exec(&hit.unwrap()));
+    }
+
+    #[test]
+    fn find_in_dirs_none_when_absent() {
+        assert!(find_in_dirs("definitely-not-xyzzy", vec![PathBuf::from("/bin")]).is_none());
+    }
+
+    #[test]
+    fn login_shell_resolves_sh_when_zsh_present() {
+        // 环境无 zsh 则跳过（CI 容器可能没有）。
+        if which("zsh").is_none() {
+            return;
+        }
+        let p = which_via_login_shell("sh");
+        assert!(p.is_some(), "登录 shell 应能解析 sh");
+        let p = p.unwrap();
+        assert!(p.is_absolute() && is_exec(&p));
+    }
+
+    #[test]
+    fn login_shell_rejects_bad_names_without_spawning() {
+        // 白名单：带 shell 元字符的名字直接拒（防注入），空名亦拒。
+        assert!(which_via_login_shell("node; rm -rf /").is_none());
+        assert!(which_via_login_shell("$(whoami)").is_none());
+        assert!(which_via_login_shell("").is_none());
+    }
+
+    #[test]
+    fn find_exe_finds_sh() {
+        assert!(find_exe("sh").is_some());
+    }
+
+    #[test]
+    fn common_bin_dirs_covers_homebrew_and_home_managers() {
+        let dirs = common_bin_dirs();
+        // Homebrew 两个前缀 + MacPorts 必在。
+        assert!(dirs.iter().any(|d| d == &PathBuf::from("/opt/homebrew/bin")));
+        assert!(dirs.iter().any(|d| d == &PathBuf::from("/usr/local/bin")));
+        assert!(dirs.iter().any(|d| d == &PathBuf::from("/opt/local/bin")));
+        // HOME 存在时应含版本管理器目录（volta）。
+        if std::env::var_os("HOME").is_some() {
+            assert!(dirs.iter().any(|d| d.to_string_lossy().contains(".volta/bin")),
+                    "HOME 下应含 .volta/bin 兜底目录");
+        }
     }
 
     #[test]

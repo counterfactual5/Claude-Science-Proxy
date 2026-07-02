@@ -14,7 +14,18 @@
         <div class="gear" id="quitBtn" title="退出 CSSwitch">退出</div>
       </div>
 
-      <div class="sec">
+      <div class="sec modeseg">
+        <div class="seg" id="modeSeg">
+          <button type="button" class="seg-btn active" data-mode="proxy">第三方模型</button>
+          <button type="button" class="seg-btn" data-mode="official">官方 Claude</button>
+        </div>
+      </div>
+
+      <div class="sec official-only">
+        <div class="hint">官方模式：用你自己真实的 Claude Science 与订阅。CSSwitch 不插手你的官方登录、也不起代理/沙箱，只把你交回官方客户端。</div>
+      </div>
+
+      <div class="sec tp-only">
         <label>模型 / Provider</label>
         <select id="provider">
           <option value="deepseek">DeepSeek（原生 Anthropic 端点）</option>
@@ -22,7 +33,7 @@
         </select>
       </div>
 
-      <div class="sec">
+      <div class="sec tp-only">
         <label id="keyLabel">DeepSeek API Key</label>
         <div class="row">
           <input id="keyInput" type="password" placeholder="粘贴第三方 key（只存本地）" autocomplete="off" spellcheck="false" />
@@ -31,7 +42,7 @@
         <div class="hint">存本地 <code>~/.csswitch/config.json</code>（0600）；面板只回显末 4 位。</div>
       </div>
 
-      <details class="sec adv">
+      <details class="sec adv tp-only">
         <summary>高级设置</summary>
         <div class="ports">
           <div class="fld"><label>代理端口</label><input id="proxyPort" inputmode="numeric" value="18991" /></div>
@@ -47,7 +58,7 @@
       </div>
 
       <div class="sec">
-        <div class="status">
+        <div class="status tp-only">
           <div class="st"><span id="ltProxy" class="lt a"></span>代理</div>
           <div class="st"><span id="ltSandbox" class="lt a"></span>沙箱</div>
           <div class="st"><span id="ltUpstream" class="lt a"></span>上游</div>

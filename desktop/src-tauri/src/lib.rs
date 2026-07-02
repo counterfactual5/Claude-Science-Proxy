@@ -9,6 +9,7 @@
 //! 由被调脚本负责（对 8765 与真实目录失败关闭）；退 app 默认停代理、保留沙箱。
 
 mod config;
+mod oauth_forge;
 mod proc;
 
 use std::path::{Path, PathBuf};
@@ -18,7 +19,6 @@ use std::time::Duration;
 
 use serde::Deserialize;
 use serde_json::json;
-use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{Manager, State};
 
 const SCIENCE_BIN: &str = "/Applications/Claude Science.app/Contents/Resources/bin/claude-science";
@@ -147,7 +147,7 @@ fn open_log(name: &str) -> std::io::Result<std::fs::File> {
 }
 
 /// 把字符串里的 secret 明文替换成 ****，用于任何要回显给前端的错误尾巴。
-fn redact<'a>(s: &str, secret: &str) -> String {
+fn redact(s: &str, secret: &str) -> String {
     if secret.is_empty() {
         s.to_string()
     } else {
@@ -202,7 +202,8 @@ fn ensure_proxy(
     let port = cfg.proxy_port;
     let root = asset_root(app)
         .ok_or("找不到代理脚本 proxy/csswitch_proxy.py（打包资源或仓库根均未命中）。开发态可设 CSSWITCH_REPO。")?;
-    let py = proc::which("python3").ok_or("缺少依赖 python3。")?;
+    let py = proc::find_exe("python3")
+        .ok_or("缺少依赖 python3（起翻译代理需要）。已查 PATH、常见目录与登录 shell 仍未找到；macOS 一般自带 /usr/bin/python3（装 Xcode 命令行工具：xcode-select --install）。")?;
 
     // path-secret：**持久化复用**。已在跑的沙箱把该 secret 嵌进了 ANTHROPIC_BASE_URL，
     // 若每次起代理都换 secret，代理一重启（换 key/换 provider/重开 app）沙箱就会拿旧 secret
@@ -333,8 +334,69 @@ fn get_config() -> Result<serde_json::Value, String> {
         "provider": cfg.provider,
         "proxy_port": cfg.proxy_port,
         "sandbox_port": cfg.sandbox_port,
+        "mode": cfg.mode,
         "keys": keys,
     }))
+}
+
+/// 切换运行模式（"proxy" 第三方 / "official" 官方）。
+///
+/// 切到「官方」是**真正的切换**，不只是改配置：先把第三方链路拆掉（停沙箱 Science + 杀代理、
+/// 清 secret）。否则代理/沙箱会留在后台空跑；且 macOS 单实例语义下，后面 `open` 可能只是聚焦
+/// 还活着的沙箱实例（带着改过的 ANTHROPIC_* 环境）而非官方实例，把用户误导回第三方链路。
+/// 切回「第三方」不自动起任何东西（仍需用户填 key 后点「一键越过登录」）。全程绝不碰真实 8765。
+#[tauri::command]
+fn set_mode(
+    app: tauri::AppHandle,
+    state: State<'_, Mutex<AppState>>,
+    mode: String,
+) -> Result<(), String> {
+    if mode != "proxy" && mode != "official" {
+        return Err(format!("未知模式：{mode}（只支持 proxy / official）。"));
+    }
+    let dir = config::default_dir();
+    // 先落盘；失败直接返错（前端据此不切 UI、如实报错）。
+    config::update(&dir, {
+        let mode = mode.clone();
+        move |c| c.mode = mode
+    })
+    .map_err(|e| e.to_string())?;
+
+    // 切到官方：拆第三方链路，做成真正的「切换」而非「选择模式」。
+    if mode == "official" {
+        let mut st = lock(&state);
+        let sandbox_res = stop_sandbox_inner(&app, &mut st);
+        kill_child(&mut st.proxy);
+        st.secret.clear();
+        sandbox_res.map_err(|e| format!("已切官方并停代理；但{e}真实实例 8765 未受影响。"))?;
+    }
+    Ok(())
+}
+
+/// 官方模式：干净地打开用户【真实】的 Claude Science（用户自己的官方登录与订阅）。
+///
+/// 铁律：绝不碰/复制真实凭证；用 `open`（系统 LaunchServices 正常启动）而非注入环境变量，
+/// 并显式抹掉任何 `ANTHROPIC_*`，确保**不用改过的环境变量启动真实实例**（真实实例走它自己的
+/// 官方端点，不经本代理）。CSSwitch 只把用户交回官方客户端，不托管其登录。
+#[tauri::command]
+fn open_official() -> Result<(), String> {
+    let app_path = "/Applications/Claude Science.app";
+    let mut cmd = Command::new("open");
+    if Path::new(app_path).is_dir() {
+        cmd.arg(app_path);
+    } else {
+        cmd.arg("-a").arg("Claude Science");
+    }
+    // 防御性：即便 `open` 通常不向被启动 app 传本进程环境，也显式抹掉，杜绝把改过的
+    // ANTHROPIC_* 带进真实实例（铁律 3）。
+    cmd.env_remove("ANTHROPIC_BASE_URL")
+        .env_remove("ANTHROPIC_API_KEY")
+        .env_remove("ANTHROPIC_AUTH_TOKEN");
+    match cmd.status() {
+        Ok(s) if s.success() => Ok(()),
+        Ok(_) => Err("未能打开 Claude Science。请确认已安装官方 Claude Science。".into()),
+        Err(e) => Err(format!("打开官方 Claude Science 失败：{e}")),
+    }
 }
 
 #[derive(Deserialize)]
@@ -440,9 +502,15 @@ fn one_click_login(
     let sport = cfg.sandbox_port;
     let root = asset_root(&app).ok_or("找不到 scripts/launch-virtual-sandbox.sh（打包资源或仓库根均未命中）。")?;
 
-    if proc::which("node").is_none() {
-        return Err("缺少依赖 node（写虚拟登录需要）。".into());
-    }
+    // 进程内伪造虚拟 OAuth（Rust 原生密码学，去 node 依赖 —— #2「缺 node」治本解）。
+    // 直接写沙箱 auth_dir；启动脚本随后带 --skip-oauth-forge 跳过其 node 伪造步，
+    // 打包 app 的一键流程从此零 node。与 .mjs 的 v2 GCM 格式字节兼容（对拍单测钉死）。
+    let sbx_home = sandbox_home();
+    let auth_dir = sbx_home.join(".claude-science");
+    // sandbox_home() 作沙箱根：伪造器要求解析后的 auth_dir 落在其下，防符号链接重定向（P1）。
+    let forged = oauth_forge::forge(&auth_dir, "virtual@localhost.invalid", &sbx_home)
+        .map_err(|e| format!("写虚拟登录失败：{e}"))?;
+
     let launch = root.join("scripts/launch-virtual-sandbox.sh");
     if !launch.is_file() {
         return Err("找不到 scripts/launch-virtual-sandbox.sh。".into());
@@ -451,6 +519,19 @@ fn one_click_login(
     // 4. 起沙箱：脚本内部写虚拟 OAuth 并以 --detached 起 Science，然后返回。
     let proxy_url = format!("http://127.0.0.1:{pport}/{secret}");
     let logf = open_log("sandbox.log").map_err(|e| format!("建日志失败：{e}"))?;
+    // 虚拟登录摘要面包屑（无密钥；uuid/假账号/沙箱路径均不敏感），便于用户附日志排查。
+    {
+        use std::io::Write;
+        let mut lw = &logf;
+        let _ = writeln!(
+            lw,
+            "[oauth] 虚拟登录已进程内写入（Rust，零 node）：auth_dir={} account={} org={} enc={}",
+            forged.auth_dir.display(),
+            forged.account_uuid,
+            forged.org_uuid,
+            forged.enc_file.display()
+        );
+    }
     let logf2 = logf.try_clone().map_err(|e| e.to_string())?;
     let status = Command::new("zsh") // launch 脚本是 #!/bin/zsh（用了 ${VAR:A} realpath）
         .arg(&launch)
@@ -458,6 +539,7 @@ fn one_click_login(
         .arg(sport.to_string())
         .arg("--proxy-url")
         .arg(&proxy_url)
+        .arg("--skip-oauth-forge") // OAuth 已由上面 Rust 进程内伪造，脚本别再调 node
         // 沙箱状态落在可写目录（打包后资源目录只读），launch/stop/取 URL 三处同一路径。
         .env("SANDBOX_HOME", sandbox_home())
         .stdout(Stdio::from(logf))
@@ -619,6 +701,57 @@ fn quit_app(app: tauri::AppHandle, state: State<'_, Mutex<AppState>>) -> Result<
     Ok(())
 }
 
+// ---------- 入口 ----------
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run() {
+    tauri::Builder::default()
+        .plugin(tauri_plugin_opener::init())
+        .manage(Mutex::new(AppState::default()))
+        .invoke_handler(tauri::generate_handler![
+            get_config,
+            set_config,
+            set_mode,
+            open_official,
+            save_provider_key,
+            start_proxy,
+            verify_key,
+            stop_all,
+            one_click_login,
+            status,
+            open_url,
+            run_doctor,
+            app_version,
+            open_release_page,
+            report_bug,
+            open_logs,
+            quit_app
+        ])
+        .setup(|app| {
+            // 正常桌面应用：进 Dock、走常规应用生命周期（默认 Regular 策略，
+            // 不再设 Accessory）。窗口在 tauri.conf.json 里配了 decorations（标题栏
+            // 三键：关闭/最小化/缩放）+ visible + center，启动即居中弹出、可拖动
+            // （修 #4；标题栏自带拖动，顺带解决 #1 拖不动）。托盘图标已移除。
+
+            // 关窗即退出：与「退出」按钮一致 —— 停代理、清 secret，保留沙箱运行
+            // （spec §5.1）。不接这一步，从标题栏红叉关窗会绕过 quit_app 直接退，
+            // 把代理子进程留成孤儿。
+            if let Some(win) = app.get_webview_window("main") {
+                let handle = app.handle().clone();
+                win.on_window_event(move |ev| {
+                    if let tauri::WindowEvent::CloseRequested { .. } = ev {
+                        let state = handle.state::<Mutex<AppState>>();
+                        let mut st = lock(&state);
+                        kill_child(&mut st.proxy);
+                        st.secret.clear();
+                    }
+                });
+            }
+            Ok(())
+        })
+        .run(tauri::generate_context!())
+        .expect("error while running tauri application");
+}
+
 #[cfg(test)]
 mod tests {
     use super::{key_fingerprint, redact, sandbox_home};
@@ -646,95 +779,4 @@ mod tests {
         assert!(h.ends_with("sandbox/home"), "应以 sandbox/home 结尾：{h:?}");
         assert!(h.to_string_lossy().contains(".csswitch"), "应在 .csswitch 下：{h:?}");
     }
-}
-
-/// 把面板锚到主屏右上角、菜单栏正下方（菜单栏 app 的下拉位置）。
-/// 无边框窗口默认开在屏幕正中，离菜单栏很远且拖不动，故每次显示前重定位。
-fn anchor_top_right(win: &tauri::WebviewWindow) {
-    if let (Ok(Some(mon)), Ok(win_size)) = (win.primary_monitor(), win.outer_size()) {
-        let mon_pos = mon.position();
-        let mon_size = mon.size();
-        let scale = mon.scale_factor();
-        let margin = (10.0 * scale) as i32;
-        let menubar = (26.0 * scale) as i32;
-        let x = mon_pos.x + mon_size.width as i32 - win_size.width as i32 - margin;
-        let y = mon_pos.y + menubar;
-        let _ = win.set_position(tauri::PhysicalPosition::new(x, y));
-    }
-}
-
-// ---------- 入口 ----------
-#[cfg_attr(mobile, tauri::mobile_entry_point)]
-pub fn run() {
-    tauri::Builder::default()
-        .plugin(tauri_plugin_opener::init())
-        .manage(Mutex::new(AppState::default()))
-        .invoke_handler(tauri::generate_handler![
-            get_config,
-            set_config,
-            save_provider_key,
-            start_proxy,
-            verify_key,
-            stop_all,
-            one_click_login,
-            status,
-            open_url,
-            run_doctor,
-            app_version,
-            open_release_page,
-            report_bug,
-            open_logs,
-            quit_app
-        ])
-        .setup(|app| {
-            // 菜单栏 app：从 Dock 隐藏（macOS）。
-            #[cfg(target_os = "macos")]
-            app.set_activation_policy(tauri::ActivationPolicy::Accessory);
-
-            // 托盘图标：用专门的单色 template 剪影（只有开关，无文字），
-            // 缩到 18px 仍清晰，且随菜单栏明暗自动重着色（修 P3）。
-            // 完整暖橘应用图标留给 Dock/Finder/关于窗，不塞进 18px 菜单栏。
-            let tray_icon = tauri::image::Image::new(
-                include_bytes!("../icons/tray_template.rgba"),
-                44,
-                44,
-            );
-            let _tray = TrayIconBuilder::new()
-                .icon(tray_icon)
-                .icon_as_template(true)
-                .tooltip("CSSwitch")
-                .on_tray_icon_event(|tray, event| {
-                    if let TrayIconEvent::Click {
-                        button: MouseButton::Left,
-                        button_state: MouseButtonState::Up,
-                        ..
-                    } = event
-                    {
-                        let app = tray.app_handle();
-                        if let Some(win) = app.get_webview_window("main") {
-                            if win.is_visible().unwrap_or(false) {
-                                let _ = win.hide();
-                            } else {
-                                anchor_top_right(&win); // 锚到菜单栏下方，别开在屏幕正中
-                                let _ = win.show();
-                                let _ = win.set_focus();
-                            }
-                        }
-                    }
-                })
-                .build(app)?;
-
-            // 面板失焦即隐藏（点面板外自动收起）。
-            if let Some(win) = app.get_webview_window("main") {
-                let w2 = win.clone();
-                win.on_window_event(move |ev| {
-                    if let tauri::WindowEvent::Focused(false) = ev {
-                        let _ = w2.hide();
-                    }
-                });
-            }
-            Ok(())
-        })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
 }

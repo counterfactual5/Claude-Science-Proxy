@@ -26,6 +26,9 @@ fn default_proxy_port() -> u16 {
 fn default_sandbox_port() -> u16 {
     8990
 }
+fn default_mode() -> String {
+    "proxy".to_string()
+}
 
 /// 单个 provider 的配置。目前只有 key（明文存盘）。
 #[derive(Serialize, Deserialize, Clone, Default, Debug, PartialEq)]
@@ -48,6 +51,10 @@ pub struct Config {
     /// 首次为空，由后端生成一次后写回。
     #[serde(default)]
     pub secret: String,
+    /// 运行模式："proxy"（第三方：起沙箱+代理+虚拟登录）| "official"（用你真实的 Claude Science）。
+    /// 官方模式下 CSSwitch 只负责把你交回真实客户端，绝不碰/托管你的官方登录。
+    #[serde(default = "default_mode")]
+    pub mode: String,
     #[serde(default)]
     pub providers: BTreeMap<String, ProviderCfg>,
 }
@@ -59,6 +66,7 @@ impl Default for Config {
             proxy_port: default_proxy_port(),
             sandbox_port: default_sandbox_port(),
             secret: String::new(),
+            mode: default_mode(),
             providers: BTreeMap::new(),
         }
     }
@@ -230,9 +238,7 @@ mod tests {
     #[test]
     fn save_then_load_roundtrips() {
         let d = tmpdir().join(".csswitch");
-        let mut cfg = Config::default();
-        cfg.provider = "qwen".into();
-        cfg.proxy_port = 12345;
+        let mut cfg = Config { provider: "qwen".into(), proxy_port: 12345, ..Default::default() };
         cfg.providers.insert("deepseek".into(), ProviderCfg { key: "sk-abcdef1234".into() });
         save_to(&d, &cfg).unwrap();
         let got = load_from(&d).unwrap();
