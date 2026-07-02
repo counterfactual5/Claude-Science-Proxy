@@ -1,6 +1,6 @@
 # 沙箱卡在「Switching organization」的根因与修复方案
 
-**状态**：根因已确认（2026-07-03，隔离沙箱复现，全程未碰真实 8765 / `~/.claude-science`）。**修复已实现**（`csswitch_proxy.py` 加 `do_CONNECT` fast-fail + `launch-virtual-sandbox.sh` 注入 `http(s)_proxy`），隔离测试 `test/test_proxy_connect.py` 已过；**整链沙箱黑洞法回归待用户在场**，反馈用户真实网络回验待其本人。
+**状态**：根因已确认（2026-07-03，隔离沙箱复现）+ **实机整链复现并验证修复**（2026-07-03，用户在场，独立沙箱端口 8990 / 独立 HOME，全程未碰真实 8765 / `~/.claude-science`）。**关键修正：fast-fail 必须回 401（未登录）而非 403（禁止）**，详见文末「实机验证」。隔离测试 `test/test_proxy_connect.py` 已更新为断言 401。
 **来源**：一位下游用户私信反馈「一键越过登录后，Science 卡在 `Switching organization` 进不去」。
 
 ## 一句话根因
@@ -47,3 +47,25 @@
 - 倾向实现：作为 `proxy/csswitch_proxy.py` 的新模式（加 `do_CONNECT` 处理），少一个进程、逻辑集中。
 - 备选（不推荐）：把所有外联都 fast-fail —— 对被墙用户反正外网都连不上，但会误伤有梯子用户的 MCP / 装包。
 - 验证：本机可用上面的黑洞法造出「卡住」并证明修复后秒过；但**反馈用户的真实网络需其本人回验**（顺带确认其 Science 版本与是否有梯子）。
+
+## 实机验证与关键修正（2026-07-03，v0.1.4，403 → 401）
+
+**第一版（403）实机不通。** v0.1.4 首次实机整链（一键越过登录 → 起沙箱 8990）后，UI 仍卡「Switching organization / This is taking longer than expected」。抓 operon 自带日志 `~/.csswitch/sandbox/home/.claude-science/logs/server-*.log`：
+
+```
+claudeAiFetch: /api/oauth/profile → 403        （反复出现，无 treating as logged-out）
+```
+
+代理侧 `do_CONNECT` 确实在对 `claude.ai:443` fast-fail，但回的是 **403**。operon 每 15~30s（页面轮询/reload 时）重试，一直卡住。
+
+**根因修正：401 vs 403 的语义差。** operon 的 `claudeAiFetch`（令牌刷新包装 `OJ()`）对 CONNECT 的状态码分支处理：
+- **401 Unauthorized**（「没登录」）→ 日志 `claudeAiFetch: 401 and refresh failed — treating as logged-out` → **秒判 logged-out 放行**。
+- **403 Forbidden**（「登录了但没权限」）→ 当成组织/权限问题 → **反复重试** → 卡 Switching organization。
+
+原始根因文里「响应快（哪怕 401）就秒过」说的就是 401；当初实现却选了 403（以为只要「快速失败」即可），是**语义选错**。虚拟登录本就该表现为「未登录」，故应回 **401**。
+
+**改动：** `csswitch_proxy.py` 的 `do_CONNECT` 对 blocked 域名 `self._connect_reply(401)`（原 403）。`test_proxy_connect.py` 断言同步改 401。
+
+**实机验证（独立沙箱，未碰 8765）：** 换 401 后重启代理 + operon，operon 日志变为 `claudeAiFetch: 401 and refresh failed — treating as logged-out`，`/health` 返回 `{"status":"healthy",...,"agents_registered":4}`，不再卡 Switching organization。对照实验干净：唯一变量是 403→401（同一沙箱 data-dir、同一伪造登录、同一代理，仅状态码不同 → 前者卡、后者过）。
+
+> 附带发现（与本 bug 无关）：实机时有一个**旧 release build**（`target/release/bundle/macos/CSSwitch.app`，v0.1.4 前带菜单栏托盘）仍在跑，与 v0.1.4 dev 窗口并存，造成「点状态栏图标唤醒的是托盘而非可挪动窗口」的错觉。v0.1.4 已无任何 tray 代码；杀掉旧进程即恢复。

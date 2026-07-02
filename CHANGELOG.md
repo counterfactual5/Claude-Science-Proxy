@@ -16,7 +16,7 @@
 
 ### 修复 Fixed
 - **#2 已装 node 仍报「缺少依赖 node」**（GUI 从访达启动只拿到最小 PATH，查不到装在 `/usr/local/bin`、Homebrew、nvm 等处的 node）。两层解决：**① 治本** = 上面的 node-ectomy（app 不再需要 node）；**② 止血兜底**（仍用于定位 python3）= `which()` PATH 未命中时扫常见安装目录 + 登录 shell `zsh -lic 'command -v'` 解析真实 PATH。*多位客户 + 开发者第二台机器复现确认。*
-- **#3 沙箱卡在「Switching organization」**（启动时对 `claude.ai/api/oauth/profile` 的阻塞请求在到不了 claude.ai 的网络上挂住）。代理新增 `do_CONNECT`：对 `claude.ai / *.claude.com / *.anthropic.com` 的 CONNECT 立即 403（fast-fail → operon 秒判 logged-out 秒过），其余域名隧道透传；`launch-virtual-sandbox.sh` 注入 `http(s)_proxy` 指向代理 + `no_proxy=127.0.0.1`（本地推理仍直连）。根因见 [`findings/switching-organization-hang.md`](findings/switching-organization-hang.md)。
+- **#3 沙箱卡在「Switching organization」**（启动时对 `claude.ai/api/oauth/profile` 的阻塞请求在到不了 claude.ai 的网络上挂住）。代理新增 `do_CONNECT`：对 `claude.ai / *.claude.com / *.anthropic.com` 的 CONNECT 立即 **401（未登录）** fast-fail，其余域名隧道透传；`launch-virtual-sandbox.sh` 注入 `https_proxy` 指向代理 + `no_proxy=127.0.0.1`（本地推理仍直连）。**实机整链验证并修正**：初版回 403（禁止）会让 operon 当组织问题反复重试、仍卡住；改回 **401** 才触发 operon `treating as logged-out` 秒过（operon 日志实测：403→卡、401→过，唯一变量就是状态码）。根因与实机证据见 [`findings/switching-organization-hang.md`](findings/switching-organization-hang.md)。
 - **#1 面板无法鼠标拖动**：随 #4 消失（原生标题栏自带拖动）。
 
 ### 变更 Changed

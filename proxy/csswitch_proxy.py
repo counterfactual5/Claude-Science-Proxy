@@ -99,8 +99,15 @@ _DATE_SUFFIX = re.compile(r"-\d{8}$")
 # 沙箱 Science 启动时会对 claude.ai/api/oauth/profile 发【阻塞式】请求解析组织；
 # 在到不了 claude.ai 的网络上超时重试 → UI 卡在 "Switching organization"。
 # 起沙箱时把 http(s)_proxy 指向本代理（见 launch-virtual-sandbox.sh），do_CONNECT
-# 对下列 Anthropic 域名的 CONNECT 立即 403 → operon 秒判 logged-out 秒过；其余域名
-# 正常隧道透传（保留装包 / MCP 等外联）。推理仍走 127.0.0.1（no_proxy 直连本地）。
+# 对下列 Anthropic 域名的 CONNECT 立即短路，其余域名正常隧道透传（保留装包 / MCP 等外联）。
+# 推理仍走 127.0.0.1（no_proxy 直连本地）。
+#
+# 【为何回 401 而非 403】operon 的 claudeAiFetch 读的是 CONNECT 的状态码：
+#   - 401 Unauthorized = 「你没登录」→ operon 打日志 `treating as logged-out` 并秒过（实测/根因确认）。
+#   - 403 Forbidden    = 「登录了但没权限」→ operon 当成组织/权限问题【反复重试】→ 一直卡
+#     "Switching organization"（v0.1.4 实机复现：server 日志固定 `/api/oauth/profile → 403`，
+#     无 `treating as logged-out`）。
+# 虚拟登录本就该表现为「未登录」，故用 401。详见 findings/switching-organization-hang.md。
 _BLOCKED_SUFFIXES = ("anthropic.com", "claude.ai", "claude.com")
 
 
@@ -415,8 +422,9 @@ class H(BaseHTTPRequestHandler):
         target = self.path
         host = target.rsplit(":", 1)[0].strip("[]").lower()
         if _is_blocked_host(host):
-            log(f"CONNECT {target} -> 403 拒绝（Anthropic 域名 fast-fail）")
-            self._connect_reply(403)
+            # 401（未登录）而非 403（禁止）：让 operon 判 logged-out 秒过，而非当组织问题反复重试。
+            log(f"CONNECT {target} -> 401 未登录（Anthropic 域名 fast-fail）")
+            self._connect_reply(401)
             return
         try:
             port = int(target.rsplit(":", 1)[1])
