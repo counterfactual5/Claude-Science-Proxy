@@ -85,9 +85,16 @@ function currentSettings() {
   };
 }
 
+// 保存设置：失败会【抛出】，让调用方（起代理 / 一键登录）中止，
+// 不再吞掉错误后拿旧配置继续、还误报成功（修 P1-4）。
 async function persistSettings() {
+  await call("set_config", { cfg: currentSettings() });
+}
+
+// 独立 UI 事件（改 provider / 端口）用的兜底版：失败只提示、不抛，避免未捕获拒绝。
+async function persistSettingsSafe() {
   try {
-    await call("set_config", { cfg: currentSettings() });
+    await persistSettings();
   } catch (e) {
     setMsg("保存设置失败：" + e, "err");
   }
@@ -197,10 +204,10 @@ function wire() {
 
   els.provider.addEventListener("change", async () => {
     reflectProvider();
-    await persistSettings();
+    await persistSettingsSafe();
   });
-  els.proxyPort.addEventListener("change", persistSettings);
-  els.sandboxPort.addEventListener("change", persistSettings);
+  els.proxyPort.addEventListener("change", persistSettingsSafe);
+  els.sandboxPort.addEventListener("change", persistSettingsSafe);
   els.saveKeyBtn.addEventListener("click", saveKey);
   els.startProxyBtn.addEventListener("click", startProxy);
   els.stopBtn.addEventListener("click", stopAll);

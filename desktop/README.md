@@ -36,8 +36,10 @@ npm run tauri dev
 
 菜单栏出现 CSSwitch 图标，点击弹出面板。
 
-后端需要定位 CSSwitch 仓库根（含 `proxy/csswitch_proxy.py`）来调用代理与脚本：
-默认从可执行文件与当前目录逐级上溯自动找到；也可用环境变量 `CSSWITCH_REPO=/path/to/CSswitch` 显式指定。
+后端定位 `proxy/` 与 `scripts/` 的顺序（`asset_root()`）：**① 打包后**优先用 Tauri 资源目录
+（`Contents/Resources/`，见下「构建」——`proxy/`、`scripts/` 已被 bundle 进去）；**② 开发态**回退到
+从可执行文件位置逐级上溯找仓库根（含 `proxy/csswitch_proxy.py`）。刻意**不看当前工作目录**，
+避免据启动目录找到来路不明的脚本；开发时也可用 `CSSWITCH_REPO=/path/to/CSswitch` 显式指定。
 
 ## 构建
 
@@ -46,9 +48,14 @@ cd desktop
 npm run tauri build
 ```
 
-产物是 `.app` / `.dmg`。
+产物是 `.app` / `.dmg`。`proxy/` 与 `scripts/` 已通过 `tauri.conf.json` 的 `bundle.resources`
+打进 `Contents/Resources/`，从 Finder 启动的正式 `.app` 也能找到并调用它们（自包含）。
+沙箱运行状态落在可写的 `~/.csswitch/sandbox/home`（不写进只读的 `.app` 包内）。
 
-> **当前限制**：本版本在运行期按仓库路径调用 `proxy/` 与 `scripts/`（适合本机开发与自用）。做成完全自包含、可分发的 `.app` 需要把 `proxy/` 与 `scripts/` 作为 Tauri 资源打包并改走资源路径，属后续工作。
+> **签名/分发说明**：本版做 **ad-hoc 签名**（`bundle.macOS.signingIdentity: "-"`，正确封装资源），
+> 但**未做 Apple 公证（notarization）**——那需要付费的 Apple Developer ID 证书。因此从 Finder 首次打开会被
+> Gatekeeper 拦：请**右键 →「打开」**，或系统设置 → 隐私与安全性 →「仍要打开」。
+> 产物目前是 **arm64（Apple Silicon）**；Intel Mac 需要额外的 x86_64 / universal 构建。
 
 ## 铁律保障
 

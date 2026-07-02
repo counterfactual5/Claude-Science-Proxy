@@ -81,7 +81,7 @@ fn config_path(dir: &Path) -> PathBuf {
 }
 
 /// 若 path 存在且是符号链接则报错（不跟随）。path 不存在返回 Ok。
-fn assert_not_symlink(path: &Path) -> io::Result<()> {
+pub(crate) fn assert_not_symlink(path: &Path) -> io::Result<()> {
     match fs::symlink_metadata(path) {
         Ok(md) if md.file_type().is_symlink() => Err(io::Error::new(
             io::ErrorKind::InvalidInput,
@@ -113,6 +113,9 @@ fn ensure_dir(dir: &Path) -> io::Result<()> {
 /// 从 `dir/config.json` 读配置。文件不存在返回 [`Config::default`]。
 /// 文件是符号链接则报错（不跟随读）。读到后把权限复位为 0600。
 pub fn load_from(dir: &Path) -> io::Result<Config> {
+    // 目录本身也不许是符号链接：否则攻击者把 ~/.csswitch 换成软链，
+    // 就能让读取跟随到别处（与文件头声明的「读/写前 lstat 拒绝符号链接」一致）。
+    assert_not_symlink(dir)?;
     let path = config_path(dir);
     assert_not_symlink(&path)?;
     let data = match fs::read(&path) {
@@ -273,6 +276,19 @@ mod tests {
         fs::write(&target, b"{\"provider\":\"leak\"}").unwrap();
         symlink(&target, config_path(&d)).unwrap();
         let err = load_from(&d).unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::InvalidInput);
+    }
+
+    #[test]
+    fn load_rejects_symlinked_dir() {
+        // ~/.csswitch 本身被换成软链时，load 也必须拒绝（不跟随读到别处）——修 P1-3。
+        let base = tmpdir();
+        let realdir = base.join("realdir");
+        fs::create_dir_all(&realdir).unwrap();
+        fs::write(realdir.join("config.json"), b"{\"provider\":\"leak\"}").unwrap();
+        let link = base.join(".csswitch");
+        symlink(&realdir, &link).unwrap();
+        let err = load_from(&link).unwrap_err();
         assert_eq!(err.kind(), io::ErrorKind::InvalidInput);
     }
 
