@@ -20,6 +20,8 @@ import argparse
 import json
 import os
 import re
+import select
+import socket
 import sys
 import time
 import urllib.request
@@ -92,6 +94,19 @@ LOG = None
 PROV_NAME = None  # 运行时设定；模块被 import 做测试时也要有定义，避免 handler NameError
 AUTH_SECRET = None  # 未设则不启用鉴权（保持旧行为）
 _DATE_SUFFIX = re.compile(r"-\d{8}$")
+
+# ---------- #3: targeted fast-fail（沙箱「Switching organization」卡死修复） ----------
+# 沙箱 Science 启动时会对 claude.ai/api/oauth/profile 发【阻塞式】请求解析组织；
+# 在到不了 claude.ai 的网络上超时重试 → UI 卡在 "Switching organization"。
+# 起沙箱时把 http(s)_proxy 指向本代理（见 launch-virtual-sandbox.sh），do_CONNECT
+# 对下列 Anthropic 域名的 CONNECT 立即 403 → operon 秒判 logged-out 秒过；其余域名
+# 正常隧道透传（保留装包 / MCP 等外联）。推理仍走 127.0.0.1（no_proxy 直连本地）。
+_BLOCKED_SUFFIXES = ("anthropic.com", "claude.ai", "claude.com")
+
+
+def _is_blocked_host(host):
+    h = host.lower().rstrip(".")
+    return any(h == s or h.endswith("." + s) for s in _BLOCKED_SUFFIXES)
 
 
 def log(msg):
@@ -386,6 +401,79 @@ class H(BaseHTTPRequestHandler):
             self._handle_anthropic(areq)
         else:
             self._handle_openai(areq)
+
+    # ---- HTTP CONNECT 隧道：Anthropic 域名 fast-fail、其余透传（修 #3） ----
+    def do_CONNECT(self):
+        # operon 用 https_proxy 走到这里；self.path 形如 "host:port"。
+        # 【为何不走 _auth_ok】CONNECT 把目标放在请求行、没有可嵌 path-secret 的位置，
+        # operon 的 https_proxy 也带不上 secret。此处不鉴权的实际风险面很小：
+        #   - 只监听回环（127.0.0.1），本机进程本就能自行外连，隧道不给它任何新能力；
+        #   - 隧道是裸 TCP 转发，不注入上游 key、不经推理端点（那两条仍受 secret 保护）。
+        #   即 path-secret 真正守护的边界（第三方 key + 推理端点）未被削弱。
+        # 进一步收紧可让 launch 把 secret 放进 https_proxy 的 userinfo 再校验
+        # Proxy-Authorization，但需先实测 operon 是否会带该头（否则误伤透传），留待整链联调。
+        target = self.path
+        host = target.rsplit(":", 1)[0].strip("[]").lower()
+        if _is_blocked_host(host):
+            log(f"CONNECT {target} -> 403 拒绝（Anthropic 域名 fast-fail）")
+            self._connect_reply(403)
+            return
+        try:
+            port = int(target.rsplit(":", 1)[1])
+        except (ValueError, IndexError):
+            self._connect_reply(400)
+            return
+        try:
+            upstream = socket.create_connection((host, port), timeout=10)
+        except Exception as e:
+            log(f"CONNECT {target} -> 502 上游连不上: {e}")
+            self._connect_reply(502)
+            return
+        self.send_response(200, "Connection Established")
+        self.end_headers()
+        try:
+            self.wfile.flush()
+        except Exception:
+            pass
+        log(f"CONNECT {target} -> 隧道建立，透传")
+        try:
+            self._tunnel(self.connection, upstream)
+        finally:
+            try:
+                upstream.close()
+            except Exception:
+                pass
+        self.close_connection = True
+
+    def _connect_reply(self, code):
+        """CONNECT 的短响应（拒绝/错误）：空体 + 主动关连接。"""
+        self.send_response(code)
+        self.send_header("Content-Length", "0")
+        self.send_header("Connection", "close")
+        self.end_headers()
+        self.close_connection = True
+
+    @staticmethod
+    def _tunnel(client, upstream):
+        """在两个已连接 socket 间双向搬字节，直到任一侧 EOF / 出错。"""
+        socks = [client, upstream]
+        while True:
+            try:
+                r, _, _ = select.select(socks, [], [])
+            except Exception:
+                return
+            for s in r:
+                other = upstream if s is client else client
+                try:
+                    data = s.recv(65536)
+                except Exception:
+                    return
+                if not data:  # 对端 EOF
+                    return
+                try:
+                    other.sendall(data)
+                except Exception:
+                    return
 
     # ---- DeepSeek：Anthropic 原生透传（改模型名+换鉴权+夹 max_tokens+重试） ----
     def _handle_anthropic(self, areq):

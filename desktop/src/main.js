@@ -11,7 +11,10 @@ const invoke = PREVIEW
 function mockInvoke(cmd, args) {
   switch (cmd) {
     case "get_config":
-      return Promise.resolve({ provider: "deepseek", proxy_port: 18991, sandbox_port: 8990, keys: { deepseek: "", qwen: "" } });
+      return Promise.resolve({ provider: "deepseek", proxy_port: 18991, sandbox_port: 8990, mode: "proxy", keys: { deepseek: "", qwen: "" } });
+    case "set_mode":
+    case "open_official":
+      return Promise.resolve(null);
     case "status":
       return Promise.resolve({ proxy: "amber", sandbox: "amber", upstream: "amber" });
     case "save_provider_key":
@@ -39,6 +42,7 @@ const $ = (id) => document.getElementById(id);
 const els = {};
 let statusTimer = null;
 let busy = false;
+let mode = "proxy"; // "proxy" 第三方 | "official" 官方
 
 const KEY_LABELS = { deepseek: "DeepSeek API Key", qwen: "DashScope (通义千问) API Key" };
 
@@ -70,8 +74,65 @@ async function loadConfig() {
     els.sandboxPort.value = cfg.sandbox_port ?? 8990;
     window._keys = cfg.keys || {};
     reflectProvider();
+    applyMode(cfg.mode === "official" ? "official" : "proxy");
   } catch (e) {
     setMsg("读取配置失败：" + e, "err");
+  }
+}
+
+// 应用模式到 UI（不落盘）：切 panel class、分段高亮、hero 按钮文案。
+function applyMode(m) {
+  mode = m === "official" ? "official" : "proxy";
+  els.panel.classList.toggle("mode-official", mode === "official");
+  els.modeSeg.querySelectorAll(".seg-btn").forEach((b) =>
+    b.classList.toggle("active", b.dataset.mode === mode)
+  );
+  els.oneClickBtn.textContent =
+    mode === "official" ? "打开官方 Claude Science ↗" : "⚡ 一键越过登录";
+}
+
+// 点分段切换：先落盘（切官方时后端会顺带停第三方链路），成功再翻 UI；失败保持旧模式、如实报错。
+async function switchMode(m) {
+  if (m === mode) return;
+  setBusy(true);
+  try {
+    await call("set_mode", { mode: m });
+  } catch (e) {
+    // 失败不动 UI（旧模式仍生效），错误提示不被后续覆盖。
+    setMsg("切换模式失败：" + e, "err");
+    setBusy(false);
+    return;
+  }
+  applyMode(m);
+  setBusy(false);
+  setMsg(
+    mode === "official"
+      ? "已切到官方模式：第三方代理/沙箱已停，点上方按钮打开你真实的 Claude Science。"
+      : "已切到第三方模式：填 key 后点「一键越过登录」。"
+  );
+  await refreshStatus();
+}
+
+// 官方模式的主按钮：干净打开真实 Claude Science（后端用 open，不注入环境变量）。
+async function openOfficial() {
+  setBusy(true);
+  setMsg("正在打开官方 Claude Science…");
+  try {
+    await call("open_official");
+    setMsg("已打开官方 Claude Science（走你自己的官方登录与订阅）。", "ok");
+  } catch (e) {
+    setMsg("打开失败：" + e, "err");
+  } finally {
+    setBusy(false);
+  }
+}
+
+// hero 按钮按当前模式分派。
+async function heroClick() {
+  if (mode === "official") {
+    await openOfficial();
+  } else {
+    await oneClick();
   }
 }
 
@@ -251,8 +312,13 @@ function wire() {
     "provider", "keyLabel", "keyInput", "saveKeyBtn", "proxyPort", "sandboxPort",
     "oneClickBtn", "stopBtn", "ltProxy", "ltSandbox", "ltUpstream",
     "msg", "brandDot", "openBrowserBtn", "doctorBtn", "updateBtn", "verLabel",
-    "reportBtn", "logsBtn", "quitBtn",
+    "reportBtn", "logsBtn", "quitBtn", "modeSeg",
   ].forEach((id) => (els[id] = $(id)));
+  els.panel = document.querySelector(".panel");
+
+  els.modeSeg.querySelectorAll(".seg-btn").forEach((b) =>
+    b.addEventListener("click", () => switchMode(b.dataset.mode))
+  );
 
   els.provider.addEventListener("change", async () => {
     reflectProvider();
@@ -262,7 +328,7 @@ function wire() {
   els.sandboxPort.addEventListener("change", persistSettingsSafe);
   els.saveKeyBtn.addEventListener("click", saveKey);
   els.stopBtn.addEventListener("click", stopAll);
-  els.oneClickBtn.addEventListener("click", oneClick);
+  els.oneClickBtn.addEventListener("click", heroClick);
   els.openBrowserBtn.addEventListener("click", openBrowser);
   els.doctorBtn.addEventListener("click", runDoctor);
   els.updateBtn.addEventListener("click", checkUpdate);

@@ -26,6 +26,7 @@ PORT=8990
 PROXY_URL="http://127.0.0.1:18991"
 EMAIL="virtual@localhost.invalid"
 DRY_RUN=0
+SKIP_FORGE=0   # app 调用时置 1：OAuth 由 app 进程内 Rust 伪造，本脚本不再调 node
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -33,6 +34,7 @@ while [[ $# -gt 0 ]]; do
     --proxy-url) PROXY_URL="$2"; shift 2;;
     --email) EMAIL="$2"; shift 2;;
     --dry-run) DRY_RUN=1; shift;;
+    --skip-oauth-forge) SKIP_FORGE=1; shift;;
     *) echo "未知参数: $1"; exit 1;;
   esac
 done
@@ -76,8 +78,14 @@ HOME="$SANDBOX_HOME" security set-keychain-settings "$SANDBOX_KC" >/dev/null 2>&
 
 # —— 写入自造的虚拟 OAuth（每次覆盖，保持唯一 .enc；复用已有 encryption.key）——
 # 注意：不覆盖 HOME —— 伪造器要用【真实】HOME 判断是否误写真实凭证目录（护栏）。
-echo "写入虚拟 OAuth 凭证 → $DATA_DIR"
-node "$PROJ/scripts/make-virtual-oauth.mjs" --auth-dir "$DATA_DIR" --email "$EMAIL"
+# app 一键流程走 --skip-oauth-forge：OAuth 已由 app 进程内 Rust 原生伪造（src/oauth_forge.rs），
+# 打包 app 从此零 node。独立/dev 运行本脚本（不带该 flag）仍用 .mjs 伪造（需 node）。
+if [[ "$SKIP_FORGE" == "1" ]]; then
+  echo "虚拟 OAuth 由 app 进程内写入（Rust 原生，已跳过 node 伪造）→ $DATA_DIR"
+else
+  echo "写入虚拟 OAuth 凭证（node）→ $DATA_DIR"
+  node "$PROJ/scripts/make-virtual-oauth.mjs" --auth-dir "$DATA_DIR" --email "$EMAIL"
+fi
 
 echo
 echo "启动隔离沙箱 Science（虚拟登录）"
@@ -88,10 +96,26 @@ echo "  端口     = $PORT   （真实实例 8765 不受影响）"
 _masked_proxy="$(printf '%s' "$PROXY_URL" | sed -E 's#(://[^/]+/).+#\1****#')"
 echo "  推理指向 = $_masked_proxy"
 echo "  账号     = $EMAIL （本地假账号，不用真实凭证）"
+
+# #3 修复：沙箱到 Anthropic 域名（claude.ai / *.claude.com / *.anthropic.com）的外联，
+# 经本地代理 fast-fail。不接这一步，启动时对 claude.ai/api/oauth/profile 的【阻塞】请求
+# 在到不了 claude.ai 的网络上会挂住重试 → UI 卡在 "Switching organization"。
+# 做法：**只设 https_proxy**（那条卡死的 profile 请求是 HTTPS → 走 CONNECT，代理的
+# do_CONNECT 对上述域名立即 403，operon 秒判 logged-out 秒过；其余 HTTPS 隧道透传）。
+# 【刻意不设 http_proxy】：代理未实现普通 HTTP 转发（GET http://host/…），若设了 http_proxy
+# 普通 HTTP 的 MCP/下载/包源会撞代理拿 404（修 P2）；不设则普通 HTTP 直连或走用户自己的
+# http_proxy，且无 Anthropic 域名走普通 HTTP，故不影响 fast-fail。
+# no_proxy 让本地推理仍直连 127.0.0.1（operon 认【小写】 https_proxy/no_proxy）。
+_PROXY_HOSTPORT="$(printf '%s' "$PROXY_URL" | sed -E 's#^[a-zA-Z][a-zA-Z0-9+.-]*://([^/]+).*#\1#')"
+_FASTFAIL_PROXY="http://$_PROXY_HOSTPORT"
+_NO_PROXY="127.0.0.1,localhost,::1"
+echo "  外联防卡 = Anthropic HTTPS fast-fail（经 $_FASTFAIL_PROXY，no_proxy=$_NO_PROXY）"
 echo
 
 HOME="$SANDBOX_HOME" \
 ANTHROPIC_BASE_URL="$PROXY_URL" \
+https_proxy="$_FASTFAIL_PROXY" HTTPS_PROXY="$_FASTFAIL_PROXY" \
+no_proxy="$_NO_PROXY" NO_PROXY="$_NO_PROXY" \
 "$BIN" serve \
   --data-dir "$DATA_DIR" \
   --port "$PORT" \

@@ -15,6 +15,16 @@ body{
 }
 .panel{width:100%;min-height:100vh;background:var(--panel);overflow:hidden}
 .hd{display:flex;align-items:center;justify-content:space-between;padding:12px 14px 10px}
+/* 模式分段切换（第三方 / 官方） */
+.modeseg{padding-top:10px;padding-bottom:10px}
+.seg{display:flex;gap:3px;padding:3px;background:var(--field);border:1px solid var(--line);border-radius:10px}
+.seg-btn{flex:1;height:30px;border:none;background:transparent;color:var(--sub);
+  font-size:12.5px;font-weight:600;border-radius:7px;cursor:pointer;font-family:inherit}
+.seg-btn.active{background:var(--panel);color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.10)}
+/* 官方模式只显示 official-only、隐藏 tp-only；第三方反之 */
+.official-only{display:none}
+.panel.mode-official .tp-only{display:none}
+.panel.mode-official .official-only{display:block}
 .brand{display:flex;align-items:center;gap:8px;font-weight:650;font-size:14px}
 .dot{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 0 3px rgba(47,191,113,.16)}
 .dot.amber{background:var(--amber);box-shadow:0 0 0 3px rgba(230,162,60,.16)}
