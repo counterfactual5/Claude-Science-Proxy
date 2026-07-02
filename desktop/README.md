@@ -1,8 +1,8 @@
-# CSSwitch 桌面 app（Tauri 菜单栏）
+# CSSwitch 桌面 app（Tauri）
 
-macOS 菜单栏 app，把 CSSwitch 的日常操作收进一个下拉面板：选 provider、填第三方 key、一键越过登录、起停代理与沙箱、三盏状态灯。
+macOS 桌面 app（正常窗口，非菜单栏），把 CSSwitch 的日常操作收进一个面板：第三方 / 官方模式切换、选 provider、填第三方 key、一键越过登录、起停代理与沙箱、三盏状态灯。
 
-架构上它只是**进程管家**：Rust 后端负责起停子进程、注入环境变量、读写配置、探活；已验证的越权与翻译逻辑仍留在仓库的 Python / Node / shell 里被当作子进程调用（`proxy/csswitch_proxy.py`、`scripts/launch-virtual-sandbox.sh` 等），以保住铁律护栏与已验证行为。
+架构上它只是**进程管家**：Rust 后端负责起停子进程、注入环境变量、读写配置、探活。虚拟 OAuth 伪造已在 v0.1.4 移进 Rust 原生实现（`src/oauth_forge.rs`，app 运行时不再需要 node）；翻译逻辑仍在 `proxy/csswitch_proxy.py` 作子进程调用（下一步移 axum 拔 python），沙箱启动仍走 `scripts/launch-virtual-sandbox.sh`，以保住铁律护栏与已验证行为。
 
 ## 组成
 
@@ -11,17 +11,18 @@ desktop/
   src/                    前端面板（原生 HTML/CSS/JS，无框架）
     index.html  styles.css  main.js
   src-tauri/
-    src/lib.rs            后端入口：托盘 + 10 个 Tauri command（进程管家）
+    src/lib.rs            后端入口：Tauri command（进程管家；含模式切换 set_mode / open_official）
+    src/oauth_forge.rs    虚拟 OAuth 伪造（Rust 原生：HKDF-SHA256 + AES-256-GCM v2 令牌；护栏拒真实目录）
     src/config.rs         ~/.csswitch/config.json 读写（0700/0600、拒符号链接、原子写、掩码）
-    src/proc.rs           探活 / which / 一次性 secret / 上游可达性（纯 std）
-    tauri.conf.json       窗口配成菜单栏下拉面板（无边框、340×560、失焦即隐）
-    Cargo.toml            tauri（tray-icon）+ serde
+    src/proc.rs           探活 / which（含登录 shell 兜底）/ 一次性 secret / 上游可达性（纯 std）
+    tauri.conf.json       正常窗口（有标题栏三键、启动居中、可缩放，min 320×520）
+    Cargo.toml            tauri + serde + aes-gcm/hkdf/sha2/base64（伪造器用）
 ```
 
 ## 前置依赖
 
 - **Rust**（rustup 安装）：<https://www.rust-lang.org/tools/install>
-- **Node** 与 npm
+- **Node** 与 npm：**仅构建/开发时需要**（Tauri CLI 走 npm）。打出的 app **运行时不需要 node**。
 - **Xcode Command Line Tools**（`xcode-select --install`）
 - 已安装 **Claude Science**（一键越登录会启动其沙箱实例）
 - 第三方 key（DeepSeek 或 DashScope），在面板里填即可（存本地 `~/.csswitch/config.json`，0600）

@@ -31,8 +31,9 @@ DeepSeek 原生 Anthropic 端点  /  通义千问等 OpenAI 兼容端点
 
 **易用**
 
-- **开箱即用**：一个 macOS 菜单栏 app 把一切串好。你只需填入自己的第三方 API key，点「一键越过登录」，浏览器自动打开已登录的 Science。
+- **开箱即用**：一个 macOS 桌面 app 把一切串好。你只需填入自己的第三方 API key，点「一键越过登录」，浏览器自动打开已登录的 Science。**零 node 运行时依赖**：虚拟登录已是 Rust 原生实现，装了就能用，不再要求本机有 node。
 - **自选模型**：DeepSeek、通义千问，或任意 OpenAI 兼容端点，面板里随时切换。
+- **第三方 / 官方一键切换**：有 Claude 订阅、想走官方时，面板顶部切到「官方 Claude」即可干净交回你真实的 Science 与订阅（CSSwitch 不插手你的官方登录、也不起代理与沙箱）。
 - **原生保真**：DeepSeek 走原生 Anthropic 端点，thinking 与工具调用不失真。
 
 **安全（绝不影响你真实的 Claude 登录与订阅）**
@@ -43,11 +44,11 @@ DeepSeek 原生 Anthropic 端点  /  通义千问等 OpenAI 兼容端点
 
 ## 快速开始
 
-**前置**：装好 [Claude Science](https://claude.com)，本机有 `python3` 与 `node`。
+**前置**：装好 [Claude Science](https://claude.com)，本机有 `python3`（虚拟登录已是 Rust 原生实现，**不再需要 node**）。
 
 1. 下载最新 [Release](../../releases/latest) 里的 `CSSwitch_*.dmg`，拖进「应用程序」。首次打开**右键 →「打开」**（未公证，属正常，见下）。
-2. 点菜单栏的开关图标弹出面板，选 provider，**粘贴你自己的第三方 API key**（只存本地 `~/.csswitch/config.json`，0600）。
-3. 点「**一键越过登录**」。它会自动起代理、写虚拟登录、起隔离沙箱、开浏览器。完事，开始用。
+2. 打开 CSSwitch，弹出一个正常窗口（可拖动 / 缩放 / 最小化）。保持顶部「**第三方模型**」，选 provider，**粘贴你自己的第三方 API key**（只存本地 `~/.csswitch/config.json`，0600）。
+3. 点「**一键越过登录**」。它会自动起代理、写虚拟登录、起隔离沙箱、开浏览器打开已登录的 Science。完事，开始用。
 
 > 你唯一要提供的就是**你自己的第三方 API key**（你付费的 key，无法内置到 app 里）。其余全自动。
 >
@@ -74,6 +75,7 @@ DeepSeek 原生 Anthropic 端点  /  通义千问等 OpenAI 兼容端点
 **体验与工程**
 
 - Qwen 走真流式翻译，降低首 token 延迟（DeepSeek 已是原生透传真流式）。
+- 继续收敛运行时依赖：把翻译代理移到 Rust（axum）以拔掉 python（虚拟登录的 node 依赖已在 v0.1.4 拔除），最终做到零外部运行时。
 - Intel（x86_64）与 universal 构建；可选的正式签名与 Apple 公证。
 - 面板增加日志查看、用量统计、更快的 provider 切换入口。
 
@@ -91,7 +93,8 @@ DeepSeek 原生 Anthropic 端点  /  通义千问等 OpenAI 兼容端点
 
 - 本项目仅供**个人学习与研究**用途，**使用者自负风险**。
 - 推理请求经本地代理直连你自己付费的第三方模型，**不经过 Anthropic 服务端**做推理，用的是本地自造的虚拟登录，**零真实 Anthropic 凭证**。
-- Science 在**启动阶段**仍会尝试访问其硬编码的 profile / account 接口（`api.anthropic.com`），该请求失败不影响使用。因此本项目**不宣称**「完全零 Anthropic 接触」这类绝对说法。
+- Science 在**启动阶段**仍会尝试访问其硬编码的 profile / account 接口（`api.anthropic.com` / `claude.ai`）；代理对这些请求即时短路（返回「未登录」），Science 以未登录态正常启动、不影响第三方推理。因此本项目**不宣称**「完全零 Anthropic 接触」这类绝对说法。
+- 虚拟登录下，**Anthropic 托管的远程 MCP 服务**（如 pubmed / clinical-trials / chembl / biorxiv，位于 `*.mcp.claude.com`）不可用：它们需真实 Anthropic 授权，代理已将其短路，Science 会自动跳过（启动日志有 `load failed (skipped)` 属正常）。**本地内置的 bio-tools MCP 仍正常可用。**
 - 对 Science 登录令牌加密格式的逆向、以及「越过登录」的实现，可能触及相关服务条款与版权法规（如美国 DMCA §1201 反规避条款）。是否适用、有无豁免需专业法律判断。
 - 本项目与 Anthropic **无任何从属、合作或背书关系**；不偷取算力（推理走你自付第三方）、不泄露用户密钥、不含恶意代码。
 - 软件按「现状」提供，**不提供任何形式的担保**。更完整的威胁模型与法律/条款分析见 `docs/superpowers/specs/`。
