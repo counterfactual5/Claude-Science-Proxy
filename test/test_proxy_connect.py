@@ -1,7 +1,7 @@
 """#3 targeted fast-fail 的隔离测试：只打代理的 do_CONNECT，不碰 Science、不联外网。
 
 覆盖：
-  - CONNECT 到 Anthropic 域名（api.anthropic.com / claude.ai / *.claude.com）→ 立即 403；
+  - CONNECT 到 Anthropic 域名（api.anthropic.com / claude.ai / *.claude.com）→ 立即 401（未登录）；
   - CONNECT 到非 Anthropic 主机（本地 echo 服务）→ 200 隧道建立且双向透传字节。
 本地 echo 服务证明「透传」这条路不依赖任何外网。
 """
@@ -86,12 +86,13 @@ class ProxyConnect(unittest.TestCase):
         cls.proc.terminate()
         cls.proc.wait(timeout=5)
 
-    def test_connect_anthropic_domains_fastfail_403(self):
+    def test_connect_anthropic_domains_fastfail_401(self):
+        # 401（未登录）而非 403（禁止）：operon 才会判 logged-out 秒过而非反复重试组织切换。
         for target in ("api.anthropic.com:443", "claude.ai:443",
                        "platform.claude.com:443", "console.anthropic.com:443"):
             s, status = _connect(target)
             s.close()
-            self.assertIn(b"403", status, f"{target} 应 fast-fail 403，实收：{status!r}")
+            self.assertIn(b"401", status, f"{target} 应 fast-fail 401，实收：{status!r}")
 
     def test_connect_passthrough_tunnels_bytes(self):
         echo_port, srv = _start_echo()
@@ -112,7 +113,7 @@ class ProxyConnect(unittest.TestCase):
         # 子域也要拦（sub.anthropic.com），但不能误伤形近的其它域（notanthropic.com）。
         s, status = _connect("sub.anthropic.com:443")
         s.close()
-        self.assertIn(b"403", status)
+        self.assertIn(b"401", status)
 
 
 if __name__ == "__main__":
