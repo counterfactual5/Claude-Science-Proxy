@@ -29,9 +29,20 @@ struct AppState {
     proxy_port: u16,
     secret: String,
     provider: String,
+    /// 当前代理进程所用 key 的非加密指纹（仅内存、绝不落盘/打印）。
+    /// 换 key 后指纹变化 → 触发重启，避免复用带旧 key 的代理。
+    key_fp: u64,
     sandbox: Option<Child>,
     sandbox_port: u16,
     sandbox_url: Option<String>,
+}
+
+/// key 的非加密指纹（SipHash），只用于判断「key 是否变了」。绝不打印、绝不落盘。
+fn key_fingerprint(s: &str) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    s.hash(&mut h);
+    h.finish()
 }
 
 // ---------- provider 元信息 ----------
@@ -76,8 +87,39 @@ fn repo_root() -> Option<PathBuf> {
     None
 }
 
+/// 定位「资源根」（含 proxy/、scripts/）。打包成 .app 后，proxy/ 与 scripts/ 被
+/// bundle 进 `Contents/Resources`；开发态则回退到仓库根。找不到返回 None。
+/// 这样从 Finder 启动的正式 .app 也能找到代理脚本（修 P1-1）。
+fn asset_root(app: &tauri::AppHandle) -> Option<PathBuf> {
+    let marker = Path::new("proxy/csswitch_proxy.py");
+    // 打包态：Tauri 资源目录。
+    if let Ok(res) = app.path().resource_dir() {
+        if res.join(marker).is_file() {
+            return Some(res);
+        }
+    }
+    // 开发态：从可执行文件位置上溯（见 repo_root 注释，刻意不看 current_dir）。
+    repo_root()
+}
+
+/// 沙箱可写工作目录（独立 HOME）：`~/.csswitch/sandbox/home`。
+/// 打包后资源目录只读，沙箱状态（虚拟登录、克隆运行时、钥匙串）必须落在可写处；
+/// 该路径同时交给 launch/stop 脚本（`SANDBOX_HOME` 环境变量）与取 URL 逻辑，三者一致。
+fn sandbox_home() -> PathBuf {
+    config::default_dir().join("sandbox").join("home")
+}
+
 fn log_path(name: &str) -> PathBuf {
     config::default_dir().join("logs").join(name)
+}
+
+/// `O_NOFOLLOW` 的平台常量（本项目不引 libc）。macOS/BSD=0x0100，Linux=0x20000。
+const fn libc_o_nofollow() -> i32 {
+    if cfg!(target_os = "linux") {
+        0x2_0000
+    } else {
+        0x0100
+    }
 }
 
 /// 打开（truncate）一个子进程日志文件，父目录 0700、文件 0600（防同机其它用户读到 secret 尾巴）。
@@ -85,14 +127,19 @@ fn open_log(name: &str) -> std::io::Result<std::fs::File> {
     use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
     let p = log_path(name);
     if let Some(parent) = p.parent() {
+        config::assert_not_symlink(parent)?;
         std::fs::create_dir_all(parent)?;
         let _ = std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700));
     }
+    // 日志路径不许是符号链接：否则 truncate+写会覆盖链接目标文件（修 P2-1）。
+    config::assert_not_symlink(&p)?;
     let f = std::fs::OpenOptions::new()
         .write(true)
         .create(true)
         .truncate(true)
         .mode(0o600)
+        // O_NOFOLLOW：即便在 lstat 与 open 之间被换成软链，也拒绝跟随。
+        .custom_flags(libc_o_nofollow())
         .open(&p)?;
     // 文件已存在时 mode() 不复位，显式再夹一次。
     let _ = std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o600));
@@ -141,16 +188,20 @@ fn open_in_browser(url: &str) -> Result<(), String> {
 
 // ---------- 代理生命周期核心 ----------
 /// 确保代理在跑且健康；返回 (端口, secret)。幂等：已健康则复用。
-fn ensure_proxy(state: &State<'_, Mutex<AppState>>) -> Result<(u16, String), String> {
+fn ensure_proxy(
+    app: &tauri::AppHandle,
+    state: &State<'_, Mutex<AppState>>,
+) -> Result<(u16, String), String> {
     let dir = config::default_dir();
     let cfg = config::load_from(&dir).map_err(|e| e.to_string())?;
     let provider = cfg.provider.clone();
     let key = cfg
         .key_for(&provider)
         .ok_or_else(|| format!("缺少 {provider} 的 API key，请先在面板填写并保存。"))?;
+    let key_fp = key_fingerprint(&key);
     let port = cfg.proxy_port;
-    let root = repo_root()
-        .ok_or("找不到 CSSwitch 仓库根（含 proxy/csswitch_proxy.py）。可设 CSSWITCH_REPO 环境变量。")?;
+    let root = asset_root(app)
+        .ok_or("找不到代理脚本 proxy/csswitch_proxy.py（打包资源或仓库根均未命中）。开发态可设 CSSWITCH_REPO。")?;
     let py = proc::which("python3").ok_or("缺少依赖 python3。")?;
 
     // 整个「检查 → 清残留 → 起进程 → 记账」在同一把锁内完成，避免并发双击时
@@ -158,14 +209,17 @@ fn ensure_proxy(state: &State<'_, Mutex<AppState>>) -> Result<(u16, String), Str
     let secret;
     {
         let mut st = lock(state);
-        // 幂等：已在跑且健康且同端口则复用。
+        // 幂等：已在跑且健康、且【端口 + provider + key 指纹】都一致才复用。
+        // 只比端口会在「换 provider / 换 key」后误用带旧配置的代理（修 P1-2）。
         if st.proxy.is_some()
             && st.proxy_port == port
+            && st.provider == provider
+            && st.key_fp == key_fp
             && proc::http_health(port, Some(&st.secret), 500)
         {
             return Ok((port, st.secret.clone()));
         }
-        // 清残留（换端口/不健康）。
+        // 清残留（换端口/换 provider/换 key/不健康）。
         kill_child(&mut st.proxy);
 
         let new_secret = proc::gen_secret().map_err(|e| format!("无法生成安全 secret：{e}"))?;
@@ -190,6 +244,7 @@ fn ensure_proxy(state: &State<'_, Mutex<AppState>>) -> Result<(u16, String), Str
         st.proxy_port = port;
         st.secret = new_secret.clone();
         st.provider = provider;
+        st.key_fp = key_fp;
         secret = new_secret;
     }
 
@@ -216,21 +271,35 @@ fn ensure_proxy(state: &State<'_, Mutex<AppState>>) -> Result<(u16, String), Str
     Ok((port, secret))
 }
 
-fn stop_sandbox_inner(st: &mut AppState) {
+/// 停沙箱。返回 Err 表示 stop 脚本非零退出（Science 可能没停干净），
+/// 调用方据此如实报告，不再无条件报「已停止」（修 P1 停止虚假成功）。
+fn stop_sandbox_inner(app: &tauri::AppHandle, st: &mut AppState) -> Result<(), String> {
     // 沙箱由脚本以 --detached 起 Science，本进程持有的是脚本 child（已退出）。
     // 真正停 Science 要调 stop 脚本（按 data-dir，绝不碰真实 8765）。
-    if let Some(root) = repo_root() {
+    let mut err = None;
+    if let Some(root) = asset_root(app) {
         let stop = root.join("scripts/stop-science-sandbox.sh");
         if stop.is_file() {
-            let _ = Command::new("zsh") // stop 脚本是 #!/bin/zsh（用了 ${VAR:A} realpath）
+            match Command::new("zsh") // stop 脚本是 #!/bin/zsh（用了 ${VAR:A} realpath）
                 .arg(&stop)
+                // 与 launch 时一致的可写沙箱 HOME，stop 才能按同一 data-dir 停对进程。
+                .env("SANDBOX_HOME", sandbox_home())
                 .stdout(Stdio::null())
                 .stderr(Stdio::null())
-                .status();
+                .status()
+            {
+                Ok(s) if s.success() => {}
+                Ok(s) => err = Some(format!("停止沙箱脚本非零退出（{:?}）。", s.code())),
+                Err(e) => err = Some(format!("调用停止沙箱脚本失败：{e}")),
+            }
         }
     }
     kill_child(&mut st.sandbox);
     st.sandbox_url = None;
+    match err {
+        Some(e) => Err(e),
+        None => Ok(()),
+    }
 }
 
 // ---------- Tauri commands ----------
@@ -264,6 +333,18 @@ fn set_config(cfg: UiSettings) -> Result<(), String> {
     if cfg.proxy_port == 8765 || cfg.sandbox_port == 8765 {
         return Err("端口 8765 是真实 Science 实例保留端口，不能用。".into());
     }
+    // 只认已实现的 provider，避免存进未知值后起代理时才失败（修 P2-3）。
+    if cfg.provider != "deepseek" && cfg.provider != "qwen" {
+        return Err(format!("未知 provider：{}（只支持 deepseek / qwen）。", cfg.provider));
+    }
+    // 端口 0 非法（无法监听/探活）。
+    if cfg.proxy_port == 0 || cfg.sandbox_port == 0 {
+        return Err("端口不能为 0。".into());
+    }
+    // 代理与沙箱不能同端口，否则互相抢占。
+    if cfg.proxy_port == cfg.sandbox_port {
+        return Err("代理端口与沙箱端口不能相同。".into());
+    }
     let dir = config::default_dir();
     config::update(&dir, move |c| {
         c.provider = cfg.provider;
@@ -286,29 +367,36 @@ fn save_provider_key(provider: String, key: String) -> Result<String, String> {
 }
 
 #[tauri::command]
-fn start_proxy(state: State<'_, Mutex<AppState>>) -> Result<serde_json::Value, String> {
-    let (port, _secret) = ensure_proxy(&state)?;
+fn start_proxy(
+    app: tauri::AppHandle,
+    state: State<'_, Mutex<AppState>>,
+) -> Result<serde_json::Value, String> {
+    let (port, _secret) = ensure_proxy(&app, &state)?;
     Ok(json!({ "port": port }))
 }
 
 #[tauri::command]
-fn stop_all(state: State<'_, Mutex<AppState>>) -> Result<(), String> {
+fn stop_all(app: tauri::AppHandle, state: State<'_, Mutex<AppState>>) -> Result<(), String> {
     let mut st = lock(&state);
-    stop_sandbox_inner(&mut st);
+    // 先停沙箱并记录结果；代理无论如何都杀。沙箱没停干净则如实返错，不虚报成功。
+    let sandbox_res = stop_sandbox_inner(&app, &mut st);
     kill_child(&mut st.proxy);
     st.secret.clear();
-    Ok(())
+    sandbox_res.map_err(|e| format!("代理已停；但{e}真实实例 8765 未受影响。"))
 }
 
 #[tauri::command]
-fn one_click_login(state: State<'_, Mutex<AppState>>) -> Result<serde_json::Value, String> {
+fn one_click_login(
+    app: tauri::AppHandle,
+    state: State<'_, Mutex<AppState>>,
+) -> Result<serde_json::Value, String> {
     // 1~3. 确保代理在跑且健康（内部已查 key、探活）。
-    let (pport, secret) = ensure_proxy(&state)?;
+    let (pport, secret) = ensure_proxy(&app, &state)?;
 
     let dir = config::default_dir();
     let cfg = config::load_from(&dir).map_err(|e| e.to_string())?;
     let sport = cfg.sandbox_port;
-    let root = repo_root().ok_or("找不到 CSSwitch 仓库根。")?;
+    let root = asset_root(&app).ok_or("找不到 scripts/launch-virtual-sandbox.sh（打包资源或仓库根均未命中）。")?;
 
     if proc::which("node").is_none() {
         return Err("缺少依赖 node（写虚拟登录需要）。".into());
@@ -328,6 +416,8 @@ fn one_click_login(state: State<'_, Mutex<AppState>>) -> Result<serde_json::Valu
         .arg(sport.to_string())
         .arg("--proxy-url")
         .arg(&proxy_url)
+        // 沙箱状态落在可写目录（打包后资源目录只读），launch/stop/取 URL 三处同一路径。
+        .env("SANDBOX_HOME", sandbox_home())
         .stdout(Stdio::from(logf))
         .stderr(Stdio::from(logf2))
         .status()
@@ -348,11 +438,17 @@ fn one_click_login(state: State<'_, Mutex<AppState>>) -> Result<serde_json::Valu
     }
     if !ok {
         let tail = redact(&tail_file(&log_path("sandbox.log"), 600), &secret);
-        return Err(format!("沙箱起后探活超时（端口 {sport}）。\n{tail}"));
+        // 探活超时：脚本已把 Science 以 --detached 起在后台，必须停掉，
+        // 否则留一个孤儿沙箱进程（修 P2-2）。
+        {
+            let mut st = lock(&state);
+            let _ = stop_sandbox_inner(&app, &mut st); // best-effort 清理，结果不影响这里的报错
+        }
+        return Err(format!("沙箱起后探活超时（端口 {sport}）。已尝试停掉刚起的沙箱。\n{tail}"));
     }
 
     // 6. 取 UI URL（登录态），交系统浏览器打开。
-    let url = sandbox_url(&root, sport);
+    let url = sandbox_url(sport);
     {
         let mut st = lock(&state);
         st.sandbox_port = sport;
@@ -363,9 +459,9 @@ fn one_click_login(state: State<'_, Mutex<AppState>>) -> Result<serde_json::Valu
 }
 
 /// 取沙箱 UI 链接：`<bin> url --data-dir <home>/.claude-science`，HOME 指向沙箱 HOME。
-/// 失败退回 http://127.0.0.1:<port>。
-fn sandbox_url(root: &Path, port: u16) -> String {
-    let home = root.join(".sandbox/home");
+/// 失败退回 http://127.0.0.1:<port>。沙箱 HOME 用 [`sandbox_home`]（与 launch 时一致）。
+fn sandbox_url(port: u16) -> String {
+    let home = sandbox_home();
     let data_dir = home.join(".claude-science");
     if Path::new(SCIENCE_BIN).is_file() {
         if let Ok(out) = Command::new(SCIENCE_BIN)
@@ -416,8 +512,8 @@ fn open_url(state: State<'_, Mutex<AppState>>) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn run_doctor() -> Result<String, String> {
-    let root = repo_root().ok_or("找不到 CSSwitch 仓库根。")?;
+fn run_doctor(app: tauri::AppHandle) -> Result<String, String> {
+    let root = asset_root(&app).ok_or("找不到 scripts/doctor.sh（打包资源或仓库根均未命中）。")?;
     let cfg = config::load_from(&config::default_dir()).unwrap_or_default();
     let doctor = root.join("scripts/doctor.sh");
     let mut cmd = Command::new("bash");
@@ -453,7 +549,7 @@ fn quit_app(app: tauri::AppHandle, state: State<'_, Mutex<AppState>>) -> Result<
 
 #[cfg(test)]
 mod tests {
-    use super::redact;
+    use super::{key_fingerprint, redact, sandbox_home};
 
     #[test]
     fn redact_scrubs_secret_and_is_noop_when_empty() {
@@ -461,6 +557,22 @@ mod tests {
                    "推理指向 http://127.0.0.1:18991/**** 尾巴");
         assert_eq!(redact("原样返回", ""), "原样返回");
         assert!(!redact("leak abcd1234 leak abcd1234", "abcd1234").contains("abcd1234"));
+    }
+
+    #[test]
+    fn key_fingerprint_stable_and_distinct() {
+        // 同 key 稳定、异 key 不同：这是「换 key 触发代理重启」判断的基础（P1-2）。
+        assert_eq!(key_fingerprint("sk-aaaa"), key_fingerprint("sk-aaaa"));
+        assert_ne!(key_fingerprint("sk-aaaa"), key_fingerprint("sk-bbbb"));
+        assert_ne!(key_fingerprint(""), key_fingerprint("x"));
+    }
+
+    #[test]
+    fn sandbox_home_is_writable_under_config_dir() {
+        // 沙箱状态目录必须在可写的 ~/.csswitch 下（不在只读的 .app 资源里）——P1-1。
+        let h = sandbox_home();
+        assert!(h.ends_with("sandbox/home"), "应以 sandbox/home 结尾：{h:?}");
+        assert!(h.to_string_lossy().contains(".csswitch"), "应在 .csswitch 下：{h:?}");
     }
 }
 
@@ -487,9 +599,17 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
 
-            // 托盘图标：左键切换面板显隐。
+            // 托盘图标：用专门的单色 template 剪影（只有开关，无文字），
+            // 缩到 18px 仍清晰，且随菜单栏明暗自动重着色（修 P3）。
+            // 完整暖橘应用图标留给 Dock/Finder/关于窗，不塞进 18px 菜单栏。
+            let tray_icon = tauri::image::Image::new(
+                include_bytes!("../icons/tray_template.rgba"),
+                44,
+                44,
+            );
             let _tray = TrayIconBuilder::new()
-                .icon(app.default_window_icon().unwrap().clone())
+                .icon(tray_icon)
+                .icon_as_template(true)
                 .tooltip("CSSwitch")
                 .on_tray_icon_event(|tray, event| {
                     if let TrayIconEvent::Click {

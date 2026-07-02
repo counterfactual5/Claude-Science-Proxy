@@ -354,7 +354,16 @@ class H(BaseHTTPRequestHandler):
     def do_POST(self):
         if not self._auth_ok():
             return
-        n = int(self.headers.get("Content-Length") or 0)
+        # Content-Length 解析放在保护内：畸形头（如 "oops" / 负数）应回规范 400，
+        # 不能让 int() 抛 ValueError 击穿 handler、给客户端一个空响应。
+        try:
+            n = int(self.headers.get("Content-Length") or 0)
+            if n < 0:
+                raise ValueError("negative length")
+        except (ValueError, TypeError):
+            self._send_json(400, {"type": "error", "error": {
+                "type": "invalid_request_error", "message": "invalid Content-Length"}})
+            return
         raw = self.rfile.read(n) if n else b"{}"
         if not self.path.startswith("/v1/messages"):
             self._send_json(404, {"type": "error", "error": {"type": "not_found_error", "message": self.path}})

@@ -130,6 +130,33 @@ class ProxyAuth(unittest.TestCase):
         # 收到的字节都不能含 secret 明文。
         self.assertNotIn(SEC.encode(), received)
 
+    def test_malformed_content_length_returns_400(self):
+        # 回归：畸形 Content-Length（非整数）以前会在 int() 抛 ValueError 击穿 handler，
+        # 客户端只收到空响应/连接重置。修复后应回规范 400（invalid_request_error）。
+        import socket
+        payload = (
+            f"POST /{SEC}/v1/messages HTTP/1.1\r\n"
+            "Host: 127.0.0.1\r\n"
+            "Content-Type: application/json\r\n"
+            "Content-Length: oops\r\n"
+            "Connection: close\r\n"
+            "\r\n"
+        ).encode()
+        s = socket.create_connection(("127.0.0.1", 18990), timeout=5)
+        try:
+            s.sendall(payload)
+            resp = b""
+            while True:
+                chunk = s.recv(4096)
+                if not chunk:
+                    break
+                resp += chunk
+        finally:
+            s.close()
+        status_line = resp.split(b"\r\n", 1)[0]
+        self.assertIn(b"400", status_line, f"应为 400，实收：{resp[:120]!r}")
+        self.assertIn(b"invalid_request_error", resp)
+
 
 if __name__ == "__main__":
     unittest.main()

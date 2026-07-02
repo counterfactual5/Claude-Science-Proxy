@@ -2,7 +2,9 @@
 # 启动一个【隔离 + 虚拟登录】的 Claude Science 沙箱：
 #   用本地自造的虚拟 OAuth 让 Science 认为已登录（virtual@localhost.invalid），
 #   推理经 ANTHROPIC_BASE_URL 导去本项目翻译代理 → 通义千问。
-#   全程零 Anthropic 接触、零真实凭证。
+#   推理零 Anthropic、零真实凭证；但启动阶段 Science 自身仍可能尝试访问其硬编码的
+#   profile/account 接口（api.anthropic.com），该请求失败不影响使用。故不宣称
+#   「完全零 Anthropic 接触」这类绝对说法（与 README「免责声明」一致）。
 #
 # 铁律保障（见 CLAUDE.md）:
 #   - 独立 HOME + 独立 data-dir + 独立端口，绝不碰真实 ~/.claude-science 与端口 8765
@@ -85,7 +87,7 @@ echo "  端口     = $PORT   （真实实例 8765 不受影响）"
 # 掩掉 proxy-url 里的 path secret（一次性鉴权令牌不入日志）
 _masked_proxy="$(printf '%s' "$PROXY_URL" | sed -E 's#(://[^/]+/).+#\1****#')"
 echo "  推理指向 = $_masked_proxy"
-echo "  账号     = $EMAIL （假账号，零 Anthropic 接触）"
+echo "  账号     = $EMAIL （本地假账号，不用真实凭证）"
 echo
 
 HOME="$SANDBOX_HOME" \
