@@ -5,7 +5,7 @@ ok() { echo "ok - $1"; }
 no() { echo "NOT ok - $1"; FAILS=$((FAILS+1)); }
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
-# --- 7.6 停止脚本如实报告 ---
+# 7.6 停止脚本如实报告
 T="$(mktemp -d)"
 mkdir -p "$T/home/.claude-science"           # DATA_DIR 存在，走到 stop 调用
 FAKE_FAIL="$T/fake-fail"; printf '#!/bin/sh\nexit 1\n' > "$FAKE_FAIL"; chmod +x "$FAKE_FAIL"
@@ -17,6 +17,13 @@ if echo "$out" | grep -q "沙箱已停"; then no "stop falsely claimed success";
 
 out="$(SANDBOX_HOME="$T/home" SCIENCE_BIN="$FAKE_OK" "$ROOT/scripts/stop-science-sandbox.sh" 2>&1)"; rc=$?
 if [ $rc -eq 0 ] && echo "$out" | grep -q "沙箱已停"; then ok "stop reports success on rc=0"; else no "stop mis-reported success path (rc=$rc)"; fi
+
+# 7.7 端口归一化 + dry-run
+out="$(SANDBOX_HOME="$T/vh" "$ROOT/scripts/launch-virtual-sandbox.sh" --port 08765 --dry-run 2>&1)"; rc=$?
+if [ $rc -ne 0 ] && echo "$out" | grep -q "拒绝"; then ok "08765 rejected via int-normalize"; else no "08765 bypassed guard (rc=$rc)"; fi
+
+out="$(SANDBOX_HOME="$T/vh" "$ROOT/scripts/launch-virtual-sandbox.sh" --port 9931 --dry-run 2>&1)"; rc=$?
+if [ $rc -eq 0 ] && echo "$out" | grep -q "DRY-RUN OK"; then ok "valid port passes guards in dry-run"; else no "valid port dry-run failed (rc=$rc): $out"; fi
 
 echo "----"
 if [ $FAILS -eq 0 ]; then echo "ALL PASS"; exit 0; else echo "$FAILS FAILED"; exit 1; fi

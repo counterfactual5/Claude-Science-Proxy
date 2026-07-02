@@ -16,26 +16,30 @@
 set -euo pipefail
 
 PROJ="${0:A:h:h}"
-SANDBOX_HOME="$PROJ/.sandbox/home"
+SANDBOX_HOME="${SANDBOX_HOME:-$PROJ/.sandbox/home}"
 DATA_DIR="$SANDBOX_HOME/.claude-science"   # = auth_dir（Science 按 HOME 推导）
 REAL_DIR="$HOME/.claude-science"
 BIN="/Applications/Claude Science.app/Contents/Resources/bin/claude-science"
 PORT=8990
 PROXY_URL="http://127.0.0.1:18991"
 EMAIL="virtual@localhost.invalid"
+DRY_RUN=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --port) PORT="$2"; shift 2;;
     --proxy-url) PROXY_URL="$2"; shift 2;;
     --email) EMAIL="$2"; shift 2;;
+    --dry-run) DRY_RUN=1; shift;;
     *) echo "未知参数: $1"; exit 1;;
   esac
 done
 
 # —— 铁律断言：绝不使用真实目录 / 真实端口 ——
-if [[ "$DATA_DIR" == "$REAL_DIR" ]]; then echo "拒绝：data-dir 指向真实目录"; exit 1; fi
-if [[ "$PORT" == "8765" ]]; then echo "拒绝：端口 8765 是真实实例保留端口"; exit 1; fi
+if (( 10#${PORT} == 8765 )); then echo "拒绝：端口 8765 是真实实例保留端口"; exit 1; fi
+_dd_real="${DATA_DIR:A}"; _real_real="${REAL_DIR:A}"
+if [[ "$_dd_real" == "$_real_real" ]]; then echo "拒绝：data-dir 的真实路径指向真实目录"; exit 1; fi
+if [[ "$DRY_RUN" == "1" ]]; then echo "DRY-RUN OK：护栏通过，未启动沙箱。"; exit 0; fi
 if [[ ! -x "$BIN" ]]; then echo "找不到 Science 二进制: $BIN"; exit 1; fi
 
 # —— 首次：克隆运行时资产，绝不复制真实登录凭证 ——
