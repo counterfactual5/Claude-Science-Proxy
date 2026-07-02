@@ -51,3 +51,19 @@ test("normal sandbox dir writes regular 0600 files", () => {
   const enc = fs.readdirSync(path.join(auth, ".oauth-tokens")).filter((x) => x.endsWith(".enc"));
   assert.equal(enc.length, 1);
 });
+
+test(".oauth-tokens pre-planted as symlink to outside dir is rejected, target untouched", () => {
+  const t = mktmp();
+  const auth = path.join(t, ".sandbox", "auth");
+  fs.mkdirSync(auth, { recursive: true });
+  const outside = path.join(t, "outside-tokens");
+  fs.mkdirSync(outside, { recursive: true });
+  const existingEnc = path.join(outside, "existing.enc");
+  fs.writeFileSync(existingEnc, "ORIGINAL-ENC-CONTENTS");
+  // .oauth-tokens 是预置的符号链接，指向沙箱外目录（最坏情况：真实 ~/.claude-science/.oauth-tokens）
+  fs.symlinkSync(outside, path.join(auth, ".oauth-tokens"));
+  assert.throws(() => run(auth));
+  // 目标目录必须原封不动：既有文件内容不变，也没有新 .enc 写进来
+  assert.equal(fs.readFileSync(existingEnc, "utf-8"), "ORIGINAL-ENC-CONTENTS");
+  assert.deepEqual(fs.readdirSync(outside).sort(), ["existing.enc"]);
+});

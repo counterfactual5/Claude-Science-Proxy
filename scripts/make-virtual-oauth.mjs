@@ -75,7 +75,7 @@ if (!authDir) {
 
 // —— 安全护栏：绝不写进真实凭证目录 ——
 const resolvedAuth = realAncestor(authDir);
-const realDir = path.resolve(os.homedir(), ".claude-science");
+const realDir = realAncestor(path.join(os.homedir(), ".claude-science"));
 if (resolvedAuth === realDir) {
   console.error(`拒绝：--auth-dir 指向真实凭证目录 ${realDir}。铁律禁止。`);
   process.exit(3);
@@ -162,6 +162,11 @@ const encFileBody = encryptTokenV2(JSON.stringify(blob), keys.OAUTH_ENCRYPTION_K
 
 // —— 写 .oauth-tokens/<sanitized uuid>.enc；清掉其它 .enc 保证唯一 ——
 const tokDir = path.join(resolvedAuth, ".oauth-tokens");
+// tokDir 本身也要拒绝符号链接：resolvedAuth 已经被 realAncestor 看穿，
+// 但 tokDir 若是预置的符号链接（指向沙箱外，最坏情况是真实 ~/.claude-science/.oauth-tokens），
+// 后续 mkdirSync/chmodSync/readdirSync/unlink/safeWrite 都会原样跟随中间路径分量指向的目录，
+// 等于把删除和写入动作打到了真实目录上。必须在 mkdirSync 前先拒绝。
+assertNotSymlink(tokDir);
 fs.mkdirSync(tokDir, { recursive: true, mode: 0o700 });
 try { fs.chmodSync(tokDir, 0o700); } catch {}
 for (const f of fs.readdirSync(tokDir)) {
