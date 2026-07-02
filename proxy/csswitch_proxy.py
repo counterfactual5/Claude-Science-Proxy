@@ -304,6 +304,9 @@ class H(BaseHTTPRequestHandler):
         self.send_response(code)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
+        if self.close_connection:
+            # 主动关闭连接时显式告知客户端，避免其在已关闭的 socket 上复用连接。
+            self.send_header("Connection", "close")
         self.end_headers()
         self.wfile.write(body)
 
@@ -318,6 +321,11 @@ class H(BaseHTTPRequestHandler):
         if self.path == prefix or self.path.startswith(prefix + "/"):
             self.path = self.path[len(prefix):] or "/"
             return True
+        # 鉴权失败时请求体（POST）尚未读取，若保持长连接，服务端下一轮会从残留
+        # body 中间开始解析下一个请求，产出的畸形 400 错误页会把残留字节和下一条
+        # 请求行拼在一起回显给客户端，可能带出路径里的 secret。这里主动关连接
+        # 阻断该复用路径；_send_json 会据 close_connection 追加 Connection: close。
+        self.close_connection = True
         self._send_json(403, {"type": "error", "error": {
             "type": "permission_error", "message": "forbidden"}})
         return False

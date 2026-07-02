@@ -1,3 +1,4 @@
+import http.client
 import json
 import os
 import subprocess
@@ -82,9 +83,52 @@ class ProxyAuth(unittest.TestCase):
         self.assertEqual(json.loads(b)["content"][0]["text"], "ok")
 
     def test_secret_not_in_log(self):
-        _s, _b = _req(f"{self.base}/{SEC}/health")
+        # /health 分支不调用 log()，只测它无法覆盖「secret 不落日志」这条不变量。
+        # 改用 POST /v1/messages（会走 log()）之后再断言，才是对该不变量的真实覆盖。
+        s, _b = _req(f"{self.base}/{SEC}/v1/messages", "POST",
+                     {"model": "claude-opus-4-8", "max_tokens": 10,
+                      "messages": [{"role": "user", "content": "hi"}]})
+        self.assertEqual(s, 200)
         with open(self.logf) as f:
             self.assertNotIn(SEC, f.read())
+
+    def test_unauth_post_closes_connection_no_leak_on_reuse(self):
+        # 回归：鉴权失败的 POST 在读走请求体之前就返回 403。若连接保持 keep-alive，
+        # 服务端下一轮会从残留 body 中间开始解析下一个请求，产出的畸形 400 错误页
+        # 会把残留字节和下一条请求行拼在一起回显给客户端，可能带出路径里的 secret。
+        # 用同一条 http.client.HTTPConnection 连发两个请求来复现/验证修复。
+        body = json.dumps({"model": "claude-opus-4-8", "max_tokens": 10,
+                           "messages": [{"role": "user", "content": "hi"}]}).encode()
+        conn = http.client.HTTPConnection("127.0.0.1", 18990, timeout=5)
+        received = b""
+        try:
+            # 第一次请求：不带 secret 前缀，触发 403，其请求体故意不被服务端读走。
+            conn.request("POST", "/v1/messages", body=body,
+                         headers={"Content-Type": "application/json"})
+            resp = conn.getresponse()
+            received += resp.read()
+            self.assertEqual(resp.status, 403)
+            # 核心断言：修复后 403 响应显式声明 Connection: close。
+            self.assertEqual(resp.getheader("Connection"), "close")
+
+            # 第二次请求：带 secret。若服务端未关连接（未修复），会在残留 body 上
+            # 错位解析，产出的畸形 400 会把这条请求行（含 secret）回显给客户端，
+            # received 里就会出现 secret 明文，下面的 assertNotIn 会抓到。
+            # 已修复时，http.client 见到上一响应带 Connection: close 会自动断开
+            # 重连（不会复用被污染的旧 socket），第二次请求要么在一条新连接上
+            # 干净地成功，要么因服务端已关闭而抛异常；两者都不泄露 secret。
+            try:
+                conn.request("POST", f"/{SEC}/v1/messages", body=body,
+                             headers={"Content-Type": "application/json"})
+                resp2 = conn.getresponse()
+                received += resp2.read()
+            except Exception:
+                pass
+        finally:
+            conn.close()
+        # 核心不变量：不论第二次请求成功、以新连接重试成功还是失败，全程客户端
+        # 收到的字节都不能含 secret 明文。
+        self.assertNotIn(SEC.encode(), received)
 
 
 if __name__ == "__main__":
