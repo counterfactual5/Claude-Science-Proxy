@@ -1,0 +1,18 @@
+# 沙箱运行时（大文件、克隆资产、可能含新登录凭证）
+.sandbox/
+
+# 运行产物
+proxy/proxy.log
+proxy/proxy.stdout
+*.pyc
+__pycache__/
+
+# 绝不入库任何密钥
+*.env
+.env
+*secret*
+*token*
+
+# macOS 与工作区杂物
+.DS_Store
+.superpowers/
