@@ -1,3 +1,4 @@
+import json
 import os
 import sys
 import unittest
@@ -167,6 +168,113 @@ class ShimMode(unittest.TestCase):
     def test_marker_bytes_are_utf8_fullwidth(self):
         self.assertTrue(all(isinstance(b, bytes) for b in ds.DSML_MARKER_BYTES))
         self.assertIn("｜DSML｜".encode("utf-8"), ds.DSML_MARKER_BYTES)
+
+
+def sse(event, obj):
+    return f"event: {event}\ndata: {json.dumps(obj, ensure_ascii=False)}\n\n"
+
+
+def parse_sse(raw_bytes):
+    """把下游 SSE 字节解析成 [(event, data_obj_or_rawstr)]，供语义断言。"""
+    text = raw_bytes.decode("utf-8")
+    out = []
+    ev, data_lines = None, []
+    for line in text.split("\n"):
+        line = line.rstrip("\r")
+        if line.startswith("event:"):
+            ev = line[6:].strip()
+        elif line.startswith("data:"):
+            data_lines.append(line[5:].lstrip())
+        elif line == "":
+            if ev is not None:
+                joined = "\n".join(data_lines)
+                try:
+                    out.append((ev, json.loads(joined)))
+                except Exception:
+                    out.append((ev, joined))
+            ev, data_lines = None, []
+    return out
+
+
+def normal_text_stream():
+    """一段无 DSML 的正常文本流（含 thinking 块），返回 SSE 字符串。"""
+    parts = [
+        sse("message_start", {"type": "message_start", "message": {"id": "m1", "type": "message",
+            "role": "assistant", "model": "deepseek-v4-pro", "content": [], "stop_reason": None,
+            "usage": {"input_tokens": 1, "output_tokens": 0}}}),
+        sse("content_block_start", {"type": "content_block_start", "index": 0,
+            "content_block": {"type": "thinking", "thinking": ""}}),
+        sse("content_block_delta", {"type": "content_block_delta", "index": 0,
+            "delta": {"type": "thinking_delta", "thinking": "let me think"}}),
+        sse("content_block_delta", {"type": "content_block_delta", "index": 0,
+            "delta": {"type": "signature_delta", "signature": "abc"}}),
+        sse("content_block_stop", {"type": "content_block_stop", "index": 0}),
+        sse("content_block_start", {"type": "content_block_start", "index": 1,
+            "content_block": {"type": "text", "text": ""}}),
+        sse("content_block_delta", {"type": "content_block_delta", "index": 1,
+            "delta": {"type": "text_delta", "text": "Hello world"}}),
+        sse("content_block_stop", {"type": "content_block_stop", "index": 1}),
+        sse("message_delta", {"type": "message_delta", "delta": {"stop_reason": "end_turn"},
+            "usage": {"output_tokens": 5}}),
+        sse("message_stop", {"type": "message_stop"}),
+    ]
+    return "".join(parts)
+
+
+class RewriterPassthrough(unittest.TestCase):
+    def _run(self, raw_str, chunk=7):
+        rw = ds.DsmlStreamRewriter({}, nonce="t")
+        data = raw_str.encode("utf-8")
+        out = b""
+        for i in range(0, len(data), chunk):
+            out += rw.feed(data[i:i + chunk])
+        out += rw.finalize()
+        return out
+
+    def test_semantic_equivalence_no_dsml(self):
+        src = normal_text_stream()
+        got = parse_sse(self._run(src, chunk=5))
+        want = parse_sse(src.encode("utf-8"))
+        # 事件类型序列一致
+        self.assertEqual([e for e, _ in got], [e for e, _ in want])
+        # 文本拼接一致
+        def text_of(evs):
+            return "".join(d["delta"]["text"] for e, d in evs
+                           if e == "content_block_delta" and isinstance(d, dict)
+                           and d.get("delta", {}).get("type") == "text_delta")
+        self.assertEqual(text_of(got), "Hello world")
+        # thinking 内容保真
+        thinks = [d["delta"]["thinking"] for e, d in got if e == "content_block_delta"
+                  and d.get("delta", {}).get("type") == "thinking_delta"]
+        self.assertEqual(thinks, ["let me think"])
+        # stop_reason 语义不变
+        md = [d for e, d in got if e == "message_delta"][0]
+        self.assertEqual(md["delta"]["stop_reason"], "end_turn")
+
+    def test_empty_feed_returns_empty_bytes(self):
+        rw = ds.DsmlStreamRewriter({}, nonce="t")
+        # 只喂半个 SSE 帧（无空行结束）→ 不应产出任何字节
+        self.assertEqual(rw.feed(b"event: ping\n"), b"")
+
+    def test_utf8_split_across_chunks(self):
+        # 把含 U+FF5C（3字节）的文本按 1 字节切，解码不崩、文本保真
+        text_val = "a｜b｜｜c"
+        src = sse("content_block_start", {"type": "content_block_start", "index": 0,
+                  "content_block": {"type": "text", "text": ""}}) + \
+              sse("content_block_delta", {"type": "content_block_delta", "index": 0,
+                  "delta": {"type": "text_delta", "text": text_val}}) + \
+              sse("content_block_stop", {"type": "content_block_stop", "index": 0})
+        got = parse_sse(self._run(src, chunk=1))
+        deltas = [d["delta"]["text"] for e, d in got if e == "content_block_delta"]
+        self.assertEqual("".join(deltas), text_val)
+
+    def test_crlf_and_unknown_fields_survive(self):
+        src = ("event: ping\r\ndata: {\"type\":\"ping\"}\r\n\r\n"
+               ": this is a comment\n\n"
+               + sse("message_stop", {"type": "message_stop"}))
+        got = parse_sse(self._run(src, chunk=4))
+        self.assertIn("ping", [e for e, _ in got])
+        self.assertIn("message_stop", [e for e, _ in got])
 
 
 if __name__ == "__main__":
