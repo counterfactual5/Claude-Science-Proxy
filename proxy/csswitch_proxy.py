@@ -395,6 +395,14 @@ class H(BaseHTTPRequestHandler):
         except Exception as e:
             self._send_json(400, {"type": "error", "error": {"type": "invalid_request_error", "message": str(e)}})
             return
+        # 结构校验（修 P1 GPT 复审）：顶层必须是对象且 messages 是数组，否则回规范 400。
+        # 否则 []/"hello"/{"messages":null} 会在下游 .get / 迭代处抛 AttributeError/TypeError，
+        # 击穿线程 → 客户端拿到空响应而非 400。
+        if not isinstance(areq, dict) or not isinstance(areq.get("messages"), list):
+            self._send_json(400, {"type": "error", "error": {
+                "type": "invalid_request_error",
+                "message": "request body must be a JSON object with a 'messages' array"}})
+            return
         _dd = os.environ.get("PROXY_DUMP_REQ")
         if _dd:
             try:
@@ -548,7 +556,10 @@ class H(BaseHTTPRequestHandler):
             detail = e.read().decode("utf-8", "replace")[:400]
             log(f"  !! 上游 HTTP {e.code}: {detail}")
             if not headers_sent:
-                self._send_json(502, {"type": "error", "error": {
+                # 修 P3（GPT 复审）：上游鉴权/额度类状态码原样透传，让上层（verify_key）能区分
+                # key 无效(401/403)与限流(429)；其余上游错误仍归一化为 502。
+                code = e.code if e.code in (401, 403, 429) else 502
+                self._send_json(code, {"type": "error", "error": {
                     "type": "api_error", "message": f"upstream {e.code}: {detail}"}})
         except Exception as e:
             log(f"  !! 代理异常: {e}")
@@ -583,8 +594,11 @@ class H(BaseHTTPRequestHandler):
         except urllib.error.HTTPError as e:
             detail = e.read().decode("utf-8", "replace")[:400]
             log(f"  !! 上游 HTTP {e.code}: {detail}")
-            self._send_json(502, {"type": "error", "error": {"type": "api_error",
-                                  "message": f"upstream {e.code}: {detail}"}})
+            # 修 P2（GPT 复审）：OpenAI 翻译路径（qwen 等）同样保留上游 401/403/429，
+            # 别一律归一化 502——否则 verify_key 无法准确提示「key 无效」。其余仍归 502。
+            code = e.code if e.code in (401, 403, 429) else 502
+            self._send_json(code, {"type": "error", "error": {"type": "api_error",
+                                   "message": f"upstream {e.code}: {detail}"}})
         except Exception as e:
             log(f"  !! 代理异常: {e}")
             self._send_json(502, {"type": "error", "error": {"type": "api_error", "message": str(e)}})

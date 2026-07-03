@@ -48,6 +48,14 @@ pub struct ForgeResult {
     pub enc_file: PathBuf,
 }
 
+/// 一键登录本次对沙箱虚拟登录做了什么（供上层据实提示）。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum LoginAction {
+    Reused,   // 现有登录完整自洽，原样复用，未写任何文件
+    Repaired, // 部分损坏，重写但沿用原 org（旧对话不丢）
+    Created,  // 真首次，铸全新 org
+}
+
 // ---------- 随机与编码 ----------
 fn rand_bytes(n: usize) -> std::io::Result<Vec<u8>> {
     let mut f = std::fs::File::open("/dev/urandom")?;
@@ -103,7 +111,13 @@ pub fn encrypt_token_v2(plaintext: &[u8], oauth_key_b64: &str) -> Result<String,
     let iv = rand_bytes(12).map_err(|e| e.to_string())?;
     let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(&derived));
     let ct = cipher
-        .encrypt(Nonce::from_slice(&iv), Payload { msg: plaintext, aad: AAD })
+        .encrypt(
+            Nonce::from_slice(&iv),
+            Payload {
+                msg: plaintext,
+                aad: AAD,
+            },
+        )
         .map_err(|_| "aes-gcm 加密失败".to_string())?;
     let mut framed = iv;
     framed.extend_from_slice(&ct);
@@ -122,7 +136,13 @@ pub fn decrypt_token_v2(body: &str, oauth_key_b64: &str) -> Result<Vec<u8>, Stri
     let derived = derive_key(oauth_key_b64)?;
     let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(&derived));
     cipher
-        .decrypt(Nonce::from_slice(iv), Payload { msg: rest, aad: AAD })
+        .decrypt(
+            Nonce::from_slice(iv),
+            Payload {
+                msg: rest,
+                aad: AAD,
+            },
+        )
         .map_err(|_| "aes-gcm 解密/验签失败".to_string())
 }
 
@@ -173,7 +193,8 @@ fn safe_write(path: &Path, data: &[u8], mode: u32) -> Result<(), String> {
             .mode(mode)
             .open(&tmp)
             .map_err(|e| format!("建临时文件失败：{e}"))?;
-        f.write_all(data).map_err(|e| format!("写临时文件失败：{e}"))?;
+        f.write_all(data)
+            .map_err(|e| format!("写临时文件失败：{e}"))?;
     }
     std::fs::rename(&tmp, path).map_err(|e| format!("rename 失败：{e}"))?;
     std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode))
@@ -186,23 +207,31 @@ fn chmod_best_effort(p: &Path, mode: u32) {
 }
 
 // ---------- 主流程 ----------
-/// 在沙箱 `auth_dir` 写虚拟登录。`sandbox_root` 是允许写入的沙箱根（app 传 `sandbox_home()`），
-/// 解析后的路径必须落在其下，防符号链接重定向。护栏另用真实 `~/.claude-science` 作对照。
-pub fn forge(auth_dir: &Path, email: &str, sandbox_root: &Path) -> Result<ForgeResult, String> {
-    let home = std::env::var_os("HOME")
-        .map(PathBuf::from)
-        .ok_or("无 HOME 环境变量")?;
-    forge_guarded(auth_dir, email, sandbox_root, &home.join(".claude-science"))
-}
-
+// 注：一次性 `forge`（总是铸新 org）已被幂等的 `ensure_virtual_login` 取代（修 #3/#6），
+// 应用不再需要它。`forge_guarded`（= 护栏 + 一次性铸新）仍保留：既是 `ensure_virtual_login`
+// 的「铸新/修复」写入路径基石，也供测试用注入假 real_cred_dir 直接验证护栏与写入。
 /// 可注入「真实凭证目录」的内层（供测试传入临时目录，不碰真实 `~/.claude-science`）。
+/// 一次性铸新（org/account 均新）。=`resolve_guarded` 护栏 + `write_login(None,None)`。
+/// 现仅测试使用（应用走幂等 `ensure_virtual_login`）→ `#[cfg(test)]` 避免非 test 构建 dead_code。
+#[cfg(test)]
 fn forge_guarded(
     auth_dir: &Path,
     email: &str,
     sandbox_root: &Path,
     real_cred_dir: &Path,
 ) -> Result<ForgeResult, String> {
-    // —— 护栏（写任何东西之前；real_ancestor 已看穿符号链接）——
+    let resolved = resolve_guarded(auth_dir, email, sandbox_root, real_cred_dir)?;
+    write_login(&resolved, email, None, None)
+}
+
+/// 护栏（写任何东西之前；`real_ancestor` 已看穿符号链接）：真实目录保护（护栏 0，铁律最高
+/// 优先）→ 沙箱根内（护栏 1）→ 假账号 email。全过则返回解析后的写入根 `resolved`。
+fn resolve_guarded(
+    auth_dir: &Path,
+    email: &str,
+    sandbox_root: &Path,
+    real_cred_dir: &Path,
+) -> Result<PathBuf, String> {
     let resolved = real_ancestor(auth_dir);
     // 载重护栏 0（铁律 1，最高优先，先于沙箱根检查）：解析后的写入根绝不落在真实
     // ~/.claude-science 之内或其本身。防「把 ~/.csswitch/sandbox（或其祖先）预置成指向
@@ -232,16 +261,27 @@ fn forge_guarded(
             "拒绝：email 必须以 localhost.invalid 结尾（当前 {email}），确保是假账号。"
         ));
     }
+    Ok(resolved)
+}
 
-    std::fs::create_dir_all(&resolved).map_err(|e| format!("建 auth_dir 失败：{e}"))?;
-    chmod_best_effort(&resolved, 0o700);
+/// 在已通过护栏的 `resolved` 写一套虚拟登录。`prefer_org`/`prefer_account` 为 Some 则复用
+/// （修复时保住 org，令旧对话 DB 仍挂得上），为 None 则新铸。写入逻辑与旧 forge 一致。
+fn write_login(
+    resolved: &Path,
+    email: &str,
+    prefer_org: Option<String>,
+    prefer_account: Option<String>,
+) -> Result<ForgeResult, String> {
+    std::fs::create_dir_all(resolved).map_err(|e| format!("建 auth_dir 失败：{e}"))?;
+    chmod_best_effort(resolved, 0o700);
 
     // —— encryption.key：复用已存在的（保持旧 .enc 可解），否则新造 ——
     let key_file = resolved.join("encryption.key");
     assert_not_symlink(&key_file)?;
     let mut keys: BTreeMap<String, String> = BTreeMap::new();
     if key_file.exists() {
-        let txt = std::fs::read_to_string(&key_file).map_err(|e| format!("读 encryption.key 失败：{e}"))?;
+        let txt = std::fs::read_to_string(&key_file)
+            .map_err(|e| format!("读 encryption.key 失败：{e}"))?;
         for line in txt.lines() {
             if let Some(eq) = line.find('=') {
                 if eq > 0 {
@@ -252,6 +292,16 @@ fn forge_guarded(
                 }
             }
         }
+    }
+    // P2a：复用的 OAUTH_ENCRYPTION_KEY 必须能 base64 解出 ≥16 字节，否则丢弃 → 下面 fill 循环
+    // 重造。免得「present 但非法 base64」的 key 被留用 → 后续 encrypt_token_v2 里 derive_key
+    // 直接报错而非自愈。只校验这一把（我们加密 .enc 用它）；另三把 Science 内部用，present 则留。
+    let oauth_usable = keys
+        .get("OAUTH_ENCRYPTION_KEY")
+        .map(|v| B64.decode(v.trim()).map(|b| b.len() >= 16).unwrap_or(false))
+        .unwrap_or(false);
+    if !oauth_usable {
+        keys.remove("OAUTH_ENCRYPTION_KEY");
     }
     for k in KEY_NAMES {
         if !keys.contains_key(k) {
@@ -266,10 +316,19 @@ fn forge_guarded(
         + "\n";
     safe_write(&key_file, key_blob.as_bytes(), 0o600)?;
 
-    // —— 令牌 blob（字段对齐 _adapt / _tryOauthToken）——
-    let account_uuid = uuid_v4().map_err(|e| e.to_string())?;
-    let org_uuid = uuid_v4().map_err(|e| e.to_string())?;
-    let access = format!("sk-ant-virtual-{}", hex(&rand_bytes(24).map_err(|e| e.to_string())?));
+    // —— 令牌 blob（字段对齐 _adapt / _tryOauthToken）：org/account 有偏好则复用，否则新铸 ——
+    let account_uuid = match prefer_account {
+        Some(a) => a,
+        None => uuid_v4().map_err(|e| e.to_string())?,
+    };
+    let org_uuid = match prefer_org {
+        Some(o) => o,
+        None => uuid_v4().map_err(|e| e.to_string())?,
+    };
+    let access = format!(
+        "sk-ant-virtual-{}",
+        hex(&rand_bytes(24).map_err(|e| e.to_string())?)
+    );
     let blob = json!({
         "access_token": access,          // 代理会剥离，值任意
         "refresh_token": "",
@@ -287,7 +346,9 @@ fn forge_guarded(
         "has_extra_usage_enabled": false
     });
     let plaintext = serde_json::to_vec(&blob).map_err(|e| format!("序列化 blob 失败：{e}"))?;
-    let oauth_key = keys.get("OAUTH_ENCRYPTION_KEY").ok_or("缺 OAUTH_ENCRYPTION_KEY")?;
+    let oauth_key = keys
+        .get("OAUTH_ENCRYPTION_KEY")
+        .ok_or("缺 OAUTH_ENCRYPTION_KEY")?;
     let enc_body = encrypt_token_v2(&plaintext, oauth_key)?;
 
     // —— 写 .oauth-tokens/<sanitized>.enc；先清其它 .enc 保证唯一 ——
@@ -302,8 +363,12 @@ fn forge_guarded(
                 assert_not_symlink(&p)?;
                 // 删除失败必须显式失败（修 P2）：否则残留旧 .enc + 新 .enc = 多个，
                 // 而 Science 预期目录内恰好一个 → 会「显示启动成功却仍登录不上」。
-                std::fs::remove_file(&p)
-                    .map_err(|err| format!("删除旧令牌 {} 失败：{err}（需目录内恰好一个 .enc）", p.display()))?;
+                std::fs::remove_file(&p).map_err(|err| {
+                    format!(
+                        "删除旧令牌 {} 失败：{err}（需目录内恰好一个 .enc）",
+                        p.display()
+                    )
+                })?;
             }
         }
     }
@@ -324,14 +389,260 @@ fn forge_guarded(
 
     // —— active-org.json（Science 只要求 org_uuid 是 UUID）——
     let org_json = serde_json::to_string_pretty(&json!({ "org_uuid": org_uuid })).unwrap() + "\n";
-    safe_write(&resolved.join("active-org.json"), org_json.as_bytes(), 0o600)?;
+    safe_write(
+        &resolved.join("active-org.json"),
+        org_json.as_bytes(),
+        0o600,
+    )?;
 
     Ok(ForgeResult {
-        auth_dir: resolved,
+        auth_dir: resolved.to_path_buf(),
         account_uuid,
         org_uuid,
         enc_file,
     })
+}
+
+// ---------- 幂等：现有登录读取/校验 ----------
+/// 严格校验：s 形如 8-4-4-4-12 的十六进制 UUID。
+fn looks_like_uuid(s: &str) -> bool {
+    let b = s.as_bytes();
+    b.len() == 36
+        && b.iter().enumerate().all(|(i, &c)| match i {
+            8 | 13 | 18 | 23 => c == b'-',
+            _ => c.is_ascii_hexdigit(),
+        })
+}
+
+/// 解析 encryption.key 拿 OAUTH_ENCRYPTION_KEY（非空才算）。
+fn parse_oauth_key(resolved: &Path) -> Option<String> {
+    let txt = std::fs::read_to_string(resolved.join("encryption.key")).ok()?;
+    for line in txt.lines() {
+        if let Some(v) = line.strip_prefix("OAUTH_ENCRYPTION_KEY=") {
+            let v = v.trim();
+            if !v.is_empty() {
+                return Some(v.to_string());
+            }
+        }
+    }
+    None
+}
+
+/// `.oauth-tokens/` 下恰好一个 `.enc` 才返回其路径；零个或多于一个都返回 None。
+fn single_enc(resolved: &Path) -> Option<PathBuf> {
+    let mut found: Option<PathBuf> = None;
+    for e in std::fs::read_dir(resolved.join(".oauth-tokens"))
+        .ok()?
+        .flatten()
+    {
+        let p = e.path();
+        if p.extension().map(|x| x == "enc").unwrap_or(false) {
+            if found.is_some() {
+                return None;
+            }
+            found = Some(p);
+        }
+    }
+    found
+}
+
+/// active-org.json 里合法 UUID 的 org_uuid。
+fn read_active_org(resolved: &Path) -> Option<String> {
+    let v: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(resolved.join("active-org.json")).ok()?)
+            .ok()?;
+    let o = v.get("org_uuid")?.as_str()?;
+    if looks_like_uuid(o) {
+        Some(o.to_string())
+    } else {
+        None
+    }
+}
+
+/// 尽力从旧 .enc 解出合法 UUID 的 account_uuid（供修复时复用；失败/非法无害，None 即新铸）。
+fn read_prior_account(resolved: &Path) -> Option<String> {
+    let key = parse_oauth_key(resolved)?;
+    let body = std::fs::read_to_string(single_enc(resolved)?).ok()?;
+    let blob: serde_json::Value =
+        serde_json::from_slice(&decrypt_token_v2(&body, &key).ok()?).ok()?;
+    let a = blob.get("account_uuid")?.as_str()?;
+    if looks_like_uuid(a) {
+        Some(a.to_string())
+    } else {
+        None
+    }
+}
+
+/// 从唯一可解 .enc 的 token blob 取合法 org_uuid（active-org.json 丢失时的回退来源）。
+fn read_token_org(resolved: &Path) -> Option<String> {
+    let key = parse_oauth_key(resolved)?;
+    let body = std::fs::read_to_string(single_enc(resolved)?).ok()?;
+    let blob: serde_json::Value =
+        serde_json::from_slice(&decrypt_token_v2(&body, &key).ok()?).ok()?;
+    let o = blob.get("org_uuid")?.as_str()?;
+    if looks_like_uuid(o) {
+        Some(o.to_string())
+    } else {
+        None
+    }
+}
+
+/// 扫 `<auth_dir>/orgs/` 下形如 UUID 的历史组织目录名（active-org 与 token 都没了时的最后回退）。
+fn scan_org_dirs(resolved: &Path) -> Vec<String> {
+    let mut v = Vec::new();
+    if let Ok(rd) = std::fs::read_dir(resolved.join("orgs")) {
+        for e in rd.flatten() {
+            if e.path().is_dir() {
+                if let Some(name) = e.file_name().to_str() {
+                    if looks_like_uuid(name) {
+                        v.push(name.to_string());
+                    }
+                }
+            }
+        }
+    }
+    v
+}
+
+/// 今天的 UTC 日期 `YYYY-MM-DD`（无外部 crate；Howard Hinnant civil-from-days）。
+fn today_utc_ymd() -> String {
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let days = (secs / 86400) as i64; // 自 1970-01-01 的天数
+    let z = days + 719468;
+    let era = (if z >= 0 { z } else { z - 146096 }) / 146097;
+    let doe = z - era * 146097; // [0, 146096]
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365; // [0, 399]
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100); // [0, 365]
+    let mp = (5 * doy + 2) / 153; // [0, 11]
+    let d = doy - (153 * mp + 2) / 5 + 1; // [1, 31]
+    let m = if mp < 10 { mp + 3 } else { mp - 9 }; // [1, 12]
+    let y = if m <= 2 { y + 1 } else { y };
+    format!("{y:04}-{m:02}-{d:02}")
+}
+
+/// `token_expires_at`（ISO8601）的日期部分是否 ≥ 今天（UTC），即尚未过期（P2）。
+/// 取前 10 字符 `YYYY-MM-DD` 与今天按字典序比较（ISO8601 日期字典序即时间序）；
+/// 格式不对（长度不足 / 非 `dddd-dd-dd`）视为过期。粒度到「天」足够区分远期 vs 过去。
+fn token_not_expired(expires_at: &str) -> bool {
+    if expires_at.len() < 10 {
+        return false;
+    }
+    let date = &expires_at[..10];
+    let b = date.as_bytes();
+    let shaped = b.iter().enumerate().all(|(i, &c)| match i {
+        4 | 7 => c == b'-',
+        _ => c.is_ascii_digit(),
+    });
+    shaped && date >= today_utc_ymd().as_str()
+}
+
+/// 现有登录是否「完整且自洽」；是则返回其身份（用于原样复用）。任何一步不满足返回 None
+/// （→ 降级到修复，安全方向）。校验从严（P2）：读路径不得是符号链接；解密后 org 一致、
+/// email 是假账号、`account_uuid` 是合法 UUID、`provider`=claude_ai、`access_token` 非空、
+/// `token_expires_at` 未过期。
+fn read_intact_login(resolved: &Path, email: &str) -> Option<ForgeResult> {
+    // 读路径不得是符号链接（不跟随；可疑布局 → 视作不自洽走修复，修复端有 assert_not_symlink）。
+    if is_symlink(&resolved.join("encryption.key"))
+        || is_symlink(&resolved.join(".oauth-tokens"))
+        || is_symlink(&resolved.join("active-org.json"))
+    {
+        return None;
+    }
+    let key = parse_oauth_key(resolved)?;
+    let enc = single_enc(resolved)?;
+    if is_symlink(&enc) {
+        return None;
+    }
+    let active_org = read_active_org(resolved)?;
+    let body = std::fs::read_to_string(&enc).ok()?;
+    let blob: serde_json::Value =
+        serde_json::from_slice(&decrypt_token_v2(&body, &key).ok()?).ok()?;
+    let blob_org = blob.get("org_uuid")?.as_str()?;
+    let blob_email = blob.get("email")?.as_str()?;
+    let account = blob.get("account_uuid")?.as_str()?;
+    let provider_ok = blob.get("provider").and_then(|v| v.as_str()) == Some("claude_ai");
+    let access_ok = blob
+        .get("access_token")
+        .and_then(|v| v.as_str())
+        .map(|s| !s.is_empty())
+        .unwrap_or(false);
+    let expiry_ok = blob
+        .get("token_expires_at")
+        .and_then(|v| v.as_str())
+        .map(token_not_expired)
+        .unwrap_or(false);
+    if blob_org != active_org
+        || blob_email != email
+        || !blob_email.ends_with("localhost.invalid")
+        || !looks_like_uuid(account)
+        || !provider_ok
+        || !access_ok
+        || !expiry_ok
+    {
+        return None;
+    }
+    Some(ForgeResult {
+        auth_dir: resolved.to_path_buf(),
+        account_uuid: account.to_string(),
+        org_uuid: active_org,
+        enc_file: enc,
+    })
+}
+
+/// 幂等虚拟登录：完整自洽→复用；部分损坏→修复但保 org；真首次→铸新。
+pub fn ensure_virtual_login(
+    auth_dir: &Path,
+    email: &str,
+    sandbox_root: &Path,
+) -> Result<(ForgeResult, LoginAction), String> {
+    let home = std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .ok_or("无 HOME 环境变量")?;
+    ensure_virtual_login_guarded(auth_dir, email, sandbox_root, &home.join(".claude-science"))
+}
+
+/// 可注入「真实凭证目录」的内层（测试用）。
+fn ensure_virtual_login_guarded(
+    auth_dir: &Path,
+    email: &str,
+    sandbox_root: &Path,
+    real_cred_dir: &Path,
+) -> Result<(ForgeResult, LoginAction), String> {
+    let resolved = resolve_guarded(auth_dir, email, sandbox_root, real_cred_dir)?;
+    // 完整自洽 → 原样复用，不碰任何文件（operon 可能正在读）。
+    if let Some(fr) = read_intact_login(&resolved, email) {
+        return Ok((fr, LoginAction::Reused));
+    }
+    // 组织来源优先级（P1a，绝不静默新铸）：active-org.json → 可解 token → orgs/ 目录。
+    // 只要定位到历史 org 就复用它（保住旧对话）；多个历史组织无法定位活动者则报错中止。
+    let (prior_org, action) = if let Some(o) = read_active_org(&resolved) {
+        (Some(o), LoginAction::Repaired)
+    } else if let Some(o) = read_token_org(&resolved) {
+        (Some(o), LoginAction::Repaired)
+    } else {
+        let dirs = scan_org_dirs(&resolved);
+        match dirs.len() {
+            0 => (None, LoginAction::Created), // 真首次：无任何历史
+            1 => (Some(dirs[0].clone()), LoginAction::Repaired), // 采用唯一历史 org
+            _ => {
+                return Err(format!(
+                    "检测到 {} 个历史组织，但 active-org.json 缺失且无可解令牌，无法确定当前活动组织；\
+                     为避免旧对话被孤儿化已中止。数据都在 {}/orgs/，请把想要的 org_uuid 写回 \
+                     {}/active-org.json 后重试。",
+                    dirs.len(),
+                    resolved.display(),
+                    resolved.display()
+                ));
+            }
+        }
+    };
+    let prior_account = read_prior_account(&resolved);
+    let fr = write_login(&resolved, email, prior_org, prior_account)?;
+    Ok((fr, action))
 }
 
 #[cfg(test)]
@@ -343,7 +654,12 @@ mod tests {
 
     fn tmpdir(tag: &str) -> PathBuf {
         let n = CTR.fetch_add(1, Ordering::SeqCst);
-        let d = std::env::temp_dir().join(format!("csswitch-forge-{}-{}-{}", std::process::id(), tag, n));
+        let d = std::env::temp_dir().join(format!(
+            "csswitch-forge-{}-{}-{}",
+            std::process::id(),
+            tag,
+            n
+        ));
         let _ = std::fs::remove_dir_all(&d);
         d
     }
@@ -406,7 +722,8 @@ mod tests {
         assert_eq!(blob["provider"], "claude_ai");
         // active-org.json 的 org_uuid 与摘要一致
         let org: serde_json::Value =
-            serde_json::from_str(&std::fs::read_to_string(dir.join("active-org.json")).unwrap()).unwrap();
+            serde_json::from_str(&std::fs::read_to_string(dir.join("active-org.json")).unwrap())
+                .unwrap();
         assert_eq!(org["org_uuid"], r.org_uuid);
         let _ = std::fs::remove_dir_all(&dir);
         let _ = std::fs::remove_dir_all(&fake_real);
@@ -419,7 +736,10 @@ mod tests {
         let r = forge_guarded(&real, "virtual@localhost.invalid", &real, &real);
         assert!(r.is_err());
         assert!(r.unwrap_err().contains("真实 Science 目录"));
-        assert!(!real.join("encryption.key").exists(), "拒绝路径不应写任何文件");
+        assert!(
+            !real.join("encryption.key").exists(),
+            "拒绝路径不应写任何文件"
+        );
     }
 
     #[test]
@@ -444,8 +764,14 @@ mod tests {
         assert!(r.is_err(), "沙箱根经符号链接落入真实树必须被拒");
         assert!(r.unwrap_err().contains("真实 Science 目录"));
         // 真实目录零改动。
-        assert_eq!(std::fs::read(real.join("encryption.key")).unwrap(), b"KEEP=me\n");
-        assert!(real.join(".oauth-tokens/victim.enc").exists(), "真实 .enc 不该被碰");
+        assert_eq!(
+            std::fs::read(real.join("encryption.key")).unwrap(),
+            b"KEEP=me\n"
+        );
+        assert!(
+            real.join(".oauth-tokens/victim.enc").exists(),
+            "真实 .enc 不该被碰"
+        );
         assert!(!real.join("home").exists(), "不该在真实树里建任何目录");
         for d in [real, csw] {
             let _ = std::fs::remove_dir_all(&d);
@@ -473,8 +799,14 @@ mod tests {
         assert!(r.is_err(), "符号链接逃出沙箱根应被拒");
         assert!(r.unwrap_err().contains("沙箱根之外"));
         // 目标目录零改动。
-        assert_eq!(std::fs::read(outside.join("encryption.key")).unwrap(), b"KEEP=me\n");
-        assert!(outside.join(".oauth-tokens/victim.enc").exists(), "旧 .enc 不该被删");
+        assert_eq!(
+            std::fs::read(outside.join("encryption.key")).unwrap(),
+            b"KEEP=me\n"
+        );
+        assert!(
+            outside.join(".oauth-tokens/victim.enc").exists(),
+            "旧 .enc 不该被删"
+        );
         assert!(!outside.join("active-org.json").exists(), "不该写入目标");
         for d in [root, outside, fake_real] {
             let _ = std::fs::remove_dir_all(&d);
@@ -544,13 +876,323 @@ mod tests {
             .arg(&dir_r)
             .output()
             .unwrap();
-        assert!(out.status.success(), "node 解密应成功：{}", String::from_utf8_lossy(&out.stderr));
+        assert!(
+            out.status.success(),
+            "node 解密应成功：{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
         let printed = String::from_utf8_lossy(&out.stdout);
-        assert!(printed.contains(email), "node 应能解开 rust 的 .enc，输出：{printed}");
+        assert!(
+            printed.contains(email),
+            "node 应能解开 rust 的 .enc，输出：{printed}"
+        );
         assert!(printed.contains("claude_ai"));
 
         for d in [dir_n, dir_r, fake_real] {
             let _ = std::fs::remove_dir_all(&d);
         }
+    }
+
+    // ---------- 幂等 ensure_virtual_login ----------
+    fn read_active_org_uuid(auth_dir: &Path) -> String {
+        let v: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(auth_dir.join("active-org.json")).unwrap(),
+        )
+        .unwrap();
+        v["org_uuid"].as_str().unwrap().to_string()
+    }
+
+    #[test]
+    fn ensure_reuses_intact_login() {
+        let dir = tmpdir("reuse");
+        let fake_real = tmpdir("realcred-reuse");
+        let email = "virtual@localhost.invalid";
+        let first = forge_guarded(&dir, email, &dir, &fake_real).unwrap();
+        let org0 = read_active_org_uuid(&dir);
+        let enc0 = std::fs::read(the_enc_file(&dir)).unwrap();
+        let key0 = std::fs::read(dir.join("encryption.key")).unwrap();
+        let (r, action) = ensure_virtual_login_guarded(&dir, email, &dir, &fake_real).unwrap();
+        assert_eq!(action, LoginAction::Reused);
+        assert_eq!(r.org_uuid, first.org_uuid, "org 不变");
+        assert_eq!(r.org_uuid, org0);
+        assert_eq!(
+            std::fs::read(the_enc_file(&dir)).unwrap(),
+            enc0,
+            ".enc 字节不变"
+        );
+        assert_eq!(
+            std::fs::read(dir.join("encryption.key")).unwrap(),
+            key0,
+            "key 字节不变"
+        );
+        for d in [dir, fake_real] {
+            let _ = std::fs::remove_dir_all(&d);
+        }
+    }
+
+    #[test]
+    fn ensure_still_rejects_real_cred_dir() {
+        let real = tmpdir("real-ensure");
+        let r = ensure_virtual_login_guarded(&real, "virtual@localhost.invalid", &real, &real);
+        assert!(r.is_err());
+        assert!(r.unwrap_err().contains("真实 Science 目录"));
+        assert!(
+            !real.join("encryption.key").exists(),
+            "拒绝路径不应写任何文件"
+        );
+        let _ = std::fs::remove_dir_all(&real);
+    }
+
+    #[test]
+    fn ensure_repairs_missing_enc_keeps_org() {
+        let dir = tmpdir("rep-missing");
+        let fake_real = tmpdir("realcred-rm");
+        let email = "virtual@localhost.invalid";
+        forge_guarded(&dir, email, &dir, &fake_real).unwrap();
+        let org0 = read_active_org_uuid(&dir);
+        std::fs::remove_file(the_enc_file(&dir)).unwrap();
+        let (r, action) = ensure_virtual_login_guarded(&dir, email, &dir, &fake_real).unwrap();
+        assert_eq!(action, LoginAction::Repaired);
+        assert_eq!(r.org_uuid, org0, "修复必须沿用原 org");
+        assert_eq!(read_active_org_uuid(&dir), org0);
+        let key = read_oauth_key(&dir);
+        let body = std::fs::read_to_string(the_enc_file(&dir)).unwrap();
+        assert!(decrypt_token_v2(&body, &key).is_ok());
+        for d in [dir, fake_real] {
+            let _ = std::fs::remove_dir_all(&d);
+        }
+    }
+
+    #[test]
+    fn ensure_repairs_extra_enc_keeps_org() {
+        let dir = tmpdir("rep-extra");
+        let fake_real = tmpdir("realcred-re");
+        let email = "virtual@localhost.invalid";
+        forge_guarded(&dir, email, &dir, &fake_real).unwrap();
+        let org0 = read_active_org_uuid(&dir);
+        std::fs::write(dir.join(".oauth-tokens/stale.enc"), b"v2:garbage").unwrap();
+        let (r, action) = ensure_virtual_login_guarded(&dir, email, &dir, &fake_real).unwrap();
+        assert_eq!(action, LoginAction::Repaired);
+        assert_eq!(r.org_uuid, org0);
+        let _ = the_enc_file(&dir); // 内部断言恰好一个 .enc
+        for d in [dir, fake_real] {
+            let _ = std::fs::remove_dir_all(&d);
+        }
+    }
+
+    #[test]
+    fn ensure_repairs_replaced_key_keeps_org() {
+        let dir = tmpdir("rep-key");
+        let fake_real = tmpdir("realcred-rk");
+        let email = "virtual@localhost.invalid";
+        forge_guarded(&dir, email, &dir, &fake_real).unwrap();
+        let org0 = read_active_org_uuid(&dir);
+        let mut blob = String::new();
+        for k in KEY_NAMES {
+            blob.push_str(&format!("{k}={}\n", b64_32().unwrap()));
+        }
+        std::fs::write(dir.join("encryption.key"), blob).unwrap();
+        let (r, action) = ensure_virtual_login_guarded(&dir, email, &dir, &fake_real).unwrap();
+        assert_eq!(
+            action,
+            LoginAction::Repaired,
+            "active-org.json 仍在 → 修复而非铸新"
+        );
+        assert_eq!(r.org_uuid, org0, "换 key 也不换 org");
+        let key = read_oauth_key(&dir);
+        let body = std::fs::read_to_string(the_enc_file(&dir)).unwrap();
+        assert!(decrypt_token_v2(&body, &key).is_ok(), "重铸令牌应可解");
+        for d in [dir, fake_real] {
+            let _ = std::fs::remove_dir_all(&d);
+        }
+    }
+
+    #[test]
+    fn ensure_creates_on_first_run() {
+        let dir = tmpdir("create");
+        let fake_real = tmpdir("realcred-cr");
+        let email = "virtual@localhost.invalid";
+        let (r, action) = ensure_virtual_login_guarded(&dir, email, &dir, &fake_real).unwrap();
+        assert_eq!(action, LoginAction::Created);
+        assert!(r.enc_file.is_file());
+        assert!(looks_like_uuid(&r.org_uuid));
+        assert_eq!(read_active_org_uuid(&dir), r.org_uuid);
+        for d in [dir, fake_real] {
+            let _ = std::fs::remove_dir_all(&d);
+        }
+    }
+
+    #[test]
+    fn ensure_recovers_org_from_token_when_active_org_missing() {
+        // P1a：active-org.json 丢了，但 .enc 可解 → 从 token 取回原 org，绝不铸新。
+        let dir = tmpdir("tok-org");
+        let fake_real = tmpdir("realcred-to");
+        let email = "virtual@localhost.invalid";
+        forge_guarded(&dir, email, &dir, &fake_real).unwrap();
+        let org0 = read_active_org_uuid(&dir);
+        std::fs::remove_file(dir.join("active-org.json")).unwrap();
+        let (r, action) = ensure_virtual_login_guarded(&dir, email, &dir, &fake_real).unwrap();
+        assert_eq!(action, LoginAction::Repaired);
+        assert_eq!(r.org_uuid, org0, "应从 token 取回原 org");
+        assert_eq!(
+            read_active_org_uuid(&dir),
+            org0,
+            "active-org.json 应写回同 org"
+        );
+        for d in [dir, fake_real] {
+            let _ = std::fs::remove_dir_all(&d);
+        }
+    }
+
+    #[test]
+    fn ensure_adopts_single_org_dir_when_active_and_token_gone() {
+        // P1a：active-org.json 和 .enc 都没了，但 orgs/ 下恰好一个历史 org → 采用它。
+        let dir = tmpdir("one-orgdir");
+        let fake_real = tmpdir("realcred-1o");
+        let email = "virtual@localhost.invalid";
+        forge_guarded(&dir, email, &dir, &fake_real).unwrap();
+        let org0 = read_active_org_uuid(&dir);
+        std::fs::create_dir_all(dir.join("orgs").join(&org0)).unwrap();
+        std::fs::remove_file(the_enc_file(&dir)).unwrap();
+        std::fs::remove_file(dir.join("active-org.json")).unwrap();
+        let (r, action) = ensure_virtual_login_guarded(&dir, email, &dir, &fake_real).unwrap();
+        assert_eq!(action, LoginAction::Repaired);
+        assert_eq!(r.org_uuid, org0, "应采用唯一历史 org 目录");
+        assert_eq!(read_active_org_uuid(&dir), org0);
+        for d in [dir, fake_real] {
+            let _ = std::fs::remove_dir_all(&d);
+        }
+    }
+
+    #[test]
+    fn ensure_errors_on_ambiguous_multi_org() {
+        // P1a：无 active-org、无可解 token、orgs/ 下多个历史组织 → 报错中止，绝不静默新铸。
+        let dir = tmpdir("multi-org");
+        let fake_real = tmpdir("realcred-mo");
+        let email = "virtual@localhost.invalid";
+        forge_guarded(&dir, email, &dir, &fake_real).unwrap();
+        let a = uuid_v4().unwrap();
+        let b = uuid_v4().unwrap();
+        std::fs::create_dir_all(dir.join("orgs").join(&a)).unwrap();
+        std::fs::create_dir_all(dir.join("orgs").join(&b)).unwrap();
+        std::fs::remove_file(the_enc_file(&dir)).unwrap();
+        std::fs::remove_file(dir.join("active-org.json")).unwrap();
+        let r = ensure_virtual_login_guarded(&dir, email, &dir, &fake_real);
+        assert!(r.is_err(), "多历史组织无法定位活动者应报错");
+        assert!(r.unwrap_err().contains("历史组织"));
+        assert!(
+            !dir.join("active-org.json").exists(),
+            "报错不应写 active-org.json"
+        );
+        assert_eq!(scan_org_dirs(&dir).len(), 2, "不应静默新铸 org");
+        for d in [dir, fake_real] {
+            let _ = std::fs::remove_dir_all(&d);
+        }
+    }
+
+    #[test]
+    fn ensure_recreates_key_on_invalid_base64() {
+        // P2a：OAUTH_ENCRYPTION_KEY 是非法 base64 → 不报错，重造合法 key，org 复用，新 .enc 可解。
+        let dir = tmpdir("badkey");
+        let fake_real = tmpdir("realcred-bk");
+        let email = "virtual@localhost.invalid";
+        forge_guarded(&dir, email, &dir, &fake_real).unwrap();
+        let org0 = read_active_org_uuid(&dir);
+        let mut blob = String::new();
+        for k in KEY_NAMES {
+            if k == "OAUTH_ENCRYPTION_KEY" {
+                blob.push_str(&format!("{k}=!!!!not-base64!!!!\n"));
+            } else {
+                blob.push_str(&format!("{k}={}\n", b64_32().unwrap()));
+            }
+        }
+        std::fs::write(dir.join("encryption.key"), blob).unwrap();
+        let (r, action) = ensure_virtual_login_guarded(&dir, email, &dir, &fake_real).unwrap();
+        assert_eq!(action, LoginAction::Repaired, "active-org.json 仍在 → 修复");
+        assert_eq!(r.org_uuid, org0, "换 key 也不换 org");
+        let key = read_oauth_key(&dir);
+        let body = std::fs::read_to_string(the_enc_file(&dir)).unwrap();
+        assert!(
+            decrypt_token_v2(&body, &key).is_ok(),
+            "重造 key 后新 .enc 应可解"
+        );
+        for d in [dir, fake_real] {
+            let _ = std::fs::remove_dir_all(&d);
+        }
+    }
+
+    #[test]
+    fn ensure_repairs_when_token_structurally_damaged() {
+        // P2：.enc 能解密但结构损坏（provider 篡改 / account 非 UUID）→ 不误判 Reused，走修复保 org。
+        let dir = tmpdir("bad-struct");
+        let fake_real = tmpdir("realcred-bs");
+        let email = "virtual@localhost.invalid";
+        forge_guarded(&dir, email, &dir, &fake_real).unwrap();
+        let org0 = read_active_org_uuid(&dir);
+        let key = read_oauth_key(&dir);
+        // 用现有 key 重写一个「可解但结构坏」的 .enc：provider 被改、account 非 UUID。
+        let bad = serde_json::json!({
+            "email": email,
+            "org_uuid": org0,
+            "account_uuid": "not-a-uuid",
+            "provider": "tampered",
+            "token_expires_at": "2099-01-01T00:00:00.000Z"
+        });
+        let enc = encrypt_token_v2(&serde_json::to_vec(&bad).unwrap(), &key).unwrap();
+        std::fs::write(the_enc_file(&dir), enc).unwrap();
+        let (r, action) = ensure_virtual_login_guarded(&dir, email, &dir, &fake_real).unwrap();
+        assert_eq!(action, LoginAction::Repaired, "结构损坏应修复而非复用");
+        assert_eq!(r.org_uuid, org0, "修复仍保 org");
+        // 修复后应重新自洽（provider=claude_ai、account 合法 UUID）
+        assert!(
+            looks_like_uuid(&r.account_uuid),
+            "修复后 account 应为合法 UUID"
+        );
+        for d in [dir, fake_real] {
+            let _ = std::fs::remove_dir_all(&d);
+        }
+    }
+
+    #[test]
+    fn ensure_repairs_when_token_expired() {
+        // P2：.enc 可解但 token 已过期 → 不误判 Reused，走修复；修复后（远期）应可复用。
+        let dir = tmpdir("expired");
+        let fake_real = tmpdir("realcred-exp");
+        let email = "virtual@localhost.invalid";
+        forge_guarded(&dir, email, &dir, &fake_real).unwrap();
+        let org0 = read_active_org_uuid(&dir);
+        let key = read_oauth_key(&dir);
+        let expired = serde_json::json!({
+            "email": email,
+            "org_uuid": org0,
+            "account_uuid": uuid_v4().unwrap(),
+            "provider": "claude_ai",
+            "access_token": "sk-ant-virtual-x",
+            "token_expires_at": "2000-01-01T00:00:00.000Z"
+        });
+        let enc = encrypt_token_v2(&serde_json::to_vec(&expired).unwrap(), &key).unwrap();
+        std::fs::write(the_enc_file(&dir), enc).unwrap();
+        let (r, action) = ensure_virtual_login_guarded(&dir, email, &dir, &fake_real).unwrap();
+        assert_eq!(action, LoginAction::Repaired, "过期令牌不应误判 Reused");
+        assert_eq!(r.org_uuid, org0);
+        // 修复后新令牌远期未过期 → 再次 ensure 应可复用。
+        let (_r2, a2) = ensure_virtual_login_guarded(&dir, email, &dir, &fake_real).unwrap();
+        assert_eq!(a2, LoginAction::Reused, "修复后应可复用");
+        for d in [dir, fake_real] {
+            let _ = std::fs::remove_dir_all(&d);
+        }
+    }
+
+    #[test]
+    fn token_expiry_check() {
+        assert!(token_not_expired("2099-01-01T00:00:00.000Z"));
+        assert!(!token_not_expired("2000-01-01T00:00:00.000Z"));
+        assert!(!token_not_expired(""), "空串视为过期");
+        assert!(!token_not_expired("2099-13"), "太短视为过期");
+        assert!(!token_not_expired("20990101ZZ"), "格式不对视为过期");
+        let t = today_utc_ymd();
+        assert_eq!(t.len(), 10);
+        assert_eq!(&t[4..5], "-");
+        assert_eq!(&t[7..8], "-");
     }
 }

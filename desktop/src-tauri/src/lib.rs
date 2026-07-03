@@ -177,21 +177,44 @@ fn lock(m: &Mutex<AppState>) -> std::sync::MutexGuard<'_, AppState> {
     m.lock().unwrap_or_else(|e| e.into_inner())
 }
 
-/// 用系统浏览器打开 URL（macOS `open`）。
+/// 用系统浏览器打开 URL（macOS `open`）。校验退出码：非零视为失败（P2c）。
 fn open_in_browser(url: &str) -> Result<(), String> {
-    Command::new("open")
+    let st = Command::new("open")
         .arg(url)
         .status()
         .map_err(|e| format!("打开浏览器失败：{e}"))?;
+    if !st.success() {
+        return Err(format!("open 非零退出（{:?}）", st.code()));
+    }
     Ok(())
 }
 
 // ---------- 代理生命周期核心 ----------
-/// 确保代理在跑且健康；返回 (端口, secret)。幂等：已健康则复用。
+/// 转义 ERE（extended regex）元字符，让路径按字面参与 `pkill -f` 匹配（避免路径里的
+/// `.`/`(`/`[` 等被当作正则、误配或失配）。
+fn ere_escape(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 8);
+    for c in s.chars() {
+        if "\\.^$*+?()[]{}|".contains(c) {
+            out.push('\\');
+        }
+        out.push(c);
+    }
+    out
+}
+
+/// 本次 ensure_proxy 对代理做了什么（供一键据实提示）。
+#[derive(Clone, Copy, PartialEq)]
+enum ProxyAction {
+    Reused,    // 端口+provider+key 指纹一致且健康，原样复用
+    Restarted, // 首次起 / 换 key / 换 provider / 不健康，重起了代理
+}
+
+/// 确保代理在跑且健康；返回 (端口, secret, 本次动作)。幂等：已健康则复用。
 fn ensure_proxy(
     app: &tauri::AppHandle,
     state: &State<'_, Mutex<AppState>>,
-) -> Result<(u16, String), String> {
+) -> Result<(u16, String, ProxyAction), String> {
     let dir = config::default_dir();
     let cfg = config::load_from(&dir).map_err(|e| e.to_string())?;
     let provider = cfg.provider.clone();
@@ -230,19 +253,18 @@ fn ensure_proxy(
             && st.key_fp == key_fp
             && proc::http_health(port, Some(&st.secret), 500)
         {
-            return Ok((port, st.secret.clone()));
+            return Ok((port, st.secret.clone(), ProxyAction::Reused));
         }
         // 清残留（换端口/换 provider/换 key/不健康）。
         kill_child(&mut st.proxy);
-        // 再清掉上次会话遗留、绑在同端口上的孤儿代理：崩溃或强退不会触发本进程的 kill，
-        // 孤儿仍占着端口 → 新代理绑不上（Errno 48）→ 探活超时。按「脚本名 + 端口」精确匹配，
-        // 只杀我们自己的代理，绝不误伤其它进程。配合代理侧的绑定重试彻底消除竞态。
-        let _ = Command::new("pkill")
-            .arg("-f")
-            .arg(format!("csswitch_proxy\\.py.*--port {port}"))
-            .status();
-
         let script = root.join("proxy/csswitch_proxy.py");
+        // 再清掉上次会话遗留、绑在同端口上的孤儿代理：崩溃或强退不会触发本进程的 kill，
+        // 孤儿仍占着端口 → 新代理绑不上（Errno 48）→ 探活超时。
+        // 收紧（P2 GPT 复审）：匹配【本安装的绝对脚本路径】+ 端口，而非仅「脚本名+端口」，
+        // 避免误杀另一个 checkout / 用户手启的同名代理。路径里的正则元字符转义按字面匹配。
+        let pat = format!("{}.*--port {port}", ere_escape(&script.to_string_lossy()));
+        let _ = Command::new("pkill").arg("-f").arg(&pat).status();
+
         let logf = open_log("proxy.log").map_err(|e| format!("建日志失败：{e}"))?;
         let logf2 = logf.try_clone().map_err(|e| e.to_string())?;
         let child = Command::new(&py)
@@ -286,7 +308,7 @@ fn ensure_proxy(
             "代理起后探活超时（端口 {port} 可能被占用，或 key 无效）。\n{tail}"
         ));
     }
-    Ok((port, secret))
+    Ok((port, secret, ProxyAction::Restarted))
 }
 
 /// 停沙箱。返回 Err 表示 stop 脚本非零退出（Science 可能没停干净），
@@ -294,22 +316,37 @@ fn ensure_proxy(
 fn stop_sandbox_inner(app: &tauri::AppHandle, st: &mut AppState) -> Result<(), String> {
     // 沙箱由脚本以 --detached 起 Science，本进程持有的是脚本 child（已退出）。
     // 真正停 Science 要调 stop 脚本（按 data-dir，绝不碰真实 8765）。
+    // 修 P1（GPT 复审）：定位不到资源根 / 停止脚本时，绝不静默返回成功——detached 沙箱
+    // 可能仍在跑，谎报「已停止」会让「切官方模式」误以为第三方链路已拆。此时如实报错。
     let mut err = None;
-    if let Some(root) = asset_root(app) {
-        let stop = root.join("scripts/stop-science-sandbox.sh");
-        if stop.is_file() {
-            match Command::new("zsh") // stop 脚本是 #!/bin/zsh（用了 ${VAR:A} realpath）
-                .arg(&stop)
-                // 与 launch 时一致的可写沙箱 HOME，stop 才能按同一 data-dir 停对进程。
-                .env("SANDBOX_HOME", sandbox_home())
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .status()
-            {
-                Ok(s) if s.success() => {}
-                Ok(s) => err = Some(format!("停止沙箱脚本非零退出（{:?}）。", s.code())),
-                Err(e) => err = Some(format!("调用停止沙箱脚本失败：{e}")),
+    match asset_root(app) {
+        Some(root) => {
+            let stop = root.join("scripts/stop-science-sandbox.sh");
+            if stop.is_file() {
+                match Command::new("zsh") // stop 脚本是 #!/bin/zsh（用了 ${VAR:A} realpath）
+                    .arg(&stop)
+                    // 与 launch 时一致的可写沙箱 HOME，stop 才能按同一 data-dir 停对进程。
+                    .env("SANDBOX_HOME", sandbox_home())
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null())
+                    .status()
+                {
+                    Ok(s) if s.success() => {}
+                    Ok(s) => err = Some(format!("停止沙箱脚本非零退出（{:?}）。", s.code())),
+                    Err(e) => err = Some(format!("调用停止沙箱脚本失败：{e}")),
+                }
+            } else {
+                err = Some(format!(
+                    "找不到停止脚本 {}，无法确认沙箱已停止（沙箱可能仍在运行）。",
+                    stop.display()
+                ));
             }
+        }
+        None => {
+            err = Some(
+                "定位不到资源根，取不到停止脚本，无法确认沙箱已停止（沙箱可能仍在运行）。"
+                    .to_string(),
+            );
         }
     }
     kill_child(&mut st.sandbox);
@@ -355,21 +392,28 @@ fn set_mode(
         return Err(format!("未知模式：{mode}（只支持 proxy / official）。"));
     }
     let dir = config::default_dir();
-    // 先落盘；失败直接返错（前端据此不切 UI、如实报错）。
+
+    // 事务化（修 P2 GPT 复审）：切官方要「先拆第三方链路，成功了再落盘 official」。
+    // 旧序（先落盘再拆）若拆沙箱失败，会留下「磁盘=official、UI/进程=第三方」的状态分裂
+    // （前端收到 Err 保持第三方 UI，磁盘却已是 official，下次启动就错进官方模式）。
+    // 现序保证：拆失败 → 不落盘、保持 proxy 模式、如实报错，磁盘/UI/进程一致。
+    if mode == "official" {
+        {
+            let mut st = lock(&state);
+            // 先停沙箱：失败就在动代理/落盘之前中止，状态不分裂。
+            stop_sandbox_inner(&app, &mut st).map_err(|e| {
+                format!("停止沙箱失败，未切换到官方模式：{e}（真实实例 8765 未受影响）")
+            })?;
+            kill_child(&mut st.proxy);
+            st.secret.clear();
+        }
+    }
+    // 拆链已成功（或切回 proxy 无需拆）→ 落盘。
     config::update(&dir, {
         let mode = mode.clone();
         move |c| c.mode = mode
     })
     .map_err(|e| e.to_string())?;
-
-    // 切到官方：拆第三方链路，做成真正的「切换」而非「选择模式」。
-    if mode == "official" {
-        let mut st = lock(&state);
-        let sandbox_res = stop_sandbox_inner(&app, &mut st);
-        kill_child(&mut st.proxy);
-        st.secret.clear();
-        sandbox_res.map_err(|e| format!("已切官方并停代理；但{e}真实实例 8765 未受影响。"))?;
-    }
     Ok(())
 }
 
@@ -414,7 +458,10 @@ fn set_config(cfg: UiSettings) -> Result<(), String> {
     }
     // 只认已实现的 provider，避免存进未知值后起代理时才失败（修 P2-3）。
     if cfg.provider != "deepseek" && cfg.provider != "qwen" {
-        return Err(format!("未知 provider：{}（只支持 deepseek / qwen）。", cfg.provider));
+        return Err(format!(
+            "未知 provider：{}（只支持 deepseek / qwen）。",
+            cfg.provider
+        ));
     }
     // 端口 0 非法（无法监听/探活）。
     if cfg.proxy_port == 0 || cfg.sandbox_port == 0 {
@@ -450,7 +497,7 @@ fn start_proxy(
     app: tauri::AppHandle,
     state: State<'_, Mutex<AppState>>,
 ) -> Result<serde_json::Value, String> {
-    let (port, _secret) = ensure_proxy(&app, &state)?;
+    let (port, _secret, _action) = ensure_proxy(&app, &state)?;
     Ok(json!({ "port": port }))
 }
 
@@ -463,14 +510,14 @@ fn verify_key(
     app: tauri::AppHandle,
     state: State<'_, Mutex<AppState>>,
 ) -> Result<serde_json::Value, String> {
-    let (port, secret) = ensure_proxy(&app, &state)?;
+    let (port, secret, _action) = ensure_proxy(&app, &state)?;
     // 走稳定模型 id（代理内部映射到当前 provider 的真实模型），非流式、只要 1 个 token。
     let body = br#"{"model":"claude-opus-4-8","max_tokens":1,"messages":[{"role":"user","content":"ping"}]}"#;
     match proc::http_post_status(port, Some(&secret), "/v1/messages", body, 15000) {
         Some(200) => Ok(json!({ "ok": true, "hint": "key 有效，上游已接受。" })),
-        Some(code @ (401 | 403)) => {
-            Ok(json!({ "ok": false, "hint": format!("上游拒绝（{code}），key 可能无效或无权限。") }))
-        }
+        Some(code @ (401 | 403)) => Ok(
+            json!({ "ok": false, "hint": format!("上游拒绝（{code}），key 可能无效或无权限。") }),
+        ),
         Some(code) => Ok(json!({
             "ok": false,
             "hint": format!("上游返回 {code}，可能是 key 无效、额度不足或上游异常。")
@@ -494,29 +541,56 @@ fn one_click_login(
     app: tauri::AppHandle,
     state: State<'_, Mutex<AppState>>,
 ) -> Result<serde_json::Value, String> {
-    // 1~3. 确保代理在跑且健康（内部已查 key、探活）。
-    let (pport, secret) = ensure_proxy(&app, &state)?;
+    // 1~3. 确保代理在跑且健康（内部已查 key、探活）。带回本次是复用还是重启。
+    let (pport, secret, proxy_action) = ensure_proxy(&app, &state)?;
 
     let dir = config::default_dir();
     let cfg = config::load_from(&dir).map_err(|e| e.to_string())?;
     let sport = cfg.sandbox_port;
-    let root = asset_root(&app).ok_or("找不到 scripts/launch-virtual-sandbox.sh（打包资源或仓库根均未命中）。")?;
 
-    // 进程内伪造虚拟 OAuth（Rust 原生密码学，去 node 依赖 —— #2「缺 node」治本解）。
-    // 直接写沙箱 auth_dir；启动脚本随后带 --skip-oauth-forge 跳过其 node 伪造步，
-    // 打包 app 的一键流程从此零 node。与 .mjs 的 v2 GCM 格式字节兼容（对拍单测钉死）。
+    // 沙箱已健康 → 绝不重伪造、绝不重跑 launch（连 auth 文件都不读，operon 可能正在用）。
+    // 只重新取 URL + 打开浏览器。修 #3/#6：活动 org 不变，旧对话一直在。
+    // P2b：asset_root() 只在下面「需启动」分支才取，健康重开不依赖 launch 资源。
+    // P2（GPT 复审）：用 sandbox_running_ours 而非裸端口 /health——按 data-dir 强身份判定，
+    // 避免端口被冒名服务占用且恰好返回 200 时误报「已重新打开 Science」。
+    if sandbox_running_ours(sport) {
+        let url = sandbox_url(sport);
+        {
+            let mut st = lock(&state);
+            st.sandbox_port = sport;
+            st.sandbox_url = Some(url.clone());
+        }
+        let base = match proxy_action {
+            ProxyAction::Reused => "已在运行",
+            ProxyAction::Restarted => "已用新配置重启代理，Science 沿用不变",
+        };
+        // P2c：捕获打开结果——open 失败不谎报「已重新打开」，改提示手动打开。
+        let msg = match open_in_browser(&url) {
+            Ok(()) => format!("{base}，已重新打开 Science。"),
+            Err(_) => format!("{base}，服务已就绪，请手动打开：{url}"),
+        };
+        return Ok(json!({ "url": url, "msg": msg, "action": "reopened" }));
+    }
+
+    // 沙箱没起 / 挂了 → 需要 launch 资源，此时才定位（P2b）。再确保虚拟登录（幂等）+ 起 launch。
+    let root = asset_root(&app)
+        .ok_or("找不到 scripts/launch-virtual-sandbox.sh（打包资源或仓库根均未命中）。")?;
+
+    // 进程内确保虚拟 OAuth（Rust 原生密码学，零 node）。幂等：现有登录完整就复用、部分坏就
+    // 修复但保住 org、真首次才铸新 —— 修 #3/#6 的核心（不再无条件换 org 孤儿化旧对话）。
     let sbx_home = sandbox_home();
     let auth_dir = sbx_home.join(".claude-science");
     // sandbox_home() 作沙箱根：伪造器要求解析后的 auth_dir 落在其下，防符号链接重定向（P1）。
-    let forged = oauth_forge::forge(&auth_dir, "virtual@localhost.invalid", &sbx_home)
-        .map_err(|e| format!("写虚拟登录失败：{e}"))?;
+    let (forged, login_action) =
+        oauth_forge::ensure_virtual_login(&auth_dir, "virtual@localhost.invalid", &sbx_home)
+            .map_err(|e| format!("写虚拟登录失败：{e}"))?;
 
     let launch = root.join("scripts/launch-virtual-sandbox.sh");
     if !launch.is_file() {
         return Err("找不到 scripts/launch-virtual-sandbox.sh。".into());
     }
 
-    // 4. 起沙箱：脚本内部写虚拟 OAuth 并以 --detached 起 Science，然后返回。
+    // 4. 起沙箱：脚本以 --detached 起 Science，然后返回。
     let proxy_url = format!("http://127.0.0.1:{pport}/{secret}");
     let logf = open_log("sandbox.log").map_err(|e| format!("建日志失败：{e}"))?;
     // 虚拟登录摘要面包屑（无密钥；uuid/假账号/沙箱路径均不敏感），便于用户附日志排查。
@@ -525,7 +599,8 @@ fn one_click_login(
         let mut lw = &logf;
         let _ = writeln!(
             lw,
-            "[oauth] 虚拟登录已进程内写入（Rust，零 node）：auth_dir={} account={} org={} enc={}",
+            "[oauth] 虚拟登录已就绪（Rust，零 node；action={:?}）：auth_dir={} account={} org={} enc={}",
+            login_action,
             forged.auth_dir.display(),
             forged.account_uuid,
             forged.org_uuid,
@@ -568,7 +643,22 @@ fn one_click_login(
             let mut st = lock(&state);
             let _ = stop_sandbox_inner(&app, &mut st); // best-effort 清理，结果不影响这里的报错
         }
-        return Err(format!("沙箱起后探活超时（端口 {sport}）。已尝试停掉刚起的沙箱。\n{tail}"));
+        return Err(format!(
+            "沙箱起后探活超时（端口 {sport}）。已尝试停掉刚起的沙箱。\n{tail}"
+        ));
+    }
+
+    // 5b. 身份确认（修 P2 GPT 复审）：/health 200 只证明端口在服务，不证明是我们的 Science。
+    // 用 data-dir 强身份再确认一次；不是我们的（端口被冒名服务占用）→ 当启动失败处理，
+    // 停掉可能已在后台的沙箱并如实报错，别对着冒名服务谎报「已启动」。
+    if !sandbox_running_ours(sport) {
+        {
+            let mut st = lock(&state);
+            let _ = stop_sandbox_inner(&app, &mut st);
+        }
+        return Err(format!(
+            "端口 {sport} 有服务响应，但按 data-dir 确认不是本沙箱 Science（疑似被其它服务占用）。已尝试停掉刚起的沙箱。"
+        ));
     }
 
     // 6. 取 UI URL（登录态），交系统浏览器打开。
@@ -578,8 +668,16 @@ fn one_click_login(
         st.sandbox_port = sport;
         st.sandbox_url = Some(url.clone());
     }
-    let _ = open_in_browser(&url);
-    Ok(json!({ "url": url }))
+    let started = match login_action {
+        oauth_forge::LoginAction::Created => "已启动",
+        _ => "沙箱已重新启动，沿用原有对话", // Reused / Repaired
+    };
+    // P2c：同样捕获打开结果。
+    let msg = match open_in_browser(&url) {
+        Ok(()) => format!("{started}。"),
+        Err(_) => format!("{started}，服务已就绪，请手动打开：{url}"),
+    };
+    Ok(json!({ "url": url, "msg": msg, "action": "started" }))
 }
 
 /// 取沙箱 UI 链接：`<bin> url --data-dir <home>/.claude-science`，HOME 指向沙箱 HOME。
@@ -604,14 +702,50 @@ fn sandbox_url(port: u16) -> String {
     format!("http://127.0.0.1:{port}")
 }
 
+/// 判断「我们自己的」沙箱 Science 是否在跑（供一键健康分派）。收紧（P2 GPT 复审）：优先用
+/// Science 二进制按【我们的 data-dir】查 `{"running":true}`，这是强身份——不会被恰好占用
+/// `port` 且返回 200 的冒名服务骗过；再叠加端口 /health 确认确实在服务。二进制不在（纯 dev /
+/// 研究者机器）时退化为仅端口探活（原行为）。
+fn sandbox_running_ours(port: u16) -> bool {
+    let home = sandbox_home();
+    let data_dir = home.join(".claude-science");
+    if Path::new(SCIENCE_BIN).is_file() {
+        match Command::new(SCIENCE_BIN)
+            .arg("status")
+            .arg("--data-dir")
+            .arg(&data_dir)
+            .env("HOME", &home)
+            .output()
+        {
+            Ok(out) => {
+                let s = String::from_utf8_lossy(&out.stdout);
+                // 形如 {"running":true,...}：只认我们这个 data-dir 的 daemon 在跑。
+                let running = s.contains("\"running\":true") || s.contains("\"running\": true");
+                return running && proc::http_health(port, None, 400);
+            }
+            // 二进制在但调用失败 → 保守退化到端口探活，别因探测本身出错就误判没起。
+            Err(_) => return proc::http_health(port, None, 400),
+        }
+    }
+    proc::http_health(port, None, 400)
+}
+
 #[tauri::command]
 fn status(state: State<'_, Mutex<AppState>>) -> serde_json::Value {
     // 只在锁内取值，锁外做阻塞探活。
     let (pport, secret, sport, provider) = {
         let st = lock(&state);
         let cfg = config::load_from(&config::default_dir()).unwrap_or_default();
-        let pport = if st.proxy_port != 0 { st.proxy_port } else { cfg.proxy_port };
-        let sport = if st.sandbox_port != 0 { st.sandbox_port } else { cfg.sandbox_port };
+        let pport = if st.proxy_port != 0 {
+            st.proxy_port
+        } else {
+            cfg.proxy_port
+        };
+        let sport = if st.sandbox_port != 0 {
+            st.sandbox_port
+        } else {
+            cfg.sandbox_port
+        };
         (pport, st.secret.clone(), sport, cfg.provider)
     };
     let proxy = if !secret.is_empty() && proc::http_health(pport, Some(&secret), 300) {
@@ -619,7 +753,13 @@ fn status(state: State<'_, Mutex<AppState>>) -> serde_json::Value {
     } else {
         "amber"
     };
-    let sandbox = if proc::http_health(sport, None, 300) { "green" } else { "amber" };
+    // 状态灯也用 data-dir 强身份（修 P2 GPT 复审），避免端口被冒名服务占用时误显绿灯。
+    // status() 是按需调用（前端 refreshStatus 在动作后触发，非高频轮询），一次子进程可接受。
+    let sandbox = if sandbox_running_ours(sport) {
+        "green"
+    } else {
+        "amber"
+    };
     let upstream = if proc::tcp_reachable(upstream_host(&provider), 443, 500) {
         "green"
     } else {
@@ -758,8 +898,10 @@ mod tests {
 
     #[test]
     fn redact_scrubs_secret_and_is_noop_when_empty() {
-        assert_eq!(redact("推理指向 http://127.0.0.1:18991/abcd1234 尾巴", "abcd1234"),
-                   "推理指向 http://127.0.0.1:18991/**** 尾巴");
+        assert_eq!(
+            redact("推理指向 http://127.0.0.1:18991/abcd1234 尾巴", "abcd1234"),
+            "推理指向 http://127.0.0.1:18991/**** 尾巴"
+        );
         assert_eq!(redact("原样返回", ""), "原样返回");
         assert!(!redact("leak abcd1234 leak abcd1234", "abcd1234").contains("abcd1234"));
     }
@@ -777,6 +919,9 @@ mod tests {
         // 沙箱状态目录必须在可写的 ~/.csswitch 下（不在只读的 .app 资源里）——P1-1。
         let h = sandbox_home();
         assert!(h.ends_with("sandbox/home"), "应以 sandbox/home 结尾：{h:?}");
-        assert!(h.to_string_lossy().contains(".csswitch"), "应在 .csswitch 下：{h:?}");
+        assert!(
+            h.to_string_lossy().contains(".csswitch"),
+            "应在 .csswitch 下：{h:?}"
+        );
     }
 }

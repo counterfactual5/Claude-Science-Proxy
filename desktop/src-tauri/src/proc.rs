@@ -10,7 +10,11 @@ use std::time::Duration;
 /// 对本地回环代理做 HTTP 探活：`GET /<secret>/health`，响应状态行含 200 即视为健康。
 /// 代理带 path-secret 鉴权时必须带上 secret，否则会拿到 403。
 pub fn http_health(port: u16, secret: Option<&str>, timeout_ms: u64) -> bool {
-    let addr = match ("127.0.0.1", port).to_socket_addrs().ok().and_then(|mut a| a.next()) {
+    let addr = match ("127.0.0.1", port)
+        .to_socket_addrs()
+        .ok()
+        .and_then(|mut a| a.next())
+    {
         Some(a) => a,
         None => return false,
     };
@@ -90,7 +94,10 @@ pub fn http_post_status(
     }
     let head = String::from_utf8_lossy(&buf);
     let status_line = head.lines().next().unwrap_or("");
-    status_line.split_whitespace().nth(1).and_then(|s| s.parse::<u16>().ok())
+    status_line
+        .split_whitespace()
+        .nth(1)
+        .and_then(|s| s.parse::<u16>().ok())
 }
 
 /// 上游主机可达性（仅 TCP 连通，不校验 key）。绿灯=可达，黄灯=不可达。
@@ -176,7 +183,9 @@ fn common_bin_dirs() -> Vec<PathBuf> {
 pub fn which_via_login_shell(name: &str) -> Option<PathBuf> {
     // name 出自本代码（"node"/"python3"），仍做白名单，杜绝拼进 shell 的注入面。
     if name.is_empty()
-        || !name.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.' | '+'))
+        || !name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.' | '+'))
     {
         return None;
     }
@@ -320,13 +329,18 @@ mod tests {
     fn common_bin_dirs_covers_homebrew_and_home_managers() {
         let dirs = common_bin_dirs();
         // Homebrew 两个前缀 + MacPorts 必在。
-        assert!(dirs.iter().any(|d| d == &PathBuf::from("/opt/homebrew/bin")));
+        assert!(dirs
+            .iter()
+            .any(|d| d == &PathBuf::from("/opt/homebrew/bin")));
         assert!(dirs.iter().any(|d| d == &PathBuf::from("/usr/local/bin")));
         assert!(dirs.iter().any(|d| d == &PathBuf::from("/opt/local/bin")));
         // HOME 存在时应含版本管理器目录（volta）。
         if std::env::var_os("HOME").is_some() {
-            assert!(dirs.iter().any(|d| d.to_string_lossy().contains(".volta/bin")),
-                    "HOME 下应含 .volta/bin 兜底目录");
+            assert!(
+                dirs.iter()
+                    .any(|d| d.to_string_lossy().contains(".volta/bin")),
+                "HOME 下应含 .volta/bin 兜底目录"
+            );
         }
     }
 

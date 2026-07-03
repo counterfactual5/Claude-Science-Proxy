@@ -1,5 +1,6 @@
 """测试用假上游：记账命中次数，按 mode 返回不同响应。
-mode="json"：返回一份最小 Anthropic 非流式消息体。"""
+mode="json"：返回一份最小 Anthropic 非流式消息体。
+mode="status:NNN"：返回 HTTP NNN + 一小段错误 JSON（测代理对上游错误码的处理，如 P3 401/403 透传）。"""
 import json
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -24,6 +25,18 @@ def start_mock(mode="json"):
                     "usage": {"input_tokens": 1, "output_tokens": 1},
                 }).encode()
                 self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+            elif mode.startswith("status:"):
+                try:
+                    code = int(mode.split(":", 1)[1])
+                except ValueError:
+                    code = 500
+                body = json.dumps({"type": "error", "error": {
+                    "type": "authentication_error", "message": "mock upstream error"}}).encode()
+                self.send_response(code)
                 self.send_header("Content-Type", "application/json")
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()

@@ -139,8 +139,12 @@ pub fn load_from(dir: &Path) -> io::Result<Config> {
     };
     // 存在即复位权限，抵御外部把它改宽。
     let _ = fs::set_permissions(&path, fs::Permissions::from_mode(0o600));
-    let cfg: Config = serde_json::from_slice(&data)
-        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, format!("config.json 解析失败：{e}")))?;
+    let cfg: Config = serde_json::from_slice(&data).map_err(|e| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("config.json 解析失败：{e}"),
+        )
+    })?;
     Ok(cfg)
 }
 
@@ -149,8 +153,12 @@ pub fn save_to(dir: &Path, cfg: &Config) -> io::Result<()> {
     ensure_dir(dir)?;
     let path = config_path(dir);
     assert_not_symlink(&path)?;
-    let json = serde_json::to_vec_pretty(cfg)
-        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, format!("config 序列化失败：{e}")))?;
+    let json = serde_json::to_vec_pretty(cfg).map_err(|e| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("config 序列化失败：{e}"),
+        )
+    })?;
 
     // 临时文件与目标同目录（保证 rename 在同一文件系统上原子）。
     // 名字带 pid + 线程 id，避免同进程并发写者撞同一个 O_EXCL 临时名。
@@ -238,8 +246,17 @@ mod tests {
     #[test]
     fn save_then_load_roundtrips() {
         let d = tmpdir().join(".csswitch");
-        let mut cfg = Config { provider: "qwen".into(), proxy_port: 12345, ..Default::default() };
-        cfg.providers.insert("deepseek".into(), ProviderCfg { key: "sk-abcdef1234".into() });
+        let mut cfg = Config {
+            provider: "qwen".into(),
+            proxy_port: 12345,
+            ..Default::default()
+        };
+        cfg.providers.insert(
+            "deepseek".into(),
+            ProviderCfg {
+                key: "sk-abcdef1234".into(),
+            },
+        );
         save_to(&d, &cfg).unwrap();
         let got = load_from(&d).unwrap();
         assert_eq!(got, cfg);
@@ -322,7 +339,11 @@ mod tests {
         let leftovers: Vec<_> = fs::read_dir(&d)
             .unwrap()
             .filter_map(|e| e.ok())
-            .filter(|e| e.file_name().to_string_lossy().starts_with(".config.json.tmp"))
+            .filter(|e| {
+                e.file_name()
+                    .to_string_lossy()
+                    .starts_with(".config.json.tmp")
+            })
             .collect();
         assert!(leftovers.is_empty(), "临时文件应已 rename 掉");
     }
@@ -333,7 +354,12 @@ mod tests {
         save_to(&d, &Config::default()).unwrap();
         update(&d, |c| {
             c.provider = "qwen".into();
-            c.providers.insert("qwen".into(), ProviderCfg { key: "k-xyz".into() });
+            c.providers.insert(
+                "qwen".into(),
+                ProviderCfg {
+                    key: "k-xyz".into(),
+                },
+            );
         })
         .unwrap();
         let got = load_from(&d).unwrap();
