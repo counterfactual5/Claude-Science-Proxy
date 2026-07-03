@@ -1,5 +1,6 @@
-//! scratch 事务内核（spec §4.4 / §11）：起一个【临时 relay 代理】（scratch 端口 + scratch
-//! secret + 候选 base_url/key/model 注环境），探 /v1/models 或 /v1/messages，据状态码判定，
+//! scratch 事务内核（spec §4.4 / §11）：起一个【临时代理】（scratch 端口 + scratch secret +
+//! 候选 provider/base_url/key/model 注环境；native=deepseek/qwen 或 relay），探 /v1/models 或
+//! /v1/messages，据状态码判定，
 //! 探完杀净。**绝不写 config、不改 AppState、不碰正在服务 Science 的正式代理。**
 //! 与 native-entry spec 的 validate_and_save 共用同一内核（绝不各写一份）。
 
@@ -60,14 +61,46 @@ impl Drop for ScratchGuard {
     }
 }
 
-/// 起一个临时 relay 代理并探测，探完杀净。**不碰 config / AppState / 正式代理**（修 P1-1/P1-2）。
-/// py/script 由调用方经 asset_root + find_exe 提供；base_url/key 为候选值（key 经 env 注入，绝不进 argv）。
+/// 临时代理的环境注入清单（纯函数，便于测试）：候选 key 注入指定 `key_env`；`base_url` 非空
+/// 才注入 `CSSWITCH_RELAY_BASE_URL`（native=deepseek/qwen 传空 → 不注入，走各自硬编码官方端点）；
+/// `model` 非空注入 `CSSWITCH_RELAY_MODEL`（仅 relay 生效）。修真机 P1：让 native 也能被临时代理探测。
+pub fn scratch_env(
+    key_env: &str,
+    key: &str,
+    base_url: &str,
+    model: Option<&str>,
+) -> Vec<(String, String)> {
+    let mut v = vec![(key_env.to_string(), key.to_string())];
+    if !base_url.is_empty() {
+        v.push(("CSSWITCH_RELAY_BASE_URL".to_string(), base_url.to_string()));
+    }
+    if let Some(m) = model {
+        if !m.is_empty() {
+            v.push(("CSSWITCH_RELAY_MODEL".to_string(), m.to_string()));
+        }
+    }
+    v
+}
+
+/// 临时代理探测目标：`provider` 直接作 `--provider`（native=deepseek/qwen；中转站=relay）；
+/// `key_env` 决定候选 key 注入哪个环境变量（native 用各自 `*_API_KEY`，relay 用 `CSSWITCH_RELAY_KEY`）；
+/// `base_url` 非空才注入 `CSSWITCH_RELAY_BASE_URL`（native 传空 → 走硬编码官方端点）；
+/// `model` 非空注入 `CSSWITCH_RELAY_MODEL`（仅 relay 生效）。
+pub struct ScratchTarget<'a> {
+    pub provider: &'a str,
+    pub key_env: &'a str,
+    pub base_url: &'a str,
+    pub key: &'a str,
+    pub model: Option<&'a str>,
+}
+
+/// 起一个临时代理并探测，探完杀净。**不碰 config / AppState / 正式代理**（修 P1-1/P1-2）。
+/// py/script 由调用方经 asset_root + find_exe 提供；`target` 描述要探测的候选连接
+/// （key 经 env 注入，绝不进 argv）。修真机 P1：provider 由调用方给（native 用 deepseek/qwen 探上游）。
 pub fn scratch_probe(
     py: &Path,
     script: &Path,
-    base_url: &str,
-    key: &str,
-    model: Option<&str>,
+    target: &ScratchTarget,
     kind: ProbeKind,
 ) -> ProbeResult {
     let port = match pick_scratch_port() {
@@ -91,19 +124,16 @@ pub fn scratch_probe(
     let mut cmd = Command::new(py);
     cmd.arg(script)
         .arg("--provider")
-        .arg("relay") // Python 只认 relay；relay-<preset> 是 Rust 侧概念
+        .arg(target.provider) // native=deepseek/qwen；中转站=relay（Python 只认这三种）
         .arg("--port")
         .arg(port.to_string())
         .arg("--auth-token")
         .arg(&secret)
-        .env("CSSWITCH_RELAY_BASE_URL", base_url)
-        .env("CSSWITCH_RELAY_KEY", key)
         .stdout(Stdio::null())
         .stderr(Stdio::null());
-    if let Some(m) = model {
-        if !m.is_empty() {
-            cmd.env("CSSWITCH_RELAY_MODEL", m);
-        }
+    // key/base_url/model 经 env 注入（绝不进 argv，避免 ps 泄露）；native 不带 relay base。
+    for (k, v) in scratch_env(target.key_env, target.key, target.base_url, target.model) {
+        cmd.env(k, v);
     }
     let child = match cmd.spawn() {
         Ok(c) => c,
@@ -176,6 +206,32 @@ mod tests {
         assert_eq!(classify(Some(429)), ProbeOutcome::Ambiguous(Some(429)));
         assert_eq!(classify(Some(502)), ProbeOutcome::Ambiguous(Some(502)));
         assert_eq!(classify(None), ProbeOutcome::NoResponse);
+    }
+
+    #[test]
+    fn scratch_env_native_uses_native_key_env_and_no_relay_base() {
+        // native：key 进 DEEPSEEK_API_KEY，绝不设 CSSWITCH_RELAY_BASE_URL（否则会被当中转站）。
+        let env = scratch_env("DEEPSEEK_API_KEY", "sk-x", "", None);
+        assert_eq!(
+            env,
+            vec![("DEEPSEEK_API_KEY".to_string(), "sk-x".to_string())]
+        );
+    }
+
+    #[test]
+    fn scratch_env_relay_sets_base_url_and_model() {
+        let env = scratch_env("CSSWITCH_RELAY_KEY", "sk-y", "https://r/claude", Some("m1"));
+        assert_eq!(
+            env,
+            vec![
+                ("CSSWITCH_RELAY_KEY".to_string(), "sk-y".to_string()),
+                (
+                    "CSSWITCH_RELAY_BASE_URL".to_string(),
+                    "https://r/claude".to_string()
+                ),
+                ("CSSWITCH_RELAY_MODEL".to_string(), "m1".to_string()),
+            ]
+        );
     }
 
     #[test]

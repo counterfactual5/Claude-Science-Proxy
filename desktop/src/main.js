@@ -73,7 +73,7 @@ function mockInvoke(cmd, args) {
       if (args.baseUrl != null) p.base_url = args.baseUrl;
       if (args.model != null) p.model = args.model;
       if (args.key) p.key = mockMask(args.key);
-      return Promise.resolve(null);
+      return Promise.resolve({ validated: true });
     }
     case "clear_profile_key": {
       const p = mockStore.profiles.find((x) => x.id === args.id);
@@ -140,7 +140,11 @@ function setBusy(on) {
     els.wizSaveBtn, els.wizFetchBtn, els.wizCancelBtn,
     els.connSaveBtn, els.connFetchBtn, els.connClearBtn, els.connCancelBtn,
     els.metaSaveBtn, els.metaCancelBtn, els.skipActivateBtn,
+    // 端口输入也纳入忙碌禁用：忙碌中改端口会与在途操作竞态（修 P1-c 前端侧）。
+    els.proxyPort, els.sandboxPort,
   ].forEach((b) => b && (b.disabled = on));
+  // 模式切换按钮同样禁用：忙碌中切官方会与「一键开始」竞态（修 P1-b 前端侧）。
+  if (els.modeSeg) els.modeSeg.querySelectorAll(".seg-btn").forEach((b) => (b.disabled = on));
   // 松开忙碌时，把 requires_model_override 的保存门控交回门（避免 setBusy(false) 覆盖门控）。
   if (!on) { refreshWizGate(); refreshConnGate(); }
 }
@@ -256,6 +260,7 @@ function applyMode(m) {
 
 async function switchMode(m) {
   if (m === mode) return;
+  if (busy) return; // 忙碌中不切模式（防与「一键开始」竞态；按钮亦已禁用，此为双保险）。修 P1-b
   setBusy(true);
   try {
     await call("set_mode", { mode: m });
@@ -296,14 +301,29 @@ async function heroClick() {
 
 // ── 端口设置（替旧 set_config；纯端口，不含 provider/连接）──
 async function persistPorts() {
+  if (busy) return; // 忙碌中不改端口（防与在途操作竞态；输入亦已禁用，此为双保险）。修 P1-c
   const p = parseInt(els.proxyPort.value, 10) || 18991;
   const s = parseInt(els.sandboxPort.value, 10) || 8990;
+  const changed = p !== state.proxy_port || s !== state.sandbox_port;
+  // 本次端口提交全程置忙：仅靠开头的 `if (busy) return` 只挡「已在忙时进入」，挡不住本函数在途
+  // 时其它操作（切模式/一键/连接编辑）启动。置忙 + 禁用控件才能保证操作顺序符合用户预期。修 GPT 三轮 P2
+  setBusy(true);
   try {
     await call("set_settings", { cfg: { proxy_port: p, sandbox_port: s } });
     state.proxy_port = p;
     state.sandbox_port = s;
+    // 后端在端口变化时会拆掉旧代理/沙箱（否则会复用指向旧端口的死链路），如实告知需重开。修 P1-c
+    if (changed) {
+      setMsg("端口已保存。改端口会重置正在运行的代理/沙箱，请重新「一键开始」。", "ok");
+      await refreshStatus();
+    }
   } catch (e) {
-    setMsg("保存端口失败：" + e, "err");
+    // 出错＝端口未落盘（校验不过 / 停旧沙箱失败）：把输入框还原成实际生效值，避免显示未保存的数字。
+    els.proxyPort.value = state.proxy_port;
+    els.sandboxPort.value = state.sandbox_port;
+    setMsg(String(e), "err");
+  } finally {
+    setBusy(false);
   }
 }
 
@@ -513,13 +533,21 @@ async function connSave() {
   setBusy(true);
   setMsg(active ? "校验中→切换中…（保存当前生效配置的新连接）" : "保存连接中…");
   try {
-    await call("update_profile_connection", args);
+    const r = await call("update_profile_connection", args);
     els.connKey.value = "";
     await loadConfig();
-    setMsg(active ? "已保存并应用新连接。" : "已保存连接。", "ok");
+    // 非 active：后端如实回传 validated，连不通/native 也保存，但据实说明未校验（修 P2-d truthful-save）。
+    if (active) {
+      setMsg("已保存并应用新连接。", "ok");
+    } else if (r && r.validated) {
+      setMsg("已保存连接（已通过上游校验）。", "ok");
+    } else {
+      setMsg("已保存连接（未能连通上游校验，激活时会再验）。", "ok");
+    }
   } catch (e) {
-    // active：后端事务失败＝未保存、已回滚、仍跑原配置——如实提示，绝不显示成已生效。
-    setMsg("连接未保存：" + e + (active ? "（仍在用原配置运行）" : ""), "err");
+    // 后端错误文案已如实说明回滚/代理状态（可能是「已回滚到原配置」或「回滚未成功：代理当前已停」），
+    // 前端不再盲目追加「仍在用原配置运行」，避免与「代理已停」相互矛盾。修 GPT 三轮 P2
+    setMsg("连接未保存：" + e, "err");
   } finally {
     setBusy(false);
     await refreshStatus();

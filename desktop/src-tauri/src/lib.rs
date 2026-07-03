@@ -323,6 +323,23 @@ fn ensure_proxy(
     start_proxy_for(app, state, lifecycle, &profile)
 }
 
+/// 探活超时的原因措辞（纯函数，修真机 P2）：本地 `/health` 不验上游 key，故探活超时与 key 有效性
+/// 无关。日志出现绑定失败（Address already in use / EADDRINUSE）→ 明确报端口占用；否则报「探活超时」
+/// （多为 python 依赖缺失 / 脚本异常），绝不再含糊说「或 key 无效」。
+fn health_timeout_reason(port: u16, tail: &str) -> String {
+    let occupied = tail.contains("Address already in use")
+        || tail.contains("EADDRINUSE")
+        || tail.contains("Errno 48") // macOS EADDRINUSE
+        || tail.contains("Errno 98"); // Linux EADDRINUSE
+    if occupied {
+        format!("端口 {port} 已被占用，换个端口或先停掉占用进程后重试。")
+    } else {
+        format!(
+            "代理起后探活超时（端口 {port}）：多为 python 依赖缺失或代理脚本异常，请查看代理日志。"
+        )
+    }
+}
+
 /// 用【给定 profile】（不读 active）起代理并探活；返回 (端口, secret, 动作)。
 ///
 /// 并发正确性（spec §8.1）：
@@ -445,9 +462,9 @@ fn start_proxy_for(
         let _ = c.kill();
         let _ = c.wait();
         let tail = redact(&tail_file(&log_path("proxy.log"), 500), &secret);
-        return Err(format!(
-            "代理起后探活超时（端口 {port} 可能被占用，或 key 无效）。\n{tail}"
-        ));
+        // 本地 /health 不验上游 key，故探活超时与 key 有效性无关：按日志区分端口占用 vs 依赖/脚本异常
+        // （修真机 P2：旧措辞含糊说「或 key 无效」会误导用户去查 key）。
+        return Err(format!("{}\n{tail}", health_timeout_reason(port, &tail)));
     }
 
     // 健康 → 回 AppState 锁，校验 generation 未被 bump 且 secret 仍是本次的（未被清 key/停/切/并发另起取代）才写回。
@@ -695,28 +712,35 @@ fn list_templates() -> Vec<serde_json::Value> {
 fn set_mode(
     app: tauri::AppHandle,
     state: State<'_, Mutex<AppState>>,
+    lifecycle: State<'_, lifecycle::Lifecycle>,
     mode: String,
 ) -> Result<(), String> {
     if mode != "proxy" && mode != "official" {
         return Err(format!("未知模式：{mode}（只支持 proxy / official）。"));
     }
-    let dir = config::default_dir();
-    if mode == "official" {
-        {
+    // 经串行器（修 P1-b）：切官方的「拆链路 + 落盘」必须与「一键开始」等互斥，否则一键起到一半时
+    // 切官方会先停链路、一键随后又把沙箱/OAuth 起起来 → 显示官方却有第三方沙箱在跑。bump_generation
+    // 作废任何在途启动，防被停后又拿旧配置写回运行态。
+    lifecycle.with_serialized(|| {
+        let dir = config::default_dir();
+        if mode == "official" {
+            lifecycle.bump_generation();
             let mut st = lock(&state);
             stop_sandbox_inner(&app, &mut st).map_err(|e| {
                 format!("停止沙箱失败，未切换到官方模式：{e}（真实实例 8765 未受影响）")
             })?;
             kill_child(&mut st.proxy);
             st.secret.clear();
+            st.provider.clear();
+            st.key_fp = 0;
         }
-    }
-    config::update(&dir, {
-        let mode = mode.clone();
-        move |c| c.mode = mode
+        config::update(&dir, {
+            let mode = mode.clone();
+            move |c| c.mode = mode
+        })
+        .map_err(|e| e.to_string())?;
+        Ok(())
     })
-    .map_err(|e| e.to_string())?;
-    Ok(())
 }
 
 /// 官方模式：干净地打开用户【真实】的 Claude Science（不碰/复制真实凭证，抹掉 ANTHROPIC_*）。
@@ -745,9 +769,28 @@ struct UiSettings {
     sandbox_port: u16,
 }
 
+/// 端口变更是否需要拆掉现有链路（纯函数，P1-c）。代理/沙箱任一端口变了，正在跑的代理就绑在
+/// 旧端口、正在跑的沙箱又把旧代理 URL 烘死了，二者与新配置不一致 → 拆掉逼下次「一键开始」按新端口重建。
+fn settings_change_needs_teardown(
+    old_proxy: u16,
+    new_proxy: u16,
+    old_sandbox: u16,
+    new_sandbox: u16,
+) -> bool {
+    old_proxy != new_proxy || old_sandbox != new_sandbox
+}
+
 /// 端口设置（provider/连接改走 profile CRUD + set_active_profile）。
+/// 经串行器（修 P1-c）：端口一旦变化，正在跑的代理绑在旧端口、正在跑的沙箱又烘死了旧代理 URL，
+/// 与新端口不一致；此处把这条陈旧链路拆掉（只停我们的沙箱、绝不碰 8765），逼下次「一键开始」按新端口重建，
+/// 杜绝「复用旧沙箱指向死端口、UI 却报沿用不变」。
 #[tauri::command]
-fn set_settings(cfg: UiSettings) -> Result<(), String> {
+fn set_settings(
+    app: tauri::AppHandle,
+    state: State<'_, Mutex<AppState>>,
+    lifecycle: State<'_, lifecycle::Lifecycle>,
+    cfg: UiSettings,
+) -> Result<(), String> {
     if cfg.proxy_port == 8765 || cfg.sandbox_port == 8765 {
         return Err("端口 8765 是真实 Science 实例保留端口，不能用。".into());
     }
@@ -757,13 +800,39 @@ fn set_settings(cfg: UiSettings) -> Result<(), String> {
     if cfg.proxy_port == cfg.sandbox_port {
         return Err("代理端口与沙箱端口不能相同。".into());
     }
-    let dir = config::default_dir();
-    config::update(&dir, move |c| {
-        c.proxy_port = cfg.proxy_port;
-        c.sandbox_port = cfg.sandbox_port;
+    lifecycle.with_serialized(|| {
+        let dir = config::default_dir();
+        let old = config::load_from(&dir).map_err(|e| e.to_string())?;
+        let teardown = settings_change_needs_teardown(
+            old.proxy_port,
+            cfg.proxy_port,
+            old.sandbox_port,
+            cfg.sandbox_port,
+        );
+        // 拆链路【先】于落盘，且停沙箱结果必须据实处理（修增量 P1）：停不掉就【不改端口】——
+        // 否则会留下「config 已是新端口、旧沙箱仍在旧端口指向旧代理」的不一致态，下次一键还会复用这条死链路。
+        // 保持端口不变则一切仍自洽（旧沙箱指旧代理端口、下次一键在旧端口重建代理，链路照通）。
+        if teardown {
+            let mut st = lock(&state);
+            stop_sandbox_inner(&app, &mut st).map_err(|e| {
+                format!(
+                    "端口未更改：无法停止指向旧端口的沙箱（{e}），为避免留下失效链路，端口保持不变。请手动停止沙箱或重启 app 后重试。（真实实例 8765 未受影响）"
+                )
+            })?;
+            lifecycle.bump_generation(); // 停成功后作废在途启动
+            kill_child(&mut st.proxy);
+            st.secret.clear();
+            st.provider.clear();
+            st.key_fp = 0;
+        }
+        // 拆链路成功（或无需拆）→ 才落盘新端口，保证 config 与运行态一致。
+        config::update(&dir, move |c| {
+            c.proxy_port = cfg.proxy_port;
+            c.sandbox_port = cfg.sandbox_port;
+        })
+        .map_err(|e| e.to_string())?;
+        Ok(())
     })
-    .map(|_| ())
-    .map_err(|e| e.to_string())
 }
 
 // ---------- profile CRUD 命令（薄包装 *_inner，统一经串行器） ----------
@@ -849,6 +918,73 @@ fn delete_profile(
     })
 }
 
+/// 非 active 连接编辑的上游校验裁决（纯函数，P2-d）：只有上游【明确】拒绝（Auth 401/403、
+/// ModelError 400/404/422）才 Some(hint) 拦下不落盘；Ok / 含糊(429/5xx) / 无响应 → None 照常落盘
+/// （best-effort：非 active 没有正在服务的链路可保护，卡在网络抖动上比放行更糟）。
+/// 非 active 连接编辑的上游校验裁决（纯函数，P2-d）：
+/// - `Ok(true)`  上游明确接受(200)，已校验；
+/// - `Ok(false)` 无法确认(429/5xx/无响应)，best-effort 落盘、标记「未校验」（激活时会再验）；
+/// - `Err(hint)` 上游明确拒绝(401/403/400/404/422)，拦下不落盘。
+///
+/// 选「如实标记后保存」：不因网络抖动/上游繁忙挡住保存，但也绝不假称已校验。
+fn nonactive_probe_verdict(outcome: &scratch::ProbeOutcome) -> Result<bool, String> {
+    match outcome {
+        scratch::ProbeOutcome::Ok => Ok(true),
+        scratch::ProbeOutcome::Auth(code) => {
+            Err(format!("上游拒绝（{code}），key/权限有误，连接未保存。"))
+        }
+        scratch::ProbeOutcome::ModelError(code) => Err(format!(
+            "上游拒绝该模型（{code}），连接未保存。请换一个模型或核对 base_url。"
+        )),
+        // 无法确认（429/5xx/无响应）：落盘但标记未校验，激活时再验。
+        scratch::ProbeOutcome::Ambiguous(_) | scratch::ProbeOutcome::NoResponse => Ok(false),
+    }
+}
+
+/// 是否对候选连接跑上游 scratch 校验（纯函数，修真机 P1）：空 key → 免（无从验）；非原生且空
+/// base_url → 免（relay 必须带 base_url）；原生（deepseek/qwen）即便 base_url 为空也【要】验
+/// （用各自硬编码官方端点，坏 key 才能在保存时被拦，不再顺延到激活）。
+fn should_scratch_candidate(adapter: &str, key: &str, base_url: &str) -> bool {
+    if key.is_empty() {
+        return false; // 无 key → 无从验，如实标记未校验。
+    }
+    if !is_native_adapter(adapter) && base_url.is_empty() {
+        return false; // relay 家族缺 base_url → 无从验。
+    }
+    true
+}
+
+/// 对候选连接做一次上游 scratch 校验（非 active 编辑用，P2-d）。起临时代理探完即杀，
+/// **绝不碰 config / AppState / 正在服务的正式代理**。返回是否【已通过上游校验】（供调用方据实措辞）：
+/// 空 key / relay 家族空 base_url → `Ok(false)`（无从预检，标记未校验）；
+/// native(deepseek/qwen) 即便 base_url 空也【会】走各自官方端点探测（修真机 P1）；
+/// 明确接受(200) → `Ok(true)`；明确拒绝 → `Err(hint)`；无法确认 → `Ok(false)`（见 [`nonactive_probe_verdict`]）。
+fn scratch_validate_candidate(
+    app: &tauri::AppHandle,
+    candidate: &config::Profile,
+) -> Result<bool, String> {
+    let launch = proxy_args_for(candidate);
+    if !should_scratch_candidate(&launch.adapter, &launch.key, &launch.base_url) {
+        return Ok(false); // 跳过 = 未校验（如实标记）
+    }
+    let root = asset_root(app).ok_or("找不到代理脚本 proxy/csswitch_proxy.py。")?;
+    let py = proc::find_exe("python3").ok_or("缺少依赖 python3（起临时代理需要）。")?;
+    let script = root.join("proxy/csswitch_proxy.py");
+    let res = scratch::scratch_probe(
+        &py,
+        &script,
+        &scratch::ScratchTarget {
+            provider: &launch.adapter,
+            key_env: launch.key_env,
+            base_url: &launch.base_url,
+            key: &launch.key,
+            model: Some(&launch.model),
+        },
+        probe_kind_for(&launch.adapter, &launch.model),
+    );
+    nonactive_probe_verdict(&scratch::classify(res.status))
+}
+
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
 fn update_profile_connection(
@@ -860,7 +996,7 @@ fn update_profile_connection(
     api_format: Option<String>,
     model: Option<String>,
     key: Option<String>,
-) -> Result<(), String> {
+) -> Result<serde_json::Value, String> {
     lifecycle.with_serialized(|| {
         let dir = config::default_dir();
         let cfg = config::load_from(&dir).map_err(|e| e.to_string())?;
@@ -889,9 +1025,24 @@ fn update_profile_connection(
                     .to_string();
                 return Err(hint);
             }
-            Ok(())
+            // active：已连同起正式代理探活并落盘，视为已校验。
+            Ok(json!({ "validated": true }))
         } else {
-            // 非 active：无正在服务的代理，直接落盘（inner 内含格式门 + 覆盖前留底）。
+            // 非 active：无正在服务的代理。先对候选做上游 scratch 校验（仅明确拒绝才拦，其余
+            // best-effort 落盘并如实标记「未校验」，修 P2-d：贴合设计「校验候选后提交」+ 如实报告），
+            // 再落盘（inner 内含格式门 + 覆盖前留底）。
+            let mut candidate = cfg
+                .profile_by_id(&id)
+                .cloned()
+                .ok_or_else(|| format!("找不到 profile：{id}"))?;
+            let edit = ConnectionEdit {
+                base_url: base_url.clone(),
+                api_format: api_format.clone(),
+                model: model.clone(),
+                key: key.clone(),
+            };
+            edit.apply(&mut candidate);
+            let validated = scratch_validate_candidate(&app, &candidate)?;
             update_profile_connection_inner(
                 &dir,
                 &id,
@@ -899,7 +1050,8 @@ fn update_profile_connection(
                 api_format.as_deref(),
                 model.as_deref(),
                 key.as_deref(),
-            )
+            )?;
+            Ok(json!({ "validated": validated }))
         }
     })
 }
@@ -950,6 +1102,14 @@ impl ConnectionEdit {
     }
 }
 
+/// 激活/切换是否跳过 scratch 上游校验（纯函数，修真机 P1）：只有用户显式 `skip_verify` 才跳；
+/// 原生 adapter 不再豁免（旧行为 `native || skip_verify` 会让原生无效 key 提交为 active 并谎报「已切到」，
+/// 首个真实推理才 401）。`native` 参数刻意保留：记录它曾是豁免条件、现已作废。
+fn skip_scratch_verify(native: bool, skip_verify: bool) -> bool {
+    let _ = native; // native 曾是豁免条件，现已作废（保留参数以固化回归防线）。
+    skip_verify
+}
+
 /// 切换事务本体（spec §7）：scratch 校验候选 → 起正式代理探活 → 探活健康【才】提交 active_id；
 /// 任一步失败杀候选 + 恢复旧代理，`active_id` 不动，**不停沙箱**（path-secret 持久，端口+secret
 /// 不变，沙箱链路不断，停沙箱只会扩大失败面）。**本函数不取串行器锁**（调用方命令已持有）。
@@ -992,9 +1152,10 @@ fn set_active_profile_txn(
     let old_active = cfg.active_id.clone();
 
     // 1) scratch 校验候选（临时端口+secret+候选 key，避开 8765；绝不碰正式链路）。
-    //    relay 家族做预检；deepseek/qwen 原生固定端点历史上不预检（保持旧行为）。
-    //    分类失败保留结构化提示（committed:false/can_skip），前端 UX 不变。
-    let scratch_ok = if native || skip_verify {
+    //    所有 adapter 都预检：native(deepseek/qwen) 用各自官方端点 + Message 探测（其 /v1/models 静态，
+    //    探不出坏 key）；只有用户显式 skip_verify 才跳过（修真机 P1：原生免校验会让无效 key 提交为
+    //    active 并谎报「已切到」，首个真实推理才 401）。分类失败保留结构化提示（committed:false/can_skip）。
+    let scratch_ok = if skip_scratch_verify(native, skip_verify) {
         true
     } else {
         let root = asset_root(app).ok_or("找不到代理脚本 proxy/csswitch_proxy.py。")?;
@@ -1003,10 +1164,14 @@ fn set_active_profile_txn(
         let res = scratch::scratch_probe(
             &py,
             &script,
-            &launch.base_url,
-            &launch.key,
-            Some(&launch.model),
-            probe_kind_for_model(&launch.model),
+            &scratch::ScratchTarget {
+                provider: &launch.adapter,
+                key_env: launch.key_env,
+                base_url: &launch.base_url,
+                key: &launch.key,
+                model: Some(&launch.model),
+            },
+            probe_kind_for(&launch.adapter, &launch.model),
         );
         match scratch::classify(res.status) {
             scratch::ProbeOutcome::Ok => true,
@@ -1046,9 +1211,10 @@ fn set_active_profile_txn(
             }) {
                 // spec §7 步 5：config 提交失败也要回滚进程——正式代理已起，若不回滚就成「运行新/盘旧」。
                 // 恢复旧 active 代理，active_id 仍为旧值，用户可重试。
-                restore_proxy_for_active(app, state, lifecycle, &cfg, &old_active);
+                let restored = restore_proxy_for_active(app, state, lifecycle, &cfg, &old_active);
                 return Err(format!(
-                    "校验通过、代理已起，但写盘失败（{e}），已回滚到原配置（沙箱未受影响）。请检查磁盘空间/权限后重试。"
+                    "校验通过、代理已起，但写盘失败（{e}），{}。请检查磁盘空间/权限后重试。",
+                    rollback_status_clause(restored)
                 ));
             }
             let hint = if is_edit {
@@ -1060,18 +1226,21 @@ fn set_active_profile_txn(
         }
         SwitchOutcome::RollbackToOld => {
             // 候选正式代理起/探活失败：恢复旧代理，active_id 不动，连接不落盘，不停沙箱。
-            restore_proxy_for_active(app, state, lifecycle, &cfg, &old_active);
+            let restored = restore_proxy_for_active(app, state, lifecycle, &cfg, &old_active);
+            let clause = rollback_status_clause(restored);
             if is_edit {
-                Err("连接已校验通过，但正式代理启动/探活失败，连接未保存，已回滚到原配置（沙箱未受影响）。".into())
+                Err(format!(
+                    "连接已校验通过，但正式代理启动/探活失败，连接未保存，{clause}。"
+                ))
             } else {
-                Err(
-                    "候选配置校验通过，但正式代理启动/探活失败，已回滚到原配置（沙箱未受影响）。"
-                        .into(),
-                )
+                Err(format!(
+                    "候选配置校验通过，但正式代理启动/探活失败，{clause}。"
+                ))
             }
         }
         SwitchOutcome::AbortBeforeStart => {
-            // scratch 校验未过（native+skip 场景不会到这）；旧态零改动、连接不落盘。
+            // scratch 校验未过；旧态零改动、连接不落盘。（明确拒绝/含糊态在上面已 committed:false 早返，
+            // 此分支是 scratch_ok=false 的兜底措辞。）
             if is_edit {
                 Err("连接上游校验失败（key/base_url/网络？），连接未保存。".into())
             } else {
@@ -1081,21 +1250,35 @@ fn set_active_profile_txn(
     }
 }
 
+/// 回滚结果措辞（纯函数，P2-e）：restored=true 才说「已回滚到原配置」；恢复失败必须如实说明代理已停，
+/// 绝不谎称回滚成功（比照本项目「如实报告」铁律，掩盖代理已停会误导用户）。
+fn rollback_status_clause(restored: bool) -> &'static str {
+    if restored {
+        "已回滚到原配置（沙箱未受影响）"
+    } else {
+        "回滚未成功：代理当前已停，请重试或手动「一键开始」（沙箱未受影响）"
+    }
+}
+
 /// 切换失败回滚：按【旧 active】重起旧代理（旧 profile 仍在盘上）；best-effort，失败则代理暂停、
 /// active_id 仍为旧值，用户可重试。旧 active 为空（此前未配置生效）→ 不复活，保持代理停着。
+/// 返回是否已把旧代理恢复到位（供调用方据实措辞，修 P2-e）。
 fn restore_proxy_for_active(
     app: &tauri::AppHandle,
     state: &State<'_, Mutex<AppState>>,
     lifecycle: &lifecycle::Lifecycle,
     cfg: &config::Config,
     old_active: &str,
-) {
+) -> bool {
     if old_active.is_empty() {
-        return;
+        return true; // 此前无生效配置 → 本就无代理可恢复，状态与切换前一致
     }
-    if let Some(old) = cfg.profile_by_id(old_active) {
-        lifecycle.bump_generation();
-        let _ = start_proxy_for(app, state, lifecycle, old);
+    match cfg.profile_by_id(old_active) {
+        Some(old) => {
+            lifecycle.bump_generation();
+            start_proxy_for(app, state, lifecycle, old).is_ok()
+        }
+        None => false, // 旧 active 指向已不存在的 profile（罕见）→ 无法恢复，代理已停
     }
 }
 
@@ -1105,8 +1288,12 @@ fn start_proxy(
     state: State<'_, Mutex<AppState>>,
     lifecycle: State<'_, lifecycle::Lifecycle>,
 ) -> Result<serde_json::Value, String> {
-    let (port, _secret, _action) = ensure_proxy(&app, &state, lifecycle.inner())?;
-    Ok(json!({ "port": port }))
+    // 经串行器：与切换/连接编辑/清 key/删/停等 ensure_proxy 竞争串行化，防陈旧读起旧配置代理
+    // 又写回运行态（修 P1-a，比照 spec §8.1「ensure_proxy 都经一把 app 级 mutex」）。
+    lifecycle.with_serialized(|| {
+        let (port, _secret, _action) = ensure_proxy(&app, &state, lifecycle.inner())?;
+        Ok(json!({ "port": port }))
+    })
 }
 
 /// 「存 key 即验证」：确保代理在跑，再经代理向上游发一个最小请求，据状态码判断 key 是否可用。
@@ -1116,19 +1303,22 @@ fn verify_key(
     state: State<'_, Mutex<AppState>>,
     lifecycle: State<'_, lifecycle::Lifecycle>,
 ) -> Result<serde_json::Value, String> {
-    let (port, secret, _action) = ensure_proxy(&app, &state, lifecycle.inner())?;
-    let body = br#"{"model":"claude-opus-4-8","max_tokens":1,"messages":[{"role":"user","content":"ping"}]}"#;
-    match proc::http_post_status(port, Some(&secret), "/v1/messages", body, 15000) {
-        Some(200) => Ok(json!({ "ok": true, "hint": "key 有效，上游已接受。" })),
-        Some(code @ (401 | 403)) => Ok(
-            json!({ "ok": false, "hint": format!("上游拒绝（{code}），key 可能无效或无权限。") }),
-        ),
-        Some(code) => Ok(json!({
-            "ok": false,
-            "hint": format!("上游返回 {code}，可能是 key 无效、额度不足或上游异常。")
-        })),
-        None => Err("验证请求无响应（多为网络或上游不通）。".to_string()),
-    }
+    // 经串行器（修 P1-a）：ensure_proxy 与其它生命周期操作不并发交叠。
+    lifecycle.with_serialized(|| {
+        let (port, secret, _action) = ensure_proxy(&app, &state, lifecycle.inner())?;
+        let body = br#"{"model":"claude-opus-4-8","max_tokens":1,"messages":[{"role":"user","content":"ping"}]}"#;
+        match proc::http_post_status(port, Some(&secret), "/v1/messages", body, 15000) {
+            Some(200) => Ok(json!({ "ok": true, "hint": "key 有效，上游已接受。" })),
+            Some(code @ (401 | 403)) => Ok(
+                json!({ "ok": false, "hint": format!("上游拒绝（{code}），key 可能无效或无权限。") }),
+            ),
+            Some(code) => Ok(json!({
+                "ok": false,
+                "hint": format!("上游返回 {code}，可能是 key 无效、额度不足或上游异常。")
+            })),
+            None => Err("验证请求无响应（多为网络或上游不通）。".to_string()),
+        }
+    })
 }
 
 #[derive(Deserialize)]
@@ -1215,9 +1405,13 @@ fn fetch_models(app: tauri::AppHandle, req: FetchModelsReq) -> Result<serde_json
     let res = scratch::scratch_probe(
         &py,
         &script,
-        &base_url,
-        &key,
-        None,
+        &scratch::ScratchTarget {
+            provider: "relay",
+            key_env: "CSSWITCH_RELAY_KEY",
+            base_url: &base_url,
+            key: &key,
+            model: None,
+        },
         scratch::ProbeKind::Models,
     );
     let builtin = tpl.builtin_models;
@@ -1261,6 +1455,17 @@ fn fetch_models(app: tauri::AppHandle, req: FetchModelsReq) -> Result<serde_json
             "source": "network", "error_kind": "network", "upstream_status": res.status
         })),
     }
+}
+
+/// 探测类型选择（纯函数，修真机 P1）：
+/// - 原生 adapter（deepseek/qwen）的 `/v1/models` 是【静态列表、不回源】，探不出坏 key，故一律用
+///   Message 探测（打 `/v1/messages` 会真发上游，坏 key → 401）。
+/// - relay：留空用 Models（`/v1/models` 回源即可验端点+鉴权）；选了具体模型用 Message 验该模型。
+fn probe_kind_for(adapter: &str, model: &str) -> scratch::ProbeKind {
+    if is_native_adapter(adapter) {
+        return scratch::ProbeKind::Message; // native /v1/models 静态，只有 Message 打上游能验 key。
+    }
+    probe_kind_for_model(model)
 }
 
 /// 选了模型 → 验具体模型（POST /v1/messages）；留空 → 验端点+鉴权（GET /v1/models）。
@@ -1684,10 +1889,12 @@ mod tests {
     use super::{
         assert_format_supported, build_get_config, build_list_templates, clear_profile_key_inner,
         create_profile_inner, decide_switch, delete_profile_inner, first_http_url,
-        is_main_list_model, key_env_for_adapter, key_fingerprint, merge_and_sort_models,
-        parse_host, probe_kind_for_model, proxy_args_for, redact, sandbox_home, should_write_back,
-        update_profile_connection_inner, update_profile_metadata_inner, upstream_host,
-        ConnectionEdit, SwitchOutcome,
+        health_timeout_reason, is_main_list_model, key_env_for_adapter, key_fingerprint,
+        merge_and_sort_models, nonactive_probe_verdict, parse_host, probe_kind_for,
+        probe_kind_for_model, proxy_args_for, redact, rollback_status_clause, sandbox_home,
+        settings_change_needs_teardown, should_scratch_candidate, should_write_back,
+        skip_scratch_verify, update_profile_connection_inner, update_profile_metadata_inner,
+        upstream_host, ConnectionEdit, SwitchOutcome,
     };
     use crate::config;
 
@@ -1763,6 +1970,75 @@ mod tests {
         assert_eq!(key_env_for_adapter("qwen"), "DASHSCOPE_API_KEY");
         assert_eq!(key_env_for_adapter("relay"), "CSSWITCH_RELAY_KEY");
         assert_eq!(key_env_for_adapter("anything-else"), "CSSWITCH_RELAY_KEY");
+    }
+
+    // ---------- P1-c: 端口变更是否需拆链路（纯函数，4 组合） ----------
+    #[test]
+    fn settings_teardown_when_any_port_changes() {
+        assert!(
+            !settings_change_needs_teardown(18991, 18991, 8990, 8990),
+            "端口未变 → 不拆链路"
+        );
+        assert!(
+            settings_change_needs_teardown(18991, 19000, 8990, 8990),
+            "代理端口变 → 拆（旧代理绑旧端口、沙箱烘旧 URL）"
+        );
+        assert!(
+            settings_change_needs_teardown(18991, 18991, 8990, 9000),
+            "沙箱端口变 → 拆（旧沙箱在旧端口成孤儿）"
+        );
+        assert!(
+            settings_change_needs_teardown(18991, 19000, 8990, 9000),
+            "都变 → 拆"
+        );
+    }
+
+    // ---------- P2-e: 回滚措辞如实（恢复失败不得谎称已回滚） ----------
+    #[test]
+    fn rollback_clause_tells_truth_when_restore_failed() {
+        assert!(
+            rollback_status_clause(true).contains("已回滚"),
+            "恢复成功 → 说已回滚"
+        );
+        let failed = rollback_status_clause(false);
+        assert!(
+            !failed.contains("已回滚到原配置"),
+            "恢复失败不得谎称已回滚到原配置"
+        );
+        assert!(failed.contains("代理当前已停"), "如实说明代理已停");
+    }
+
+    // ---------- P2-d: 非 active「如实标记后保存」裁决（明确拒绝才拦；200=已校验；含糊/无响应=落盘但未校验） ----------
+    #[test]
+    fn nonactive_probe_verdict_maps_outcomes() {
+        use crate::scratch::ProbeOutcome;
+        assert!(
+            nonactive_probe_verdict(&ProbeOutcome::Auth(401))
+                .unwrap_err()
+                .contains("401"),
+            "401 明确鉴权失败 → 拦下不落盘"
+        );
+        assert!(
+            nonactive_probe_verdict(&ProbeOutcome::ModelError(404))
+                .unwrap_err()
+                .contains("404"),
+            "404 模型不被接受 → 拦下不落盘"
+        );
+        assert_eq!(
+            nonactive_probe_verdict(&ProbeOutcome::Ok),
+            Ok(true),
+            "200 → 落盘且【已校验】"
+        );
+        assert_eq!(
+            nonactive_probe_verdict(&ProbeOutcome::Ambiguous(Some(429))),
+            Ok(false),
+            "含糊(429) → best-effort 落盘但【未校验】"
+        );
+        assert_eq!(
+            nonactive_probe_verdict(&ProbeOutcome::NoResponse),
+            Ok(false),
+            "无响应 → best-effort 落盘但【未校验】"
+        );
     }
 
     // ---------- B3: 切换事务决策（纯函数，3 分支） ----------
@@ -2078,5 +2354,67 @@ mod tests {
             probe_kind_for_model(""),
             crate::scratch::ProbeKind::Models
         ));
+    }
+
+    // ---------- 修真机 P1：native adapter 上游校验（GPT 验收报告 RM-06） ----------
+
+    #[test]
+    fn native_probe_uses_message_since_native_models_is_static() {
+        // native 的 /v1/models 是静态列表、探不出坏 key，故一律用 Message（打上游 /v1/messages）。
+        assert!(matches!(
+            probe_kind_for("deepseek", ""),
+            crate::scratch::ProbeKind::Message
+        ));
+        assert!(matches!(
+            probe_kind_for("qwen", ""),
+            crate::scratch::ProbeKind::Message
+        ));
+        // relay：空 model 用 Models（/v1/models 回源即验鉴权）；选了 model 用 Message 验该模型。
+        assert!(matches!(
+            probe_kind_for("relay", ""),
+            crate::scratch::ProbeKind::Models
+        ));
+        assert!(matches!(
+            probe_kind_for("relay", "m1"),
+            crate::scratch::ProbeKind::Message
+        ));
+    }
+
+    #[test]
+    fn native_adapter_no_longer_bypasses_upstream_verify() {
+        // 只有显式 skip_verify 才跳过；native 不再是豁免条件（旧行为的核心漏洞）。
+        assert!(
+            !skip_scratch_verify(true, false),
+            "native 不得再豁免上游校验"
+        );
+        assert!(!skip_scratch_verify(false, false));
+        assert!(skip_scratch_verify(false, true), "显式 skip_verify 才跳");
+        assert!(skip_scratch_verify(true, true));
+    }
+
+    #[test]
+    fn native_candidate_is_upstream_validated_even_without_base_url() {
+        // 非 active 编辑：native 即便 base_url 空也要验（走硬编码官方端点）。
+        assert!(should_scratch_candidate("deepseek", "sk-x", ""));
+        assert!(should_scratch_candidate("qwen", "sk-x", ""));
+        // relay 仍需 base_url；空 key 一律免验。
+        assert!(!should_scratch_candidate("relay", "sk-x", ""));
+        assert!(should_scratch_candidate("relay", "sk-x", "https://r"));
+        assert!(!should_scratch_candidate("deepseek", "", ""));
+    }
+
+    #[test]
+    fn health_timeout_reason_flags_port_conflict_and_never_blames_key() {
+        // 端口占用：明确报占用、带端口号，绝不提「key 无效」。
+        let occ = health_timeout_reason(18991, "OSError: [Errno 48] Address already in use");
+        assert!(occ.contains("18991"));
+        assert!(occ.contains("占用"), "应明确报端口占用：{occ}");
+        assert!(!occ.contains("key"), "端口占用不该扯上 key：{occ}");
+        // 其它探活失败（依赖缺失等）：本地探活与 key 有效性无关，不得说「key 无效」。
+        let generic = health_timeout_reason(18991, "ModuleNotFoundError: No module named 'x'");
+        assert!(
+            !generic.contains("key 无效"),
+            "本地探活超时与 key 有效性无关：{generic}"
+        );
     }
 }
