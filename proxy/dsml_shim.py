@@ -198,15 +198,12 @@ class DsmlStreamRewriter:
     def _drain_frames(self, flush_tail=False):
         out = []
         while True:
-            idx = self._buf.find("\n\n")
-            if idx < 0:
-                # 兼容 \r\n\r\n
-                idx = self._buf.find("\r\n\r\n")
-                sep = 4
-            else:
-                sep = 2
-            if idx < 0:
+            i_lf = self._buf.find("\n\n")
+            i_crlf = self._buf.find("\r\n\r\n")
+            cands = [(i, s) for i, s in ((i_lf, 2), (i_crlf, 4)) if i >= 0]
+            if not cands:
                 break
+            idx, sep = min(cands)
             frame = self._buf[:idx]
             self._buf = self._buf[idx + sep:]
             out.append(self._handle_frame(frame))
