@@ -97,7 +97,7 @@ DeepSeek 原生 Anthropic 端点  /  通义千问等 OpenAI 兼容端点
 - 虚拟登录下，**Anthropic 托管的远程 MCP 服务**（如 pubmed / clinical-trials / chembl / biorxiv，位于 `*.mcp.claude.com`）不可用：它们需真实 Anthropic 授权，代理已将其短路，Science 会自动跳过（启动日志有 `load failed (skipped)` 属正常）。**本地内置的 bio-tools MCP 仍正常可用。**
 - 对 Science 登录令牌加密格式的逆向、以及「越过登录」的实现，可能触及相关服务条款与版权法规（如美国 DMCA §1201 反规避条款）。是否适用、有无豁免需专业法律判断。
 - 本项目与 Anthropic **无任何从属、合作或背书关系**；不偷取算力（推理走你自付第三方）、不泄露用户密钥、不含恶意代码。
-- 软件按「现状」提供，**不提供任何形式的担保**。更完整的威胁模型与法律/条款分析见 `docs/superpowers/specs/`。
+- 软件按「现状」提供，**不提供任何形式的担保**。
 
 ## 许可
 

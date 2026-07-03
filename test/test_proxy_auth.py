@@ -157,6 +157,91 @@ class ProxyAuth(unittest.TestCase):
         self.assertIn(b"400", status_line, f"应为 400，实收：{resp[:120]!r}")
         self.assertIn(b"invalid_request_error", resp)
 
+    def test_malformed_request_structure_returns_400(self):
+        # 回归（修 P1 GPT 复审）：JSON 能解析但结构不对（顶层非对象 / messages 非数组）
+        # 以前会在下游 .get / 迭代处抛 AttributeError/TypeError 击穿线程，客户端拿空响应。
+        # 修复后一律回规范 400，且上游一次都不被打到。
+        before = len(self.hits)
+        for bad in ([], "hello", 42, {"messages": None}, {"model": "x"}):
+            s, b = _req(f"{self.base}/{SEC}/v1/messages", "POST", bad)
+            self.assertEqual(s, 400, f"{bad!r} 应回 400，实收 {s} {b[:120]!r}")
+            self.assertIn(b"invalid_request_error", b)
+        self.assertEqual(len(self.hits), before, "畸形请求不应打到上游")
+
+
+class ProxyUpstreamErrorPassthrough(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.up_url, cls.hits, cls.stop_up = start_mock("status:401")
+        port = 18992
+        cls.base = f"http://127.0.0.1:{port}"
+        cls.logf = os.path.join(tempfile.gettempdir(), f"csswitch-401-{port}.log")
+        open(cls.logf, "w").close()
+        env = dict(os.environ, DEEPSEEK_API_KEY="fake-key",
+                   CSSWITCH_UPSTREAM_URL=cls.up_url)
+        cls.proc = subprocess.Popen(
+            [sys.executable, PROXY, "--provider", "deepseek",
+             "--port", str(port), "--auth-token", SEC, "--log", cls.logf],
+            env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        for _ in range(50):
+            try:
+                s, _b = _req(f"{cls.base}/{SEC}/health")
+                if s == 200:
+                    break
+            except Exception:
+                pass
+            time.sleep(0.1)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.proc.terminate()
+        cls.proc.wait(timeout=5)
+        cls.stop_up()
+
+    def test_upstream_401_preserved_not_502(self):
+        # 修 P3（GPT 复审）：上游 401 原样透传（不再归一化 502），verify_key 才能据此判 key 无效。
+        s, b = _req(f"{self.base}/{SEC}/v1/messages", "POST",
+                    {"model": "claude-opus-4-8", "max_tokens": 1,
+                     "messages": [{"role": "user", "content": "ping"}]})
+        self.assertEqual(s, 401, f"应保留上游 401，实收 {s} {b[:160]!r}")
+
+
+class ProxyQwenUpstreamErrorPassthrough(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.up_url, cls.hits, cls.stop_up = start_mock("status:401")
+        port = 18993
+        cls.base = f"http://127.0.0.1:{port}"
+        cls.logf = os.path.join(tempfile.gettempdir(), f"csswitch-qwen401-{port}.log")
+        open(cls.logf, "w").close()
+        env = dict(os.environ, DASHSCOPE_API_KEY="fake-key",
+                   CSSWITCH_UPSTREAM_URL=cls.up_url)
+        cls.proc = subprocess.Popen(
+            [sys.executable, PROXY, "--provider", "qwen",
+             "--port", str(port), "--auth-token", SEC, "--log", cls.logf],
+            env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        for _ in range(50):
+            try:
+                s, _b = _req(f"{cls.base}/{SEC}/health")
+                if s == 200:
+                    break
+            except Exception:
+                pass
+            time.sleep(0.1)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.proc.terminate()
+        cls.proc.wait(timeout=5)
+        cls.stop_up()
+
+    def test_qwen_upstream_401_preserved_not_502(self):
+        # 修 P2（GPT 复审）：qwen（OpenAI 翻译路径）上游 401 也应原样透传，而非归一化 502。
+        s, b = _req(f"{self.base}/{SEC}/v1/messages", "POST",
+                    {"model": "claude-opus-4-8", "max_tokens": 1,
+                     "messages": [{"role": "user", "content": "ping"}]})
+        self.assertEqual(s, 401, f"qwen 也应保留上游 401，实收 {s} {b[:160]!r}")
+
 
 if __name__ == "__main__":
     unittest.main()

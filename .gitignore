@@ -26,6 +26,9 @@ build/
 .DS_Store
 .superpowers/
 
+# 本地开发工作流文档（brainstorm→spec→plan），不上传公开仓库
+docs/superpowers/
+
 # 每日巡检运行产物：全是本机运行态（报告/版本基线/日志/锁），只保留空目录占位
 findings/auto-maint/*
 !findings/auto-maint/.gitkeep

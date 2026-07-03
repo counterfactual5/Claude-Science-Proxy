@@ -229,7 +229,9 @@ async function oneClick() {
     }
     await persistSettings();
     const r = await call("one_click_login");
-    setMsg("登录态就绪。正在打开浏览器面板…\n" + (r.url || ""), "ok");
+    // 透传后端据实回传的 msg（区分：已重新打开 / 已用新配置重启 / 沿用原有对话 / 已启动 /
+    // 打开失败请手动打开），保证提示不谎报。后端未给 msg 时退回中性兜底。
+    setMsg((r.msg || "已就绪，正在打开面板…") + "\n" + (r.url || ""), "ok");
     await refreshStatus();
   } catch (e) {
     setMsg("一键开始失败：" + e, "err");
