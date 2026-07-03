@@ -1,5 +1,6 @@
 """CSSwitch DSML 兜底 shim：把 DeepSeek 泄漏成纯文本的 DSML 工具调用还原成 tool_use。
 纯函数分段器（本文件）+ 流式状态机 + 字节检测器（后续 Task）。不依赖第三方。"""
+import codecs
 import json
 import os
 import re
@@ -160,3 +161,130 @@ def segment_dsml_text(text, known_tools):
     if not segs:
         return [{"type": "text", "text": text}]
     return segs
+
+
+class DsmlStreamRewriter:
+    """流式 SSE 改写状态机。Task 4：透明重映射（自管下游索引、通用 delta/stop 映射、增量 UTF-8）。
+    Task 5 在此基础上加 text_delta 的 DSML 检测与 tool_use 合成。"""
+
+    def __init__(self, known_tools, nonce=""):
+        self.known_tools = known_tools or {}
+        self.nonce = nonce or "x"
+        self._dec = codecs.getincrementaldecoder("utf-8")()
+        self._buf = ""            # 已解码、未成帧的文本
+        self.next_out = 0
+        self.cur_out = None       # 当前打开的下游块索引
+        self.cur_type = None      # 当前上游块类型
+        self.synthesized = False
+        self.tool_n = 0
+        # Task 5 用：
+        self.state = "PASS"
+        self.scan_buf = ""
+        self.cap_buf = ""
+
+    # ---- 对外 ----
+    def feed(self, data):
+        self._buf += self._dec.decode(data)
+        return self._drain_frames()
+
+    def finalize(self):
+        # 冲掉解码器残留 + 未成帧尾巴 + Task 5 的扣留文本
+        self._buf += self._dec.decode(b"", final=True)
+        out = self._drain_frames(flush_tail=True)
+        out += self._finalize_text()      # Task 5 覆盖；Task 4 为 b""
+        return out
+
+    # ---- 帧循环 ----
+    def _drain_frames(self, flush_tail=False):
+        out = []
+        while True:
+            idx = self._buf.find("\n\n")
+            if idx < 0:
+                # 兼容 \r\n\r\n
+                idx = self._buf.find("\r\n\r\n")
+                sep = 4
+            else:
+                sep = 2
+            if idx < 0:
+                break
+            frame = self._buf[:idx]
+            self._buf = self._buf[idx + sep:]
+            out.append(self._handle_frame(frame))
+        return b"".join(out)
+
+    def _finalize_text(self):
+        return b""   # Task 5 覆盖
+
+    def _flush_pending(self):
+        return b""   # Task 5 覆盖：message 边界前 flush 扣留文本
+
+    # ---- 单帧处理 ----
+    def _handle_frame(self, frame):
+        event, obj = self._parse_frame(frame)
+        if obj is None or not isinstance(obj, dict):
+            return self._raw(frame)              # 注释/未知/非 JSON：原样
+        t = obj.get("type")
+        if t == "content_block_start":
+            self.cur_type = (obj.get("content_block") or {}).get("type")
+            self.cur_out = self.next_out
+            self.next_out += 1
+            return self._emit("content_block_start",
+                              {**obj, "index": self.cur_out})
+        if t == "content_block_delta":
+            dtype = (obj.get("delta") or {}).get("type")
+            if self.cur_type == "text" and dtype == "text_delta":
+                return self._on_text_delta(obj.get("delta", {}).get("text", ""))
+            return self._emit("content_block_delta", {**obj, "index": self.cur_out})
+        if t == "content_block_stop":
+            return self._on_block_stop()
+        if t == "message_delta":
+            return self._flush_pending() + self._on_message_delta(obj)
+        if t == "message_stop":
+            return self._flush_pending() + self._raw(frame)
+        # message_start / ping / 其它：原样
+        return self._raw(frame)
+
+    def _on_text_delta(self, text):
+        # Task 4：不检测，原样重发；Task 5 覆盖为扫描器。
+        return self._emit("content_block_delta", {"type": "content_block_delta",
+                          "index": self.cur_out, "delta": {"type": "text_delta", "text": text}})
+
+    def _on_block_stop(self):
+        if self.cur_out is not None:
+            out = self._emit("content_block_stop", {"type": "content_block_stop", "index": self.cur_out})
+            self.cur_out = None
+            return out
+        return b""     # 已主动关闭 → 吞掉上游冗余 stop
+
+    def _on_message_delta(self, obj):
+        if self.synthesized:
+            d = dict(obj.get("delta") or {})
+            if d.get("stop_reason") in ("end_turn", "stop", None):
+                d["stop_reason"] = "tool_use"
+            obj = {**obj, "delta": d}
+        return self._emit("message_delta", obj)
+
+    # ---- 工具 ----
+    @staticmethod
+    def _parse_frame(frame):
+        event, data_lines = None, []
+        for line in frame.split("\n"):
+            line = line.rstrip("\r")
+            if line.startswith("event:"):
+                event = line[6:].strip()
+            elif line.startswith("data:"):
+                data_lines.append(line[5:].lstrip())
+        if not data_lines:
+            return event, None
+        try:
+            return event, json.loads("\n".join(data_lines))
+        except (ValueError, json.JSONDecodeError):
+            return event, None
+
+    @staticmethod
+    def _emit(event, obj):
+        return f"event: {event}\ndata: {json.dumps(obj, ensure_ascii=False)}\n\n".encode("utf-8")
+
+    @staticmethod
+    def _raw(frame):
+        return (frame + "\n\n").encode("utf-8")
