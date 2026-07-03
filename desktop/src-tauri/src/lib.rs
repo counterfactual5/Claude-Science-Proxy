@@ -1,18 +1,22 @@
-//! CSSwitch 菜单栏 app 后端（进程管家）。
+//! CSSwitch 桌面 app 后端（进程管家）。
 //!
 //! 职责：管理「翻译代理」与「沙箱 Science」两个子进程的生命周期；读写
-//! `~/.csswitch/config.json`；把第三方 key 以【环境变量】注入代理子进程（绝不进 argv）；
-//! 探活；把沙箱 URL 交系统浏览器打开。已验证的越权/翻译逻辑仍留在 Python/Node/shell
-//! 里被当作子进程调用，以保住铁律护栏与已验证行为。
+//! `~/.csswitch/config.json`（多 profile 形态）；把第三方 key 以【环境变量】注入代理子进程
+//! （绝不进 argv）；探活；把沙箱 URL 交系统浏览器打开。已验证的越权/翻译逻辑仍留在
+//! Python/Node/shell 里被当作子进程调用，以保住铁律护栏与已验证行为。
+//!
+//! 运行行为由生效 profile 的 `template_id` 经 [`templates`] 注册表派生出 adapter
+//! （deepseek | qwen | relay），再传给 python 代理 `--provider`。
 //!
 //! 铁律相关：key 只在内存与 0600 的 config.json；回显前端只给掩码；沙箱端口/目录护栏
 //! 由被调脚本负责（对 8765 与真实目录失败关闭）；退 app 默认停代理、保留沙箱。
 
 mod config;
+mod config_legacy;
 mod oauth_forge;
 mod proc;
-mod relay_presets;
 mod scratch;
+mod templates;
 
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
@@ -30,16 +34,17 @@ struct AppState {
     proxy: Option<Child>,
     proxy_port: u16,
     secret: String,
+    /// 当前代理进程所用 adapter 名（deepseek | qwen | relay）；用于健康复用判定。
     provider: String,
     /// 当前代理进程所用 key 的非加密指纹（仅内存、绝不落盘/打印）。
-    /// 换 key 后指纹变化 → 触发重启，避免复用带旧 key 的代理。
+    /// 换 key/换上游后指纹变化 → 触发重启，避免复用带旧配置的代理。
     key_fp: u64,
     sandbox: Option<Child>,
     sandbox_port: u16,
     sandbox_url: Option<String>,
 }
 
-/// key 的非加密指纹（SipHash），只用于判断「key 是否变了」。绝不打印、绝不落盘。
+/// key 的非加密指纹（SipHash），只用于判断「配置是否变了」。绝不打印、绝不落盘。
 fn key_fingerprint(s: &str) -> u64 {
     use std::hash::{Hash, Hasher};
     let mut h = std::collections::hash_map::DefaultHasher::new();
@@ -47,30 +52,58 @@ fn key_fingerprint(s: &str) -> u64 {
     h.finish()
 }
 
-// ---------- provider 元信息 ----------
-/// 是否 relay 家族（裸 relay 或多槽 relay-<preset>）。
-fn is_relay(provider: &str) -> bool {
-    provider == "relay" || provider.starts_with("relay-")
-}
-
-fn key_env(provider: &str) -> &'static str {
-    if is_relay(provider) {
-        return "CSSWITCH_RELAY_KEY";
-    }
-    match provider {
+// ---------- adapter / profile 运行元信息 ----------
+/// adapter → 该 adapter 期望的 key 环境变量名（python 代理侧 PROVIDERS[...]["key_env"]）。
+fn key_env_for_adapter(adapter: &str) -> &'static str {
+    match adapter {
+        "deepseek" => "DEEPSEEK_API_KEY",
         "qwen" => "DASHSCOPE_API_KEY",
-        _ => "DEEPSEEK_API_KEY",
+        _ => "CSSWITCH_RELAY_KEY", // relay / 兜底
     }
 }
 
-/// 上游主机名（供 status 上游灯做 TCP 可达性探测）。relay 从其 base_url 解析。
-fn upstream_host(provider: &str, base_url: &str) -> String {
-    if is_relay(provider) {
-        return parse_host(base_url).unwrap_or_default();
+/// 从一条 profile 派生出起代理需要的全部参数（纯函数，便于测试）。
+struct ProxyLaunch {
+    adapter: String,
+    base_url: String,
+    model: String,
+    key: String,
+    key_env: &'static str,
+}
+
+fn proxy_args_for(p: &config::Profile) -> ProxyLaunch {
+    let adapter = templates::adapter_for(&p.template_id).to_string();
+    let key_env = key_env_for_adapter(&adapter);
+    ProxyLaunch {
+        adapter,
+        base_url: p.base_url.clone(),
+        model: p.model.clone(),
+        key: p.api_key.clone(),
+        key_env,
     }
-    match provider {
+}
+
+/// 本轨仅支持 anthropic / openai_chat；其余进 schema 但激活拒绝（待轨道 2：Rust 代理）。
+fn assert_format_supported(p: &config::Profile) -> Result<(), String> {
+    match p.api_format.as_str() {
+        "anthropic" | "openai_chat" => Ok(()),
+        other => Err(format!(
+            "api_format `{other}` 暂不支持（待 Rust 代理），请选 anthropic 或 openai_chat。"
+        )),
+    }
+}
+
+/// deepseek/qwen 走各自固定官方端点（python 侧硬编码）；其余 = relay 家族，需带 base_url。
+fn is_native_adapter(adapter: &str) -> bool {
+    adapter == "deepseek" || adapter == "qwen"
+}
+
+/// 上游主机名（供 status 上游灯做 TCP 可达性探测）。relay 家族从其 base_url 解析。
+fn upstream_host(adapter: &str, base_url: &str) -> String {
+    match adapter {
+        "deepseek" => "api.deepseek.com".to_string(),
         "qwen" => "dashscope.aliyuncs.com".to_string(),
-        _ => "api.deepseek.com".to_string(),
+        _ => parse_host(base_url).unwrap_or_default(),
     }
 }
 
@@ -108,10 +141,9 @@ fn is_main_list_model(id: &str) -> bool {
 
 // ---------- 路径与日志 ----------
 /// 定位 CSSwitch 仓库根（含 proxy/csswitch_proxy.py）。优先 CSSWITCH_REPO，
-/// 否则从可执行文件与当前目录逐级上溯。找不到返回 None。
+/// 否则从可执行文件逐级上溯。找不到返回 None。
 fn repo_root() -> Option<PathBuf> {
     let marker = Path::new("proxy/csswitch_proxy.py");
-    // 显式指定优先：规范化后再判定，避免相对/软链歧义。
     if let Some(r) = std::env::var_os("CSSWITCH_REPO") {
         if let Ok(p) = std::fs::canonicalize(PathBuf::from(r)) {
             if p.join(marker).is_file() {
@@ -119,7 +151,7 @@ fn repo_root() -> Option<PathBuf> {
             }
         }
     }
-    // 否则只从【可执行文件位置】上溯。刻意不看 current_dir：启动目录可被影响，
+    // 只从【可执行文件位置】上溯。刻意不看 current_dir：启动目录可被影响，
     // 若据此找到别处的 csswitch_proxy.py，会把带 key 的环境交给来路不明的脚本。
     if let Ok(exe) = std::env::current_exe() {
         let mut dir: Option<&Path> = exe.parent();
@@ -133,24 +165,19 @@ fn repo_root() -> Option<PathBuf> {
     None
 }
 
-/// 定位「资源根」（含 proxy/、scripts/）。打包成 .app 后，proxy/ 与 scripts/ 被
-/// bundle 进 `Contents/Resources`；开发态则回退到仓库根。找不到返回 None。
-/// 这样从 Finder 启动的正式 .app 也能找到代理脚本（修 P1-1）。
+/// 定位「资源根」（含 proxy/、scripts/）。打包成 .app 后 bundle 进 `Contents/Resources`；
+/// 开发态则回退到仓库根。找不到返回 None。
 fn asset_root(app: &tauri::AppHandle) -> Option<PathBuf> {
     let marker = Path::new("proxy/csswitch_proxy.py");
-    // 打包态：Tauri 资源目录。
     if let Ok(res) = app.path().resource_dir() {
         if res.join(marker).is_file() {
             return Some(res);
         }
     }
-    // 开发态：从可执行文件位置上溯（见 repo_root 注释，刻意不看 current_dir）。
     repo_root()
 }
 
 /// 沙箱可写工作目录（独立 HOME）：`~/.csswitch/sandbox/home`。
-/// 打包后资源目录只读，沙箱状态（虚拟登录、克隆运行时、钥匙串）必须落在可写处；
-/// 该路径同时交给 launch/stop 脚本（`SANDBOX_HOME` 环境变量）与取 URL 逻辑，三者一致。
 fn sandbox_home() -> PathBuf {
     config::default_dir().join("sandbox").join("home")
 }
@@ -177,17 +204,14 @@ fn open_log(name: &str) -> std::io::Result<std::fs::File> {
         std::fs::create_dir_all(parent)?;
         let _ = std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700));
     }
-    // 日志路径不许是符号链接：否则 truncate+写会覆盖链接目标文件（修 P2-1）。
     config::assert_not_symlink(&p)?;
     let f = std::fs::OpenOptions::new()
         .write(true)
         .create(true)
         .truncate(true)
         .mode(0o600)
-        // O_NOFOLLOW：即便在 lstat 与 open 之间被换成软链，也拒绝跟随。
         .custom_flags(libc_o_nofollow())
         .open(&p)?;
-    // 文件已存在时 mode() 不复位，显式再夹一次。
     let _ = std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o600));
     Ok(f)
 }
@@ -236,8 +260,7 @@ fn open_in_browser(url: &str) -> Result<(), String> {
 }
 
 // ---------- 代理生命周期核心 ----------
-/// 转义 ERE（extended regex）元字符，让路径按字面参与 `pkill -f` 匹配（避免路径里的
-/// `.`/`(`/`[` 等被当作正则、误配或失配）。
+/// 转义 ERE 元字符，让路径按字面参与 `pkill -f` 匹配。
 fn ere_escape(s: &str) -> String {
     let mut out = String::with_capacity(s.len() + 8);
     for c in s.chars() {
@@ -252,42 +275,49 @@ fn ere_escape(s: &str) -> String {
 /// 本次 ensure_proxy 对代理做了什么（供一键据实提示）。
 #[derive(Clone, Copy, PartialEq)]
 enum ProxyAction {
-    Reused,    // 端口+provider+key 指纹一致且健康，原样复用
-    Restarted, // 首次起 / 换 key / 换 provider / 不健康，重起了代理
+    Reused,    // 端口+adapter+key 指纹一致且健康，原样复用
+    Restarted, // 首次起 / 换 key / 换 profile / 不健康，重起了代理
 }
 
 /// 确保代理在跑且健康；返回 (端口, secret, 本次动作)。幂等：已健康则复用。
+/// 读【生效 profile】派生 adapter/base_url/model/key，起 python 代理 `--provider <adapter>`。
 fn ensure_proxy(
     app: &tauri::AppHandle,
     state: &State<'_, Mutex<AppState>>,
 ) -> Result<(u16, String, ProxyAction), String> {
     let dir = config::default_dir();
     let cfg = config::load_from(&dir).map_err(|e| e.to_string())?;
-    let provider = cfg.provider.clone();
-    let key = cfg
-        .key_for(&provider)
-        .ok_or_else(|| format!("缺少 {provider} 的 API key，请先在面板填写并保存。"))?;
-    // relay（中转站）：base_url 必填，作上游根地址。非 relay 为空串。
-    let base_url = cfg.base_url_for(&provider).unwrap_or_default();
-    if is_relay(&provider) && base_url.is_empty() {
+    let profile = cfg
+        .active_profile()
+        .cloned()
+        .ok_or("未配置生效 profile，请先在面板选择或新建一条配置。")?;
+    assert_format_supported(&profile)?;
+    let launch = proxy_args_for(&profile);
+    if launch.key.is_empty() {
+        return Err(format!(
+            "「{}」还没填 API key，请先在面板填写并保存。",
+            profile.name
+        ));
+    }
+    let native = is_native_adapter(&launch.adapter);
+    if !native && launch.base_url.is_empty() {
         return Err(
-            "中转站模式需要填 base_url（如 https://your-relay/claude），请先在面板填写并保存。"
-                .into(),
+            "该配置需要填 base_url（如 https://your-relay/claude），请先在面板填写并保存。".into(),
         );
     }
-    let model = cfg.model_for(&provider).unwrap_or_default();
-    // 指纹并入 base_url + model：换 key、换中转站地址或换选中模型都触发代理重启（避免复用旧上游）。
-    let key_fp = key_fingerprint(&format!("{key}\n{base_url}\n{model}"));
+    // 指纹并入 adapter+base_url+model+key：换其中任一都触发代理重启（避免复用旧上游）。
+    let key_fp = key_fingerprint(&format!(
+        "{}\n{}\n{}\n{}",
+        launch.adapter, launch.base_url, launch.model, launch.key
+    ));
     let port = cfg.proxy_port;
     let root = asset_root(app)
         .ok_or("找不到代理脚本 proxy/csswitch_proxy.py（打包资源或仓库根均未命中）。开发态可设 CSSWITCH_REPO。")?;
     let py = proc::find_exe("python3")
         .ok_or("缺少依赖 python3（起翻译代理需要）。已查 PATH、常见目录与登录 shell 仍未找到；macOS 一般自带 /usr/bin/python3（装 Xcode 命令行工具：xcode-select --install）。")?;
 
-    // path-secret：**持久化复用**。已在跑的沙箱把该 secret 嵌进了 ANTHROPIC_BASE_URL，
-    // 若每次起代理都换 secret，代理一重启（换 key/换 provider/重开 app）沙箱就会拿旧 secret
-    // 打到新代理 → 全部 403（修 P1：代理重启后沙箱失联）。故从 config 读稳定 secret，
-    // 首次为空才生成一次并写回，之后所有代理进程都复用它。
+    // path-secret：**持久化复用**（已在跑的沙箱把该 secret 嵌进了 ANTHROPIC_BASE_URL，
+    // 若每次起代理都换 secret，代理一重启沙箱就会拿旧 secret 打到新代理 → 全部 403）。
     let secret = if !cfg.secret.is_empty() {
         cfg.secret.clone()
     } else {
@@ -297,54 +327,41 @@ fn ensure_proxy(
         s
     };
 
-    // 整个「检查 → 清残留 → 起进程 → 记账」在同一把锁内完成，避免并发双击时
-    // 两路都判定「没健康代理」各起一个、后者覆盖前者的 Child 句柄导致前者被孤儿泄漏。
+    // 整个「检查 → 清残留 → 起进程 → 记账」在同一把锁内完成，避免并发双击时孤儿泄漏。
     {
         let mut st = lock(state);
-        // 幂等：已在跑且健康、且【端口 + provider + key 指纹】都一致才复用。
-        // 只比端口会在「换 provider / 换 key」后误用带旧配置的代理（修 P1-2）。
+        // 幂等：已在跑且健康、且【端口 + adapter + key 指纹】都一致才复用。
         if st.proxy.is_some()
             && st.proxy_port == port
-            && st.provider == provider
+            && st.provider == launch.adapter
             && st.key_fp == key_fp
             && proc::http_health(port, Some(&st.secret), 500)
         {
             return Ok((port, st.secret.clone(), ProxyAction::Reused));
         }
-        // 清残留（换端口/换 provider/换 key/不健康）。
         kill_child(&mut st.proxy);
         let script = root.join("proxy/csswitch_proxy.py");
-        // 再清掉上次会话遗留、绑在同端口上的孤儿代理：崩溃或强退不会触发本进程的 kill，
-        // 孤儿仍占着端口 → 新代理绑不上（Errno 48）→ 探活超时。
-        // 收紧（P2 GPT 复审）：匹配【本安装的绝对脚本路径】+ 端口，而非仅「脚本名+端口」，
-        // 避免误杀另一个 checkout / 用户手启的同名代理。路径里的正则元字符转义按字面匹配。
+        // 再清掉上次会话遗留、绑在同端口上的孤儿代理（匹配本安装的绝对脚本路径 + 端口）。
         let pat = format!("{}.*--port {port}", ere_escape(&script.to_string_lossy()));
         let _ = Command::new("pkill").arg("-f").arg(&pat).status();
 
         let logf = open_log("proxy.log").map_err(|e| format!("建日志失败：{e}"))?;
         let logf2 = logf.try_clone().map_err(|e| e.to_string())?;
-        // Python 代理只认裸 "relay"（不知道 relay-<preset> 多槽），故归一化传给它；
-        // 多槽区分（key/base_url/model 各槽独立）全在 Rust 侧的 config 层完成。
-        let proxy_provider = if is_relay(&provider) {
-            "relay"
-        } else {
-            provider.as_str()
-        };
         let mut cmd = Command::new(&py);
         cmd.arg(&script)
             .arg("--provider")
-            .arg(proxy_provider)
+            .arg(&launch.adapter)
             .arg("--port")
             .arg(port.to_string())
             .arg("--auth-token")
             .arg(&secret)
             // key 经环境变量注入，绝不作为命令行参数（避免 ps 泄露）。
-            .env(key_env(&provider), &key);
-        // relay：中转站 base_url + 选中模型经环境变量交给代理（均非密钥，但与 key 一致走 env）。
-        if is_relay(&provider) {
-            cmd.env("CSSWITCH_RELAY_BASE_URL", &base_url);
-            if !model.is_empty() {
-                cmd.env("CSSWITCH_RELAY_MODEL", &model);
+            .env(launch.key_env, &launch.key);
+        // relay 家族：base_url + 选中模型经环境变量交给代理（均非密钥，但与 key 一致走 env）。
+        if !native {
+            cmd.env("CSSWITCH_RELAY_BASE_URL", &launch.base_url);
+            if !launch.model.is_empty() {
+                cmd.env("CSSWITCH_RELAY_MODEL", &launch.model);
             }
         }
         let child = cmd
@@ -355,7 +372,7 @@ fn ensure_proxy(
         st.proxy = Some(child);
         st.proxy_port = port;
         st.secret = secret.clone();
-        st.provider = provider;
+        st.provider = launch.adapter.clone();
         st.key_fp = key_fp;
     }
 
@@ -370,7 +387,6 @@ fn ensure_proxy(
     }
     if !ok {
         let mut st = lock(state);
-        // 只在仍是本次起的代理时才清（secret 匹配），避免误杀并发重启起来的新代理。
         if st.secret == secret {
             kill_child(&mut st.proxy);
         }
@@ -382,21 +398,15 @@ fn ensure_proxy(
     Ok((port, secret, ProxyAction::Restarted))
 }
 
-/// 停沙箱。返回 Err 表示 stop 脚本非零退出（Science 可能没停干净），
-/// 调用方据此如实报告，不再无条件报「已停止」（修 P1 停止虚假成功）。
+/// 停沙箱。返回 Err 表示 stop 脚本非零退出（Science 可能没停干净），调用方据此如实报告。
 fn stop_sandbox_inner(app: &tauri::AppHandle, st: &mut AppState) -> Result<(), String> {
-    // 沙箱由脚本以 --detached 起 Science，本进程持有的是脚本 child（已退出）。
-    // 真正停 Science 要调 stop 脚本（按 data-dir，绝不碰真实 8765）。
-    // 修 P1（GPT 复审）：定位不到资源根 / 停止脚本时，绝不静默返回成功——detached 沙箱
-    // 可能仍在跑，谎报「已停止」会让「切官方模式」误以为第三方链路已拆。此时如实报错。
     let mut err = None;
     match asset_root(app) {
         Some(root) => {
             let stop = root.join("scripts/stop-science-sandbox.sh");
             if stop.is_file() {
-                match Command::new("zsh") // stop 脚本是 #!/bin/zsh（用了 ${VAR:A} realpath）
+                match Command::new("zsh")
                     .arg(&stop)
-                    // 与 launch 时一致的可写沙箱 HOME，stop 才能按同一 data-dir 停对进程。
                     .env("SANDBOX_HOME", sandbox_home())
                     .stdout(Stdio::null())
                     .stderr(Stdio::null())
@@ -428,48 +438,171 @@ fn stop_sandbox_inner(app: &tauri::AppHandle, st: &mut AppState) -> Result<(), S
     }
 }
 
-// ---------- Tauri commands ----------
-#[tauri::command]
-fn get_config() -> Result<serde_json::Value, String> {
-    let dir = config::default_dir();
-    let cfg = config::load_from(&dir).map_err(|e| e.to_string())?;
-    let mut keys = serde_json::Map::new();
-    for p in ["deepseek", "qwen"] {
-        let masked = cfg.key_for(p).map(|k| config::mask(&k)).unwrap_or_default();
-        keys.insert(p.to_string(), serde_json::Value::String(masked));
-    }
-    // 每个中转站预设一份 {key(掩码), base_url, model}；未配置的预设 key 空、base_url 取预设默认。
-    let mut relay = serde_json::Map::new();
-    for preset in relay_presets::all() {
-        let masked = cfg
-            .key_for(preset.id)
-            .map(|k| config::mask(&k))
-            .unwrap_or_default();
-        let base_url = cfg
-            .base_url_for(preset.id)
-            .unwrap_or_else(|| preset.base_url.to_string());
-        let model = cfg.model_for(preset.id).unwrap_or_default();
-        relay.insert(
-            preset.id.to_string(),
-            json!({ "key": masked, "base_url": base_url, "model": model }),
-        );
-    }
+// ---------- 返回体组装（纯函数，便于测试） ----------
+/// 组装 get_config 返回体：profiles 的 key 只回掩码，全 key 绝不出后端。
+fn build_get_config(dir: &Path) -> Result<serde_json::Value, String> {
+    let cfg = config::load_from(dir).map_err(|e| e.to_string())?;
+    let profiles: Vec<serde_json::Value> = cfg
+        .profiles
+        .iter()
+        .map(|p| {
+            json!({
+                "id": p.id, "name": p.name, "template_id": p.template_id, "category": p.category,
+                "api_format": p.api_format, "base_url": p.base_url, "model": p.model,
+                "key": config::mask(&p.api_key), "icon": p.icon, "icon_color": p.icon_color,
+                "website_url": p.website_url, "sort_index": p.sort_index,
+            })
+        })
+        .collect();
     Ok(json!({
-        "provider": cfg.provider,
-        "proxy_port": cfg.proxy_port,
-        "sandbox_port": cfg.sandbox_port,
-        "mode": cfg.mode,
-        "keys": keys,
-        "relay": relay,
+        "schema_version": cfg.schema_version, "active_id": cfg.active_id, "profiles": profiles,
+        "templates": build_list_templates(), "proxy_port": cfg.proxy_port,
+        "sandbox_port": cfg.sandbox_port, "mode": cfg.mode,
     }))
 }
 
-/// 切换运行模式（"proxy" 第三方 / "official" 官方）。
-///
-/// 切到「官方」是**真正的切换**，不只是改配置：先把第三方链路拆掉（停沙箱 Science + 杀代理、
-/// 清 secret）。否则代理/沙箱会留在后台空跑；且 macOS 单实例语义下，后面 `open` 可能只是聚焦
-/// 还活着的沙箱实例（带着改过的 ANTHROPIC_* 环境）而非官方实例，把用户误导回第三方链路。
-/// 切回「第三方」不自动起任何东西（仍需用户填 key 后点「一键开始」）。全程绝不碰真实 8765。
+/// 模板注册表交前端铺 UI（单一来源，前端不复制常量）。
+fn build_list_templates() -> Vec<serde_json::Value> {
+    templates::all()
+        .iter()
+        .map(|t| {
+            json!({
+                "id": t.id, "name": t.name, "category": t.category, "api_format": t.api_format,
+                "adapter": t.adapter, "base_url": t.base_url, "base_url_editable": t.base_url_editable,
+                "requires_model_override": t.requires_model_override,
+                "builtin_models": t.builtin_models, "icon": t.icon, "icon_color": t.icon_color,
+                "website_url": t.website_url,
+            })
+        })
+        .collect()
+}
+
+// ---------- profile CRUD 纯实现（*_inner，便于用临时 dir 单测） ----------
+fn create_profile_inner(
+    dir: &Path,
+    template_id: &str,
+    name: &str,
+    key: Option<&str>,
+    base_url_override: Option<&str>,
+    model: Option<&str>,
+) -> Result<String, String> {
+    let tpl = templates::by_id(template_id).ok_or_else(|| format!("未知模板：{template_id}"))?;
+    let id = config::new_id();
+    let base_url = base_url_override
+        .map(str::to_string)
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| tpl.base_url.to_string());
+    let p = config::Profile {
+        id: id.clone(),
+        name: name.to_string(),
+        template_id: template_id.to_string(),
+        category: tpl.category.to_string(),
+        api_format: tpl.api_format.to_string(),
+        base_url,
+        api_key: key.unwrap_or("").to_string(),
+        model: model.unwrap_or("").to_string(),
+        website_url: Some(tpl.website_url.to_string()),
+        icon: Some(tpl.icon.to_string()),
+        icon_color: Some(tpl.icon_color.to_string()),
+        sort_index: Some(config::now_ms()),
+        created_at: Some(config::now_ms()),
+        notes: None,
+    };
+    assert_format_supported(&p)?; // custom 选了不支持格式则拒
+    config::update(dir, |c| c.profiles.push(p)).map_err(|e| e.to_string())?;
+    Ok(id)
+}
+
+fn update_profile_metadata_inner(
+    dir: &Path,
+    id: &str,
+    name: &str,
+    notes: Option<&str>,
+) -> Result<(), String> {
+    config::update(dir, |c| {
+        if let Some(p) = c.profile_by_id_mut(id) {
+            p.name = name.to_string();
+            p.notes = notes.map(str::to_string);
+        }
+    })
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+fn clear_profile_key_inner(dir: &Path, id: &str) -> Result<(), String> {
+    config::update(dir, |c| {
+        if let Some(p) = c.profile_by_id_mut(id) {
+            p.api_key.clear();
+        }
+    })
+    .map_err(|e| e.to_string())?;
+    config::drop_rolling_backup(dir); // 清 key 后净化滚动备份，旧明文不可从 .bak 恢复
+    Ok(())
+}
+
+fn delete_profile_inner(dir: &Path, id: &str) -> Result<(), String> {
+    config::update(dir, |c| {
+        c.profiles.retain(|p| p.id != id);
+        if c.active_id == id {
+            c.active_id.clear(); // 删 active → 置空
+        }
+    })
+    .map_err(|e| e.to_string())?;
+    config::drop_rolling_backup(dir);
+    Ok(())
+}
+
+fn update_profile_connection_inner(
+    dir: &Path,
+    id: &str,
+    base_url: Option<&str>,
+    api_format: Option<&str>,
+    model: Option<&str>,
+    key: Option<&str>,
+) -> Result<(), String> {
+    if let Some(fmt) = api_format {
+        let probe = config::Profile {
+            api_format: fmt.to_string(),
+            ..Default::default()
+        };
+        assert_format_supported(&probe)?;
+    }
+    config::write_rolling_backup(dir).ok(); // 覆盖前留底
+    config::update(dir, |c| {
+        if let Some(p) = c.profile_by_id_mut(id) {
+            if let Some(u) = base_url {
+                p.base_url = u.to_string();
+            }
+            if let Some(f) = api_format {
+                p.api_format = f.to_string();
+            }
+            if let Some(m) = model {
+                p.model = m.to_string();
+            }
+            if let Some(k) = key {
+                if !k.is_empty() {
+                    p.api_key = k.to_string(); // 空=不改（留占位不覆盖已存 key）
+                }
+            }
+        }
+    })
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+// ---------- Tauri commands ----------
+#[tauri::command]
+fn get_config() -> Result<serde_json::Value, String> {
+    build_get_config(&config::default_dir())
+}
+
+/// 模板注册表交前端铺 UI（新建向导用）。
+#[tauri::command]
+fn list_templates() -> Vec<serde_json::Value> {
+    build_list_templates()
+}
+
+/// 切换运行模式（"proxy" 第三方 / "official" 官方）。切官方要先拆第三方链路成功再落盘。
 #[tauri::command]
 fn set_mode(
     app: tauri::AppHandle,
@@ -480,15 +613,9 @@ fn set_mode(
         return Err(format!("未知模式：{mode}（只支持 proxy / official）。"));
     }
     let dir = config::default_dir();
-
-    // 事务化（修 P2 GPT 复审）：切官方要「先拆第三方链路，成功了再落盘 official」。
-    // 旧序（先落盘再拆）若拆沙箱失败，会留下「磁盘=official、UI/进程=第三方」的状态分裂
-    // （前端收到 Err 保持第三方 UI，磁盘却已是 official，下次启动就错进官方模式）。
-    // 现序保证：拆失败 → 不落盘、保持 proxy 模式、如实报错，磁盘/UI/进程一致。
     if mode == "official" {
         {
             let mut st = lock(&state);
-            // 先停沙箱：失败就在动代理/落盘之前中止，状态不分裂。
             stop_sandbox_inner(&app, &mut st).map_err(|e| {
                 format!("停止沙箱失败，未切换到官方模式：{e}（真实实例 8765 未受影响）")
             })?;
@@ -496,7 +623,6 @@ fn set_mode(
             st.secret.clear();
         }
     }
-    // 拆链已成功（或切回 proxy 无需拆）→ 落盘。
     config::update(&dir, {
         let mode = mode.clone();
         move |c| c.mode = mode
@@ -505,11 +631,7 @@ fn set_mode(
     Ok(())
 }
 
-/// 官方模式：干净地打开用户【真实】的 Claude Science（用户自己的官方登录与订阅）。
-///
-/// 铁律：绝不碰/复制真实凭证；用 `open`（系统 LaunchServices 正常启动）而非注入环境变量，
-/// 并显式抹掉任何 `ANTHROPIC_*`，确保**不用改过的环境变量启动真实实例**（真实实例走它自己的
-/// 官方端点，不经本代理）。CSSwitch 只把用户交回官方客户端，不托管其登录。
+/// 官方模式：干净地打开用户【真实】的 Claude Science（不碰/复制真实凭证，抹掉 ANTHROPIC_*）。
 #[tauri::command]
 fn open_official() -> Result<(), String> {
     let app_path = "/Applications/Claude Science.app";
@@ -519,8 +641,6 @@ fn open_official() -> Result<(), String> {
     } else {
         cmd.arg("-a").arg("Claude Science");
     }
-    // 防御性：即便 `open` 通常不向被启动 app 传本进程环境，也显式抹掉，杜绝把改过的
-    // ANTHROPIC_* 带进真实实例（铁律 3）。
     cmd.env_remove("ANTHROPIC_BASE_URL")
         .env_remove("ANTHROPIC_API_KEY")
         .env_remove("ANTHROPIC_AUTH_TOKEN");
@@ -533,72 +653,156 @@ fn open_official() -> Result<(), String> {
 
 #[derive(Deserialize)]
 struct UiSettings {
-    provider: String,
     proxy_port: u16,
     sandbox_port: u16,
-    /// 仅「中转站」(relay) 用：中转站 base_url。其它 provider 前端不传（None → 不改动已存值）。
-    #[serde(default)]
-    base_url: Option<String>,
 }
 
+/// 端口设置（provider/连接改走 profile CRUD + set_active_profile）。
 #[tauri::command]
-fn set_config(cfg: UiSettings) -> Result<(), String> {
-    // 铁律防御：代理/沙箱端口都不许用真实实例保留端口 8765。
+fn set_settings(cfg: UiSettings) -> Result<(), String> {
     if cfg.proxy_port == 8765 || cfg.sandbox_port == 8765 {
         return Err("端口 8765 是真实 Science 实例保留端口，不能用。".into());
     }
-    // 只认已实现的 provider（deepseek/qwen + 预设表里的 relay-<preset>），
-    // 避免存进未知值后起代理时才失败（修 P2-3）。
-    if cfg.provider != "deepseek"
-        && cfg.provider != "qwen"
-        && relay_presets::by_id(&cfg.provider).is_none()
-    {
-        return Err(format!(
-            "未知 provider：{}（只支持 deepseek / qwen / relay-<预设>）。",
-            cfg.provider
-        ));
-    }
-    // 端口 0 非法（无法监听/探活）。
     if cfg.proxy_port == 0 || cfg.sandbox_port == 0 {
         return Err("端口不能为 0。".into());
     }
-    // 代理与沙箱不能同端口，否则互相抢占。
     if cfg.proxy_port == cfg.sandbox_port {
         return Err("代理端口与沙箱端口不能相同。".into());
     }
-    // base_url 只做「非空时校验格式」——不在这里强制必填，否则「先选中转站、再填地址」
-    // 的流程会在切 provider 时就被拦下。必填校验放在真正要用它的 ensure_proxy /
-    // fetch_relay_models（那里给的提示也更贴合动作）。
-    let base_url = cfg.base_url.clone().unwrap_or_default().trim().to_string();
-    let has_scheme = base_url.starts_with("http://") || base_url.starts_with("https://");
-    if !base_url.is_empty() && !has_scheme {
-        return Err("中转站 base_url 必须以 http:// 或 https:// 开头。".into());
-    }
     let dir = config::default_dir();
     config::update(&dir, move |c| {
-        c.provider = cfg.provider;
         c.proxy_port = cfg.proxy_port;
         c.sandbox_port = cfg.sandbox_port;
-        // 只在前端传了 base_url 且当前 provider 是 relay 家族时，写入【当前】provider
-        // 槽的 base_url（多槽下不同预设各自独立），避免在别的 provider 下改端口时
-        // 误写/清空其它中转站预设已存的地址。
-        if !base_url.is_empty() && is_relay(&c.provider) {
-            c.providers.entry(c.provider.clone()).or_default().base_url = base_url;
-        }
     })
     .map(|_| ())
     .map_err(|e| e.to_string())
 }
 
+// ---------- profile CRUD 命令（薄包装 *_inner） ----------
 #[tauri::command]
-fn save_provider_key(provider: String, key: String) -> Result<String, String> {
+fn create_profile(
+    template_id: String,
+    name: String,
+    key: Option<String>,
+    base_url: Option<String>,
+    model: Option<String>,
+) -> Result<String, String> {
+    create_profile_inner(
+        &config::default_dir(),
+        &template_id,
+        &name,
+        key.as_deref(),
+        base_url.as_deref(),
+        model.as_deref(),
+    )
+}
+
+#[tauri::command]
+fn update_profile_metadata(id: String, name: String, notes: Option<String>) -> Result<(), String> {
+    update_profile_metadata_inner(&config::default_dir(), &id, &name, notes.as_deref())
+}
+
+#[tauri::command]
+fn clear_profile_key(id: String) -> Result<(), String> {
+    clear_profile_key_inner(&config::default_dir(), &id)
+}
+
+#[tauri::command]
+fn delete_profile(id: String) -> Result<(), String> {
+    delete_profile_inner(&config::default_dir(), &id)
+}
+
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+fn update_profile_connection(
+    app: tauri::AppHandle,
+    state: State<'_, Mutex<AppState>>,
+    id: String,
+    base_url: Option<String>,
+    api_format: Option<String>,
+    model: Option<String>,
+    key: Option<String>,
+) -> Result<(), String> {
+    // MP-2: 升级为事务+串行器（rollback/generation token）
     let dir = config::default_dir();
-    let key2 = key.clone();
-    config::update(&dir, move |c| {
-        c.providers.entry(provider).or_default().key = key2;
-    })
-    .map_err(|e| e.to_string())?;
-    Ok(config::mask(&key))
+    update_profile_connection_inner(
+        &dir,
+        &id,
+        base_url.as_deref(),
+        api_format.as_deref(),
+        model.as_deref(),
+        key.as_deref(),
+    )?;
+    // 若改的是当前生效 profile，连接变更后重启代理让新连接生效（修 P1-4）。
+    let cfg = config::load_from(&dir).map_err(|e| e.to_string())?;
+    if cfg.active_id == id {
+        ensure_proxy(&app, &state)?;
+    }
+    Ok(())
+}
+
+/// 一键切生效 profile（简化版 = 旧 save_relay_config 同款 commit-then-ensure）：
+/// relay 家族先 scratch 校验候选 → 提交 active_id → ensure_proxy 切正式代理。
+/// deepseek/qwen 原生 adapter 走固定官方端点，不做 scratch 预检（历史行为一致）。
+#[tauri::command]
+fn set_active_profile(
+    app: tauri::AppHandle,
+    state: State<'_, Mutex<AppState>>,
+    id: String,
+    skip_verify: bool,
+) -> Result<serde_json::Value, String> {
+    // MP-2: 升级为事务+串行器（rollback/generation token）
+    let dir = config::default_dir();
+    let cfg = config::load_from(&dir).map_err(|e| e.to_string())?;
+    let candidate = cfg
+        .profile_by_id(&id)
+        .cloned()
+        .ok_or_else(|| format!("找不到 profile：{id}"))?;
+    assert_format_supported(&candidate)?;
+    let launch = proxy_args_for(&candidate);
+    if launch.key.is_empty() {
+        return Err(format!("「{}」还没填 API key，请先填写。", candidate.name));
+    }
+    let native = is_native_adapter(&launch.adapter);
+    if !native && launch.base_url.is_empty() {
+        return Err("该配置需要填 base_url（http:// 或 https:// 开头）。".into());
+    }
+
+    // relay 家族（任意 base_url）：sctatch 代理校验候选（不碰正式链路）。
+    if !native && !skip_verify {
+        let root = asset_root(&app).ok_or("找不到代理脚本 proxy/csswitch_proxy.py。")?;
+        let py = proc::find_exe("python3").ok_or("缺少依赖 python3（起临时代理需要）。")?;
+        let script = root.join("proxy/csswitch_proxy.py");
+        let res = scratch::scratch_probe(
+            &py,
+            &script,
+            &launch.base_url,
+            &launch.key,
+            Some(&launch.model),
+            probe_kind_for_model(&launch.model),
+        );
+        match scratch::classify(res.status) {
+            scratch::ProbeOutcome::Ok => {}
+            scratch::ProbeOutcome::Auth(code) => {
+                return Ok(json!({ "committed": false,
+                    "hint": format!("上游拒绝（{code}），key/权限有误，未切换（当前配置不变）。") }));
+            }
+            scratch::ProbeOutcome::ModelError(code) => {
+                return Ok(json!({ "committed": false,
+                    "hint": format!("上游拒绝该模型（{code}），未切换。请换一个模型或核对 base_url。") }));
+            }
+            scratch::ProbeOutcome::Ambiguous(_) | scratch::ProbeOutcome::NoResponse => {
+                return Ok(json!({ "committed": false, "can_skip": true,
+                    "hint": "无法确认（网络/上游繁忙），未切换。可重试，或用「跳过验证」。" }));
+            }
+        }
+    }
+
+    // 提交 active_id（commit-then-ensure：先落盘再切代理；代理失败不回滚，待 MP-2 事务化）。
+    config::update(&dir, |c| c.active_id = id.clone()).map_err(|e| e.to_string())?;
+    ensure_proxy(&app, &state)?;
+    Ok(json!({ "committed": true, "active_id": id,
+        "hint": format!("已切到「{}」。", candidate.name) }))
 }
 
 #[tauri::command]
@@ -610,17 +814,13 @@ fn start_proxy(
     Ok(json!({ "port": port }))
 }
 
-/// 「存 key 即验证」：确保代理在跑，再经代理向上游发一个**最小**请求
-/// （`max_tokens:1`，一句 "ping"），据响应状态码判断 key 是否真的可用。
-/// 返回 `{ok, hint}`：ok=true 表示上游接受（key 有效）；ok=false 表示上游拒绝或异常，
-/// hint 给人话。彻底避免「只看绿灯（代理起来了）≠ key 真能用」。
+/// 「存 key 即验证」：确保代理在跑，再经代理向上游发一个最小请求，据状态码判断 key 是否可用。
 #[tauri::command]
 fn verify_key(
     app: tauri::AppHandle,
     state: State<'_, Mutex<AppState>>,
 ) -> Result<serde_json::Value, String> {
     let (port, secret, _action) = ensure_proxy(&app, &state)?;
-    // 走稳定模型 id（代理内部映射到当前 provider 的真实模型），非流式、只要 1 个 token。
     let body = br#"{"model":"claude-opus-4-8","max_tokens":1,"messages":[{"role":"user","content":"ping"}]}"#;
     match proc::http_post_status(port, Some(&secret), "/v1/messages", body, 15000) {
         Some(200) => Ok(json!({ "ok": true, "hint": "key 有效，上游已接受。" })),
@@ -636,16 +836,21 @@ fn verify_key(
 }
 
 #[derive(Deserialize)]
-struct RelayModelsReq {
-    /// 预设 id（relay-xiaomi / … / relay-custom）；用于 builtin 兜底。
-    preset: String,
+struct FetchModelsReq {
+    /// 模板 id（决定 builtin / base_url 可编辑性 / 默认 base_url）。
+    template_id: String,
+    /// 自定义模板时用户填的 base_url（不可编辑模板忽略）。
+    #[serde(default)]
     base_url: String,
-    /// 用户新填的 key；为空表示沿用该预设已存的 key（后端不回传完整 key）。
+    /// 用户新填的 key；为空表示沿用 profile_id 已存的 key（后端不回传完整 key）。
+    #[serde(default)]
     key: String,
+    /// 编辑已存 profile 时传其 id（用于沿用已存 key）。
+    #[serde(default)]
+    profile_id: Option<String>,
 }
 
-/// live 探测结果（id + 能力）∪ 预设 builtin，去重（按 id）+ 排序（true>null>false，主列表 id 微调靠前）。
-/// 纯逻辑，便于单测。
+/// live 探测结果（id + 能力）∪ builtin，去重（按 id）+ 排序（true>null>false，主列表 id 微调靠前）。
 fn merge_and_sort_models(
     live: Vec<(String, Option<bool>)>,
     builtin: &[&str],
@@ -659,10 +864,9 @@ fn merge_and_sort_models(
     }
     for b in builtin {
         if seen.insert(b.to_string()) {
-            merged.push((b.to_string(), None)); // builtin 无能力信息 → null
+            merged.push((b.to_string(), None));
         }
     }
-    // 排序键：能力档（true=0, null=1, false=2）为主，主列表 id 在同档内微靠前。
     merged.sort_by_key(|(id, st)| {
         let cap = match st {
             Some(true) => 0u8,
@@ -678,39 +882,36 @@ fn merge_and_sort_models(
         .collect()
 }
 
-/// 解析探测用 key：新填的优先，否则沿用该预设已存的（后端内部用，绝不回传前端）。
-fn resolve_probe_key(preset: &str, candidate: &str) -> Result<String, String> {
+/// 解析探测用 key：新填的优先，否则沿用 profile_id 已存的（后端内部用，绝不回传前端）。
+fn resolve_probe_key(profile_id: Option<&str>, candidate: &str) -> Result<String, String> {
     let c = candidate.trim();
     if !c.is_empty() {
         return Ok(c.to_string());
     }
+    let pid = profile_id.ok_or("请先填写 API Key / Token。")?;
     let cfg = config::load_from(&config::default_dir()).map_err(|e| e.to_string())?;
-    cfg.key_for(preset)
-        .ok_or_else(|| "请先填写中转站 API Key / Token。".to_string())
+    cfg.profile_by_id(pid)
+        .map(|p| p.api_key.clone())
+        .filter(|k| !k.is_empty())
+        .ok_or_else(|| "请先填写 API Key / Token。".to_string())
 }
 
-/// 「获取中转站可用模型」——**纯 scratch 探测**（修评审 P1-2）：只用临时代理探候选
-/// base_url/key 的 /v1/models，**绝不写 config、不改 AppState、不碰正在服务 Science 的正式代理**
-/// （用户查看别家模型不会切走当前对话）。返回 {models:[{id,supports_tools}], source, error_kind, upstream_status}。
+/// 「获取可用模型」——纯 scratch 探测：只用临时代理探候选 base_url/key 的 /v1/models，
+/// 绝不写 config、不改 AppState、不碰正在服务 Science 的正式代理。
 #[tauri::command]
-fn fetch_relay_models(
-    app: tauri::AppHandle,
-    req: RelayModelsReq,
-) -> Result<serde_json::Value, String> {
-    let preset_id = req.preset.trim();
-    let preset =
-        relay_presets::by_id(preset_id).ok_or_else(|| format!("未知中转站预设：{preset_id}"))?;
-    // base_url：预设不可编辑则用预设的；自定义用前端填的。
-    let base_url = if preset.base_url_editable {
+fn fetch_models(app: tauri::AppHandle, req: FetchModelsReq) -> Result<serde_json::Value, String> {
+    let tid = req.template_id.trim();
+    let tpl = templates::by_id(tid).ok_or_else(|| format!("未知模板：{tid}"))?;
+    let base_url = if tpl.base_url_editable {
         req.base_url.trim().to_string()
     } else {
-        preset.base_url.to_string()
+        tpl.base_url.to_string()
     };
     if base_url.is_empty() || !(base_url.starts_with("http://") || base_url.starts_with("https://"))
     {
-        return Err("请先填写中转站 base_url（http:// 或 https:// 开头）。".into());
+        return Err("请先填写 base_url（http:// 或 https:// 开头）。".into());
     }
-    let key = resolve_probe_key(preset_id, &req.key)?;
+    let key = resolve_probe_key(req.profile_id.as_deref(), &req.key)?;
     let root = asset_root(&app).ok_or("找不到代理脚本 proxy/csswitch_proxy.py。")?;
     let py = proc::find_exe("python3").ok_or("缺少依赖 python3（起临时代理需要）。")?;
     let script = root.join("proxy/csswitch_proxy.py");
@@ -723,10 +924,9 @@ fn fetch_relay_models(
         None,
         scratch::ProbeKind::Models,
     );
-    let builtin = preset.builtin_models;
+    let builtin = tpl.builtin_models;
     match scratch::classify(res.status) {
         scratch::ProbeOutcome::Ok => {
-            // 解析 body 的 data[].{id, supports_tools}。
             let v: serde_json::Value =
                 serde_json::from_str(&res.body).map_err(|e| format!("解析模型列表失败：{e}"))?;
             let live: Vec<(String, Option<bool>)> = v
@@ -743,7 +943,6 @@ fn fetch_relay_models(
                 })
                 .unwrap_or_default();
             if live.is_empty() {
-                // 200 但空列表：退回 builtin，标 source=builtin。
                 return Ok(json!({
                     "models": merge_and_sort_models(vec![], builtin),
                     "source": "builtin", "error_kind": null, "upstream_status": 200
@@ -755,17 +954,12 @@ fn fetch_relay_models(
             }))
         }
         scratch::ProbeOutcome::Auth(code) => {
-            // 硬失败：key/权限有误，不回列表（修评审 P2-1，不拿 builtin 掩盖坏 key）。
-            Err(format!("中转站拒绝（{code}），key 或权限可能有误。"))
+            Err(format!("上游拒绝（{code}），key 或权限可能有误。"))
         }
-        scratch::ProbeOutcome::ModelError(code) => {
-            // 404 等：多为该站无 /v1/models（如小米）→ 退回 builtin，前端标「内置/未验证」。
-            Ok(json!({
-                "models": merge_and_sort_models(vec![], builtin),
-                "source": "builtin", "error_kind": null, "upstream_status": code
-            }))
-        }
-        // Ambiguous(429/5xx) / NoResponse：回 builtin 但标 network（前端提示「未验证」）。
+        scratch::ProbeOutcome::ModelError(code) => Ok(json!({
+            "models": merge_and_sort_models(vec![], builtin),
+            "source": "builtin", "error_kind": null, "upstream_status": code
+        })),
         _ => Ok(json!({
             "models": merge_and_sort_models(vec![], builtin),
             "source": "network", "error_kind": "network", "upstream_status": res.status
@@ -773,7 +967,7 @@ fn fetch_relay_models(
     }
 }
 
-/// 选了模型 → 验具体模型（POST /v1/messages）；留空（仅透传预设）→ 验端点+鉴权（GET /v1/models）。
+/// 选了模型 → 验具体模型（POST /v1/messages）；留空 → 验端点+鉴权（GET /v1/models）。
 fn probe_kind_for_model(model: &str) -> scratch::ProbeKind {
     if model.trim().is_empty() {
         scratch::ProbeKind::Models
@@ -782,134 +976,9 @@ fn probe_kind_for_model(model: &str) -> scratch::ProbeKind {
     }
 }
 
-/// 预设表交前端铺 UI（单一来源，前端不复制常量）。
-#[tauri::command]
-fn get_relay_presets() -> serde_json::Value {
-    let list: Vec<serde_json::Value> = relay_presets::all()
-        .iter()
-        .map(|p| {
-            json!({
-                "id": p.id,
-                "name": p.name,
-                "base_url": p.base_url,
-                "base_url_editable": p.base_url_editable,
-                "requires_model_override": p.requires_model_override,
-                "builtin_models": p.builtin_models,
-            })
-        })
-        .collect();
-    json!({ "presets": list })
-}
-
-#[derive(Deserialize)]
-struct SaveRelayReq {
-    preset: String,
-    /// 新填 key；空=沿用已存。
-    key: String,
-    base_url: String,
-    /// 选中的上游模型；空=透传（仅 requires_model_override=false 的预设允许）。
-    model: String,
-    /// 含糊态（网络/429/5xx）时用户显式跳过验证直接存。
-    skip_verify: bool,
-}
-
-/// 事务化存中转站配置（修评审 P1-1）：候选 → scratch 代理验证 →**仅 200 才原子提交 + 切正式代理**。
-/// 401/403/模型错 → 不提交、不动旧链路；网络/429/5xx → 不提交 + 提示可「跳过验证保存」。
-/// 与 native-entry validate_and_save 共用 scratch 内核（spec §11）。
-#[tauri::command]
-fn save_relay_config(
-    app: tauri::AppHandle,
-    state: State<'_, Mutex<AppState>>,
-    req: SaveRelayReq,
-) -> Result<serde_json::Value, String> {
-    let preset_id = req.preset.trim().to_string();
-    let preset =
-        relay_presets::by_id(&preset_id).ok_or_else(|| format!("未知中转站预设：{preset_id}"))?;
-    let base_url = if preset.base_url_editable {
-        req.base_url.trim().to_string()
-    } else {
-        preset.base_url.to_string()
-    };
-    if base_url.is_empty() || !(base_url.starts_with("http://") || base_url.starts_with("https://"))
-    {
-        return Err("请先填写中转站 base_url（http:// 或 https:// 开头）。".into());
-    }
-    let model = req.model.trim().to_string();
-    // 门控：requires_model_override 的预设禁止留空透传（杜绝存下必坏配置，修评审 P1-3）。
-    if preset.requires_model_override && model.is_empty() {
-        return Err(format!(
-            "{} 需要选一个模型才能保存（该中转站不认 claude-* / 无 /v1/models）。",
-            preset.name
-        ));
-    }
-    let key = resolve_probe_key(&preset_id, &req.key)?;
-
-    // 提交闭包：落盘 providers[preset] + provider=preset，随后切正式代理。
-    let commit = {
-        let dir = config::default_dir();
-        let (pid, bu, k, m) = (
-            preset_id.clone(),
-            base_url.clone(),
-            key.clone(),
-            model.clone(),
-        );
-        move || -> Result<(), String> {
-            config::update(&dir, |c| {
-                c.provider = pid.clone();
-                let e = c.providers.entry(pid.clone()).or_default();
-                e.key = k.clone();
-                e.base_url = bu.clone();
-                e.model = m.clone();
-            })
-            .map_err(|e| e.to_string())?;
-            Ok(())
-        }
-    };
-
-    if req.skip_verify {
-        commit()?;
-        let (_p, _s, _a) = ensure_proxy(&app, &state)?; // 切正式代理（带新配置）
-        return Ok(json!({ "committed": true, "hint": "已跳过验证保存并切换代理。" }));
-    }
-
-    // scratch 验证（不碰正式链路）。
-    let root = asset_root(&app).ok_or("找不到代理脚本 proxy/csswitch_proxy.py。")?;
-    let py = proc::find_exe("python3").ok_or("缺少依赖 python3（起临时代理需要）。")?;
-    let script = root.join("proxy/csswitch_proxy.py");
-    let res = scratch::scratch_probe(
-        &py,
-        &script,
-        &base_url,
-        &key,
-        Some(&model),
-        probe_kind_for_model(&model),
-    );
-    match scratch::classify(res.status) {
-        scratch::ProbeOutcome::Ok => {
-            commit()?;
-            ensure_proxy(&app, &state)?;
-            Ok(json!({ "committed": true, "hint": "验证通过，已保存并切换代理。" }))
-        }
-        scratch::ProbeOutcome::Auth(code) => Ok(json!({
-            "committed": false,
-            "hint": format!("上游拒绝（{code}），key/权限有误，未保存（旧配置不变）。")
-        })),
-        scratch::ProbeOutcome::ModelError(code) => Ok(json!({
-            "committed": false,
-            "hint": format!("上游拒绝该模型（{code}），未保存。请换一个模型或核对 base_url。")
-        })),
-        scratch::ProbeOutcome::Ambiguous(_) | scratch::ProbeOutcome::NoResponse => Ok(json!({
-            "committed": false,
-            "hint": "无法确认（网络/上游繁忙），未保存。可重试，或用「跳过验证保存」。",
-            "can_skip": true
-        })),
-    }
-}
-
 #[tauri::command]
 fn stop_all(app: tauri::AppHandle, state: State<'_, Mutex<AppState>>) -> Result<(), String> {
     let mut st = lock(&state);
-    // 先停沙箱并记录结果；代理无论如何都杀。沙箱没停干净则如实返错，不虚报成功。
     let sandbox_res = stop_sandbox_inner(&app, &mut st);
     kill_child(&mut st.proxy);
     st.secret.clear();
@@ -921,25 +990,17 @@ fn one_click_login(
     app: tauri::AppHandle,
     state: State<'_, Mutex<AppState>>,
 ) -> Result<serde_json::Value, String> {
-    // 1~3. 确保代理在跑且健康（内部已查 key、探活）。带回本次是复用还是重启。
+    // 1~3. 确保代理在跑且健康（内部已查生效 profile、key、探活）。带回本次是复用还是重启。
     let (pport, secret, proxy_action) = ensure_proxy(&app, &state)?;
 
     let dir = config::default_dir();
     let cfg = config::load_from(&dir).map_err(|e| e.to_string())?;
     let sport = cfg.sandbox_port;
 
-    // sandbox_home() 作沙箱根：伪造器要求解析后的 auth_dir 落在其下，防符号链接重定向（P1）。
     let sbx_home = sandbox_home();
     let auth_dir = sbx_home.join(".claude-science");
 
-    // 沙箱已健康 → 但「daemon 活着」≠「登录态可用」：先只读校验虚拟登录是否自洽（修 0.2.1 Bug2）。
-    // - 自洽 → 绝不重伪造、绝不重跑 launch（连 auth 文件都不读，operon 可能正在用），只重取
-    //   URL + 打开。修 #3/#6：活动 org 不变，旧对话一直在。
-    // - 健康但登录失效（旧版遗留 / 凭证损坏 / 已落登录页）→ 重开也只会再落登录页，故停沙箱、
-    //   落到下面「修复保 org + 重启」路径自愈（0.2.0 的健康快捷路径漏了这一步）。
-    // P2b：asset_root() 只在下面「需启动」分支才取。
-    // P2（GPT 复审）：用 sandbox_running_ours 而非裸端口 /health——按 data-dir 强身份判定，
-    // 避免端口被冒名服务占用且恰好返回 200 时误报「已重新打开 Science」。
+    // 沙箱已健康 → 但「daemon 活着」≠「登录态可用」：先只读校验虚拟登录是否自洽。
     if sandbox_running_ours(sport) {
         if oauth_forge::login_intact(&auth_dir, "virtual@localhost.invalid", &sbx_home) {
             let url = sandbox_url(sport);
@@ -952,27 +1013,22 @@ fn one_click_login(
                 ProxyAction::Reused => "已在运行",
                 ProxyAction::Restarted => "已用新配置重启代理，Science 沿用不变",
             };
-            // P2c：捕获打开结果——open 失败不谎报「已重新打开」，改提示手动打开。
             let msg = match open_in_browser(&url) {
                 Ok(()) => format!("{base}，已重新打开 Science。"),
                 Err(_) => format!("{base}，服务已就绪，请手动打开：{url}"),
             };
             return Ok(json!({ "url": url, "msg": msg, "action": "reopened" }));
         }
-        // 健康但登录态失效：停沙箱，让下面 relaunch 拿到修复后的登录材料（daemon 运行中不会
-        // 重读 auth）。ensure_virtual_login 幂等：保住 org（旧对话不丢），只重铸失效的登录。
         {
             let mut st = lock(&state);
             let _ = stop_sandbox_inner(&app, &mut st);
         }
     }
 
-    // 沙箱没起 / 挂了 / 登录失效已停 → 需要 launch 资源，此时才定位（P2b）。确保虚拟登录（幂等）+ launch。
+    // 沙箱没起 / 挂了 / 登录失效已停 → 需要 launch 资源，此时才定位。确保虚拟登录（幂等）+ launch。
     let root = asset_root(&app)
         .ok_or("找不到 scripts/launch-virtual-sandbox.sh（打包资源或仓库根均未命中）。")?;
 
-    // 进程内确保虚拟 OAuth（Rust 原生密码学，零 node）。幂等：现有登录完整就复用、部分坏就
-    // 修复但保住 org、真首次才铸新 —— 修 #3/#6 的核心（不再无条件换 org 孤儿化旧对话）。
     let (forged, login_action) =
         oauth_forge::ensure_virtual_login(&auth_dir, "virtual@localhost.invalid", &sbx_home)
             .map_err(|e| format!("写虚拟登录失败：{e}"))?;
@@ -985,7 +1041,6 @@ fn one_click_login(
     // 4. 起沙箱：脚本以 --detached 起 Science，然后返回。
     let proxy_url = format!("http://127.0.0.1:{pport}/{secret}");
     let logf = open_log("sandbox.log").map_err(|e| format!("建日志失败：{e}"))?;
-    // 虚拟登录摘要面包屑（无密钥；uuid/假账号/沙箱路径均不敏感），便于用户附日志排查。
     {
         use std::io::Write;
         let mut lw = &logf;
@@ -1000,14 +1055,13 @@ fn one_click_login(
         );
     }
     let logf2 = logf.try_clone().map_err(|e| e.to_string())?;
-    let status = Command::new("zsh") // launch 脚本是 #!/bin/zsh（用了 ${VAR:A} realpath）
+    let status = Command::new("zsh")
         .arg(&launch)
         .arg("--port")
         .arg(sport.to_string())
         .arg("--proxy-url")
         .arg(&proxy_url)
-        .arg("--skip-oauth-forge") // OAuth 已由上面 Rust 进程内伪造，脚本别再调 node
-        // 沙箱状态落在可写目录（打包后资源目录只读），launch/stop/取 URL 三处同一路径。
+        .arg("--skip-oauth-forge")
         .env("SANDBOX_HOME", sandbox_home())
         .stdout(Stdio::from(logf))
         .stderr(Stdio::from(logf2))
@@ -1029,20 +1083,16 @@ fn one_click_login(
     }
     if !ok {
         let tail = redact(&tail_file(&log_path("sandbox.log"), 600), &secret);
-        // 探活超时：脚本已把 Science 以 --detached 起在后台，必须停掉，
-        // 否则留一个孤儿沙箱进程（修 P2-2）。
         {
             let mut st = lock(&state);
-            let _ = stop_sandbox_inner(&app, &mut st); // best-effort 清理，结果不影响这里的报错
+            let _ = stop_sandbox_inner(&app, &mut st);
         }
         return Err(format!(
             "沙箱起后探活超时（端口 {sport}）。已尝试停掉刚起的沙箱。\n{tail}"
         ));
     }
 
-    // 5b. 身份确认（修 P2 GPT 复审）：/health 200 只证明端口在服务，不证明是我们的 Science。
-    // 用 data-dir 强身份再确认一次；不是我们的（端口被冒名服务占用）→ 当启动失败处理，
-    // 停掉可能已在后台的沙箱并如实报错，别对着冒名服务谎报「已启动」。
+    // 5b. 身份确认：/health 200 只证明端口在服务，用 data-dir 强身份再确认一次。
     if !sandbox_running_ours(sport) {
         {
             let mut st = lock(&state);
@@ -1062,9 +1112,8 @@ fn one_click_login(
     }
     let started = match login_action {
         oauth_forge::LoginAction::Created => "已启动",
-        _ => "沙箱已重新启动，沿用原有对话", // Reused / Repaired
+        _ => "沙箱已重新启动，沿用原有对话",
     };
-    // P2c：同样捕获打开结果。
     let msg = match open_in_browser(&url) {
         Ok(()) => format!("{started}。"),
         Err(_) => format!("{started}，服务已就绪，请手动打开：{url}"),
@@ -1073,10 +1122,6 @@ fn one_click_login(
 }
 
 /// 从 `claude-science url` 的 stdout 里取**第一条**合法 http(s) URL。
-/// Science 的 `url` 命令会输出多行（第一行是真 URL，随后行是「single-use…」说明）；把整段
-/// stdout 当 URL 交给 `open` 会带上换行与说明文字 → 打开错误入口、nonce 不被正确消费 → 落到
-/// `/login`（修 0.2.1 Bug1）。故逐行找第一条以 `http://`/`https://` 开头的行，并只取该行首个
-/// 非空白 token（URL 内不含空白，若同行尾随了说明也被切掉）。找不到返回 None。
 fn first_http_url(stdout: &str) -> Option<String> {
     for line in stdout.lines() {
         let t = line.trim();
@@ -1089,7 +1134,6 @@ fn first_http_url(stdout: &str) -> Option<String> {
 }
 
 /// 取沙箱 UI 链接：`<bin> url --data-dir <home>/.claude-science`，HOME 指向沙箱 HOME。
-/// 失败退回 http://127.0.0.1:<port>。沙箱 HOME 用 [`sandbox_home`]（与 launch 时一致）。
 fn sandbox_url(port: u16) -> String {
     let home = sandbox_home();
     let data_dir = home.join(".claude-science");
@@ -1102,7 +1146,6 @@ fn sandbox_url(port: u16) -> String {
             .output()
         {
             let s = String::from_utf8_lossy(&out.stdout);
-            // 只取第一条合法 URL（修 0.2.1 Bug1）：url 命令多行输出里第一行才是真 URL。
             if let Some(url) = first_http_url(&s) {
                 return url;
             }
@@ -1111,10 +1154,8 @@ fn sandbox_url(port: u16) -> String {
     format!("http://127.0.0.1:{port}")
 }
 
-/// 判断「我们自己的」沙箱 Science 是否在跑（供一键健康分派）。收紧（P2 GPT 复审）：优先用
-/// Science 二进制按【我们的 data-dir】查 `{"running":true}`，这是强身份——不会被恰好占用
-/// `port` 且返回 200 的冒名服务骗过；再叠加端口 /health 确认确实在服务。二进制不在（纯 dev /
-/// 研究者机器）时退化为仅端口探活（原行为）。
+/// 判断「我们自己的」沙箱 Science 是否在跑（供一键健康分派）。优先用 Science 二进制按
+/// 【我们的 data-dir】查 `{"running":true}`（强身份）；再叠加端口 /health 确认。
 fn sandbox_running_ours(port: u16) -> bool {
     let home = sandbox_home();
     let data_dir = home.join(".claude-science");
@@ -1128,11 +1169,9 @@ fn sandbox_running_ours(port: u16) -> bool {
         {
             Ok(out) => {
                 let s = String::from_utf8_lossy(&out.stdout);
-                // 形如 {"running":true,...}：只认我们这个 data-dir 的 daemon 在跑。
                 let running = s.contains("\"running\":true") || s.contains("\"running\": true");
                 return running && proc::http_health(port, None, 400);
             }
-            // 二进制在但调用失败 → 保守退化到端口探活，别因探测本身出错就误判没起。
             Err(_) => return proc::http_health(port, None, 400),
         }
     }
@@ -1142,7 +1181,7 @@ fn sandbox_running_ours(port: u16) -> bool {
 #[tauri::command]
 fn status(state: State<'_, Mutex<AppState>>) -> serde_json::Value {
     // 只在锁内取值，锁外做阻塞探活。
-    let (pport, secret, sport, provider, base_url) = {
+    let (pport, secret, sport, adapter, base_url) = {
         let st = lock(&state);
         let cfg = config::load_from(&config::default_dir()).unwrap_or_default();
         let pport = if st.proxy_port != 0 {
@@ -1155,22 +1194,27 @@ fn status(state: State<'_, Mutex<AppState>>) -> serde_json::Value {
         } else {
             cfg.sandbox_port
         };
-        let base_url = cfg.base_url_for(&cfg.provider).unwrap_or_default();
-        (pport, st.secret.clone(), sport, cfg.provider, base_url)
+        // 上游灯读生效 profile 的 adapter/base_url；无生效配置 → 空（灯显黄，不误探）。
+        let (adapter, base_url) = match cfg.active_profile() {
+            Some(p) => (
+                templates::adapter_for(&p.template_id).to_string(),
+                p.base_url.clone(),
+            ),
+            None => (String::new(), String::new()),
+        };
+        (pport, st.secret.clone(), sport, adapter, base_url)
     };
     let proxy = if !secret.is_empty() && proc::http_health(pport, Some(&secret), 300) {
         "green"
     } else {
         "amber"
     };
-    // 状态灯也用 data-dir 强身份（修 P2 GPT 复审），避免端口被冒名服务占用时误显绿灯。
-    // status() 是按需调用（前端 refreshStatus 在动作后触发，非高频轮询），一次子进程可接受。
     let sandbox = if sandbox_running_ours(sport) {
         "green"
     } else {
         "amber"
     };
-    let uhost = upstream_host(&provider, &base_url);
+    let uhost = upstream_host(&adapter, &base_url);
     let upstream = if !uhost.is_empty() && proc::tcp_reachable(&uhost, 443, 500) {
         "green"
     } else {
@@ -1191,14 +1235,23 @@ fn run_doctor(app: tauri::AppHandle) -> Result<String, String> {
     let root = asset_root(&app).ok_or("找不到 scripts/doctor.sh（打包资源或仓库根均未命中）。")?;
     let cfg = config::load_from(&config::default_dir()).unwrap_or_default();
     let doctor = root.join("scripts/doctor.sh");
+    // 生效 profile 的展示名（template_id）+ adapter + 有无 key；无生效配置则留空。
+    let (provider_label, adapter, has_key) = match cfg.active_profile() {
+        Some(p) => (
+            p.template_id.clone(),
+            templates::adapter_for(&p.template_id),
+            !p.api_key.is_empty(),
+        ),
+        None => (String::new(), "", false),
+    };
     let mut cmd = Command::new("bash");
     cmd.arg(&doctor)
-        .env("CSSWITCH_PROVIDER", &cfg.provider)
+        .env("CSSWITCH_PROVIDER", &provider_label)
         .env("CSSWITCH_PROXY_PORT", cfg.proxy_port.to_string())
         .env("CSSWITCH_SANDBOX_PORT", cfg.sandbox_port.to_string());
     // doctor 只做 -n 判空来报 key 有无。只让它知道「存在」，绝不把真实 key 传进其环境。
-    if cfg.key_for(&cfg.provider).is_some() {
-        cmd.env(key_env(&cfg.provider), "***present***");
+    if has_key {
+        cmd.env(key_env_for_adapter(adapter), "***present***");
     }
     let out = cmd.output().map_err(|e| e.to_string())?;
     let mut text = String::from_utf8_lossy(&out.stdout).to_string();
@@ -1260,15 +1313,19 @@ pub fn run() {
         .manage(Mutex::new(AppState::default()))
         .invoke_handler(tauri::generate_handler![
             get_config,
-            set_config,
+            list_templates,
+            set_settings,
             set_mode,
             open_official,
-            save_provider_key,
+            create_profile,
+            update_profile_metadata,
+            update_profile_connection,
+            clear_profile_key,
+            delete_profile,
+            set_active_profile,
             start_proxy,
             verify_key,
-            fetch_relay_models,
-            save_relay_config,
-            get_relay_presets,
+            fetch_models,
             stop_all,
             one_click_login,
             status,
@@ -1281,25 +1338,14 @@ pub fn run() {
             quit_app
         ])
         .setup(|app| {
-            // 正常桌面应用：进 Dock、走常规应用生命周期（默认 Regular 策略，
-            // 不再设 Accessory）。窗口在 tauri.conf.json 里配了 decorations（标题栏
-            // 三键：关闭/最小化/缩放）+ visible + center，启动即居中弹出、可拖动
-            // （修 #4；标题栏自带拖动，顺带解决 #1 拖不动）。托盘图标已移除。
+            // 正常桌面应用：进 Dock、走常规应用生命周期。窗口在 tauri.conf.json 里配了
+            // decorations + visible + center，启动即居中弹出、可拖动。托盘图标已移除。
 
-            // 遗留 provider=relay 迁移（防御项，幂等）：把 PR #4 单槽迁到多槽 relay-<preset>。
-            // 本机无 relay 槽 → no-op；下游若有旧槽则一次性迁移并落盘。
-            {
-                let dir = config::default_dir();
-                if let Ok(mut cfg) = config::load_from(&dir) {
-                    if relay_presets::migrate_legacy_relay(&mut cfg) {
-                        let _ = config::update(&dir, |c| *c = cfg.clone());
-                    }
-                }
-            }
+            // 启动即触发一次 load：若是旧 v1 固定槽文件，这里完成 v1→v2 迁移 + 落盘 + 留 .v1.bak；
+            // 悬空 active 归一化为空。迁移逻辑并入 config::load_from（不再单独跑 relay_presets）。
+            let _ = config::load_from(&config::default_dir());
 
-            // 关窗即退出：与「退出」按钮一致 —— 停代理、清 secret，保留沙箱运行
-            // （spec §5.1）。不接这一步，从标题栏红叉关窗会绕过 quit_app 直接退，
-            // 把代理子进程留成孤儿。
+            // 关窗即退出：与「退出」按钮一致 —— 停代理、清 secret，保留沙箱运行（spec §5.1）。
             if let Some(win) = app.get_webview_window("main") {
                 let handle = app.handle().clone();
                 win.on_window_event(move |ev| {
@@ -1320,37 +1366,200 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::{
-        first_http_url, is_main_list_model, is_relay, key_env, key_fingerprint,
-        merge_and_sort_models, parse_host, redact, sandbox_home,
+        assert_format_supported, build_get_config, build_list_templates, clear_profile_key_inner,
+        create_profile_inner, delete_profile_inner, first_http_url, is_main_list_model,
+        key_env_for_adapter, key_fingerprint, merge_and_sort_models, parse_host,
+        probe_kind_for_model, proxy_args_for, redact, sandbox_home,
+        update_profile_connection_inner, update_profile_metadata_inner, upstream_host,
     };
+    use crate::config;
+
+    /// 每个测试用独立临时 `.csswitch` 目录（进程 id + 线程 id + 随机后缀），互不干扰。
+    fn tmpdir_lib() -> std::path::PathBuf {
+        let base = std::env::temp_dir().join(format!("csswitch-lib-test-{}", std::process::id()));
+        let d = base.join(format!(
+            "{:?}-{}",
+            std::thread::current().id(),
+            config::new_id()
+        ));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d.join(".csswitch")
+    }
+
+    // ---------- B2: proxy_args_for / assert_format_supported ----------
+    #[test]
+    fn proxy_args_derive_adapter_and_key_env() {
+        use crate::config::Profile;
+        let ds = Profile {
+            template_id: "deepseek".into(),
+            api_format: "anthropic".into(),
+            base_url: "https://api.deepseek.com/anthropic".into(),
+            api_key: "sk-ds".into(),
+            ..Default::default()
+        };
+        let a = proxy_args_for(&ds);
+        assert_eq!(a.adapter, "deepseek");
+        assert_eq!(a.key_env, "DEEPSEEK_API_KEY");
+
+        let glm = Profile {
+            template_id: "glm".into(),
+            api_format: "anthropic".into(),
+            base_url: "https://open.bigmodel.cn/api/anthropic".into(),
+            api_key: "gk".into(),
+            model: "glm-5".into(),
+            ..Default::default()
+        };
+        let b = proxy_args_for(&glm);
+        assert_eq!(b.adapter, "relay");
+        assert_eq!(b.key_env, "CSSWITCH_RELAY_KEY");
+        assert_eq!(b.base_url, "https://open.bigmodel.cn/api/anthropic");
+        assert_eq!(b.model, "glm-5");
+    }
 
     #[test]
+    fn unsupported_api_format_is_rejected() {
+        use crate::config::Profile;
+        let p = Profile {
+            template_id: "custom".into(),
+            api_format: "gemini_native".into(),
+            base_url: "https://x/y".into(),
+            api_key: "k".into(),
+            ..Default::default()
+        };
+        assert!(assert_format_supported(&p).is_err());
+        let ok = Profile {
+            api_format: "anthropic".into(),
+            ..p.clone()
+        };
+        assert!(assert_format_supported(&ok).is_ok());
+        let ok2 = Profile {
+            api_format: "openai_chat".into(),
+            ..p
+        };
+        assert!(assert_format_supported(&ok2).is_ok());
+    }
+
+    #[test]
+    fn key_env_for_adapter_maps_adapters() {
+        assert_eq!(key_env_for_adapter("deepseek"), "DEEPSEEK_API_KEY");
+        assert_eq!(key_env_for_adapter("qwen"), "DASHSCOPE_API_KEY");
+        assert_eq!(key_env_for_adapter("relay"), "CSSWITCH_RELAY_KEY");
+        assert_eq!(key_env_for_adapter("anything-else"), "CSSWITCH_RELAY_KEY");
+    }
+
+    // ---------- B4: profile CRUD *_inner ----------
+    #[test]
+    fn create_profile_from_template_prefills() {
+        let d = tmpdir_lib();
+        let id = create_profile_inner(&d, "glm", "我的 GLM", Some("gk"), None, None).unwrap();
+        let cfg = config::load_from(&d).unwrap();
+        let p = cfg.profile_by_id(&id).unwrap();
+        assert_eq!(p.template_id, "glm");
+        assert_eq!(p.name, "我的 GLM");
+        assert_eq!(p.api_format, "anthropic");
+        assert_eq!(p.base_url, "https://open.bigmodel.cn/api/anthropic");
+        assert_eq!(p.api_key, "gk");
+        assert_eq!(cfg.active_id, "", "新建不自动生效");
+    }
+
+    #[test]
+    fn update_metadata_does_not_touch_key() {
+        let d = tmpdir_lib();
+        let id = create_profile_inner(&d, "glm", "GLM", Some("secret9"), None, None).unwrap();
+        update_profile_metadata_inner(&d, &id, "改名", Some("备注")).unwrap();
+        let cfg = config::load_from(&d).unwrap();
+        let p = cfg.profile_by_id(&id).unwrap();
+        assert_eq!(p.name, "改名");
+        assert_eq!(p.notes.as_deref(), Some("备注"));
+        assert_eq!(p.api_key, "secret9", "元数据编辑不动 key");
+    }
+
+    #[test]
+    fn clear_key_empties_key_and_drops_backup() {
+        let d = tmpdir_lib();
+        let id = create_profile_inner(&d, "glm", "GLM", Some("secretTAIL"), None, None).unwrap();
+        config::write_rolling_backup(&d).ok();
+        clear_profile_key_inner(&d, &id).unwrap();
+        let cfg = config::load_from(&d).unwrap();
+        assert_eq!(cfg.profile_by_id(&id).unwrap().api_key, "");
+        assert!(!d.join("config.json.bak").exists(), "清 key 后净化滚动备份");
+    }
+
+    #[test]
+    fn delete_active_clears_active() {
+        let d = tmpdir_lib();
+        let id = create_profile_inner(&d, "glm", "GLM", Some("k"), None, None).unwrap();
+        config::update(&d, |c| c.active_id = id.clone()).unwrap();
+        delete_profile_inner(&d, &id).unwrap();
+        let cfg = config::load_from(&d).unwrap();
+        assert!(cfg.profile_by_id(&id).is_none());
+        assert_eq!(cfg.active_id, "", "删 active → 置空");
+    }
+
+    #[test]
+    fn update_connection_rejects_unsupported_format() {
+        let d = tmpdir_lib();
+        let id = create_profile_inner(&d, "custom", "C", None, Some("https://x/y"), None).unwrap();
+        let e = update_profile_connection_inner(
+            &d,
+            &id,
+            Some("https://x/y"),
+            Some("gemini_native"),
+            None,
+            None,
+        );
+        assert!(e.is_err());
+    }
+
+    // ---------- B5: build_get_config / build_list_templates ----------
+    #[test]
+    fn get_config_masks_keys_and_lists_profiles() {
+        let d = tmpdir_lib();
+        let id =
+            create_profile_inner(&d, "glm", "GLM", Some("sk-longsecret9999"), None, None).unwrap();
+        let v = build_get_config(&d).unwrap();
+        assert_eq!(v["schema_version"], 2);
+        let arr = v["profiles"].as_array().unwrap();
+        let p = arr.iter().find(|p| p["id"] == id).unwrap();
+        assert!(p["key"].as_str().unwrap().ends_with("9999"));
+        assert!(
+            !p["key"].as_str().unwrap().contains("longsecret"),
+            "只回掩码"
+        );
+        assert!(
+            p.get("api_key").is_none() || p["api_key"].is_null(),
+            "全 key 不出后端"
+        );
+    }
+
+    #[test]
+    fn list_templates_has_seven() {
+        let v = build_list_templates();
+        assert_eq!(v.len(), 7);
+        assert!(v.iter().any(|t| t["id"] == "custom"));
+    }
+
+    // ---------- 既有纯逻辑不变量（保留） ----------
+    #[test]
     fn first_http_url_takes_only_first_valid_url() {
-        // Science 的 `url` 命令输出两行：第一行是真 URL，第二行是「single-use…」说明。
-        // 旧代码把整段 stdout 当 URL 交给 open → 换行+说明污染参数、nonce 不被消费 → 落登录页。
-        // 只能取第一条合法 http(s) URL（修 0.2.1 Bug1）。
         let multi = "http://127.0.0.1:8990/setup?nonce=abc123\n\
                      This is a single-use link, expires in 60 seconds.";
         assert_eq!(
             first_http_url(multi).as_deref(),
             Some("http://127.0.0.1:8990/setup?nonce=abc123"),
-            "多行输出必须只取第一行 URL，丢弃说明文字"
         );
-        // 同一行 URL 后跟了说明，只取 URL token（URL 内不含空白）。
         let inline = "https://x.example/y?z=1  (single-use)";
         assert_eq!(
             first_http_url(inline).as_deref(),
             Some("https://x.example/y?z=1")
         );
-        // 前导非 URL 行被跳过，取第一条 http 行。
         let lead = "Open this link in your browser:\nhttp://127.0.0.1:8990/a";
         assert_eq!(
             first_http_url(lead).as_deref(),
             Some("http://127.0.0.1:8990/a")
         );
-        // 无任何 URL → None（sandbox_url 据此退回裸端口）。
         assert_eq!(first_http_url("no url here\nnor here"), None);
-        // 单行纯 URL 原样返回。
         assert_eq!(
             first_http_url("http://127.0.0.1:8990").as_deref(),
             Some("http://127.0.0.1:8990")
@@ -1371,18 +1580,26 @@ mod tests {
             parse_host("https://relay.example.com:8443").as_deref(),
             Some("relay.example.com")
         );
-        // 无 scheme / 空 → None（status 上游灯据此显黄，不误探）。
         assert_eq!(parse_host("byteswarm.ai/claude"), None);
         assert_eq!(parse_host(""), None);
     }
 
     #[test]
+    fn upstream_host_by_adapter() {
+        assert_eq!(upstream_host("deepseek", ""), "api.deepseek.com");
+        assert_eq!(upstream_host("qwen", ""), "dashscope.aliyuncs.com");
+        assert_eq!(
+            upstream_host("relay", "https://open.bigmodel.cn/api/anthropic"),
+            "open.bigmodel.cn"
+        );
+        assert_eq!(upstream_host("", ""), "", "无生效配置 → 空（灯显黄）");
+    }
+
+    #[test]
     fn main_list_model_matches_family_plus_digit() {
-        // 会平铺进 Science 选择器主列表的。
         assert!(is_main_list_model("claude-opus-4-8"));
         assert!(is_main_list_model("claude-sonnet-5"));
         assert!(is_main_list_model("claude-haiku-4-5-20251001"));
-        // 不会平铺（折叠进 More models）：老式命名 / family 后非数字。
         assert!(!is_main_list_model("claude-3-5-sonnet-20241022"));
         assert!(!is_main_list_model("claude-fable-5"));
         assert!(!is_main_list_model("gpt-4o"));
@@ -1400,7 +1617,6 @@ mod tests {
 
     #[test]
     fn key_fingerprint_stable_and_distinct() {
-        // 同 key 稳定、异 key 不同：这是「换 key 触发代理重启」判断的基础（P1-2）。
         assert_eq!(key_fingerprint("sk-aaaa"), key_fingerprint("sk-aaaa"));
         assert_ne!(key_fingerprint("sk-aaaa"), key_fingerprint("sk-bbbb"));
         assert_ne!(key_fingerprint(""), key_fingerprint("x"));
@@ -1408,7 +1624,6 @@ mod tests {
 
     #[test]
     fn sandbox_home_is_writable_under_config_dir() {
-        // 沙箱状态目录必须在可写的 ~/.csswitch 下（不在只读的 .app 资源里）——P1-1。
         let h = sandbox_home();
         assert!(h.ends_with("sandbox/home"), "应以 sandbox/home 结尾：{h:?}");
         assert!(
@@ -1419,7 +1634,6 @@ mod tests {
 
     #[test]
     fn merge_and_sort_prefers_tools_then_dedupes_builtin() {
-        // live 结果 + builtin 兜底：去重（按 id），排序 true>null>false。
         let live = vec![
             ("m-notools".to_string(), Some(false)),
             ("m-tools".to_string(), Some(true)),
@@ -1430,40 +1644,21 @@ mod tests {
             .iter()
             .map(|v| v.get("id").unwrap().as_str().unwrap().to_string())
             .collect();
-        // m-tools(true) 最前；false 靠后；builtin-only 去重后附上（作为 null 能力）。
         assert_eq!(ids[0], "m-tools");
         assert!(ids.contains(&"m-builtin-only".to_string()));
         assert_eq!(ids.iter().filter(|i| *i == "m-tools").count(), 1, "去重");
-        // 末位是明确不支持工具的。
         assert_eq!(ids.last().unwrap(), "m-notools");
     }
 
     #[test]
     fn probe_kind_picks_message_when_model_set() {
         assert!(matches!(
-            super::probe_kind_for_model("mimo-v2.5-pro"),
+            probe_kind_for_model("mimo-v2.5-pro"),
             crate::scratch::ProbeKind::Message
         ));
         assert!(matches!(
-            super::probe_kind_for_model(""),
+            probe_kind_for_model(""),
             crate::scratch::ProbeKind::Models
         ));
-    }
-
-    #[test]
-    fn is_relay_matches_bare_and_preset_slots() {
-        assert!(is_relay("relay"));
-        assert!(is_relay("relay-xiaomi"));
-        assert!(is_relay("relay-custom"));
-        assert!(!is_relay("deepseek"));
-        assert!(!is_relay("qwen"));
-    }
-
-    #[test]
-    fn key_env_relay_presets_use_relay_key_env() {
-        assert_eq!(key_env("relay-xiaomi"), "CSSWITCH_RELAY_KEY");
-        assert_eq!(key_env("relay-glm"), "CSSWITCH_RELAY_KEY");
-        assert_eq!(key_env("qwen"), "DASHSCOPE_API_KEY");
-        assert_eq!(key_env("deepseek"), "DEEPSEEK_API_KEY");
     }
 }
