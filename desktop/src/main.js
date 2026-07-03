@@ -204,7 +204,7 @@ function reflectProvider() {
 
 function currentSettings() {
   const s = {
-    provider: els.provider.value,
+    provider: els.provider.value === "relay" ? currentPresetId() : els.provider.value,
     proxy_port: parseInt(els.proxyPort.value, 10) || 18991,
     sandbox_port: parseInt(els.sandboxPort.value, 10) || 8990,
   };
