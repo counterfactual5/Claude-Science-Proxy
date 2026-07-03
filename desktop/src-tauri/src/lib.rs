@@ -300,6 +300,14 @@ fn decide_switch(scratch_ok: bool, real_healthy: bool) -> SwitchOutcome {
     }
 }
 
+/// 探活结束回锁后是否可写回 `st.proxy`：generation 未被取代【且】secret 仍是本次启动的。
+/// 抽成纯函数便于确定性单测（gen 同/异 × secret 同/异 4 组合）。
+/// secret 合取防「冷启动双起、两个不同 secret、generation 却相等」的窄窗：另起若用不同 secret
+/// 重置了槽位，本次就不该拿旧 child 覆盖它（起代理前会把 `st.secret` 预置成本次 secret，故合法启动上恒真）。
+fn should_write_back(gen_captured: u64, gen_now: u64, st_secret: &str, my_secret: &str) -> bool {
+    gen_captured == gen_now && st_secret == my_secret
+}
+
 /// 确保代理在跑且健康；返回 (端口, secret, 本次动作)。幂等：已健康则复用。
 /// 读【生效 profile】派生 adapter/base_url/model/key，委托 [`start_proxy_for`]。
 fn ensure_proxy(
@@ -388,6 +396,9 @@ fn start_proxy_for(
         kill_child(&mut st.proxy);
         st.provider.clear();
         st.key_fp = 0;
+        // 预置 st.secret = 本次 secret（persistent path-secret）：使探活后写回门的 secret 合取
+        // 在合法启动上恒真；只有并发另起用「不同 secret」重置了它，才会挡下写回（冷启动双起窄窗防御）。
+        st.secret = secret.clone();
         let script = root.join("proxy/csswitch_proxy.py");
         // 再清掉上次会话遗留、绑在同端口上的孤儿代理（匹配本安装的绝对脚本路径 + 端口）。
         let pat = format!("{}.*--port {port}", ere_escape(&script.to_string_lossy()));
@@ -439,11 +450,12 @@ fn start_proxy_for(
         ));
     }
 
-    // 健康 → 回 AppState 锁，校验 generation 未被 bump（未被清 key/停/切取代）才写回。
+    // 健康 → 回 AppState 锁，校验 generation 未被 bump 且 secret 仍是本次的（未被清 key/停/切/并发另起取代）才写回。
     {
         let mut st = lock(state);
-        if lifecycle.current_generation() != gen {
-            // 被更晚的操作取代：杀掉自己刚起的 child、不写回 st.proxy（不拿旧配置复活）。
+        if !should_write_back(gen, lifecycle.current_generation(), &st.secret, &secret) {
+            // 被更晚的操作取代（generation 变）或被并发另起用不同 secret 占了槽：
+            // 杀掉自己刚起的 child、不写回 st.proxy（不拿旧配置复活、不覆盖他人的槽）。
             let mut c = child;
             let _ = c.kill();
             let _ = c.wait();
@@ -851,21 +863,43 @@ fn update_profile_connection(
 ) -> Result<(), String> {
     lifecycle.with_serialized(|| {
         let dir = config::default_dir();
-        // 先持久化连接字段（未命中 id → Err，见 update_profile_connection_inner）。
-        update_profile_connection_inner(
-            &dir,
-            &id,
-            base_url.as_deref(),
-            api_format.as_deref(),
-            model.as_deref(),
-            key.as_deref(),
-        )?;
-        // 若改的是当前生效 profile：走切换事务（校验→起正式→健康→提交/回滚），而非裸重启（修 P1-4）。
         let cfg = config::load_from(&dir).map_err(|e| e.to_string())?;
+        // 未命中 id → Err（不静默 Ok）。
+        if cfg.profile_by_id(&id).is_none() {
+            return Err(format!("找不到 profile：{id}"));
+        }
         if cfg.active_id == id {
-            set_active_profile_txn(&app, &state, lifecycle.inner(), &id, false).map(|_| ())
-        } else {
+            // active（有正在服务的代理）：validate-before-persist —— 新连接作【内存候选】喂进
+            // 切换事务（校验→起正式→健康），探活健康【才】连同落盘；失败则磁盘连接零改动、
+            // 仍跑旧连接（杜绝「盘新运行旧」，修 P1-4）。
+            let edit = ConnectionEdit {
+                base_url,
+                api_format,
+                model,
+                key,
+            };
+            let v =
+                set_active_profile_txn(&app, &state, lifecycle.inner(), &id, false, Some(&edit))?;
+            // 连接编辑：committed:false（scratch 分类失败）也如实作为错误上抛（磁盘未改、代理仍跑旧的）。
+            if v.get("committed").and_then(|b| b.as_bool()) == Some(false) {
+                let hint = v
+                    .get("hint")
+                    .and_then(|h| h.as_str())
+                    .unwrap_or("连接校验未通过，连接未保存。")
+                    .to_string();
+                return Err(hint);
+            }
             Ok(())
+        } else {
+            // 非 active：无正在服务的代理，直接落盘（inner 内含格式门 + 覆盖前留底）。
+            update_profile_connection_inner(
+                &dir,
+                &id,
+                base_url.as_deref(),
+                api_format.as_deref(),
+                model.as_deref(),
+                key.as_deref(),
+            )
         }
     })
 }
@@ -880,8 +914,40 @@ fn set_active_profile(
     skip_verify: bool,
 ) -> Result<serde_json::Value, String> {
     lifecycle.with_serialized(|| {
-        set_active_profile_txn(&app, &state, lifecycle.inner(), &id, skip_verify)
+        set_active_profile_txn(&app, &state, lifecycle.inner(), &id, skip_verify, None)
     })
+}
+
+/// active 连接编辑的内存候选值（validate-before-persist 用）：不改的字段为 None。
+/// 校验时把它套到旧 profile 的克隆上做 scratch/起正式；提交成功时用**同一套** [`ConnectionEdit::apply`]
+/// 逻辑连同 active_id 一起落盘，杜绝「先落盘后校验」导致的「盘新运行旧」（P1-4）。
+#[derive(Default)]
+struct ConnectionEdit {
+    base_url: Option<String>,
+    api_format: Option<String>,
+    model: Option<String>,
+    key: Option<String>,
+}
+
+impl ConnectionEdit {
+    /// 把非空编辑值套到目标 profile（内存候选与落盘共用同一逻辑）。
+    /// 语义与 `update_profile_connection_inner` 一致：None=不改；key 为空串=不改（留占位不覆盖已存 key）。
+    fn apply(&self, p: &mut config::Profile) {
+        if let Some(u) = &self.base_url {
+            p.base_url = u.clone();
+        }
+        if let Some(f) = &self.api_format {
+            p.api_format = f.clone();
+        }
+        if let Some(m) = &self.model {
+            p.model = m.clone();
+        }
+        if let Some(k) = &self.key {
+            if !k.is_empty() {
+                p.api_key = k.clone();
+            }
+        }
+    }
 }
 
 /// 切换事务本体（spec §7）：scratch 校验候选 → 起正式代理探活 → 探活健康【才】提交 active_id；
@@ -893,13 +959,26 @@ fn set_active_profile_txn(
     lifecycle: &lifecycle::Lifecycle,
     id: &str,
     skip_verify: bool,
+    conn_edit: Option<&ConnectionEdit>,
 ) -> Result<serde_json::Value, String> {
     let dir = config::default_dir();
     let cfg = config::load_from(&dir).map_err(|e| e.to_string())?;
-    let candidate = cfg
+    let mut candidate = cfg
         .profile_by_id(id)
         .cloned()
         .ok_or_else(|| format!("找不到 profile：{id}"))?;
+    // active 连接编辑：把新连接字段套到【内存候选】做校验（validate-before-persist）——
+    // 磁盘此刻仍是旧连接；只有探活健康提交时才落盘（见下方 Commit 分支）。
+    if let Some(edit) = conn_edit {
+        edit.apply(&mut candidate);
+    }
+    let is_edit = conn_edit.is_some();
+    // 失败措辞：连接编辑说「未保存/仍在用原配置运行」，普通切换说「未切换/当前配置不变」。
+    let (verb, tail): (&str, &str) = if is_edit {
+        ("未保存", "仍在用原配置运行")
+    } else {
+        ("未切换", "当前配置不变")
+    };
     assert_format_supported(&candidate)?;
     let launch = proxy_args_for(&candidate);
     if launch.key.is_empty() {
@@ -933,15 +1012,15 @@ fn set_active_profile_txn(
             scratch::ProbeOutcome::Ok => true,
             scratch::ProbeOutcome::Auth(code) => {
                 return Ok(json!({ "committed": false,
-                    "hint": format!("上游拒绝（{code}），key/权限有误，未切换（当前配置不变）。") }));
+                    "hint": format!("上游拒绝（{code}），key/权限有误，{verb}（{tail}）。") }));
             }
             scratch::ProbeOutcome::ModelError(code) => {
                 return Ok(json!({ "committed": false,
-                    "hint": format!("上游拒绝该模型（{code}），未切换。请换一个模型或核对 base_url。") }));
+                    "hint": format!("上游拒绝该模型（{code}），{verb}。请换一个模型或核对 base_url。") }));
             }
             scratch::ProbeOutcome::Ambiguous(_) | scratch::ProbeOutcome::NoResponse => {
                 return Ok(json!({ "committed": false, "can_skip": true,
-                    "hint": "无法确认（网络/上游繁忙），未切换。可重试，或用「跳过验证」。" }));
+                    "hint": format!("无法确认（网络/上游繁忙），{verb}。可重试，或用「跳过验证」。") }));
             }
         }
     };
@@ -952,22 +1031,46 @@ fn set_active_profile_txn(
 
     match decide_switch(scratch_ok, real_healthy) {
         SwitchOutcome::Commit => {
-            // 探活健康【才】提交 active_id（盘上与运行态一致，杜绝「盘新运行旧」）。
-            config::update(&dir, |c| c.active_id = id.to_string()).map_err(|e| e.to_string())?;
-            Ok(json!({ "committed": true, "active_id": id,
-                "hint": format!("已切到「{}」。", candidate.name) }))
+            // 探活健康【才】落盘：连接编辑连同 active_id 一起提交（validate-before-persist），
+            // 盘上与运行态一致，杜绝「盘新运行旧」。
+            if is_edit {
+                config::write_rolling_backup(&dir).ok(); // 覆盖连接前留底（仅编辑路径需要）
+            }
+            config::update(&dir, |c| {
+                c.active_id = id.to_string();
+                if let Some(edit) = conn_edit {
+                    if let Some(p) = c.profile_by_id_mut(id) {
+                        edit.apply(p);
+                    }
+                }
+            })
+            .map_err(|e| e.to_string())?;
+            let hint = if is_edit {
+                format!("已保存并应用「{}」的新连接。", candidate.name)
+            } else {
+                format!("已切到「{}」。", candidate.name)
+            };
+            Ok(json!({ "committed": true, "active_id": id, "hint": hint }))
         }
         SwitchOutcome::RollbackToOld => {
-            // 候选正式代理起/探活失败：恢复旧代理，active_id 不动，不停沙箱。
+            // 候选正式代理起/探活失败：恢复旧代理，active_id 不动，连接不落盘，不停沙箱。
             restore_proxy_for_active(app, state, lifecycle, &cfg, &old_active);
-            Err(
-                "候选配置校验通过，但正式代理启动/探活失败，已回滚到原配置（沙箱未受影响）。"
-                    .into(),
-            )
+            if is_edit {
+                Err("连接已校验通过，但正式代理启动/探活失败，连接未保存，已回滚到原配置（沙箱未受影响）。".into())
+            } else {
+                Err(
+                    "候选配置校验通过，但正式代理启动/探活失败，已回滚到原配置（沙箱未受影响）。"
+                        .into(),
+                )
+            }
         }
         SwitchOutcome::AbortBeforeStart => {
-            // scratch 校验未过（native+skip 场景不会到这）；旧态零改动。
-            Err("候选上游校验失败（key/base_url/网络？），未切换。".into())
+            // scratch 校验未过（native+skip 场景不会到这）；旧态零改动、连接不落盘。
+            if is_edit {
+                Err("连接上游校验失败（key/base_url/网络？），连接未保存。".into())
+            } else {
+                Err("候选上游校验失败（key/base_url/网络？），未切换。".into())
+            }
         }
     }
 }
@@ -1576,9 +1679,9 @@ mod tests {
         assert_format_supported, build_get_config, build_list_templates, clear_profile_key_inner,
         create_profile_inner, decide_switch, delete_profile_inner, first_http_url,
         is_main_list_model, key_env_for_adapter, key_fingerprint, merge_and_sort_models,
-        parse_host, probe_kind_for_model, proxy_args_for, redact, sandbox_home,
+        parse_host, probe_kind_for_model, proxy_args_for, redact, sandbox_home, should_write_back,
         update_profile_connection_inner, update_profile_metadata_inner, upstream_host,
-        SwitchOutcome,
+        ConnectionEdit, SwitchOutcome,
     };
     use crate::config;
 
@@ -1666,6 +1769,53 @@ mod tests {
         assert_eq!(decide_switch(false, true), SwitchOutcome::AbortBeforeStart);
         // scratch ok 但正式起/探活失败 → 杀候选、恢复旧、不提交
         assert_eq!(decide_switch(true, false), SwitchOutcome::RollbackToOld);
+    }
+
+    // ---------- MP-2 fix [3]: 写回门纯函数（gen 同/异 × secret 同/异 4 组合） ----------
+    #[test]
+    fn should_write_back_requires_both_gen_and_secret() {
+        // gen 同 + secret 同 → 写回（合法启动，未被取代）
+        assert!(should_write_back(5, 5, "sekret", "sekret"));
+        // gen 同 + secret 异 → 不写回（被并发另起用不同 secret 占了槽，冷启动双起窄窗）
+        assert!(!should_write_back(5, 5, "other", "sekret"));
+        // gen 异 + secret 同 → 不写回（被清 key/停/切 bump 取代）
+        assert!(!should_write_back(5, 6, "sekret", "sekret"));
+        // gen 异 + secret 异 → 不写回
+        assert!(!should_write_back(5, 6, "other", "sekret"));
+    }
+
+    // ---------- MP-2 fix [1]: 连接编辑 validate-before-persist 的字段应用逻辑（内存/落盘共用） ----------
+    #[test]
+    fn connection_edit_apply_only_changes_provided_fields() {
+        use crate::config::Profile;
+        let mut p = Profile {
+            base_url: "old-url".into(),
+            api_format: "anthropic".into(),
+            model: "old-model".into(),
+            api_key: "old-key".into(),
+            ..Default::default()
+        };
+        let edit = ConnectionEdit {
+            base_url: Some("new-url".into()),
+            api_format: None, // None = 不改
+            model: Some("new-model".into()),
+            key: Some(String::new()), // 空 key = 不改（留占位不覆盖已存 key）
+        };
+        edit.apply(&mut p);
+        assert_eq!(p.base_url, "new-url");
+        assert_eq!(p.api_format, "anthropic", "None 字段不改");
+        assert_eq!(p.model, "new-model");
+        assert_eq!(p.api_key, "old-key", "空 key 不覆盖已存 key");
+
+        // 非空 key 覆盖；其余 None 不动。
+        let edit2 = ConnectionEdit {
+            key: Some("new-key".into()),
+            ..Default::default()
+        };
+        edit2.apply(&mut p);
+        assert_eq!(p.api_key, "new-key", "非空 key 覆盖");
+        assert_eq!(p.base_url, "new-url", "None 字段不改");
+        assert_eq!(p.model, "new-model", "None 字段不改");
     }
 
     // ---------- B4: profile CRUD *_inner ----------
