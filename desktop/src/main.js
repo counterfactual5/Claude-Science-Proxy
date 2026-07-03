@@ -344,7 +344,9 @@ async function oneClick() {
     // 「粘贴 key → 直接一键开始」也要能走通：输入框里有新 key 就先存下，
     // 不强制用户先点「保存」（修 P1：oneClick 之前不读/不存输入框，导致无 key 起代理失败）。
     const key = els.keyInput.value.trim();
-    if (key) {
+    // relay 模式不走通用 save_provider_key（那会把 key 写进无人读的哨兵槽 providers["relay"] 并清空输入框，
+    // 导致下面 relay 块拿到空 key）。relay 的 key 只经下面的 save_relay_config 落到 relay-<preset> 槽。
+    if (key && els.provider.value !== "relay") {
       const masked = await call("save_provider_key", { provider: els.provider.value, key });
       window._keys[els.provider.value] = masked;
       els.keyInput.value = "";
@@ -354,8 +356,14 @@ async function oneClick() {
     // 失败则中止一键（不带半套配置起链路）。
     if (els.provider.value === "relay") {
       const p = currentPreset();
+      if (!p) { setMsg("预设未加载，请重开面板重试。", "err"); setBusy(false); return; }
       const base = p.base_url_editable ? els.relayBase.value.trim() : p.base_url;
       const model = els.relayModel.value;
+      if (p.requires_model_override && !model) {
+        setMsg("该中转站需要选一个模型才能启动。", "err");
+        setBusy(false);
+        return;
+      }
       const r = await call("save_relay_config", {
         req: { preset: p.id, base_url: base, key: els.keyInput.value.trim(), model, skip_verify: false },
       });
