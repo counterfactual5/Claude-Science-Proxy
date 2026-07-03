@@ -35,6 +35,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 PROVIDERS = {
     "deepseek": {
         "mode": "anthropic",
+        "dsml_capable": True,   # 只有 DeepSeek 打开 DSML 兜底 shim（relay 需显式确认）
         "url": "https://api.deepseek.com/anthropic/v1/messages",
         "key_env": "DEEPSEEK_API_KEY",
         # 选择器里展示的可选模型。

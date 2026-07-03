@@ -1,7 +1,23 @@
 """CSSwitch DSML 兜底 shim：把 DeepSeek 泄漏成纯文本的 DSML 工具调用还原成 tool_use。
 纯函数分段器（本文件）+ 流式状态机 + 字节检测器（后续 Task）。不依赖第三方。"""
 import json
+import os
 import re
+
+DSML_MARKER_BYTES = (
+    "｜DSML｜".encode("utf-8"),
+    "｜｜DSML｜｜".encode("utf-8"),
+)
+
+
+def shim_mode(prov_name, prov):
+    """off | detect | rewrite。本轮 relay 恒 off（deepseek-only）；deepseek 且 dsml_capable 才读环境变量。"""
+    if prov_name == "relay":
+        return "off"
+    if not (prov or {}).get("dsml_capable"):
+        return "off"
+    m = os.environ.get("CSSWITCH_TOOLUSE_SHIM", "").lower()
+    return m if m in ("detect", "rewrite") else "off"
 
 # 分隔符：一到两个全角竖线 U+FF5C（vLLM 文档单、issue #8 实测双）。
 _P = r"[｜]{1,2}"

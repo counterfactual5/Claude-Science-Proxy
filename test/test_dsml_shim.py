@@ -137,5 +137,37 @@ class ParamTyping(unittest.TestCase):
         self.assertEqual(ds.parse_dsml_tool_calls(blk, req_tool), [])
 
 
+class ShimMode(unittest.TestCase):
+    def setUp(self):
+        os.environ.pop("CSSWITCH_TOOLUSE_SHIM", None)
+
+    def tearDown(self):
+        self.setUp()
+
+    def test_off_when_not_capable(self):
+        os.environ["CSSWITCH_TOOLUSE_SHIM"] = "rewrite"
+        self.assertEqual(ds.shim_mode("qwen", {"dsml_capable": False}), "off")
+
+    def test_deepseek_reads_env(self):
+        prov = {"dsml_capable": True}
+        os.environ["CSSWITCH_TOOLUSE_SHIM"] = "detect"
+        self.assertEqual(ds.shim_mode("deepseek", prov), "detect")
+        os.environ["CSSWITCH_TOOLUSE_SHIM"] = "rewrite"
+        self.assertEqual(ds.shim_mode("deepseek", prov), "rewrite")
+
+    def test_default_off_when_env_unset(self):
+        self.assertEqual(ds.shim_mode("deepseek", {"dsml_capable": True}), "off")
+
+    def test_relay_always_off_this_round(self):
+        # 本轮 relay 永远关闭（deepseek-only）：即便 capable 或设了 env 也 off
+        os.environ["CSSWITCH_TOOLUSE_SHIM"] = "rewrite"
+        self.assertEqual(ds.shim_mode("relay", {"dsml_capable": False}), "off")
+        self.assertEqual(ds.shim_mode("relay", {"dsml_capable": True}), "off")
+
+    def test_marker_bytes_are_utf8_fullwidth(self):
+        self.assertTrue(all(isinstance(b, bytes) for b in ds.DSML_MARKER_BYTES))
+        self.assertIn("｜DSML｜".encode("utf-8"), ds.DSML_MARKER_BYTES)
+
+
 if __name__ == "__main__":
     unittest.main()
