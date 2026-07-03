@@ -276,6 +276,27 @@ class RewriterPassthrough(unittest.TestCase):
         self.assertIn("ping", [e for e, _ in got])
         self.assertIn("message_stop", [e for e, _ in got])
 
+    def test_mixed_crlf_lf_frames_no_event_loss(self):
+        # CRLF 结束的 content_block_start 后接 LF 结束的 delta 与 stop：事件不能丢、索引成对
+        f1 = ('event: content_block_start\r\n'
+              'data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}\r\n\r\n')
+        f2 = sse("content_block_delta", {"type": "content_block_delta", "index": 0,
+                 "delta": {"type": "text_delta", "text": "Hello"}})
+        f3 = sse("content_block_stop", {"type": "content_block_stop", "index": 0})
+        rw = ds.DsmlStreamRewriter({}, nonce="t")
+        out = rw.feed((f1 + f2 + f3).encode("utf-8")) + rw.finalize()
+        evs = parse_sse(out)
+        kinds = [e for e, _ in evs]
+        self.assertIn("content_block_start", kinds)     # 起始块不能被合并吞掉
+        self.assertIn("content_block_stop", kinds)      # 结束块不能被静默丢弃
+        texts = "".join(d["delta"]["text"] for e, d in evs
+                        if e == "content_block_delta" and isinstance(d, dict)
+                        and d.get("delta", {}).get("type") == "text_delta")
+        self.assertEqual(texts, "Hello")
+        starts = [d["index"] for e, d in evs if e == "content_block_start" and isinstance(d, dict)]
+        stops = [d["index"] for e, d in evs if e == "content_block_stop" and isinstance(d, dict)]
+        self.assertEqual(sorted(stops), sorted(starts))  # 每个 start 恰一个 stop
+
 
 if __name__ == "__main__":
     unittest.main()
