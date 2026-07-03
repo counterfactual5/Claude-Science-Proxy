@@ -13,6 +13,7 @@
 
 mod config;
 mod config_legacy;
+mod lifecycle;
 mod oauth_forge;
 mod proc;
 mod scratch;
@@ -277,6 +278,26 @@ fn ere_escape(s: &str) -> String {
 enum ProxyAction {
     Reused,    // 端口+adapter+key 指纹一致且健康，原样复用
     Restarted, // 首次起 / 换 key / 换 profile / 不健康，重起了代理
+}
+
+/// 切换事务的提交/回滚决策（纯函数，spec §7）。live 路径难做确定性单测，故把决策抽出单独测。
+#[derive(Debug, PartialEq)]
+enum SwitchOutcome {
+    Commit,            // scratch 校验过 + 正式代理探活健康 → 提交 active_id
+    RollbackToOld,     // scratch 过但正式代理起/探活失败 → 杀候选、恢复旧代理、不提交
+    AbortBeforeStart,  // scratch 校验失败 → 根本没起正式代理、旧态零改动
+}
+
+/// 给定「候选 scratch 校验结果」与「正式代理探活结果」，决定切换事务走向。
+fn decide_switch(scratch_ok: bool, real_healthy: bool) -> SwitchOutcome {
+    if !scratch_ok {
+        return SwitchOutcome::AbortBeforeStart;
+    }
+    if real_healthy {
+        SwitchOutcome::Commit
+    } else {
+        SwitchOutcome::RollbackToOld
+    }
 }
 
 /// 确保代理在跑且健康；返回 (端口, secret, 本次动作)。幂等：已健康则复用。
@@ -1311,6 +1332,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .manage(Mutex::new(AppState::default()))
+        .manage(lifecycle::Lifecycle::new())
         .invoke_handler(tauri::generate_handler![
             get_config,
             list_templates,
@@ -1367,9 +1389,9 @@ pub fn run() {
 mod tests {
     use super::{
         assert_format_supported, build_get_config, build_list_templates, clear_profile_key_inner,
-        create_profile_inner, delete_profile_inner, first_http_url, is_main_list_model,
-        key_env_for_adapter, key_fingerprint, merge_and_sort_models, parse_host,
-        probe_kind_for_model, proxy_args_for, redact, sandbox_home,
+        create_profile_inner, decide_switch, delete_profile_inner, first_http_url,
+        is_main_list_model, key_env_for_adapter, key_fingerprint, merge_and_sort_models,
+        parse_host, probe_kind_for_model, proxy_args_for, redact, sandbox_home, SwitchOutcome,
         update_profile_connection_inner, update_profile_metadata_inner, upstream_host,
     };
     use crate::config;
@@ -1446,6 +1468,18 @@ mod tests {
         assert_eq!(key_env_for_adapter("qwen"), "DASHSCOPE_API_KEY");
         assert_eq!(key_env_for_adapter("relay"), "CSSWITCH_RELAY_KEY");
         assert_eq!(key_env_for_adapter("anything-else"), "CSSWITCH_RELAY_KEY");
+    }
+
+    // ---------- B3: 切换事务决策（纯函数，3 分支） ----------
+    #[test]
+    fn transaction_commits_only_when_healthy() {
+        // scratch ok + real ok → 提交
+        assert_eq!(decide_switch(true, true), SwitchOutcome::Commit);
+        // scratch 校验失败 → 不起正式、不提交、旧态不动
+        assert_eq!(decide_switch(false, false), SwitchOutcome::AbortBeforeStart);
+        assert_eq!(decide_switch(false, true), SwitchOutcome::AbortBeforeStart);
+        // scratch ok 但正式起/探活失败 → 杀候选、恢复旧、不提交
+        assert_eq!(decide_switch(true, false), SwitchOutcome::RollbackToOld);
     }
 
     // ---------- B4: profile CRUD *_inner ----------
