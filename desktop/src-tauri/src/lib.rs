@@ -48,19 +48,28 @@ fn key_fingerprint(s: &str) -> u64 {
 }
 
 // ---------- provider 元信息 ----------
+/// 是否 relay 家族（裸 relay 或多槽 relay-<preset>）。
+fn is_relay(provider: &str) -> bool {
+    provider == "relay" || provider.starts_with("relay-")
+}
+
 fn key_env(provider: &str) -> &'static str {
+    if is_relay(provider) {
+        return "CSSWITCH_RELAY_KEY";
+    }
     match provider {
         "qwen" => "DASHSCOPE_API_KEY",
-        "relay" => "CSSWITCH_RELAY_KEY",
         _ => "DEEPSEEK_API_KEY",
     }
 }
 
 /// 上游主机名（供 status 上游灯做 TCP 可达性探测）。relay 从其 base_url 解析。
 fn upstream_host(provider: &str, base_url: &str) -> String {
+    if is_relay(provider) {
+        return parse_host(base_url).unwrap_or_default();
+    }
     match provider {
         "qwen" => "dashscope.aliyuncs.com".to_string(),
-        "relay" => parse_host(base_url).unwrap_or_default(),
         _ => "api.deepseek.com".to_string(),
     }
 }
@@ -260,14 +269,15 @@ fn ensure_proxy(
         .ok_or_else(|| format!("缺少 {provider} 的 API key，请先在面板填写并保存。"))?;
     // relay（中转站）：base_url 必填，作上游根地址。非 relay 为空串。
     let base_url = cfg.base_url_for(&provider).unwrap_or_default();
-    if provider == "relay" && base_url.is_empty() {
+    if is_relay(&provider) && base_url.is_empty() {
         return Err(
             "中转站模式需要填 base_url（如 https://your-relay/claude），请先在面板填写并保存。"
                 .into(),
         );
     }
-    // 指纹并入 base_url：换 key 或换中转站地址都触发代理重启（避免复用旧上游）。
-    let key_fp = key_fingerprint(&format!("{key}\n{base_url}"));
+    let model = cfg.model_for(&provider).unwrap_or_default();
+    // 指纹并入 base_url + model：换 key、换中转站地址或换选中模型都触发代理重启（避免复用旧上游）。
+    let key_fp = key_fingerprint(&format!("{key}\n{base_url}\n{model}"));
     let port = cfg.proxy_port;
     let root = asset_root(app)
         .ok_or("找不到代理脚本 proxy/csswitch_proxy.py（打包资源或仓库根均未命中）。开发态可设 CSSWITCH_REPO。")?;
@@ -313,19 +323,29 @@ fn ensure_proxy(
 
         let logf = open_log("proxy.log").map_err(|e| format!("建日志失败：{e}"))?;
         let logf2 = logf.try_clone().map_err(|e| e.to_string())?;
+        // Python 代理只认裸 "relay"（不知道 relay-<preset> 多槽），故归一化传给它；
+        // 多槽区分（key/base_url/model 各槽独立）全在 Rust 侧的 config 层完成。
+        let proxy_provider = if is_relay(&provider) {
+            "relay"
+        } else {
+            provider.as_str()
+        };
         let mut cmd = Command::new(&py);
         cmd.arg(&script)
             .arg("--provider")
-            .arg(&provider)
+            .arg(proxy_provider)
             .arg("--port")
             .arg(port.to_string())
             .arg("--auth-token")
             .arg(&secret)
             // key 经环境变量注入，绝不作为命令行参数（避免 ps 泄露）。
             .env(key_env(&provider), &key);
-        // relay：中转站 base_url 经环境变量交给代理（非密钥，但与 key 一致走 env）。
-        if provider == "relay" {
+        // relay：中转站 base_url + 选中模型经环境变量交给代理（均非密钥，但与 key 一致走 env）。
+        if is_relay(&provider) {
             cmd.env("CSSWITCH_RELAY_BASE_URL", &base_url);
+            if !model.is_empty() {
+                cmd.env("CSSWITCH_RELAY_MODEL", &model);
+            }
         }
         let child = cmd
             .stdout(Stdio::from(logf))
@@ -414,9 +434,25 @@ fn get_config() -> Result<serde_json::Value, String> {
     let dir = config::default_dir();
     let cfg = config::load_from(&dir).map_err(|e| e.to_string())?;
     let mut keys = serde_json::Map::new();
-    for p in ["deepseek", "qwen", "relay"] {
+    for p in ["deepseek", "qwen"] {
         let masked = cfg.key_for(p).map(|k| config::mask(&k)).unwrap_or_default();
         keys.insert(p.to_string(), serde_json::Value::String(masked));
+    }
+    // 每个中转站预设一份 {key(掩码), base_url, model}；未配置的预设 key 空、base_url 取预设默认。
+    let mut relay = serde_json::Map::new();
+    for preset in relay_presets::all() {
+        let masked = cfg
+            .key_for(preset.id)
+            .map(|k| config::mask(&k))
+            .unwrap_or_default();
+        let base_url = cfg
+            .base_url_for(preset.id)
+            .unwrap_or_else(|| preset.base_url.to_string());
+        let model = cfg.model_for(preset.id).unwrap_or_default();
+        relay.insert(
+            preset.id.to_string(),
+            json!({ "key": masked, "base_url": base_url, "model": model }),
+        );
     }
     Ok(json!({
         "provider": cfg.provider,
@@ -424,8 +460,7 @@ fn get_config() -> Result<serde_json::Value, String> {
         "sandbox_port": cfg.sandbox_port,
         "mode": cfg.mode,
         "keys": keys,
-        // 中转站 base_url（非密钥，可回显），供面板回填。
-        "relay_base_url": cfg.base_url_for("relay").unwrap_or_default(),
+        "relay": relay,
     }))
 }
 
@@ -512,10 +547,14 @@ fn set_config(cfg: UiSettings) -> Result<(), String> {
     if cfg.proxy_port == 8765 || cfg.sandbox_port == 8765 {
         return Err("端口 8765 是真实 Science 实例保留端口，不能用。".into());
     }
-    // 只认已实现的 provider，避免存进未知值后起代理时才失败（修 P2-3）。
-    if cfg.provider != "deepseek" && cfg.provider != "qwen" && cfg.provider != "relay" {
+    // 只认已实现的 provider（deepseek/qwen + 预设表里的 relay-<preset>），
+    // 避免存进未知值后起代理时才失败（修 P2-3）。
+    if cfg.provider != "deepseek"
+        && cfg.provider != "qwen"
+        && relay_presets::by_id(&cfg.provider).is_none()
+    {
         return Err(format!(
-            "未知 provider：{}（只支持 deepseek / qwen / relay）。",
+            "未知 provider：{}（只支持 deepseek / qwen / relay-<预设>）。",
             cfg.provider
         ));
     }
@@ -541,10 +580,11 @@ fn set_config(cfg: UiSettings) -> Result<(), String> {
         c.provider = cfg.provider;
         c.proxy_port = cfg.proxy_port;
         c.sandbox_port = cfg.sandbox_port;
-        // 只在前端传了 base_url（即用户在中转站模式）时写入 relay 的 base_url，
-        // 避免在别的 provider 下改端口时误清空已存的中转站地址。
-        if !base_url.is_empty() {
-            c.providers.entry("relay".into()).or_default().base_url = base_url;
+        // 只在前端传了 base_url 且当前 provider 是 relay 家族时，写入【当前】provider
+        // 槽的 base_url（多槽下不同预设各自独立），避免在别的 provider 下改端口时
+        // 误写/清空其它中转站预设已存的地址。
+        if !base_url.is_empty() && is_relay(&c.provider) {
+            c.providers.entry(c.provider.clone()).or_default().base_url = base_url;
         }
     })
     .map(|_| ())
@@ -1281,8 +1321,8 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::{
-        first_http_url, is_main_list_model, key_fingerprint, merge_and_sort_models, parse_host,
-        redact, sandbox_home,
+        first_http_url, is_main_list_model, is_relay, key_env, key_fingerprint,
+        merge_and_sort_models, parse_host, redact, sandbox_home,
     };
 
     #[test]
@@ -1409,5 +1449,22 @@ mod tests {
             super::probe_kind_for_model(""),
             crate::scratch::ProbeKind::Models
         ));
+    }
+
+    #[test]
+    fn is_relay_matches_bare_and_preset_slots() {
+        assert!(is_relay("relay"));
+        assert!(is_relay("relay-xiaomi"));
+        assert!(is_relay("relay-custom"));
+        assert!(!is_relay("deepseek"));
+        assert!(!is_relay("qwen"));
+    }
+
+    #[test]
+    fn key_env_relay_presets_use_relay_key_env() {
+        assert_eq!(key_env("relay-xiaomi"), "CSSWITCH_RELAY_KEY");
+        assert_eq!(key_env("relay-glm"), "CSSWITCH_RELAY_KEY");
+        assert_eq!(key_env("qwen"), "DASHSCOPE_API_KEY");
+        assert_eq!(key_env("deepseek"), "DEEPSEEK_API_KEY");
     }
 }
