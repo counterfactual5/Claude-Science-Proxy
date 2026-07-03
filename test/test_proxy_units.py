@@ -75,6 +75,7 @@ class RelayProvider(unittest.TestCase):
         cs.PROV["models_url"] = "https://relay.test/claude/v1/models"
         cs.KEY = "cr_testkey"
         cs.RELAY_MODELS = []
+        cs.RELAY_FORCE_MODEL = None
 
     def test_passthrough_keeps_model_name(self):
         # 中转站原生认 claude-*，模型名原样透传（不走 model_map）。
@@ -93,6 +94,22 @@ class RelayProvider(unittest.TestCase):
         self.assertEqual(cs.resolve_model("claude-opus-4-8"), "claude-opus-4-8")
         # 缓存里没有的原样透传（交中转站处理别名/报错）。
         self.assertEqual(cs.resolve_model("claude-sonnet-5"), "claude-sonnet-5")
+
+    def test_force_model_overrides_everything(self):
+        # 选了模型：无论 Science 发什么（含裸 claude-*、空名），都强制成选中的上游模型。
+        cs.RELAY_FORCE_MODEL = "mimo-v2.5-pro"
+        try:
+            self.assertEqual(cs.resolve_model("claude-opus-4-8"), "mimo-v2.5-pro")
+            self.assertEqual(cs.resolve_model("claude-haiku-4-5"), "mimo-v2.5-pro")
+            self.assertEqual(cs.resolve_model(""), "mimo-v2.5-pro")
+        finally:
+            cs.RELAY_FORCE_MODEL = None
+
+    def test_no_force_model_keeps_passthrough(self):
+        # 留空：维持 PR #4 透传（贴合到真实 id / 原样）。
+        cs.RELAY_FORCE_MODEL = None
+        self.assertEqual(cs.resolve_model("claude-opus-4-8"), "claude-opus-4-8")
+        self.assertEqual(cs.resolve_model(""), "claude-opus-4-8")  # 空名兜底 default_model
 
     def test_auth_headers_both(self):
         h = cs._upstream_auth_headers()

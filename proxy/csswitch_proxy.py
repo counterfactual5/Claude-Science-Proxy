@@ -118,6 +118,9 @@ _DATE_SUFFIX = re.compile(r"-\d{8}$")
 # Science 发来的裸 id（如标题 agent 的 claude-haiku-4-5）贴合到中转站真实 id
 # （如 claude-haiku-4-5-20251001）。首拉前为空 → 纯透传。
 RELAY_MODELS = []
+# relay 强制模型 override：面板选了模型时，代理无条件把所有请求模型改成它（覆盖透传）。
+# 由 CSSWITCH_RELAY_MODEL 环境变量在 __main__ 里装配；留空 → None → 维持 PR #4 透传。
+RELAY_FORCE_MODEL = None
 # 出站 User-Agent：部分中转站的 WAF 把默认的 "Python-urllib/x.y" 判为 bot 直接 403
 # （byteswarm 实测），故所有上游请求统一带一个非 bot 的 UA。
 UPSTREAM_UA = "CSSwitch/0.2 (+https://github.com/SuperJJ007/CSswitch)"
@@ -180,10 +183,12 @@ def _snap_relay_model(name):
 
 def resolve_model(name):
     """把 Science 传来的模型名解析成当前 provider 的目标模型。
-    优先：选择器里选中的 provider 原生名 > 显式映射 > 去日期后缀 > 前缀匹配 > 默认。"""
+    优先：relay 强制模型 override > 选择器选中名 > 显式映射 > 去日期后缀 > 前缀匹配 > 默认。"""
+    if PROV.get("passthrough") and RELAY_FORCE_MODEL:
+        return RELAY_FORCE_MODEL   # relay 选了模型：强制覆盖一切（含裸 claude-* 与空名）
     if not name:
         return PROV["default_model"]
-    if PROV.get("passthrough"):   # relay：中转站原生认 claude-*，透传（仅贴合到真实 id）
+    if PROV.get("passthrough"):   # relay 留空：中转站原生认 claude-*，透传（仅贴合到真实 id）
         return _snap_relay_model(name)
     mm = PROV["model_map"]
     if name in mm:          # 先查映射（覆盖伪 claude- 前缀的选择器 id 和 Science 硬编码 claude-*）
@@ -773,6 +778,9 @@ if __name__ == "__main__":
         PROV = dict(PROV)
         PROV["url"] = base + "/v1/messages"
         PROV["models_url"] = base + "/v1/models"
+        forced = (os.environ.get("CSSWITCH_RELAY_MODEL") or "").strip()
+        if forced:
+            RELAY_FORCE_MODEL = forced
     _up = os.environ.get("CSSWITCH_UPSTREAM_URL")
     if _up:
         PROV = dict(PROV)
