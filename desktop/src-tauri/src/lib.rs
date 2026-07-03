@@ -548,39 +548,51 @@ fn one_click_login(
     let cfg = config::load_from(&dir).map_err(|e| e.to_string())?;
     let sport = cfg.sandbox_port;
 
-    // 沙箱已健康 → 绝不重伪造、绝不重跑 launch（连 auth 文件都不读，operon 可能正在用）。
-    // 只重新取 URL + 打开浏览器。修 #3/#6：活动 org 不变，旧对话一直在。
-    // P2b：asset_root() 只在下面「需启动」分支才取，健康重开不依赖 launch 资源。
+    // sandbox_home() 作沙箱根：伪造器要求解析后的 auth_dir 落在其下，防符号链接重定向（P1）。
+    let sbx_home = sandbox_home();
+    let auth_dir = sbx_home.join(".claude-science");
+
+    // 沙箱已健康 → 但「daemon 活着」≠「登录态可用」：先只读校验虚拟登录是否自洽（修 0.2.1 Bug2）。
+    // - 自洽 → 绝不重伪造、绝不重跑 launch（连 auth 文件都不读，operon 可能正在用），只重取
+    //   URL + 打开。修 #3/#6：活动 org 不变，旧对话一直在。
+    // - 健康但登录失效（旧版遗留 / 凭证损坏 / 已落登录页）→ 重开也只会再落登录页，故停沙箱、
+    //   落到下面「修复保 org + 重启」路径自愈（0.2.0 的健康快捷路径漏了这一步）。
+    // P2b：asset_root() 只在下面「需启动」分支才取。
     // P2（GPT 复审）：用 sandbox_running_ours 而非裸端口 /health——按 data-dir 强身份判定，
     // 避免端口被冒名服务占用且恰好返回 200 时误报「已重新打开 Science」。
     if sandbox_running_ours(sport) {
-        let url = sandbox_url(sport);
+        if oauth_forge::login_intact(&auth_dir, "virtual@localhost.invalid", &sbx_home) {
+            let url = sandbox_url(sport);
+            {
+                let mut st = lock(&state);
+                st.sandbox_port = sport;
+                st.sandbox_url = Some(url.clone());
+            }
+            let base = match proxy_action {
+                ProxyAction::Reused => "已在运行",
+                ProxyAction::Restarted => "已用新配置重启代理，Science 沿用不变",
+            };
+            // P2c：捕获打开结果——open 失败不谎报「已重新打开」，改提示手动打开。
+            let msg = match open_in_browser(&url) {
+                Ok(()) => format!("{base}，已重新打开 Science。"),
+                Err(_) => format!("{base}，服务已就绪，请手动打开：{url}"),
+            };
+            return Ok(json!({ "url": url, "msg": msg, "action": "reopened" }));
+        }
+        // 健康但登录态失效：停沙箱，让下面 relaunch 拿到修复后的登录材料（daemon 运行中不会
+        // 重读 auth）。ensure_virtual_login 幂等：保住 org（旧对话不丢），只重铸失效的登录。
         {
             let mut st = lock(&state);
-            st.sandbox_port = sport;
-            st.sandbox_url = Some(url.clone());
+            let _ = stop_sandbox_inner(&app, &mut st);
         }
-        let base = match proxy_action {
-            ProxyAction::Reused => "已在运行",
-            ProxyAction::Restarted => "已用新配置重启代理，Science 沿用不变",
-        };
-        // P2c：捕获打开结果——open 失败不谎报「已重新打开」，改提示手动打开。
-        let msg = match open_in_browser(&url) {
-            Ok(()) => format!("{base}，已重新打开 Science。"),
-            Err(_) => format!("{base}，服务已就绪，请手动打开：{url}"),
-        };
-        return Ok(json!({ "url": url, "msg": msg, "action": "reopened" }));
     }
 
-    // 沙箱没起 / 挂了 → 需要 launch 资源，此时才定位（P2b）。再确保虚拟登录（幂等）+ 起 launch。
+    // 沙箱没起 / 挂了 / 登录失效已停 → 需要 launch 资源，此时才定位（P2b）。确保虚拟登录（幂等）+ launch。
     let root = asset_root(&app)
         .ok_or("找不到 scripts/launch-virtual-sandbox.sh（打包资源或仓库根均未命中）。")?;
 
     // 进程内确保虚拟 OAuth（Rust 原生密码学，零 node）。幂等：现有登录完整就复用、部分坏就
     // 修复但保住 org、真首次才铸新 —— 修 #3/#6 的核心（不再无条件换 org 孤儿化旧对话）。
-    let sbx_home = sandbox_home();
-    let auth_dir = sbx_home.join(".claude-science");
-    // sandbox_home() 作沙箱根：伪造器要求解析后的 auth_dir 落在其下，防符号链接重定向（P1）。
     let (forged, login_action) =
         oauth_forge::ensure_virtual_login(&auth_dir, "virtual@localhost.invalid", &sbx_home)
             .map_err(|e| format!("写虚拟登录失败：{e}"))?;
@@ -680,6 +692,22 @@ fn one_click_login(
     Ok(json!({ "url": url, "msg": msg, "action": "started" }))
 }
 
+/// 从 `claude-science url` 的 stdout 里取**第一条**合法 http(s) URL。
+/// Science 的 `url` 命令会输出多行（第一行是真 URL，随后行是「single-use…」说明）；把整段
+/// stdout 当 URL 交给 `open` 会带上换行与说明文字 → 打开错误入口、nonce 不被正确消费 → 落到
+/// `/login`（修 0.2.1 Bug1）。故逐行找第一条以 `http://`/`https://` 开头的行，并只取该行首个
+/// 非空白 token（URL 内不含空白，若同行尾随了说明也被切掉）。找不到返回 None。
+fn first_http_url(stdout: &str) -> Option<String> {
+    for line in stdout.lines() {
+        let t = line.trim();
+        if t.starts_with("http://") || t.starts_with("https://") {
+            let url = t.split_whitespace().next().unwrap_or(t);
+            return Some(url.to_string());
+        }
+    }
+    None
+}
+
 /// 取沙箱 UI 链接：`<bin> url --data-dir <home>/.claude-science`，HOME 指向沙箱 HOME。
 /// 失败退回 http://127.0.0.1:<port>。沙箱 HOME 用 [`sandbox_home`]（与 launch 时一致）。
 fn sandbox_url(port: u16) -> String {
@@ -693,9 +721,10 @@ fn sandbox_url(port: u16) -> String {
             .env("HOME", &home)
             .output()
         {
-            let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
-            if s.starts_with("http") {
-                return s;
+            let s = String::from_utf8_lossy(&out.stdout);
+            // 只取第一条合法 URL（修 0.2.1 Bug1）：url 命令多行输出里第一行才是真 URL。
+            if let Some(url) = first_http_url(&s) {
+                return url;
             }
         }
     }
@@ -894,7 +923,40 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::{key_fingerprint, redact, sandbox_home};
+    use super::{first_http_url, key_fingerprint, redact, sandbox_home};
+
+    #[test]
+    fn first_http_url_takes_only_first_valid_url() {
+        // Science 的 `url` 命令输出两行：第一行是真 URL，第二行是「single-use…」说明。
+        // 旧代码把整段 stdout 当 URL 交给 open → 换行+说明污染参数、nonce 不被消费 → 落登录页。
+        // 只能取第一条合法 http(s) URL（修 0.2.1 Bug1）。
+        let multi = "http://127.0.0.1:8990/setup?nonce=abc123\n\
+                     This is a single-use link, expires in 60 seconds.";
+        assert_eq!(
+            first_http_url(multi).as_deref(),
+            Some("http://127.0.0.1:8990/setup?nonce=abc123"),
+            "多行输出必须只取第一行 URL，丢弃说明文字"
+        );
+        // 同一行 URL 后跟了说明，只取 URL token（URL 内不含空白）。
+        let inline = "https://x.example/y?z=1  (single-use)";
+        assert_eq!(
+            first_http_url(inline).as_deref(),
+            Some("https://x.example/y?z=1")
+        );
+        // 前导非 URL 行被跳过，取第一条 http 行。
+        let lead = "Open this link in your browser:\nhttp://127.0.0.1:8990/a";
+        assert_eq!(
+            first_http_url(lead).as_deref(),
+            Some("http://127.0.0.1:8990/a")
+        );
+        // 无任何 URL → None（sandbox_url 据此退回裸端口）。
+        assert_eq!(first_http_url("no url here\nnor here"), None);
+        // 单行纯 URL 原样返回。
+        assert_eq!(
+            first_http_url("http://127.0.0.1:8990").as_deref(),
+            Some("http://127.0.0.1:8990")
+        );
+    }
 
     #[test]
     fn redact_scrubs_secret_and_is_noop_when_empty() {

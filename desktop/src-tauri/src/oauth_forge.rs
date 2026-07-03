@@ -645,6 +645,31 @@ fn ensure_virtual_login_guarded(
     Ok((fr, action))
 }
 
+/// 只读判定：沙箱里的虚拟登录当前是否「完整自洽」（可直接复用）。**绝不写任何文件**
+/// （operon 可能正在读）。供一键健康快捷路径判断：`8990` daemon 活着 ≠ 登录态可用；若登录已
+/// 失效（旧版遗留 / 凭证损坏 / 已落登录页），重开也只会再落登录页，应改走「停沙箱 → 修复保
+/// org → 重启」。这样 0.2.0 的健康快捷路径不再把「健康但登录失效」当成可用（修 0.2.1 Bug2）。
+pub fn login_intact(auth_dir: &Path, email: &str, sandbox_root: &Path) -> bool {
+    match std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".claude-science")) {
+        Some(real) => login_intact_guarded(auth_dir, email, sandbox_root, &real),
+        None => false,
+    }
+}
+
+/// 可注入「真实凭证目录」的内层（测试用）。护栏失败（异常布局 / 落入真实树）视作不自洽（false），
+/// 促使上层走修复路径；修复路径自身仍有护栏，绝不触碰真实目录。只读，绝不写。
+fn login_intact_guarded(
+    auth_dir: &Path,
+    email: &str,
+    sandbox_root: &Path,
+    real_cred_dir: &Path,
+) -> bool {
+    match resolve_guarded(auth_dir, email, sandbox_root, real_cred_dir) {
+        Ok(resolved) => read_intact_login(&resolved, email).is_some(),
+        Err(_) => false,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1179,6 +1204,71 @@ mod tests {
         let (_r2, a2) = ensure_virtual_login_guarded(&dir, email, &dir, &fake_real).unwrap();
         assert_eq!(a2, LoginAction::Reused, "修复后应可复用");
         for d in [dir, fake_real] {
+            let _ = std::fs::remove_dir_all(&d);
+        }
+    }
+
+    #[test]
+    fn login_intact_true_for_fresh_false_when_damaged_and_readonly() {
+        // Bug2（0.2.1）：健康快捷路径要靠只读校验区分「自洽」与「健康但登录失效」。
+        let dir = tmpdir("intact");
+        let fake_real = tmpdir("realcred-intact");
+        let email = "virtual@localhost.invalid";
+        forge_guarded(&dir, email, &dir, &fake_real).unwrap();
+
+        // 新鲜伪造 → 自洽 → true。
+        assert!(
+            login_intact_guarded(&dir, email, &dir, &fake_real),
+            "新鲜伪造应判自洽"
+        );
+
+        // 只读不写：连调两次，三个文件字节都不变。
+        let enc0 = std::fs::read(the_enc_file(&dir)).unwrap();
+        let key0 = std::fs::read(dir.join("encryption.key")).unwrap();
+        let org0 = std::fs::read(dir.join("active-org.json")).unwrap();
+        assert!(login_intact_guarded(&dir, email, &dir, &fake_real));
+        assert_eq!(
+            std::fs::read(the_enc_file(&dir)).unwrap(),
+            enc0,
+            "不改 .enc"
+        );
+        assert_eq!(
+            std::fs::read(dir.join("encryption.key")).unwrap(),
+            key0,
+            "不改 encryption.key"
+        );
+        assert_eq!(
+            std::fs::read(dir.join("active-org.json")).unwrap(),
+            org0,
+            "不改 active-org.json"
+        );
+
+        // 删 .enc → 不自洽 → false（这一步旧 stub 恒真会失败）。
+        std::fs::remove_file(the_enc_file(&dir)).unwrap();
+        assert!(
+            !login_intact_guarded(&dir, email, &dir, &fake_real),
+            "缺 .enc 应判不自洽"
+        );
+
+        // 过期令牌 → 不自洽 → false。
+        let dir2 = tmpdir("intact-exp");
+        let fr2 = tmpdir("realcred-exp2");
+        forge_guarded(&dir2, email, &dir2, &fr2).unwrap();
+        let org2 = read_active_org_uuid(&dir2);
+        let key2 = read_oauth_key(&dir2);
+        let expired = serde_json::json!({
+            "email": email, "org_uuid": org2, "account_uuid": uuid_v4().unwrap(),
+            "provider": "claude_ai", "access_token": "sk-ant-virtual-x",
+            "token_expires_at": "2000-01-01T00:00:00.000Z"
+        });
+        let enc = encrypt_token_v2(&serde_json::to_vec(&expired).unwrap(), &key2).unwrap();
+        std::fs::write(the_enc_file(&dir2), enc).unwrap();
+        assert!(
+            !login_intact_guarded(&dir2, email, &dir2, &fr2),
+            "过期令牌应判不自洽"
+        );
+
+        for d in [dir, fake_real, dir2, fr2] {
             let _ = std::fs::remove_dir_all(&d);
         }
     }
