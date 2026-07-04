@@ -105,9 +105,9 @@
         </div>
       </details>
 
-      <!-- 反馈消息：所有视图可见（表单错误 / 回滚 / 保存结果都靠它）。P1-3 -->
-      <div class="sec feedback">
-        <div class="msg" id="msg" role="status" aria-live="polite">就绪。</div>
+      <!-- 反馈消息：有真实反馈（表单错误 / 回滚 / 保存结果 / 自检）才显示，空闲不占位。 -->
+      <div class="sec feedback" hidden>
+        <div class="msg" id="msg" role="status" aria-live="polite"></div>
       </div>
 
       <!-- 运行控制区 + 状态灯：仅列表视图显示（表单视图由 .view-form 隐藏）。 -->
