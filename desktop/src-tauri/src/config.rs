@@ -433,8 +433,9 @@ pub fn update<F: FnOnce(&mut Config)>(dir: &Path, f: F) -> io::Result<Config> {
     Ok(cfg)
 }
 
-/// 掩码：只保留末 4 位，其余用 • 遮蔽。空 key 返回空串。
-/// 绝不返回完整 key，是回显给前端的唯一形式。
+/// 掩码：固定 4 个圆点 + 末 4 位（`••••tail`）。空 key 返回空串；≤4 位全遮。
+/// 定长而非随 key 长度增长：长 key 的掩码不会在列表里撑出横向溢出（WKWebView 不给连续
+/// 圆点断行，`word-break` 拦不住），且不泄漏 key 长度。绝不返回完整 key，是回显前端的唯一形式。
 pub fn mask(key: &str) -> String {
     let n = key.chars().count();
     if n == 0 {
@@ -443,7 +444,7 @@ pub fn mask(key: &str) -> String {
         "•".repeat(n)
     } else {
         let last4: String = key.chars().skip(n - 4).collect();
-        format!("{}{}", "•".repeat(n - 4), last4)
+        format!("••••{last4}")
     }
 }
 
@@ -916,12 +917,14 @@ mod tests {
 
     #[test]
     fn mask_hides_all_but_last4() {
-        assert_eq!(mask("sk-1234567890ab"), "•".repeat(11) + "90ab"); // 15 字符 → 11 掩 + 末4
+        assert_eq!(mask("sk-1234567890ab"), "••••90ab"); // 定长 4 点 + 末4
         assert_eq!(mask(""), "");
         assert_eq!(mask("abc"), "•••");
         assert_eq!(mask("abcd"), "••••");
-        assert_eq!(mask("abcde"), "•bcde");
+        assert_eq!(mask("abcde"), "••••bcde"); // 定长 4 点 + 末4
         let full = "sk-secret-tail9999";
         assert!(!mask(full).contains("secret"));
+        // 定长：掩码总长恒为 8（4 点 + 末4），不随 key 长度变长、不泄漏长度
+        assert_eq!(mask("sk-aaaaaaaaaaaaaaaaaaaaaaaaaaaa1234").chars().count(), 8);
     }
 }
