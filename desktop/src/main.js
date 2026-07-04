@@ -272,7 +272,7 @@ function renderList() {
   const list = els.profileList;
   const ps = state.profiles || [];
   if (!ps.length) {
-    list.innerHTML = '<div class="empty">还没有任何配置。<br>点右上「＋ 新建」添加一条第三方来源（DeepSeek / GLM / 千问 / 自定义端点…）。</div>';
+    list.innerHTML = '<div class="empty">还没有配置。点右上「＋ 新建」加一条第三方来源。</div>';
     return;
   }
   list.innerHTML = ps.map((p) => {
