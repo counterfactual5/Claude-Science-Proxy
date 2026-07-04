@@ -184,11 +184,14 @@ function applyModelCapability(t, ui, currentModel) {
 }
 
 function setMsg(text, kind) {
-  els.msg.textContent = text;
+  // 去掉常驻「就绪。」：空消息或纯 idle 时整条反馈栏不占位，有真实反馈（结果/错误/自检）才冒出来。
+  const t = text && text !== "就绪。" ? text : "";
+  els.msg.textContent = t;
   els.msg.className = "msg" + (kind ? " " + kind : "");
+  els.msg.parentElement.hidden = !t;
   // 表单视图里反馈区可能落在折叠线以下：给出结果（ok/err）时滚到可见；
   // 中性提示（无 kind，多为打开表单时）不滚，避免把页面拽到底部。
-  if (kind && els.panel && els.panel.classList.contains("view-form")) {
+  if (t && kind && els.panel && els.panel.classList.contains("view-form")) {
     els.msg.scrollIntoView({ block: "nearest" });
   }
 }
