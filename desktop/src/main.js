@@ -137,7 +137,12 @@ function sourceHint(t) {
   if (!t) return "选择来源后按提示填写。";
   if (t.base_url_editable) return "自定义端点：填地址与 key，用「获取模型」列出并选一个。";
   const cap = modelCapability(t);
-  if (cap === CAP.NATIVE) return "官方直连：填 API Key 即可，地址与模型都已内置。";
+  if (cap === CAP.NATIVE) {
+    // deepseek 是原生 Anthropic 透传；qwen 经代理做 Anthropic↔OpenAI 转换，别都叫「直连」。
+    return t.adapter === "qwen"
+      ? "官方端点（经代理转换协议）：填 API Key 即可，地址与模型都已内置。"
+      : "官方原生端点（无需转换）：填 API Key 即可，地址与模型都已内置。";
+  }
   if (cap === CAP.FOLLOW) return "填 API Key 即可，地址已预设，模型默认跟随 Science。";
   return "填 API Key 并选一个模型，地址已预设。";
 }
@@ -181,6 +186,11 @@ function applyModelCapability(t, ui, currentModel) {
 function setMsg(text, kind) {
   els.msg.textContent = text;
   els.msg.className = "msg" + (kind ? " " + kind : "");
+  // 表单视图里反馈区可能落在折叠线以下：给出结果（ok/err）时滚到可见；
+  // 中性提示（无 kind，多为打开表单时）不滚，避免把页面拽到底部。
+  if (kind && els.panel && els.panel.classList.contains("view-form")) {
+    els.msg.scrollIntoView({ block: "nearest" });
+  }
 }
 
 function setLight(el, s) {
@@ -268,6 +278,16 @@ async function loadConfig() {
   }
 }
 
+// 列表里模型摘要：无显式 model 时按三能力给准确措辞（native 内置映射 / relay 跟随 / 需指定），
+// 取代旧「（透传）」字样（三能力语义下不再有「透传」）。
+function modelSummary(p) {
+  if (p.model) return escapeHtml(p.model);
+  const cap = modelCapability(tplById(p.template_id));
+  if (cap === CAP.NATIVE) return "内置映射";
+  if (cap === CAP.FOLLOW) return "跟随 Science";
+  return "未选模型";
+}
+
 function renderList() {
   const list = els.profileList;
   const ps = state.profiles || [];
@@ -279,7 +299,7 @@ function renderList() {
     const active = p.id === state.active_id;
     const catLabel = CAT_LABELS[p.category] || p.category || "";
     const keyMask = p.key ? escapeHtml(p.key) : "未填 key";
-    const modelTxt = p.model ? escapeHtml(p.model) : "（透传）";
+    const modelTxt = modelSummary(p);
     const dotStyle = p.icon_color ? ' style="background:' + escapeHtml(p.icon_color) + '"' : "";
     return (
       '<div class="prow' + (active ? " pactive" : "") + '" data-id="' + escapeHtml(p.id) + '">' +
@@ -383,7 +403,7 @@ async function persistPorts() {
   }
 }
 
-// ── 模型下拉渲染（requires_override=false 时首项「透传」；按 supports_tools 标注）──
+// ── 模型下拉渲染（requires_override=false 时首项「跟随 Science 选择器」；按 supports_tools 标注）──
 function renderModelSelect(sel, models, requiresOverride, sourceLabel) {
   sel.innerHTML = "";
   if (!requiresOverride) {
@@ -423,7 +443,7 @@ function openWizard() {
   const first = (state.templates || [])[0];
   selectWizTemplate(first ? first.id : "");
   showView("wizard");
-  setMsg("选择来源，填 key 即可创建（新建不会自动生效）。");
+  setMsg("选择来源，填 key 即可创建。");
 }
 
 function renderTemplateChips() {
@@ -454,7 +474,8 @@ function onWizTemplate() {
   const t = tplById(els.wizTemplate.value);
   if (!t) return;
   els.wizName.value = t.name;
-  els.wizTplHint.textContent = sourceHint(t);
+  // 把「新建不自动生效」放进顶部常驻提示（默认窗口下反馈区首屏可能在折叠线下，见 #6）。
+  els.wizTplHint.textContent = sourceHint(t) + " 新建后需在列表点「设为当前」才生效。";
   if (t.base_url_editable) {
     els.wizBase.value = "";
     els.wizBase.readOnly = false;
@@ -542,7 +563,12 @@ function openConn(id) {
   els.connTitle.textContent = "编辑连接 · " + p.name + (active ? "（当前生效）" : "");
   els.connBase.value = p.base_url || (t ? t.base_url : "");
   els.connBase.readOnly = !editable;
-  els.connBaseHint.textContent = editable ? "自定义端点根地址。" : "模板地址（只读）。填 key 后可「获取模型」。";
+  // native（deepseek/qwen）隐藏「获取模型」按钮，别再提示一个不存在的操作（修 #5）。
+  els.connBaseHint.textContent = editable
+    ? "自定义端点根地址。"
+    : (modelCapability(t) === CAP.NATIVE
+        ? "模板地址（只读），模型由内置映射自动选择。"
+        : "模板地址（只读）。填 key 后可「获取模型」。");
   applyModelCapability(t, {
     info: els.connModelInfo, sel: els.connModel, hint: els.connModelHint, fetchBtn: els.connFetchBtn,
   }, p.model || "");
