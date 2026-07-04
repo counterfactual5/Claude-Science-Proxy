@@ -293,5 +293,46 @@ class ThinkingNormalization(unittest.TestCase):
         self.assertEqual(out["thinking"], {"type": "disabled"})
 
 
+class BuildModelsResponse(unittest.TestCase):
+    def setUp(self):
+        self._saved = (cs.PROV, cs.PROV_NAME, cs.RELAY_FORCE_MODEL)
+
+    def tearDown(self):
+        cs.PROV, cs.PROV_NAME, cs.RELAY_FORCE_MODEL = self._saved
+
+    def test_force_returns_single_shell(self):
+        # force（Science 常驻代理）：/v1/models 只返回一个壳，display_name=真实模型名。
+        cs.PROV = {"models_url": "https://r/v1/models"}
+        cs.PROV_NAME = "relay"
+        cs.RELAY_FORCE_MODEL = "glm-5.2"
+        code, body = cs.build_models_response()
+        self.assertEqual(code, 200)
+        self.assertEqual(
+            body["data"],
+            [{
+                "type": "model", "id": "claude-opus-4-8",
+                "display_name": "glm-5.2", "supports_tools": None,
+                "created_at": "2026-01-01T00:00:00Z",
+            }],
+        )
+        self.assertEqual(body["first_id"], "claude-opus-4-8")
+        self.assertEqual(body["last_id"], "claude-opus-4-8")
+        self.assertFalse(body["has_more"])
+
+    def test_not_forced_falls_back_to_source(self):
+        # 未 force（app 获取模型的临时代理）：仍回源拿真实 id 供用户选（两个消费者切分）。
+        cs.PROV = {"models_url": "https://r/v1/models"}
+        cs.PROV_NAME = "relay"
+        cs.RELAY_FORCE_MODEL = None
+        saved_fetch = cs.fetch_relay_models
+        cs.fetch_relay_models = lambda: [{"type": "model", "id": "glm-4.6"}]
+        try:
+            code, body = cs.build_models_response()
+        finally:
+            cs.fetch_relay_models = saved_fetch
+        self.assertEqual(code, 200)
+        self.assertEqual(body["data"][0]["id"], "glm-4.6")
+
+
 if __name__ == "__main__":
     unittest.main()
