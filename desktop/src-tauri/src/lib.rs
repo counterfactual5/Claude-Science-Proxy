@@ -603,6 +603,10 @@ fn create_profile_inner(
         notes: None,
     };
     assert_format_supported(&p)?; // custom 选了不支持格式则拒
+                                  // 守卫（修 #9 P1-a）：relay/自定义端点必须带 model（force 前提）。
+    if relay_missing_model(tpl.adapter, &p.model) {
+        return Err("中转 / 自定义端点必须选择或填写一个模型，未创建。".to_string());
+    }
     config::update(dir, |c| c.profiles.push(p)).map_err(|e| e.to_string())?;
     Ok(id)
 }
@@ -970,6 +974,13 @@ fn relay_missing_base_url(adapter: &str, base_url: &str) -> bool {
     !is_native_adapter(adapter) && base_url.trim().is_empty()
 }
 
+/// 保存/激活前守卫（纯函数，修 #9 P1-a）：relay 家族（非 native）空（含纯空白）model 不可用——
+/// 无 model → launcher 不注入 CSSWITCH_RELAY_MODEL → 无 force → 退回 passthrough → Science 显示 claude。
+/// native(deepseek/qwen) 走内置映射/硬编码端点，model 可空 → 不拦。
+fn relay_missing_model(adapter: &str, model: &str) -> bool {
+    !is_native_adapter(adapter) && model.trim().is_empty()
+}
+
 /// 对候选连接做一次上游 scratch 校验（非 active 编辑用，P2-d）。起临时代理探完即杀，
 /// **绝不碰 config / AppState / 正在服务的正式代理**。返回是否【已通过上游校验】（供调用方据实措辞）：
 /// 空 key / relay 家族空 base_url → `Ok(false)`（无从预检，标记未校验）；
@@ -1037,6 +1048,13 @@ fn update_profile_connection(
             &candidate.base_url,
         ) {
             return Err("中转 / 自定义端点必须填写连接地址（base_url），连接未保存。".to_string());
+        }
+        // 保存前守卫（修 #9 P1-a）：relay/自定义端点空 model → 无 force → 退回 passthrough（显示 claude）。
+        if relay_missing_model(
+            templates::adapter_for(&candidate.template_id),
+            &candidate.model,
+        ) {
+            return Err("中转 / 自定义端点必须选择或填写一个模型，连接未保存。".to_string());
         }
         if cfg.active_id == id {
             // active（有正在服务的代理）：validate-before-persist —— 新连接作【内存候选】喂进
@@ -1164,6 +1182,12 @@ fn set_active_profile_txn(
     let native = is_native_adapter(&launch.adapter);
     if !native && launch.base_url.is_empty() {
         return Err("该配置需要填 base_url（http:// 或 https:// 开头）。".into());
+    }
+    // 守卫（修 #9 P1-a）：relay/自定义端点空 model 无法激活（无 force → 退回 passthrough 显示 claude）。
+    if relay_missing_model(&launch.adapter, &candidate.model) {
+        return Err(
+            "该配置需要选择或填写一个模型（中转/自定义端点必填），请在连接编辑里补上。".into(),
+        );
     }
     // 快照旧 active（回滚锚点）：旧 profile 仍在盘上未动、active_id 未改，恢复据它重起旧代理。
     let old_active = cfg.active_id.clone();
@@ -1920,7 +1944,7 @@ mod tests {
         create_profile_inner, decide_switch, delete_profile_inner, first_http_url,
         health_timeout_reason, is_main_list_model, key_env_for_adapter, key_fingerprint,
         merge_and_sort_models, nonactive_probe_verdict, parse_host, probe_kind_for,
-        probe_kind_for_model, proxy_args_for, redact, relay_missing_base_url,
+        probe_kind_for_model, proxy_args_for, redact, relay_missing_base_url, relay_missing_model,
         rollback_status_clause, sandbox_home, settings_change_needs_teardown,
         should_scratch_candidate, should_write_back, skip_scratch_verify,
         update_profile_connection_inner, update_profile_metadata_inner, upstream_host,
@@ -2134,7 +2158,8 @@ mod tests {
     #[test]
     fn create_profile_from_template_prefills() {
         let d = tmpdir_lib();
-        let id = create_profile_inner(&d, "glm", "我的 GLM", Some("gk"), None, None).unwrap();
+        let id =
+            create_profile_inner(&d, "glm", "我的 GLM", Some("gk"), None, Some("glm-5.2")).unwrap();
         let cfg = config::load_from(&d).unwrap();
         let p = cfg.profile_by_id(&id).unwrap();
         assert_eq!(p.template_id, "glm");
@@ -2146,9 +2171,21 @@ mod tests {
     }
 
     #[test]
+    fn create_relay_without_model_is_rejected() {
+        // 修 #9 P1-a：后端命令层直接创建 relay/自定义端点空 model 也被拦（不变量不可绕过）。
+        let d = tmpdir_lib();
+        let e = create_profile_inner(&d, "glm", "GLM", Some("gk"), None, None);
+        assert!(e.is_err(), "relay 空 model 应拒绝创建");
+        assert!(e.unwrap_err().contains("模型"));
+        // native 不受约束（model 可空）。
+        assert!(create_profile_inner(&d, "deepseek", "DS", Some("gk"), None, None).is_ok());
+    }
+
+    #[test]
     fn update_metadata_does_not_touch_key() {
         let d = tmpdir_lib();
-        let id = create_profile_inner(&d, "glm", "GLM", Some("secret9"), None, None).unwrap();
+        let id =
+            create_profile_inner(&d, "glm", "GLM", Some("secret9"), None, Some("glm-5.2")).unwrap();
         update_profile_metadata_inner(&d, &id, "改名", Some("备注")).unwrap();
         let cfg = config::load_from(&d).unwrap();
         let p = cfg.profile_by_id(&id).unwrap();
@@ -2160,7 +2197,8 @@ mod tests {
     #[test]
     fn clear_key_empties_key_and_drops_backup() {
         let d = tmpdir_lib();
-        let id = create_profile_inner(&d, "glm", "GLM", Some("secretTAIL"), None, None).unwrap();
+        let id = create_profile_inner(&d, "glm", "GLM", Some("secretTAIL"), None, Some("glm-5.2"))
+            .unwrap();
         config::write_rolling_backup(&d).ok();
         clear_profile_key_inner(&d, &id).unwrap();
         let cfg = config::load_from(&d).unwrap();
@@ -2171,7 +2209,7 @@ mod tests {
     #[test]
     fn delete_active_clears_active() {
         let d = tmpdir_lib();
-        let id = create_profile_inner(&d, "glm", "GLM", Some("k"), None, None).unwrap();
+        let id = create_profile_inner(&d, "glm", "GLM", Some("k"), None, Some("glm-5.2")).unwrap();
         config::update(&d, |c| c.active_id = id.clone()).unwrap();
         delete_profile_inner(&d, &id).unwrap();
         let cfg = config::load_from(&d).unwrap();
@@ -2182,7 +2220,8 @@ mod tests {
     #[test]
     fn update_connection_rejects_unsupported_format() {
         let d = tmpdir_lib();
-        let id = create_profile_inner(&d, "custom", "C", None, Some("https://x/y"), None).unwrap();
+        let id =
+            create_profile_inner(&d, "custom", "C", None, Some("https://x/y"), Some("m")).unwrap();
         let e = update_profile_connection_inner(
             &d,
             &id,
@@ -2198,7 +2237,7 @@ mod tests {
     #[test]
     fn update_metadata_unknown_id_errors() {
         let d = tmpdir_lib();
-        create_profile_inner(&d, "glm", "GLM", Some("k"), None, None).unwrap();
+        create_profile_inner(&d, "glm", "GLM", Some("k"), None, Some("glm-5.2")).unwrap();
         let e = update_profile_metadata_inner(&d, "no-such-id", "改名", None);
         assert!(e.is_err(), "未命中 id 应报错，而非静默成功");
         assert!(e.unwrap_err().contains("找不到 profile"));
@@ -2207,7 +2246,7 @@ mod tests {
     #[test]
     fn update_connection_unknown_id_errors() {
         let d = tmpdir_lib();
-        create_profile_inner(&d, "glm", "GLM", Some("k"), None, None).unwrap();
+        create_profile_inner(&d, "glm", "GLM", Some("k"), None, Some("glm-5.2")).unwrap();
         let e = update_profile_connection_inner(
             &d,
             "no-such-id",
@@ -2224,8 +2263,15 @@ mod tests {
     #[test]
     fn get_config_masks_keys_and_lists_profiles() {
         let d = tmpdir_lib();
-        let id =
-            create_profile_inner(&d, "glm", "GLM", Some("sk-longsecret9999"), None, None).unwrap();
+        let id = create_profile_inner(
+            &d,
+            "glm",
+            "GLM",
+            Some("sk-longsecret9999"),
+            None,
+            Some("glm-5.2"),
+        )
+        .unwrap();
         let v = build_get_config(&d).unwrap();
         assert_eq!(v["schema_version"], 2);
         let arr = v["profiles"].as_array().unwrap();
@@ -2245,7 +2291,7 @@ mod tests {
     fn get_config_returns_notes_so_rename_does_not_wipe_them() {
         // M1 回归：build_get_config 必须回传 notes，否则前端读到空、下次改名把备注静默清掉。
         let d = tmpdir_lib();
-        let id = create_profile_inner(&d, "glm", "GLM", Some("k"), None, None).unwrap();
+        let id = create_profile_inner(&d, "glm", "GLM", Some("k"), None, Some("glm-5.2")).unwrap();
         update_profile_metadata_inner(&d, &id, "GLM", Some("我的备注")).unwrap();
         let v = build_get_config(&d).unwrap();
         let p = v["profiles"]
@@ -2446,6 +2492,18 @@ mod tests {
         // native 走硬编码端点，空 base_url 无妨 → 不拦。
         assert!(!relay_missing_base_url("deepseek", ""));
         assert!(!relay_missing_base_url("qwen", ""));
+    }
+
+    #[test]
+    fn relay_empty_model_is_rejected() {
+        // 修 #9 P1-a：relay/自定义端点空（或纯空白）model → 拦下（无 model 则无 force → 退回 passthrough）。
+        assert!(relay_missing_model("relay", ""));
+        assert!(relay_missing_model("glm", "   "));
+        assert!(relay_missing_model("custom", ""));
+        assert!(!relay_missing_model("relay", "glm-5.2"));
+        // native 走内置映射/硬编码端点，model 可空 → 不拦。
+        assert!(!relay_missing_model("deepseek", ""));
+        assert!(!relay_missing_model("qwen", ""));
     }
 
     #[test]
