@@ -536,6 +536,11 @@ fn stop_sandbox_inner(app: &tauri::AppHandle, st: &mut AppState) -> Result<(), S
 /// 组装 get_config 返回体：profiles 的 key 只回掩码，全 key 绝不出后端。
 fn build_get_config(dir: &Path) -> Result<serde_json::Value, String> {
     let cfg = config::load_from(dir).map_err(|e| e.to_string())?;
+    // 一次性迁移提示（#9 甲）：读出后立即清盘，避免每次 get_config 重复提示。
+    let notice = cfg.pending_notice.clone();
+    if notice.is_some() {
+        config::update(dir, |c| c.pending_notice = None).map_err(|e| e.to_string())?;
+    }
     let profiles: Vec<serde_json::Value> = cfg
         .profiles
         .iter()
@@ -551,7 +556,7 @@ fn build_get_config(dir: &Path) -> Result<serde_json::Value, String> {
     Ok(json!({
         "schema_version": cfg.schema_version, "active_id": cfg.active_id, "profiles": profiles,
         "templates": build_list_templates(), "proxy_port": cfg.proxy_port,
-        "sandbox_port": cfg.sandbox_port, "mode": cfg.mode,
+        "sandbox_port": cfg.sandbox_port, "mode": cfg.mode, "pending_notice": notice,
     }))
 }
 
