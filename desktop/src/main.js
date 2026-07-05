@@ -523,11 +523,20 @@ function refreshWizGate() {
   els.wizSaveBtn.disabled = busy || !!(need && !els.wizModel.value.trim());
 }
 
+function openaiCustomAnthropicBaseMessage(t, base) {
+  if (t && t.id === "custom-openai" && (base || "").trim().toLowerCase().includes("/anthropic")) {
+    return "这个地址看起来是 Anthropic 兼容端点。请改选「自定义 Anthropic」，或填写 OpenAI 兼容 base root（如 https://api.moonshot.cn/v1）。";
+  }
+  return "";
+}
+
 async function wizFetch() {
   const t = tplById(els.wizTemplate.value);
   if (!t) return;
   const base = t.base_url_editable ? els.wizBase.value.trim() : t.base_url;
   if (!base) { setMsg("请先填写 base_url。", "err"); return; }
+  const baseErr = openaiCustomAnthropicBaseMessage(t, base);
+  if (baseErr) { setMsg(baseErr, "err"); return; }
   const key = els.wizKey.value.trim();
   if (!key) { setMsg("请先填 key 再获取模型。", "err"); return; }
   setBusy(true);
@@ -556,6 +565,8 @@ async function wizSave() {
   if (t.base_url_editable) {
     const base = els.wizBase.value.trim();
     if (!base) { setMsg("请先填写 base_url。", "err"); return; }
+    const baseErr = openaiCustomAnthropicBaseMessage(t, base);
+    if (baseErr) { setMsg(baseErr, "err"); return; }
     args.baseUrl = base;
   }
   setBusy(true);
@@ -627,6 +638,8 @@ async function connFetch() {
   const editable = t ? t.base_url_editable : true;
   const base = editable ? els.connBase.value.trim() : (t ? t.base_url : els.connBase.value.trim());
   if (!base) { setMsg("请先填写 base_url。", "err"); return; }
+  const baseErr = openaiCustomAnthropicBaseMessage(t, base);
+  if (baseErr) { setMsg(baseErr, "err"); return; }
   setBusy(true);
   setMsg("获取模型中：起临时代理探 /v1/models…");
   try {
@@ -655,6 +668,8 @@ async function connSave() {
   // 可编辑地址的模板都是中转/自定义端点，必须带 base_url；清空后保存会得到不可用连接（激活必失败）。
   // 保存前就拦（后端也有同款守卫兜底，修 P2）。
   if (editable && !base) { setMsg("中转 / 自定义端点必须填写连接地址（base_url）。", "err"); return; }
+  const baseErr = openaiCustomAnthropicBaseMessage(t, base);
+  if (baseErr) { setMsg(baseErr, "err"); return; }
   const active = p.id === state.active_id;
   // key 留空＝不改（后端语义）；base_url/model 照传。api_format 不在此改（保留模板值）。
   const args = { id: p.id, baseUrl: base, model, key: els.connKey.value.trim() };

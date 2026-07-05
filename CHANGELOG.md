@@ -4,6 +4,11 @@
 
 > **约定**：已修问题从 [`docs/known-issues.md`](docs/known-issues.md)「毕业」到这里（发布即定稿）；未修/进行中留在 known-issues；硬 bug 的根因证据链存在 [`findings/`](findings/)。
 
+## [0.3.4] — 2026-07-05
+
+### 修复 Fixed
+- **自定义 OpenAI 填错 Anthropic 地址的防呆**：如果在「自定义 OpenAI」里填写 `https://.../anthropic` 这类 Anthropic 兼容端点，现在新建、编辑、获取模型、激活都会明确提示改用「自定义 Anthropic」，避免把 Kimi / 其它 Anthropic 兼容地址误拼成 OpenAI Chat Completions 路径。
+
 ## [0.3.3] — 2026-07-05
 
 > 主题：**自定义 OpenAI 兼容 API 真正可用**。把原先只服务通义千问的 OpenAI Chat Completions 翻译路径泛化，补上独立的「自定义 OpenAI」来源，让任意 OpenAI 兼容 base root + key + model 可经 CSSwitch 转成 Claude Science 可用的 Anthropic `/v1/messages`。

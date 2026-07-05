@@ -110,6 +110,19 @@ fn assert_format_supported(p: &config::Profile) -> Result<(), String> {
     }
 }
 
+fn looks_like_anthropic_endpoint(base_url: &str) -> bool {
+    let u = base_url.trim().trim_end_matches('/').to_ascii_lowercase();
+    u.contains("/anthropic")
+}
+
+fn reject_openai_custom_anthropic_base(template_id: &str, base_url: &str) -> Result<(), String> {
+    if template_id == "custom-openai" && looks_like_anthropic_endpoint(base_url) {
+        Err("这个地址看起来是 Anthropic 兼容端点。请改选「自定义 Anthropic」，或使用 OpenAI 兼容 base root（如 https://api.moonshot.cn/v1）。".to_string())
+    } else {
+        Ok(())
+    }
+}
+
 /// deepseek/qwen 走各自固定官方端点（python 侧硬编码）；其余 = relay 家族，需带 base_url。
 fn is_native_adapter(adapter: &str) -> bool {
     adapter == "deepseek" || adapter == "qwen"
@@ -613,6 +626,7 @@ fn create_profile_inner(
         .map(str::to_string)
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| tpl.base_url.to_string());
+    reject_openai_custom_anthropic_base(template_id, &base_url)?;
     let p = config::Profile {
         id: id.clone(),
         name: name.to_string(),
@@ -1068,6 +1082,7 @@ fn update_profile_connection(
             key: key.clone(),
         };
         edit.apply(&mut candidate);
+        reject_openai_custom_anthropic_base(&candidate.template_id, &candidate.base_url)?;
         // 保存前守卫（修 P2）：relay/自定义端点清空 base_url → 不可用连接（激活必失败）。
         // 校验生效后的 base_url，空则拒绝落盘、绝不谎报「已保存」；native 走硬编码端点，空无妨。
         if relay_missing_base_url(
@@ -1194,6 +1209,7 @@ fn set_active_profile_txn(
     if let Some(edit) = conn_edit {
         edit.apply(&mut candidate);
     }
+    reject_openai_custom_anthropic_base(&candidate.template_id, &candidate.base_url)?;
     let is_edit = conn_edit.is_some();
     // 失败措辞：连接编辑说「未保存/仍在用原配置运行」，普通切换说「未切换/当前配置不变」。
     let (verb, tail): (&str, &str) = if is_edit {
@@ -1468,6 +1484,7 @@ fn fetch_models(app: tauri::AppHandle, req: FetchModelsReq) -> Result<serde_json
     {
         return Err("请先填写 base_url（http:// 或 https:// 开头）。".into());
     }
+    reject_openai_custom_anthropic_base(tid, &base_url)?;
     let key = resolve_probe_key(req.profile_id.as_deref(), &req.key)?;
     let root = asset_root(&app).ok_or("找不到代理脚本 proxy/csswitch_proxy.py。")?;
     let py = proc::find_exe("python3").ok_or("缺少依赖 python3（起临时代理需要）。")?;
@@ -1972,8 +1989,9 @@ mod tests {
         create_profile_inner, decide_switch, delete_profile_inner, first_http_url,
         health_timeout_reason, is_main_list_model, key_env_for_adapter, key_fingerprint,
         merge_and_sort_models, nonactive_probe_verdict, parse_host, probe_kind_for,
-        probe_kind_for_model, proxy_args_for, proxy_fingerprint, redact, relay_missing_base_url,
-        relay_missing_model, rollback_status_clause, sandbox_home, settings_change_needs_teardown,
+        probe_kind_for_model, proxy_args_for, proxy_fingerprint, redact,
+        reject_openai_custom_anthropic_base, relay_missing_base_url, relay_missing_model,
+        rollback_status_clause, sandbox_home, settings_change_needs_teardown,
         should_scratch_candidate, should_write_back, skip_scratch_verify,
         update_profile_connection_inner, update_profile_metadata_inner, upstream_host,
         ConnectionEdit, SwitchOutcome,
@@ -2058,6 +2076,24 @@ mod tests {
             ..p
         };
         assert!(assert_format_supported(&ok2).is_ok());
+    }
+
+    #[test]
+    fn custom_openai_rejects_anthropic_base_url() {
+        let err = reject_openai_custom_anthropic_base(
+            "custom-openai",
+            "https://api.moonshot.cn/anthropic",
+        )
+        .unwrap_err();
+        assert!(err.contains("自定义 Anthropic"));
+        assert!(
+            reject_openai_custom_anthropic_base("custom-openai", "https://api.moonshot.cn/v1",)
+                .is_ok()
+        );
+        assert!(
+            reject_openai_custom_anthropic_base("custom", "https://api.moonshot.cn/anthropic",)
+                .is_ok()
+        );
     }
 
     #[test]
