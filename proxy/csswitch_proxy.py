@@ -543,6 +543,42 @@ def responses_max_output_tokens(req, model, state, has_tools):
     return value
 
 
+def _is_dashscope_responses():
+    return PROV.get("api_format") == "openai_responses" and "dashscope.aliyuncs.com" in (PROV.get("url") or "")
+
+
+def normalize_responses_tool_parameters(schema):
+    if not isinstance(schema, dict):
+        return {"type": "object", "properties": {}}
+    out = dict(schema)
+    if "properties" in out and not out.get("type"):
+        out["type"] = "object"
+    if out.get("type") != "object":
+        return {"type": "object", "properties": {}}
+    if not isinstance(out.get("properties"), dict):
+        out["properties"] = {}
+    return out
+
+
+def map_responses_tools(tools):
+    out = []
+    for t in tools or []:
+        name = t.get("name")
+        if not name:
+            continue
+        # DashScope Responses currently rejects this function schema in
+        # compatibility mode; omit it rather than failing the entire request.
+        if _is_dashscope_responses() and name == "web_search":
+            continue
+        out.append({
+            "type": "function",
+            "name": name,
+            "description": t.get("description", ""),
+            "parameters": normalize_responses_tool_parameters(t.get("input_schema", {})),
+        })
+    return out
+
+
 def _as_text(value):
     if isinstance(value, str):
         return value
@@ -601,21 +637,17 @@ def anthropic_to_openai_responses(req):
     }
     if sys_prompt:
         out["instructions"] = sys_prompt
-    max_output_tokens = responses_max_output_tokens(req, out["model"], _st, bool(req.get("tools")))
+    tools = map_responses_tools(req.get("tools"))
+    max_output_tokens = responses_max_output_tokens(req, out["model"], _st, bool(tools))
     if max_output_tokens:
         out["max_output_tokens"] = max_output_tokens
     if req.get("temperature") is not None:
         out["temperature"] = req["temperature"]
     if req.get("top_p") is not None:
         out["top_p"] = req["top_p"]
-    if req.get("tools"):
-        out["tools"] = [{
-            "type": "function",
-            "name": t["name"],
-            "description": t.get("description", ""),
-            "parameters": t.get("input_schema", {}),
-        } for t in req["tools"] if t.get("name")]
-    tcm = map_responses_tool_choice(req.get("tool_choice"), req.get("tools"))
+    if tools:
+        out["tools"] = tools
+    tcm = map_responses_tool_choice(req.get("tool_choice"), tools)
     if tcm is not None:
         out["tool_choice"] = tcm
     return out
