@@ -514,16 +514,33 @@ def map_responses_tool_choice(tc, tools):
     千问 Responses 在 thinking mode 下会拒绝 required/object 形态；Science 会在
     reviewing/agent 路径发送强制工具选择。这里保守降级为 auto，宁可不强制工具，
     也不要让整个请求 400。"""
-    if not isinstance(tc, dict):
-        return None
-    t = tc.get("type")
+    has_tools = bool(tools)
+    if isinstance(tc, str):
+        t = tc
+    elif isinstance(tc, dict):
+        t = tc.get("type")
+    else:
+        t = None
     if t == "auto":
         return "auto"
     if t == "none":
         return "none"
-    if t in ("tool", "any"):
+    if has_tools:
         return "auto"
     return None
+
+
+def responses_max_output_tokens(req, model, state, has_tools):
+    value = provider_policy.clamp_max_tokens(req.get("max_tokens"), model, state)
+    if not value:
+        return value
+    # DashScope Responses accepts 65536 for simple prompts, but real Science tool
+    # requests with very large inbound max_tokens can still fail its compatibility
+    # layer. Keep tool calls on the conservative budget used by the existing Qwen
+    # chat path.
+    if has_tools and "dashscope.aliyuncs.com" in (PROV.get("url") or ""):
+        return min(int(value), 8192)
+    return value
 
 
 def _as_text(value):
@@ -584,8 +601,9 @@ def anthropic_to_openai_responses(req):
     }
     if sys_prompt:
         out["instructions"] = sys_prompt
-    if req.get("max_tokens"):
-        out["max_output_tokens"] = provider_policy.clamp_max_tokens(req["max_tokens"], out["model"], _st)
+    max_output_tokens = responses_max_output_tokens(req, out["model"], _st, bool(req.get("tools")))
+    if max_output_tokens:
+        out["max_output_tokens"] = max_output_tokens
     if req.get("temperature") is not None:
         out["temperature"] = req["temperature"]
     if req.get("top_p") is not None:

@@ -78,6 +78,30 @@ class ResponsesMapping(unittest.TestCase):
         self.assertEqual(out["tools"][0]["name"], "lookup")
         self.assertEqual(out["tool_choice"], "auto")
 
+    def test_responses_forced_tool_choice_string_degrades_to_auto(self):
+        out = cs.anthropic_to_openai_responses({
+            "model": "claude-opus-4-8",
+            "messages": [{"role": "user", "content": "hi"}],
+            "tools": [{"name": "lookup", "input_schema": {"type": "object"}}],
+            "tool_choice": "required",
+        })
+        self.assertEqual(out["tool_choice"], "auto")
+
+    def test_dashscope_responses_tool_requests_use_conservative_cap(self):
+        old_url = cs.PROV.get("url")
+        cs.PROV["url"] = "https://dashscope.aliyuncs.com/compatible-mode/v1/responses"
+        try:
+            out = cs.anthropic_to_openai_responses({
+                "model": "claude-opus-4-8",
+                "messages": [{"role": "user", "content": "hi"}],
+                "max_tokens": 999999,
+                "tools": [{"name": "lookup", "input_schema": {"type": "object"}}],
+            })
+        finally:
+            cs.PROV["url"] = old_url
+        self.assertEqual(out["max_output_tokens"], 8192)
+        self.assertEqual(out["tool_choice"], "auto")
+
     def test_responses_tool_choice_none_passthrough(self):
         out = cs.anthropic_to_openai_responses({
             "model": "claude-opus-4-8",
