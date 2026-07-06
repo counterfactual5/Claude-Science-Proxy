@@ -102,6 +102,31 @@ class ResponsesMapping(unittest.TestCase):
         self.assertEqual(out["max_output_tokens"], 8192)
         self.assertEqual(out["tool_choice"], "auto")
 
+    def test_dashscope_responses_drops_incompatible_web_search_tool(self):
+        old_url = cs.PROV.get("url")
+        cs.PROV["url"] = "https://dashscope.aliyuncs.com/compatible-mode/v1/responses"
+        try:
+            out = cs.anthropic_to_openai_responses({
+                "model": "claude-opus-4-8",
+                "messages": [{"role": "user", "content": "hi"}],
+                "tools": [
+                    {"name": "web_search", "input_schema": {"type": "object"}},
+                    {"name": "lookup", "input_schema": {"properties": {"q": {"type": "string"}}}},
+                ],
+            })
+        finally:
+            cs.PROV["url"] = old_url
+        self.assertEqual([t["name"] for t in out["tools"]], ["lookup"])
+        self.assertEqual(out["tools"][0]["parameters"]["type"], "object")
+
+    def test_non_dashscope_responses_keeps_web_search_tool(self):
+        out = cs.anthropic_to_openai_responses({
+            "model": "claude-opus-4-8",
+            "messages": [{"role": "user", "content": "hi"}],
+            "tools": [{"name": "web_search", "input_schema": {"type": "object"}}],
+        })
+        self.assertEqual(out["tools"][0]["name"], "web_search")
+
     def test_responses_tool_choice_none_passthrough(self):
         out = cs.anthropic_to_openai_responses({
             "model": "claude-opus-4-8",
