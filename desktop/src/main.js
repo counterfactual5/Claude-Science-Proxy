@@ -119,6 +119,8 @@ const $ = (id) => document.getElementById(id);
 const els = {};
 let statusTimer = null;
 let busy = false;
+let busyOp = null;
+let busyMsgTimers = [];
 let mode = "proxy"; // "proxy" 第三方 | "official" 官方
 // 当前配置快照（get_config 结果）。全 key 绝不在此，只有掩码。
 let state = { profiles: [], templates: [], active_id: "", proxy_port: 18991, sandbox_port: 8990 };
@@ -213,8 +215,54 @@ function setLight(el, s) {
   el.className = "lt " + cls;
 }
 
-function setBusy(on) {
+function clearBusyMsgTimers() {
+  busyMsgTimers.forEach((t) => clearTimeout(t));
+  busyMsgTimers = [];
+}
+
+function profileName(id) {
+  const p = (state.profiles || []).find((x) => x.id === id);
+  return p ? p.name : id;
+}
+
+function syncProfileBusyState() {
+  if (!els.profileList) return;
+  els.profileList.querySelectorAll(".prow").forEach((row) => {
+    const isTarget = !!(busyOp && busyOp.kind === "activate" && row.getAttribute("data-id") === busyOp.id);
+    row.classList.toggle("pworking", isTarget);
+    row.querySelectorAll("button[data-act]").forEach((btn) => {
+      btn.disabled = busy;
+      if (btn.getAttribute("data-act") === "activate") {
+        btn.textContent = isTarget ? "正在启用…" : "设为当前";
+      }
+    });
+  });
+}
+
+function scheduleBusyMsg(ms, op, text) {
+  const timer = setTimeout(() => {
+    if (busy && busyOp && busyOp.kind === op.kind && busyOp.id === op.id) setMsg(text);
+  }, ms);
+  busyMsgTimers.push(timer);
+}
+
+function startActivateFeedback(id, skipVerify) {
+  const name = profileName(id);
+  clearBusyMsgTimers();
+  if (skipVerify) {
+    setMsg("正在启用「" + name + "」：已跳过上游校验，正在启动正式代理并探活…");
+    scheduleBusyMsg(3500, { kind: "activate", id }, "仍在等待正式代理探活完成。完成后会自动应用，失败会保留原配置。");
+    return;
+  }
+  setMsg("正在启用「" + name + "」：先用临时代理校验上游，网络慢时可能需要约 20 秒…");
+  scheduleBusyMsg(4500, { kind: "activate", id }, "仍在等待上游校验响应。可以继续查看日志/报告，请不要重复切换配置。");
+  scheduleBusyMsg(18000, { kind: "activate", id }, "上游校验仍未返回，接近本次等待上限。完成后会自动切换，或给出重试/跳过验证提示。");
+}
+
+function setBusy(on, op) {
   busy = on;
+  busyOp = on ? (op || { kind: "global" }) : null;
+  if (!on) clearBusyMsgTimers();
   [
     els.oneClickBtn, els.stopBtn, els.newBtn,
     els.wizSaveBtn, els.wizFetchBtn, els.wizCancelBtn,
@@ -225,6 +273,7 @@ function setBusy(on) {
   ].forEach((b) => b && (b.disabled = on));
   // 模式切换按钮同样禁用：忙碌中切官方会与「一键开始」竞态（修 P1-b 前端侧）。
   if (els.modeSeg) els.modeSeg.querySelectorAll(".seg-btn").forEach((b) => (b.disabled = on));
+  syncProfileBusyState();
   // 松开忙碌时，把 requires_model_override 的保存门控交回门（避免 setBusy(false) 覆盖门控）。
   if (!on) { refreshWizGate(); refreshConnGate(); }
 }
@@ -338,6 +387,7 @@ function renderList() {
       "</div>"
     );
   }).join("");
+  syncProfileBusyState();
 }
 
 // ── 模式（第三方 / 官方）──
@@ -790,8 +840,8 @@ async function doDelete(id) {
 // 返回体 committed:true=已生效；committed:false=未生效（可能可 skip）；抛错=回滚/中止。
 async function activate(id, skipVerify) {
   hideSkip();
-  setBusy(true);
-  setMsg(skipVerify ? "跳过验证，切换中…" : "校验中→切换中…");
+  setBusy(true, { kind: "activate", id });
+  startActivateFeedback(id, !!skipVerify);
   try {
     const r = await call("set_active_profile", { id, skipVerify: !!skipVerify });
     if (r && r.committed) {
