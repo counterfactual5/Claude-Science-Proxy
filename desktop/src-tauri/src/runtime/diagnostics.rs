@@ -6,6 +6,11 @@ pub(crate) struct StatusProbeInput {
     pub(crate) upstream_ok: bool,
 }
 
+pub(crate) struct ScienceDiagnosticsInput {
+    pub(crate) sandbox_port: u16,
+    pub(crate) sandbox_ok: bool,
+}
+
 #[derive(Clone, Copy)]
 pub(crate) struct StatusLights {
     pub(crate) proxy: &'static str,
@@ -30,12 +35,40 @@ pub(crate) fn status_lights(input: StatusProbeInput) -> StatusLights {
     }
 }
 
+pub(crate) fn science_diagnostics(input: ScienceDiagnosticsInput) -> serde_json::Value {
+    json!({
+        "schema_version": 1,
+        "sandbox": {
+            "port": input.sandbox_port,
+            "health": light(input.sandbox_ok),
+        },
+        "auth": {
+            "mode": "virtual_oauth",
+            "real_account_verified": false,
+            "real_home_verified": false,
+            "known_boundary_rule_ids": [
+                "science.auth.virtual-oauth-scope-boundary",
+                "science.auth.refresh-hardcoded-0_1_15",
+            ],
+        },
+        "version": {
+            "status_probe": "not_run_in_status_poll",
+            "known_rule_ids": [
+                "science.version.0_1_15_dev.route-diff",
+                "science.auth.refresh-hardcoded-0_1_15",
+            ],
+            "note": "status() does not run claude-science binary/version probes; use isolated HOME and non-8765 ports before making Science-version or real-account claims.",
+        },
+    })
+}
+
 pub(crate) fn build_status_response(
     lights: StatusLights,
     active_profile: serde_json::Value,
     gateway_kind: &str,
     shim_mode: &str,
     catalog: serde_json::Value,
+    science: serde_json::Value,
 ) -> serde_json::Value {
     json!({
         "proxy": lights.proxy,
@@ -47,13 +80,17 @@ pub(crate) fn build_status_response(
             "shim_mode": shim_mode,
         },
         "catalog": catalog,
+        "science": science,
         "last_error": null,
     })
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{build_status_response, status_lights, StatusProbeInput};
+    use super::{
+        build_status_response, science_diagnostics, status_lights, ScienceDiagnosticsInput,
+        StatusProbeInput,
+    };
     use serde_json::json;
 
     #[test]
@@ -101,6 +138,10 @@ mod tests {
                 "active_rules": [],
                 "boundary_rules": [],
             }),
+            science_diagnostics(ScienceDiagnosticsInput {
+                sandbox_port: 8990,
+                sandbox_ok: false,
+            }),
         );
         assert_eq!(v["proxy"], "green");
         assert_eq!(v["sandbox"], "amber");
@@ -109,6 +150,14 @@ mod tests {
         assert_eq!(v["runtime"]["gateway_kind"], "python");
         assert_eq!(v["runtime"]["shim_mode"], "off");
         assert_eq!(v["catalog"]["schema_version"], 1);
+        assert_eq!(v["science"]["schema_version"], 1);
+        assert_eq!(v["science"]["sandbox"]["port"], 8990);
+        assert_eq!(v["science"]["sandbox"]["health"], "amber");
+        assert_eq!(v["science"]["auth"]["real_account_verified"], false);
+        assert_eq!(
+            v["science"]["version"]["known_rule_ids"][1],
+            "science.auth.refresh-hardcoded-0_1_15"
+        );
         assert!(v["last_error"].is_null());
     }
 }

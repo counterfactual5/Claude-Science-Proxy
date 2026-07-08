@@ -219,6 +219,8 @@ fn boundary_rule_ids() -> &'static [&'static str] {
         "mcp.streamable-http.external-bio",
         "mcp.directory-connectors.virtual-login",
         "skill.remote-official.virtual-login-boundary",
+        "science.version.0_1_15_dev.route-diff",
+        "science.auth.refresh-hardcoded-0_1_15",
         "science.auth.virtual-oauth-scope-boundary",
         "transport.connect.anthropic-fastfail-401",
         "transport.connect.non-anthropic-direct-tunnel",
@@ -327,6 +329,7 @@ mod tests {
 
         let boundaries = ids(&v, "boundary_rules");
         assert!(boundaries.contains(&"mcp.hosted-anthropic.hcls-boundary".to_string()));
+        assert!(boundaries.contains(&"science.auth.refresh-hardcoded-0_1_15".to_string()));
         assert!(boundaries.contains(&"transport.upstream-proxy.planned-for-http-mcp".to_string()));
     }
 

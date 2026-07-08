@@ -34,6 +34,7 @@
 - **当前本机安装版**：`/Applications/Claude Science.app` 仍是 `0.1.0-dev.20260630.t212931.sha2bc1ac8`。
 - **本地缓存证据版**：`.science-binaries/README.md` 记录过 `0.1.15-dev.20260701.t220242.shaaa553de`；该缓存只作为本地证据，不随公开包发布。本轮未读取、未复制、未修改真实 `~/.claude-science`。
 - **route diff 新增面**：`/api/auth/nonce`、`/api/auth/` 可能影响虚拟 OAuth / auth status；`/api/conda/conda-remote`、`/api/pypi/pypi-remote/simple`、conda mirror preference/probe 可能影响沙箱包源代理；`/api/frames/:id/token-series`、`/api/skills/:name/resync` 可能影响诊断或技能同步行为。
+- **2026-07-09 追加（#15 auth refresh / logged-out）：** catalog/status diagnostics 已新增 `science.auth.refresh-hardcoded-0_1_15` 边界，用于解释 `0.1.15-dev.20260701.t220242.shaaa553de` 可能通过硬编码 `api.anthropic.com/oauth/token` 刷新 OAuth、从而把虚拟 OAuth 判为 logged-out 的版本风险。`status().science` 只暴露沙箱健康、虚拟 OAuth 边界和“status 轮询不跑二进制版本探测”的说明；这不是修复真实账号态，也不等于真实 HOME、GUI E2E、published DMG 或 live provider E2E 验证。
 - **下一步**：在 `0.1.15-dev` 二进制可控时，用隔离 HOME + 非 `8765` 端口复跑虚拟 OAuth、沙箱启动、包源代理相关最小路径；不要从当前 `0.1.0-dev` 实测外推兼容结论。
 
 ## 3. ✅ 运行中再点主按钮的幂等分派（已随 v0.2.0 发布，已毕业）
