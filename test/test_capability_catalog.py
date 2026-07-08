@@ -66,6 +66,7 @@ REQUIRED_RULE_IDS = {
     "tool.dashscope.responses.web_search-drop",
     "mcp.hosted-anthropic.hcls-boundary",
     "science.version.0_1_15_dev.route-diff",
+    "science.auth.refresh-hardcoded-0_1_15",
     "transport.connect.anthropic-fastfail-401",
 }
 

@@ -325,6 +325,25 @@
       "tests": []
     },
     {
+      "id": "science.auth.refresh-hardcoded-0_1_15",
+      "scope": "science_version",
+      "match": {
+        "version": "0.1.15-dev.20260701.t220242.shaaa553de",
+        "auth_refresh": "api.anthropic.com/oauth/token"
+      },
+      "status": "limited",
+      "action": "diagnose",
+      "reason": "Issue #15 reports that this Science build may refresh OAuth via hardcoded api.anthropic.com/oauth/token outside ANTHROPIC_BASE_URL; virtual OAuth can then be treated as logged-out. CSSwitch surfaces this as a version/auth boundary, not as real-account success.",
+      "evidence": [
+        "https://github.com/SuperJJ007/CSSwitch/issues/15",
+        "docs/known-issues.md:37",
+        "findings/switching-organization-hang.md:16"
+      ],
+      "tests": [
+        "test.test_capability_catalog.CapabilityCatalogSchema.test_rule_ids_are_unique_and_key_rules_exist"
+      ]
+    },
+    {
       "id": "science.auth.virtual-oauth-scope-boundary",
       "scope": "science_version",
       "match": {
