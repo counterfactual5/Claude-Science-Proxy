@@ -29,6 +29,7 @@ CSSwitch 是一个给 Claude Science 使用的本地模型切换器。它把 Sci
 - [可以做什么](#可以做什么)
 - [快速开始](#快速开始)
 - [支持的模型来源](#支持的模型来源)
+- [状态诊断与能力 catalog](#状态诊断与能力-catalog)
 - [它如何保护你的真实账号](#它如何保护你的真实账号)
 - [哪些能力暂时用不了](#哪些能力暂时用不了)
 - [多语言](#多语言)
@@ -111,6 +112,12 @@ Claude Science sandbox
 | 自定义 OpenAI Responses | 自填 OpenAI Responses base root | 代理自动补 `/responses` 与 `/models` |
 
 > 如果你的地址是 `/anthropic` 端点，请选择「自定义 Anthropic」。如果选择「自定义 OpenAI」，请填写 OpenAI 兼容的 base root，例如 `https://example.com/v1`，不要填 Anthropic 端点。
+
+## 状态诊断与能力 catalog
+
+CSSwitch 内置了只读的 capability catalog，用来把 provider、工具调用、MCP/skill、Science 版本和 transport 的已知兼容性边界显式化。运行时 `status` 诊断会返回当前 profile 命中的 catalog 规则和固定边界规则，便于定位「当前配置为什么这样处理」以及「哪些能力只能诊断或降级」。
+
+这个 catalog 是诊断与可观测性入口，不是 live provider、真实 Claude 账号态、Science GUI E2E、DMG 签名/公证或官方托管能力的验证结果。看到 catalog rule id 只表示 CSSwitch 记录了对应规则或边界；不表示外部 provider、Anthropic-hosted MCP、Directory connectors、remote skills 已被完整验证或修通。
 
 ## 它如何保护你的真实账号
 
