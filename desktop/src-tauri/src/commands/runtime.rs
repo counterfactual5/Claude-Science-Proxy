@@ -248,6 +248,9 @@ fn verify_key_inner_cmd(
 pub(crate) struct FetchModelsReq {
     /// 模板 id（决定 builtin / base_url 可编辑性 / 默认 base_url）。
     template_id: String,
+    /// 编辑已存 profile 时的实际 api_format；为空则按模板默认值。
+    #[serde(default)]
+    api_format: Option<String>,
     /// 自定义模板时用户填的 base_url（不可编辑模板忽略）。
     #[serde(default)]
     base_url: String,
@@ -271,6 +274,7 @@ pub(crate) async fn fetch_models(
             app,
             crate::runtime::model_discovery::ModelDiscoveryRequest {
                 template_id: req.template_id,
+                api_format: req.api_format,
                 base_url: req.base_url,
                 key: req.key,
                 profile_id: req.profile_id,
