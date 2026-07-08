@@ -28,8 +28,20 @@ pub(crate) struct ProxyLaunch {
     pub(crate) thinking_policy: &'static str,
 }
 
+pub(crate) fn adapter_for_profile(p: &config::Profile) -> &'static str {
+    if p.template_id == "custom" {
+        match p.api_format.as_str() {
+            "openai_chat" => "openai-custom",
+            "openai_responses" => "openai-responses",
+            _ => templates::adapter_for(&p.template_id),
+        }
+    } else {
+        templates::adapter_for(&p.template_id)
+    }
+}
+
 pub(crate) fn proxy_args_for(p: &config::Profile) -> ProxyLaunch {
-    let adapter = templates::adapter_for(&p.template_id).to_string();
+    let adapter = adapter_for_profile(p).to_string();
     let key_env = key_env_for_adapter(&adapter);
     ProxyLaunch {
         adapter,
@@ -86,12 +98,10 @@ fn looks_like_anthropic_endpoint(base_url: &str) -> bool {
 }
 
 pub(crate) fn reject_openai_custom_anthropic_base(
-    template_id: &str,
+    adapter: &str,
     base_url: &str,
 ) -> Result<(), String> {
-    if matches!(template_id, "custom-openai" | "custom-openai-responses")
-        && looks_like_anthropic_endpoint(base_url)
-    {
+    if is_openai_adapter(adapter) && looks_like_anthropic_endpoint(base_url) {
         Err("这个地址看起来是 Anthropic 兼容端点。请改选「自定义 Anthropic」，或使用 OpenAI 兼容 base root（如 https://api.moonshot.cn/v1）。".to_string())
     } else {
         Ok(())
@@ -179,9 +189,9 @@ pub(crate) fn relay_missing_model(adapter: &str, model: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        assert_format_supported, gateway_kind_for_adapter, key_env_for_adapter, key_fingerprint,
-        normalize_shim_mode, parse_host, proxy_args_for, proxy_fingerprint,
-        proxy_fingerprint_with_runtime, reject_openai_custom_anthropic_base,
+        adapter_for_profile, assert_format_supported, gateway_kind_for_adapter,
+        key_env_for_adapter, key_fingerprint, normalize_shim_mode, parse_host, proxy_args_for,
+        proxy_fingerprint, proxy_fingerprint_with_runtime, reject_openai_custom_anthropic_base,
         relay_missing_base_url, relay_missing_model, should_scratch_candidate, upstream_host,
     };
     use crate::config::Profile;
@@ -240,6 +250,41 @@ mod tests {
         assert_eq!(d.key_env, "CSSWITCH_OPENAI_KEY");
         assert_eq!(d.base_url, "https://api.openai.com/v1");
         assert_eq!(d.model, "gpt-5.2");
+
+        let custom_profile_openai = Profile {
+            template_id: "custom".into(),
+            api_format: "openai_chat".into(),
+            base_url: "https://api.example.com/v1".into(),
+            api_key: "ok".into(),
+            model: "gpt-5.2".into(),
+            ..Default::default()
+        };
+        let e = proxy_args_for(&custom_profile_openai);
+        assert_eq!(adapter_for_profile(&custom_profile_openai), "openai-custom");
+        assert_eq!(e.adapter, "openai-custom");
+        assert_eq!(e.key_env, "CSSWITCH_OPENAI_KEY");
+
+        let custom_profile_responses = Profile {
+            api_format: "openai_responses".into(),
+            ..custom_profile_openai
+        };
+        let f = proxy_args_for(&custom_profile_responses);
+        assert_eq!(
+            adapter_for_profile(&custom_profile_responses),
+            "openai-responses"
+        );
+        assert_eq!(f.adapter, "openai-responses");
+        assert_eq!(f.key_env, "CSSWITCH_OPENAI_KEY");
+
+        let non_custom_openai_format = Profile {
+            template_id: "glm".into(),
+            api_format: "openai_chat".into(),
+            base_url: "https://open.bigmodel.cn/api/anthropic".into(),
+            api_key: "ok".into(),
+            model: "glm-5".into(),
+            ..Default::default()
+        };
+        assert_eq!(adapter_for_profile(&non_custom_openai_format), "relay");
     }
 
     #[test]
@@ -272,22 +317,22 @@ mod tests {
     #[test]
     fn custom_openai_rejects_anthropic_base_url() {
         let err = reject_openai_custom_anthropic_base(
-            "custom-openai",
+            "openai-custom",
             "https://api.moonshot.cn/anthropic",
         )
         .unwrap_err();
         assert!(err.contains("自定义 Anthropic"));
         assert!(
-            reject_openai_custom_anthropic_base("custom-openai", "https://api.moonshot.cn/v1",)
+            reject_openai_custom_anthropic_base("openai-custom", "https://api.moonshot.cn/v1",)
                 .is_ok()
         );
         assert!(reject_openai_custom_anthropic_base(
-            "custom-openai-responses",
+            "openai-responses",
             "https://api.moonshot.cn/anthropic",
         )
         .is_err());
         assert!(
-            reject_openai_custom_anthropic_base("custom", "https://api.moonshot.cn/anthropic",)
+            reject_openai_custom_anthropic_base("relay", "https://api.moonshot.cn/anthropic",)
                 .is_ok()
         );
     }

@@ -72,7 +72,6 @@ pub(crate) fn set_active_profile_txn(
     if let Some(edit) = conn_edit {
         edit.apply(&mut candidate);
     }
-    reject_openai_custom_anthropic_base(&candidate.template_id, &candidate.base_url)?;
     let is_edit = conn_edit.is_some();
     let (verb, tail): (&str, &str) = if is_edit {
         ("未保存", "仍在用原配置运行")
@@ -81,6 +80,7 @@ pub(crate) fn set_active_profile_txn(
     };
     assert_format_supported(&candidate)?;
     let launch = proxy_args_for(&candidate);
+    reject_openai_custom_anthropic_base(&launch.adapter, &candidate.base_url)?;
     if launch.key.is_empty() {
         return Err(format!("「{}」还没填 API key，请先填写。", candidate.name));
     }

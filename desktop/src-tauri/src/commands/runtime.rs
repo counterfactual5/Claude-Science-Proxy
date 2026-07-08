@@ -9,14 +9,12 @@ use crate::runtime::diagnostics::{build_status_response, status_lights, StatusPr
 use crate::runtime::operation::{self, OperationKind, OperationStage, OperationTrace};
 use crate::runtime::profile::profile_capabilities;
 use crate::runtime::provider::{
-    current_shim_mode_for_adapter, gateway_kind_for_adapter, upstream_host,
+    adapter_for_profile, current_shim_mode_for_adapter, gateway_kind_for_adapter, upstream_host,
 };
 use crate::runtime::proxy_lifecycle::ensure_proxy;
 use crate::runtime::science::{settings_change_needs_teardown, stop_sandbox};
 use crate::runtime::system::{kill_child, open_in_browser};
-use crate::{
-    config, lock, proc, run_blocking, templates, AppState, SharedAppState, SharedLifecycle,
-};
+use crate::{config, lock, proc, run_blocking, AppState, SharedAppState, SharedLifecycle};
 
 fn stop_sandbox_state(app: &tauri::AppHandle, st: &mut AppState) -> Result<(), String> {
     stop_sandbox(app, &mut st.sandbox, &mut st.sandbox_url)
@@ -354,7 +352,7 @@ pub(crate) fn status(state: State<'_, SharedAppState>) -> serde_json::Value {
         // 上游灯读生效 profile 的 adapter/base_url；无生效配置 → 空（灯显黄，不误探）。
         let (adapter, base_url, active_profile) = match cfg.active_profile() {
             Some(p) => {
-                let adapter = templates::adapter_for(&p.template_id).to_string();
+                let adapter = adapter_for_profile(p).to_string();
                 (
                     adapter,
                     p.base_url.clone(),

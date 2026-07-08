@@ -3,7 +3,7 @@ use std::path::Path;
 use serde_json::json;
 
 use crate::runtime::provider::{
-    assert_format_supported, is_native_adapter, is_openai_adapter,
+    adapter_for_profile, assert_format_supported, is_native_adapter, is_openai_adapter,
     reject_openai_custom_anthropic_base, relay_missing_model,
 };
 use crate::{config, scratch, templates};
@@ -147,7 +147,6 @@ pub(crate) fn create_profile_inner(
         .map(str::to_string)
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| tpl.base_url.to_string());
-    reject_openai_custom_anthropic_base(template_id, &base_url)?;
     let p = config::Profile {
         id: id.clone(),
         name: name.to_string(),
@@ -165,8 +164,10 @@ pub(crate) fn create_profile_inner(
         notes: None,
     };
     assert_format_supported(&p)?; // custom 选了不支持格式则拒
-                                  // 守卫（修 #9 P1-a）：relay/自定义端点必须带 model（force 前提）。
-    if relay_missing_model(tpl.adapter, &p.model) {
+    let adapter = adapter_for_profile(&p);
+    reject_openai_custom_anthropic_base(adapter, &p.base_url)?;
+    // 守卫（修 #9 P1-a）：relay/自定义端点必须带 model（force 前提）。
+    if relay_missing_model(adapter, &p.model) {
         return Err("中转 / 自定义端点必须选择或填写一个模型，未创建。".to_string());
     }
     config::update(dir, |c| c.profiles.push(p)).map_err(|e| e.to_string())?;
