@@ -147,6 +147,17 @@ function modelRequired(t) {
   if (Object.prototype.hasOwnProperty.call(caps, "model_required")) return !!caps.model_required;
   return !!t.requires_model_override; // 兼容旧后端 / preview mock
 }
+function profileCapabilitySource(p, t) {
+  if (!p || !p.capabilities) return t;
+  return {
+    ...(t || {}),
+    ...p,
+    adapter: (t && t.adapter) || p.adapter,
+    builtin_models: (t && t.builtin_models) || [],
+    base_url_editable: t ? t.base_url_editable : true,
+    capabilities: p.capabilities,
+  };
+}
 // 来源提示：据「地址是否可编辑 + 模型能力」生成，不能只看 category
 // （OpenRouter 的 category 是 custom，但地址只读、模型可跟随；只看 category 会误导）。
 function sourceHint(t) {
@@ -717,28 +728,29 @@ function openConn(id) {
   const p = (state.profiles || []).find((x) => x.id === id);
   if (!p) return;
   const t = tplById(p.template_id);
+  const capSrc = profileCapabilitySource(p, t);
   const editable = t ? t.base_url_editable : true;
   const active = id === state.active_id;
   els.connSec.dataset.id = id;
   els.connTitle.textContent = "编辑连接 · " + p.name + (active ? "（当前生效）" : "");
   els.connBase.value = p.base_url || (t ? t.base_url : "");
   els.connBase.readOnly = !editable;
-  els.connBase.placeholder = t && (t.api_format === "openai_chat" || t.api_format === "openai_responses")
+  els.connBase.placeholder = capSrc && (capSrc.api_format === "openai_chat" || capSrc.api_format === "openai_responses")
     ? "https://open.bigmodel.cn/api/paas/v4"
     : "https://your-relay/claude";
   // native（deepseek/qwen）隐藏「获取模型」按钮，别再提示一个不存在的操作（修 #5）。
   els.connBaseHint.textContent = editable
     ? (t && t.base_url
         ? "官方默认地址，可改到 token 套餐 / 区域端点。"
-        : (t && t.api_format === "openai_chat"
+        : (capSrc && capSrc.api_format === "openai_chat"
           ? "OpenAI 兼容 base root，代理自动补 /chat/completions。"
-          : t && t.api_format === "openai_responses"
+          : capSrc && capSrc.api_format === "openai_responses"
           ? "OpenAI 兼容 base root，代理自动补 /responses。"
           : "自定义端点根地址。"))
-    : (modelCapability(t) === CAP.NATIVE
+    : (modelCapability(capSrc) === CAP.NATIVE
         ? "模板地址（只读），模型由内置映射自动选择。"
         : "模板地址（只读）。填 key 后可「获取模型」。");
-  applyModelCapability(t, {
+  applyModelCapability(capSrc, {
     info: els.connModelInfo, sel: els.connModel, hint: els.connModelHint, fetchBtn: els.connFetchBtn,
   }, p.model || "");
   els.connKey.value = "";
@@ -771,7 +783,7 @@ async function connFetch() {
   try {
     const key = els.connKey.value.trim(); // 有新 key 带上；空则后端用已存 key（profileId）
     const r = await call("fetch_models", {
-      req: { template_id: p.template_id, base_url: base, key, profile_id: p.id },
+      req: { template_id: p.template_id, api_format: p.api_format || (t ? t.api_format : ""), base_url: base, key, profile_id: p.id },
     });
     applyFetchResult(els.connModel, p.capabilities ? modelRequired(p) : (t ? modelRequired(t) : true), r);
   } catch (e) {
