@@ -8,10 +8,11 @@ use crate::runtime::profile::{
 };
 use crate::runtime::profile_switch::{scratch_validate_candidate, set_active_profile_txn};
 use crate::runtime::provider::{
-    reject_openai_custom_anthropic_base, relay_missing_base_url, relay_missing_model,
+    adapter_for_profile, reject_openai_custom_anthropic_base, relay_missing_base_url,
+    relay_missing_model,
 };
 use crate::runtime::system::kill_child;
-use crate::{config, lock, run_blocking, templates, SharedAppState, SharedLifecycle};
+use crate::{config, lock, run_blocking, SharedAppState, SharedLifecycle};
 
 #[tauri::command]
 pub(crate) fn get_config() -> Result<serde_json::Value, String> {
@@ -156,20 +157,15 @@ fn update_profile_connection_inner_cmd(
             key.clone(),
         );
         edit.apply(&mut candidate);
-        reject_openai_custom_anthropic_base(&candidate.template_id, &candidate.base_url)?;
+        let adapter = adapter_for_profile(&candidate);
+        reject_openai_custom_anthropic_base(adapter, &candidate.base_url)?;
         // 保存前守卫（修 P2）：relay/自定义端点清空 base_url → 不可用连接（激活必失败）。
         // 校验生效后的 base_url，空则拒绝落盘、绝不谎报「已保存」；native 走硬编码端点，空无妨。
-        if relay_missing_base_url(
-            templates::adapter_for(&candidate.template_id),
-            &candidate.base_url,
-        ) {
+        if relay_missing_base_url(adapter, &candidate.base_url) {
             return Err("中转 / 自定义端点必须填写连接地址（base_url），连接未保存。".to_string());
         }
         // 保存前守卫（修 #9 P1-a）：relay/自定义端点空 model → 无 force → 退回 passthrough（显示 claude）。
-        if relay_missing_model(
-            templates::adapter_for(&candidate.template_id),
-            &candidate.model,
-        ) {
+        if relay_missing_model(adapter, &candidate.model) {
             return Err("中转 / 自定义端点必须选择或填写一个模型，连接未保存。".to_string());
         }
         if cfg.active_id == id {

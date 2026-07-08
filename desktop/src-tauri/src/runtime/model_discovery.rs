@@ -75,18 +75,6 @@ fn discovery_adapter(
     }
 }
 
-fn discovery_reject_template_id(template_id: &str, api_format: &str) -> String {
-    if template_id == "custom" {
-        match api_format {
-            "openai_chat" => "custom-openai".to_string(),
-            "openai_responses" => "custom-openai-responses".to_string(),
-            _ => "custom".to_string(),
-        }
-    } else {
-        template_id.to_string()
-    }
-}
-
 /// 「获取可用模型」——纯 scratch 探测：只用临时代理探候选 base_url/key 的 /v1/models，
 /// 绝不写 config、不改 AppState、不碰正在服务 Science 的正式代理。
 pub(crate) fn fetch_models(
@@ -110,13 +98,12 @@ pub(crate) fn fetch_models(
         req.profile_id.as_deref(),
         req.api_format.as_deref(),
     )?;
-    let reject_tid = discovery_reject_template_id(tid, &api_format);
-    reject_openai_custom_anthropic_base(&reject_tid, &base_url)?;
     let key = resolve_probe_key(req.profile_id.as_deref(), &req.key)?;
     let root = asset_root(&app).ok_or("找不到代理脚本 proxy/csswitch_proxy.py。")?;
     let py = proc::find_exe("python3").ok_or("缺少依赖 python3（起临时代理需要）。")?;
     let script = root.join("proxy/csswitch_proxy.py");
     let adapter = discovery_adapter(tid, tpl.adapter, &api_format);
+    reject_openai_custom_anthropic_base(adapter, &base_url)?;
     let trace = OperationTrace::start(
         OperationKind::FetchModels,
         format!("template_id={tid} adapter={adapter}"),
@@ -199,8 +186,8 @@ pub(crate) fn fetch_models(
 #[cfg(test)]
 mod tests {
     use super::{
-        discovery_adapter, discovery_reject_template_id, effective_api_format_from_dir,
-        resolve_probe_key, resolve_probe_key_from_dir,
+        discovery_adapter, effective_api_format_from_dir, resolve_probe_key,
+        resolve_probe_key_from_dir,
     };
     use crate::{config, runtime::profile::create_profile_inner};
 
@@ -247,10 +234,6 @@ mod tests {
             "openai-responses"
         );
         assert_eq!(discovery_adapter("glm", "relay", "openai_chat"), "relay");
-        assert_eq!(
-            discovery_reject_template_id("custom", "openai_responses"),
-            "custom-openai-responses"
-        );
     }
 
     #[test]

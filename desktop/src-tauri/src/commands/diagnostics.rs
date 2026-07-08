@@ -1,7 +1,8 @@
 use std::process::Command;
 
+use crate::runtime::provider::adapter_for_profile;
 use crate::runtime::system::{asset_root, open_in_browser};
-use crate::{config, run_blocking, templates};
+use crate::{config, run_blocking};
 
 #[tauri::command]
 pub(crate) async fn run_doctor(app: tauri::AppHandle) -> Result<String, String> {
@@ -16,7 +17,7 @@ fn run_doctor_inner_cmd(app: tauri::AppHandle) -> Result<String, String> {
     let (provider_label, adapter, has_key) = match cfg.active_profile() {
         Some(p) => (
             p.template_id.clone(),
-            templates::adapter_for(&p.template_id),
+            adapter_for_profile(p),
             !p.api_key.is_empty(),
         ),
         None => (String::new(), "", false),
