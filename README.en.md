@@ -29,6 +29,7 @@ It is built for more than developers. You need Claude Science, a third-party API
 - [What it can do](#what-it-can-do)
 - [Quick start](#quick-start)
 - [Supported model sources](#supported-model-sources)
+- [Status diagnostics and capability catalog](#status-diagnostics-and-capability-catalog)
 - [How it protects your real account](#how-it-protects-your-real-account)
 - [Current limitations](#current-limitations)
 - [Languages](#languages)
@@ -111,6 +112,12 @@ If you have a Claude subscription and want the normal official Science experienc
 | Custom OpenAI Responses | User-provided OpenAI Responses base root | The proxy appends `/responses` and `/models` |
 
 > If your URL is an `/anthropic` endpoint, choose "Custom Anthropic". If you choose "Custom OpenAI", enter an OpenAI-compatible base root such as `https://example.com/v1`, not an Anthropic endpoint.
+
+## Status diagnostics and capability catalog
+
+CSSwitch includes a read-only capability catalog that makes known compatibility boundaries explicit across providers, tool use, MCP/skills, Science versions, and transport behavior. Runtime `status` diagnostics return the catalog rules matched by the current profile plus fixed boundary rules, which helps explain why a configuration is handled a certain way and which capabilities are diagnostic-only or degraded.
+
+This catalog is for diagnostics and observability. It is not proof that a live provider, real Claude account state, Science GUI E2E flow, DMG signing/notarization, or official hosted capability has been verified. A catalog rule id means CSSwitch records that rule or boundary; it does not mean external providers, Anthropic-hosted MCP, Directory connectors, or remote skills are fully verified or fixed.
 
 ## How it protects your real account
 

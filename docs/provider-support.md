@@ -3,6 +3,8 @@
 目标：CSSwitch 支持的第三方 API **尽量多**，慢慢实现。本文回答两个核心问题（到底走 Anthropic 端点还是 OpenAI 端点、Claude Science 的工具调用格式怎么处理），并给出候选 provider 清单与实现优先级。对应 roadmap 见 [`known-issues.md`](known-issues.md) 第 2 条。
 
 > 状态：**调研封存**（用户 2026-07-03 叫停）。#1 文案脱敏已完成；**本研究的落地切片「面板内自定义 OpenAI 端点」已定为 #1 之后的下个主线**（见 [`known-issues.md`](known-issues.md) 文末）。已定稿：核心分型、Science 工具调用格式与翻译坑、CC Switch 参考（第三节）、国际 provider 数据（已调研）。**待续**：把国产各家 OpenAI 端点 / 模型细节并成第四节大表（深挖 agent 中断）。
+>
+> 2026-07-08 维护注记：主线现已有静态 [`catalog/capabilities.v1.json`](../catalog/capabilities.v1.json) 和 runtime `status().catalog` diagnostics，用来暴露当前 profile 命中的 provider/tool 规则以及固定边界规则。它们是诊断与可观测性入口，不让 catalog 驱动代理行为，也不等同于 live provider、真实账号态、Science GUI E2E、DMG 签名/公证或官方托管 MCP/Directory/remote skill 能力已验证。
 
 ## 一、核心结论：到底是 Anthropic 端口还是 OpenAI 端点？
 
