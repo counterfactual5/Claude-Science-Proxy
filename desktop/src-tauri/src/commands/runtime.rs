@@ -6,7 +6,10 @@ use serde_json::json;
 use tauri::State;
 
 use crate::runtime::capability_catalog::diagnostics_for_profile;
-use crate::runtime::diagnostics::{build_status_response, status_lights, StatusProbeInput};
+use crate::runtime::diagnostics::{
+    build_status_response, science_diagnostics, status_lights, ScienceDiagnosticsInput,
+    StatusProbeInput,
+};
 use crate::runtime::operation::{self, OperationKind, OperationStage, OperationTrace};
 use crate::runtime::profile::profile_capabilities;
 use crate::runtime::provider::{
@@ -365,12 +368,15 @@ pub(crate) fn status(state: State<'_, SharedAppState>) -> serde_json::Value {
         )
     };
     let uhost = upstream_host(&adapter, &base_url);
+    let proxy_ok = !secret.is_empty()
+        && proc::http_health(pport, Some(&secret), operation::STATUS_HEALTH_TIMEOUT_MS);
+    let sandbox_ok = proc::http_health(sport, None, operation::STATUS_HEALTH_TIMEOUT_MS);
+    let upstream_ok = !uhost.is_empty()
+        && proc::tcp_reachable(&uhost, 443, operation::STATUS_UPSTREAM_TIMEOUT_MS);
     let lights = status_lights(StatusProbeInput {
-        proxy_ok: !secret.is_empty()
-            && proc::http_health(pport, Some(&secret), operation::STATUS_HEALTH_TIMEOUT_MS),
-        sandbox_ok: proc::http_health(sport, None, operation::STATUS_HEALTH_TIMEOUT_MS),
-        upstream_ok: !uhost.is_empty()
-            && proc::tcp_reachable(&uhost, 443, operation::STATUS_UPSTREAM_TIMEOUT_MS),
+        proxy_ok,
+        sandbox_ok,
+        upstream_ok,
     });
     let shim_mode = current_shim_mode_for_adapter(&adapter);
     build_status_response(
@@ -379,6 +385,10 @@ pub(crate) fn status(state: State<'_, SharedAppState>) -> serde_json::Value {
         gateway_kind_for_adapter(&adapter),
         shim_mode,
         diagnostics_for_profile(catalog_profile.as_ref(), shim_mode),
+        science_diagnostics(ScienceDiagnosticsInput {
+            sandbox_port: sport,
+            sandbox_ok,
+        }),
     )
 }
 
