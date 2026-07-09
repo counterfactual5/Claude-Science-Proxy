@@ -53,10 +53,12 @@
         </div>
       </div>
 
-      <!-- 连接编辑（base_url/model/key）：编辑生效条会走「校验→切换」事务 -->
+      <!-- 连接编辑（名称/base_url/model/key） -->
       <div class="sec" id="connSec" hidden>
-        <label id="connTitle">编辑连接</label>
-        <label style="margin-top:6px" for="connBase">地址 base_url</label>
+        <label id="connTitle">编辑</label>
+        <label style="margin-top:6px" for="connName">名称</label>
+        <input id="connName" type="text" autocomplete="off" spellcheck="false" />
+        <label style="margin-top:10px" for="connBase">地址 base_url</label>
         <div class="row">
           <input id="connBase" type="text" autocomplete="off" spellcheck="false" />
           <button class="btn small" id="connFetchBtn">获取模型</button>
@@ -72,23 +74,10 @@
         <div class="hint" id="connModelHint"></div>
         <label style="margin-top:10px" for="connKey">API Key / Token</label>
         <input id="connKey" type="password" autocomplete="off" spellcheck="false" />
-        <div class="hint">留空＝不改；要清除请点「清除 key」。</div>
+        <div class="hint">留空＝不改 key。</div>
         <div class="row" style="margin-top:12px">
-          <button class="btn small" id="connSaveBtn">保存连接</button>
-          <button class="btn small" id="connClearBtn">清除 key</button>
+          <button class="btn small" id="connSaveBtn">保存</button>
           <button class="btn small" id="connCancelBtn">取消</button>
-        </div>
-      </div>
-
-      <!-- 改名 / 备注：就地改元数据，不触发代理 -->
-      <div class="sec" id="metaSec" hidden>
-        <label for="metaName">名称</label>
-        <input id="metaName" type="text" autocomplete="off" spellcheck="false" />
-        <label style="margin-top:10px" for="metaNotes">备注（可选）</label>
-        <input id="metaNotes" type="text" autocomplete="off" spellcheck="false" />
-        <div class="row" style="margin-top:12px">
-          <button class="btn small" id="metaSaveBtn">保存</button>
-          <button class="btn small" id="metaCancelBtn">取消</button>
         </div>
       </div>
 
@@ -109,7 +98,7 @@
       <div class="sec list-only run-sec">
         <button class="hero" id="oneClickBtn">启动 Claude Science</button>
         <div class="subbtns">
-          <button class="btn" id="stopBtn">全部停止</button>
+          <button class="btn" id="stopBtn" title="停止本地代理与 Science 沙箱">停止</button>
         </div>
       </div>
     </div>
