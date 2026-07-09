@@ -254,7 +254,7 @@ class ProxyQwenUpstreamErrorPassthrough(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.up_url, cls.hits, cls.stop_up = start_mock("status:401")
-        port = 18972  # S0 全局唯一端口：ProxyQwenUpstreamErrorPassthrough
+        port = 18972  # S0 globally unique port: ProxyQwenUpstreamErrorPassthrough
         cls.base = f"http://127.0.0.1:{port}"
         cls.logf = os.path.join(tempfile.gettempdir(), f"csswitch-qwen401-{port}.log")
         open(cls.logf, "w").close()
@@ -280,7 +280,7 @@ class ProxyQwenUpstreamErrorPassthrough(unittest.TestCase):
         cls.stop_up()
 
     def test_qwen_upstream_401_preserved_not_502(self):
-        # 修 P2（GPT 复审）：qwen（OpenAI 翻译路径）上游 401 也应原样透传，而非归一化 502。
+        # Fix P2 (GPT review): qwen (OpenAI translation path) upstream 401 should also passthrough, not normalize to 502.
         s, b = _req(f"{self.base}/{SEC}/v1/messages", "POST",
                     {"model": "claude-opus-4-8", "max_tokens": 1,
                      "messages": [{"role": "user", "content": "ping"}]})
@@ -292,7 +292,7 @@ class ProxyRelayToolSchemaNormalization(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.up_base, cls.bodies, cls.stop_up = _start_capture_upstream()
-        port = 18997  # S0 全局唯一端口：ProxyRelayToolSchemaNormalization
+        port = 18997  # S0 globally unique port: ProxyRelayToolSchemaNormalization
         cls.base = f"http://127.0.0.1:{port}"
         cls.logf = os.path.join(tempfile.gettempdir(), f"csswitch-relay-tools-{port}.log")
         open(cls.logf, "w").close()
@@ -372,8 +372,8 @@ class ProxyOpenAICustomModelsDiscovery(unittest.TestCase):
         cls.stop_up()
 
     def test_models_fetch_starts_without_model_env(self):
-        # 回归 v0.3.3 F1：获取模型 scratch 不带 CSP_OPENAI_MODEL。
-        # 代理应能启动并只为 /models 回源；正式推理由 Rust 侧仍要求 model 必填。
+        # Regression v0.3.3 F1: model-fetch scratch runs without CSP_OPENAI_MODEL.
+        # Proxy should start and only hit upstream for /models; formal inference still requires model on Rust side.
         s, b = _req(f"{self.base}/{SEC}/v1/models")
         self.assertEqual(s, 200, b[:160])
         body = json.loads(b)
@@ -413,8 +413,8 @@ class ProxyOpenAICustomForcedModelList(unittest.TestCase):
         cls.stop_up()
 
     def test_formal_proxy_returns_claude_shell_for_science_selector(self):
-        # 回归 #26：正式代理已选定 custom OpenAI 模型时，Science 只能显示
-        # claude-* 壳 id；真实模型名必须放 display_name，出站再由 force override。
+        # Regression #26: when formal proxy has custom OpenAI model selected, Science may only show
+        # claude-* shell ids; real model name goes in display_name, outbound uses force override.
         s, b = _req(f"{self.base}/{SEC}/v1/models")
         self.assertEqual(s, 200, b[:160])
         body = json.loads(b)
