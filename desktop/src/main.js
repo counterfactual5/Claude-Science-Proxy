@@ -100,10 +100,6 @@ function mockInvoke(cmd, args) {
       return Promise.resolve(null);
     case "one_click_login":
       return Promise.resolve({ url: "http://127.0.0.1:8990", msg: "（预览模式：假装已就绪）", action: "started" });
-    case "status":
-      return Promise.resolve({ proxy: "amber", sandbox: "amber", upstream: "amber" });
-    case "run_doctor":
-      return Promise.resolve("（预览模式：后端未运行，这里是占位文本）");
     default:
       return Promise.resolve(null);
   }
@@ -111,7 +107,6 @@ function mockInvoke(cmd, args) {
 
 const $ = (id) => document.getElementById(id);
 const els = {};
-let statusTimer = null;
 let busy = false;
 let busyOp = null;
 let busyMsgTimers = [];
@@ -293,11 +288,6 @@ function setMsg(text, kind) {
   }
 }
 
-function setLight(el, s) {
-  const cls = { green: "g", amber: "a", red: "r" }[s] || "a";
-  el.className = "lt " + cls;
-}
-
 function clearBusyMsgTimers() {
   busyMsgTimers.forEach((t) => clearTimeout(t));
   busyMsgTimers = [];
@@ -387,11 +377,6 @@ function startPortSaveFeedback(changed) {
   setMsg("正在保存端口设置…");
 }
 
-function startDoctorFeedback() {
-  clearBusyMsgTimers();
-  setMsg("自检中：正在运行本地诊断脚本…");
-  scheduleBusyMsg(3500, { kind: "doctor" }, "自检仍在运行。它只检查本地依赖、端口和当前配置摘要，不会读取真实 Science HOME，也不会传出、打印或展示完整 key。");
-}
 
 function setBusy(on, op) {
   busy = on;
@@ -401,7 +386,7 @@ function setBusy(on, op) {
     els.oneClickBtn, els.stopBtn, els.newBtn,
     els.wizSaveBtn, els.wizFetchBtn, els.wizCancelBtn,
     els.connSaveBtn, els.connFetchBtn, els.connClearBtn, els.connCancelBtn,
-    els.metaSaveBtn, els.metaCancelBtn, els.skipActivateBtn, els.doctorBtn,
+    els.metaSaveBtn, els.metaCancelBtn, els.skipActivateBtn,
     // 端口输入也纳入忙碌禁用：忙碌中改端口会与在途操作竞态（修 P1-c 前端侧）。
     els.proxyPort, els.sandboxPort,
   ].forEach((b) => b && (b.disabled = on));
@@ -549,7 +534,6 @@ async function persistPorts() {
     // 后端在端口变化时会拆掉旧代理/沙箱（否则会复用指向旧端口的死链路），如实告知需重开。修 P1-c
     if (changed) {
       setMsg("端口已保存。改端口会重置正在运行的代理/沙箱，请重新启动 Claude Science。", "ok");
-      await refreshStatus();
     } else {
       setMsg("端口未变化。", "ok");
     }
@@ -876,7 +860,6 @@ async function connSave() {
     setMsg("连接未保存：" + e, "err");
   } finally {
     setBusy(false);
-    await refreshStatus();
   }
 }
 
@@ -903,7 +886,6 @@ async function doClearKey(id) {
     setMsg("清除失败：" + e, "err");
   } finally {
     setBusy(false);
-    await refreshStatus();
   }
 }
 
@@ -957,7 +939,6 @@ async function doDelete(id) {
     setMsg("删除失败：" + e, "err");
   } finally {
     setBusy(false);
-    await refreshStatus();
   }
 }
 
@@ -982,7 +963,6 @@ async function activate(id, skipVerify) {
     setMsg("设为当前失败：" + e, "err");
   } finally {
     setBusy(false);
-    await refreshStatus();
   }
 }
 
@@ -997,7 +977,6 @@ async function oneClick() {
   try {
     const r = await call("one_click_login");
     setMsg((r.msg || "已就绪，正在打开面板…") + "\n" + (r.url || ""), "ok");
-    await refreshStatus();
   } catch (e) {
     setMsg("启动失败：" + e, "err");
   } finally {
@@ -1011,7 +990,6 @@ async function stopAll() {
   try {
     await call("stop_all");
     setMsg("已停止代理与沙箱。", "ok");
-    await refreshStatus();
   } catch (e) {
     setMsg("停止失败：" + e, "err");
   } finally {
@@ -1019,36 +997,10 @@ async function stopAll() {
   }
 }
 
-async function runDoctor() {
-  if (busy) return;
-  setBusy(true, { kind: "doctor" });
-  startDoctorFeedback();
-  try {
-    const out = await call("run_doctor");
-    setMsg(out, out.includes("失败 0") ? "ok" : null);
-  } catch (e) {
-    setMsg("自检失败：" + e, "err");
-  } finally {
-    setBusy(false);
-  }
-}
-
-async function refreshStatus() {
-  try {
-    const s = await call("status");
-    setLight(els.ltProxy, s.proxy);
-    setLight(els.ltSandbox, s.sandbox);
-    setLight(els.ltUpstream, s.upstream);
-    els.brandDot.className = "dot" + (s.proxy === "green" ? "" : " amber");
-  } catch (e) {
-    [els.ltProxy, els.ltSandbox, els.ltUpstream].forEach((l) => setLight(l, "amber"));
-  }
-}
-
 function wire() {
   [
-    "oneClickBtn", "stopBtn", "ltProxy", "ltSandbox", "ltUpstream",
-    "msg", "brandDot", "doctorBtn", "logsBtn", "quitBtn", "proxyPort", "sandboxPort", "advSec",
+    "oneClickBtn", "stopBtn",
+    "msg", "proxyPort", "sandboxPort", "advSec",
     "listSec", "profileList", "newBtn", "skipActivateBtn",
     "wizSec", "wizTemplate", "wizTemplateChips", "wizTplLabel", "wizTplHint", "wizName", "wizBase", "wizBaseHint",
     "wizFetchBtn", "wizModelInfo", "wizModel", "wizModelHint", "wizModelPick", "wizDefaultModelLabel", "wizDefaultModel", "wizKey", "wizSaveBtn", "wizCancelBtn",
@@ -1119,20 +1071,12 @@ function wire() {
 
   els.oneClickBtn.addEventListener("click", oneClick);
   els.stopBtn.addEventListener("click", stopAll);
-  els.doctorBtn.addEventListener("click", runDoctor);
-  els.logsBtn.addEventListener("click", () =>
-    call("open_logs").catch((e) => setMsg("打开日志失败：" + e, "err"))
-  );
-  els.quitBtn.addEventListener("click", () => call("quit_app").catch(() => {}));
 }
 
 window.addEventListener("DOMContentLoaded", async () => {
   wire();
   await loadConfig();
-  await refreshStatus();
   if (PREVIEW) {
     setMsg("预览模式：仅看界面，按钮不连后端（真实 app 里会连进程管家）。");
-  } else {
-    statusTimer = setInterval(refreshStatus, 2500);
   }
 });
