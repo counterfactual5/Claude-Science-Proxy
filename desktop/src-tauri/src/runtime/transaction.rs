@@ -35,33 +35,15 @@ pub(crate) fn rollback_status_key(restored: bool) -> &'static str {
     }
 }
 
-/// 回滚结果措辞（纯函数，P2-e）：restored=true 才说「已回滚到原配置」；恢复失败必须如实说明代理已停，
-/// 绝不谎称回滚成功（比照本项目「如实报告」铁律，掩盖代理已停会误导用户）。
-pub(crate) fn rollback_status_clause(restored: bool) -> &'static str {
-    if restored {
-        "已回滚到原配置（沙箱未受影响）"
-    } else {
-        "回滚未成功：代理当前已停，请重试或手动「一键开始」（沙箱未受影响）"
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{decide_switch, rollback_status_clause, skip_scratch_verify, SwitchOutcome};
+    use super::{decide_switch, rollback_status_key, skip_scratch_verify, SwitchOutcome};
 
-    // ---------- P2-e: 回滚措辞如实（恢复失败不得谎称已回滚） ----------
+    // ---------- P2-e: 回滚 i18n 键如实（恢复失败不得用 restored 键） ----------
     #[test]
-    fn rollback_clause_tells_truth_when_restore_failed() {
-        assert!(
-            rollback_status_clause(true).contains("已回滚"),
-            "恢复成功 → 说已回滚"
-        );
-        let failed = rollback_status_clause(false);
-        assert!(
-            !failed.contains("已回滚到原配置"),
-            "恢复失败不得谎称已回滚到原配置"
-        );
-        assert!(failed.contains("代理当前已停"), "如实说明代理已停");
+    fn rollback_key_tells_truth_when_restore_failed() {
+        assert_eq!(rollback_status_key(true), "rollbackRestored");
+        assert_eq!(rollback_status_key(false), "rollbackProxyStopped");
     }
 
     // ---------- B3: 切换事务决策（纯函数，3 分支） ----------
