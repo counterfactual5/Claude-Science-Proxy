@@ -3,11 +3,11 @@ use std::path::Path;
 use serde_json::json;
 
 use crate::runtime::i18n::i18n_err;
+use crate::runtime::model_sort;
 use crate::runtime::provider::{
     adapter_for_profile, assert_format_supported, is_native_adapter, is_openai_adapter,
     reject_openai_custom_anthropic_base,
 };
-use crate::runtime::model_sort;
 use crate::{config, scratch, templates};
 
 /// 判断模型 id 是否会平铺进 Science 选择器主列表（claude-{opus|sonnet|haiku}-<数字…>）。
@@ -216,6 +216,7 @@ pub(crate) fn delete_profile_inner(dir: &Path, id: &str) -> Result<(), String> {
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn update_profile_connection_inner(
     dir: &Path,
     id: &str,
@@ -286,9 +287,10 @@ pub(crate) fn update_profile_connection_inner(
 pub(crate) fn nonactive_probe_verdict(outcome: &scratch::ProbeOutcome) -> Result<bool, String> {
     match outcome {
         scratch::ProbeOutcome::Ok => Ok(true),
-        scratch::ProbeOutcome::Auth(code) => {
-            Err(i18n_err("errUpstreamAuthConnNotSaved", json!({ "code": code })))
-        }
+        scratch::ProbeOutcome::Auth(code) => Err(i18n_err(
+            "errUpstreamAuthConnNotSaved",
+            json!({ "code": code }),
+        )),
         scratch::ProbeOutcome::ModelError(code) => Err(i18n_err(
             "errUpstreamModelRejected",
             json!({ "code": code }),
@@ -423,9 +425,9 @@ pub(crate) fn probe_kind_for_model(model: &str) -> scratch::ProbeKind {
 #[cfg(test)]
 mod tests {
     use super::{
-        build_get_config, build_list_templates, create_profile_inner,
-        delete_profile_inner, is_main_list_model, merge_and_sort_models, nonactive_probe_verdict,
-        probe_kind_for, probe_kind_for_model, profile_capabilities, template_capabilities,
+        build_get_config, build_list_templates, create_profile_inner, delete_profile_inner,
+        is_main_list_model, merge_and_sort_models, nonactive_probe_verdict, probe_kind_for,
+        probe_kind_for_model, profile_capabilities, template_capabilities,
         update_profile_connection_inner, update_profile_metadata_inner, ConnectionEdit,
     };
     use crate::config;
@@ -503,7 +505,8 @@ mod tests {
         assert_eq!(p.api_key, "old-key", "空 key 不覆盖已存 key");
 
         // 非空 key 覆盖；其余 None 不动。
-        let edit2 = ConnectionEdit::with_models(None, None, None, None, None, Some("new-key".into()));
+        let edit2 =
+            ConnectionEdit::with_models(None, None, None, None, None, Some("new-key".into()));
         edit2.apply(&mut p);
         assert_eq!(p.api_key, "new-key", "非空 key 覆盖");
         assert_eq!(p.base_url, "new-url", "None 字段不改");

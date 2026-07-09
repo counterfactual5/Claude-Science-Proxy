@@ -10,7 +10,10 @@ use crate::runtime::operation::{
 };
 use crate::runtime::proxy::ProxyAction;
 use crate::runtime::proxy_lifecycle::ensure_proxy;
-use crate::runtime::science::{ensure_sandbox_runtime_permissions, sandbox_home, sandbox_running_ours, sandbox_url, stop_sandbox};
+use crate::runtime::science::{
+    ensure_sandbox_runtime_permissions, sandbox_home, sandbox_running_ours, sandbox_url,
+    stop_sandbox,
+};
 use crate::runtime::system::{asset_root, log_path, open_in_browser, open_log, redact, tail_file};
 use crate::{config, lifecycle, lock, oauth_forge, proc, AppState, SharedAppState};
 
@@ -68,8 +71,7 @@ pub(crate) fn one_click_login<R: Runtime>(
         }
     }
 
-    let root = asset_root(&app)
-        .ok_or_else(|| i18n_err("errSandboxScriptMissing", json!({})))?;
+    let root = asset_root(&app).ok_or_else(|| i18n_err("errSandboxScriptMissing", json!({})))?;
 
     trace.stage(OperationStage::SandboxLogin, "ensure_virtual_login");
     let (forged, login_action) =
@@ -82,7 +84,8 @@ pub(crate) fn one_click_login<R: Runtime>(
     }
 
     let proxy_url = format!("http://127.0.0.1:{pport}/{secret}");
-    let logf = open_log("sandbox.log").map_err(|e| i18n_err("errSandboxLogOpenFailed", json!({ "error": e.to_string() })))?;
+    let logf = open_log("sandbox.log")
+        .map_err(|e| i18n_err("errSandboxLogOpenFailed", json!({ "error": e.to_string() })))?;
     {
         use std::io::Write;
         let mut lw = &logf;
@@ -113,7 +116,10 @@ pub(crate) fn one_click_login<R: Runtime>(
     if !status.success() {
         let tail = redact(&tail_file(&log_path("sandbox.log"), 600), &secret);
         trace.finish("error=sandbox_launch_failed");
-        return Err(i18n_err("errSandboxLaunchScriptFailed", json!({ "tail": tail })));
+        return Err(i18n_err(
+            "errSandboxLaunchScriptFailed",
+            json!({ "tail": tail }),
+        ));
     }
 
     let mut ok = false;
@@ -147,7 +153,10 @@ pub(crate) fn one_click_login<R: Runtime>(
             let _ = stop_sandbox_state(&app, &mut st);
         }
         trace.finish("error=sandbox_identity_mismatch");
-        return Err(i18n_err("errSandboxIdentityMismatch", json!({ "port": sport })));
+        return Err(i18n_err(
+            "errSandboxIdentityMismatch",
+            json!({ "port": sport }),
+        ));
     }
 
     let url = sandbox_url(sport);

@@ -1,5 +1,5 @@
-use crate::runtime::model_sort;
 use crate::runtime::i18n::i18n_err;
+use crate::runtime::model_sort;
 use crate::{config, templates};
 use serde_json::json;
 
@@ -152,10 +152,7 @@ pub(crate) fn normalize_shim_mode(adapter: &str, raw: Option<&str>) -> &'static 
 }
 
 pub(crate) fn current_shim_mode_for_adapter(adapter: &str) -> &'static str {
-    normalize_shim_mode(
-        adapter,
-        std::env::var("CSP_TOOLUSE_SHIM").ok().as_deref(),
-    )
+    normalize_shim_mode(adapter, std::env::var("CSP_TOOLUSE_SHIM").ok().as_deref())
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -236,7 +233,7 @@ pub(crate) fn relay_missing_profile_models(adapter: &str, profile: &config::Prof
 /// 为正式代理构建虚拟模型注册表 JSON（relay / openai 家族）。
 pub(crate) fn build_model_registry_json(p: &config::Profile) -> Option<String> {
     let adapter = adapter_for_profile(p);
-    if is_native_adapter(&adapter) {
+    if is_native_adapter(adapter) {
         return None;
     }
     let mut models = p.effective_models();
@@ -245,7 +242,10 @@ pub(crate) fn build_model_registry_json(p: &config::Profile) -> Option<String> {
     }
     model_sort::sort_model_ids(&mut models);
     let default_model = p.effective_default_model();
-    let fast_model = models.last().cloned().unwrap_or_else(|| default_model.clone());
+    let fast_model = models
+        .last()
+        .cloned()
+        .unwrap_or_else(|| default_model.clone());
     let payload = serde_json::json!({
         "models": models,
         "default_model": default_model,
@@ -281,7 +281,7 @@ mod tests {
             template_id: "kimi".into(),
             ..p1.clone()
         };
-        let single = proxy_args_for_active_profiles(&[p1.clone()]).unwrap();
+        let single = proxy_args_for_active_profiles(std::slice::from_ref(&p1)).unwrap();
         assert_eq!(single.adapter, "relay");
         let first = proxy_args_for_active_profiles(&[p1, p2]).unwrap();
         assert_eq!(first.adapter, "relay");
@@ -434,10 +434,7 @@ mod tests {
         assert_eq!(key_env_for_adapter("deepseek"), "DEEPSEEK_API_KEY");
         assert_eq!(key_env_for_adapter("qwen"), "DASHSCOPE_API_KEY");
         assert_eq!(key_env_for_adapter("openai-custom"), "CSP_OPENAI_KEY");
-        assert_eq!(
-            key_env_for_adapter("openai-responses"),
-            "CSP_OPENAI_KEY"
-        );
+        assert_eq!(key_env_for_adapter("openai-responses"), "CSP_OPENAI_KEY");
         assert_eq!(key_env_for_adapter("relay"), "CSP_RELAY_KEY");
         assert_eq!(key_env_for_adapter("anything-else"), "CSP_RELAY_KEY");
     }
