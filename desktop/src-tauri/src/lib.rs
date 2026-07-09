@@ -93,6 +93,7 @@ pub fn run() {
             commands::runtime::fetch_models,
             commands::runtime::stop_all,
             commands::runtime::one_click_login,
+            commands::runtime::status,
         ])
         .setup(|app| {
             // 正常桌面应用：进 Dock、走常规应用生命周期。窗口在 tauri.conf.json 里配了
