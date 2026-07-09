@@ -15,20 +15,6 @@ body{
 }
 .panel{width:100%;min-height:100vh;background:var(--panel);overflow:hidden}
 .hd{display:flex;align-items:center;justify-content:space-between;padding:12px 14px 10px}
-/* 模式分段切换（第三方 / 官方） */
-.modeseg{padding-top:10px;padding-bottom:10px}
-.seg{display:flex;gap:3px;padding:3px;background:var(--field);border:1px solid var(--line);border-radius:10px}
-.seg-btn{flex:1;height:30px;border:none;background:transparent;color:var(--sub);
-  font-size:12.5px;font-weight:600;border-radius:7px;cursor:pointer;font-family:inherit}
-.seg-btn.active{background:var(--panel);color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.10)}
-/* 官方模式只显示 official-only、隐藏 tp-only；第三方反之 */
-.official-only{display:none}
-.panel.mode-official .tp-only{display:none}
-.panel.mode-official .official-only{display:block}
-/* 中转站(relay)专属区块：仅在「第三方模式 且 provider=relay」时显示（由 JS 加 show-relay 类，
-   已保证不与官方模式并存，故不必与 mode-official 抢 CSS 优先级） */
-.relay-only{display:none}
-.panel.show-relay .relay-only{display:block}
 .brand{display:flex;align-items:center;gap:8px;font-weight:650;font-size:14px}
 .dot{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 0 3px rgba(47,191,113,.16)}
 .dot.amber{background:var(--amber);box-shadow:0 0 0 3px rgba(230,162,60,.16)}
@@ -74,7 +60,7 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10.5px;
 .msg.ok{color:var(--green)}
 .foot{display:flex;justify-content:space-between;align-items:center;padding:9px 14px;
   border-top:1px solid var(--line);font-size:11.5px;color:var(--sub)}
-.foot2{border-top:none;padding-top:0;padding-bottom:11px}
+.foot-min{justify-content:center;gap:18px;padding:10px 14px 12px}
 .link{color:var(--accent);cursor:pointer}
 .link:hover{text-decoration:underline}
 .hint{font-size:10.5px;color:var(--sub);margin-top:6px;line-height:1.5}
@@ -100,7 +86,17 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10.5px;
   padding:1px 5px;background:var(--panel)}
 .badge.on{color:#fff;background:var(--accent);border-color:var(--accent)}
 .pmeta{font-size:10.5px;color:var(--sub);margin-top:4px;word-break:break-all;overflow-wrap:anywhere;line-height:1.5}
-.prow-acts{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.prow-acts{display:flex;align-items:center;gap:6px;margin-top:8px}
+.pmenu-wrap{position:relative;margin-left:auto}
+.pmenu{position:absolute;right:0;top:calc(100% + 4px);z-index:20;min-width:108px;
+  background:var(--panel);border:1px solid var(--line);border-radius:9px;
+  box-shadow:0 6px 18px rgba(0,0,0,.10);padding:4px;display:flex;flex-direction:column;gap:2px}
+.pmenu-item{display:block;width:100%;text-align:left;border:none;background:transparent;
+  color:var(--ink);font-size:11.5px;font-weight:600;padding:7px 10px;border-radius:6px;
+  cursor:pointer;font-family:inherit}
+.pmenu-item:hover{background:var(--field)}
+.pmenu-item.danger:hover{color:var(--red)}
+.pmenu-btn{min-width:30px;padding:0 8px;font-size:14px;line-height:1}
 .abtn{height:26px;border-radius:7px;border:1px solid var(--line);background:var(--panel);
   color:var(--ink);font-size:11px;font-weight:600;cursor:pointer;padding:0 9px;font-family:inherit}
 .abtn:hover{border-color:var(--accent)}
@@ -132,8 +128,8 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10.5px;
 /* 页脚链接按钮：外观仍似链接，但天然键盘可达。 */
 .linkbtn{border:none;background:none;padding:0;font:inherit;cursor:pointer}
 /* 键盘可见焦点（a11y）。 */
-.btn:focus-visible,.hero:focus-visible,.chip:focus-visible,.abtn:focus-visible,
-.seg-btn:focus-visible,input:focus-visible,select:focus-visible,.link:focus-visible{
+.btn:focus-visible,.hero:focus-visible,.chip:focus-visible,.abtn:focus-visible,.pmenu-item:focus-visible,
+input:focus-visible,select:focus-visible,.link:focus-visible{
   outline:2px solid var(--accent);outline-offset:2px}
 .model-pick{display:flex;flex-direction:column;gap:6px;margin-top:8px}
 .model-pick-item{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--ink)}

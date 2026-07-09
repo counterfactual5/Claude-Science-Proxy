@@ -121,7 +121,7 @@ let statusTimer = null;
 let busy = false;
 let busyOp = null;
 let busyMsgTimers = [];
-let mode = "proxy"; // "proxy" 第三方 | "official" 官方
+// 始终第三方代理模式；官方 Claude 入口已从 UI 移除。
 // 当前配置快照（get_config 结果）。全 key 绝不在此，只有掩码。
 let configState = { profiles: [], templates: [], active_id: "", proxy_port: 18991, sandbox_port: 8990 };
 let pendingSkipActivateId = null;   // set_active 校验含糊时，允许「跳过验证」再切
@@ -314,6 +314,14 @@ function profileName(id) {
   return p ? p.name : id;
 }
 
+function closeAllMenus() {
+  if (!els.profileList) return;
+  els.profileList.querySelectorAll(".pmenu").forEach((m) => { m.hidden = true; });
+  els.profileList.querySelectorAll(".pmenu-btn").forEach((b) => {
+    b.setAttribute("aria-expanded", "false");
+  });
+}
+
 function syncProfileBusyState() {
   if (!els.profileList) return;
   els.profileList.querySelectorAll(".prow").forEach((row) => {
@@ -325,6 +333,7 @@ function syncProfileBusyState() {
         btn.textContent = isTarget ? "正在启用…" : "设为当前";
       }
     });
+    if (busy) closeAllMenus();
   });
 }
 
@@ -369,20 +378,9 @@ function startSaveConnectionFeedback(id, active) {
 
 function startOneClickFeedback() {
   clearBusyMsgTimers();
-  setMsg("一键开始：检查代理 → 准备虚拟登录 → 启动/复用沙箱 → 探活…");
+  setMsg("正在启动：检查代理 → 准备虚拟登录 → 启动/复用沙箱 → 探活…");
   scheduleBusyMsg(3500, { kind: "oneClick" }, "仍在准备代理或沙箱。若代理配置已变更，可能需要重启本地代理。");
   scheduleBusyMsg(9000, { kind: "oneClick" }, "仍在等待沙箱就绪。完成后会自动打开 Science；失败会显示日志摘要。");
-}
-
-function startSwitchModeFeedback(targetMode) {
-  clearBusyMsgTimers();
-  const toOfficial = targetMode === "official";
-  setMsg(toOfficial
-    ? "正在切到官方模式：停止第三方代理/沙箱并保存模式…"
-    : "正在切到第三方模式：保存模式，完成后可选择配置并一键开始…");
-  scheduleBusyMsg(3500, { kind: "switchMode", id: targetMode }, toOfficial
-    ? "仍在停止第三方链路。真实 Claude Science 实例不会被触碰。"
-    : "仍在保存模式切换。当前不会自动启动第三方代理。");
 }
 
 function startPortSaveFeedback(changed) {
@@ -413,8 +411,6 @@ function setBusy(on, op) {
     // 端口输入也纳入忙碌禁用：忙碌中改端口会与在途操作竞态（修 P1-c 前端侧）。
     els.proxyPort, els.sandboxPort,
   ].forEach((b) => b && (b.disabled = on));
-  // 模式切换按钮同样禁用：忙碌中切官方会与「一键开始」竞态（修 P1-b 前端侧）。
-  if (els.modeSeg) els.modeSeg.querySelectorAll(".seg-btn").forEach((b) => (b.disabled = on));
   syncProfileBusyState();
   // 松开忙碌时，把模型必填保存门控交回门（避免 setBusy(false) 覆盖门控）。
   if (!on) { refreshWizGate(); refreshConnGate(); }
@@ -476,7 +472,9 @@ async function loadConfig() {
     configState.sandbox_port = cfg.sandbox_port ?? 8990;
     els.proxyPort.value = configState.proxy_port;
     els.sandboxPort.value = configState.sandbox_port;
-    applyMode(cfg.mode === "official" ? "official" : "proxy");
+    if (cfg.mode === "official") {
+      try { await call("set_mode", { mode: "proxy" }); } catch (_) {}
+    }
     renderList();
     showView("list");
     // 一次性迁移提示（#9 甲）：后端 get_config 读后已清盘，只会出现一次。
@@ -486,13 +484,16 @@ async function loadConfig() {
   }
 }
 
-// 列表里模型摘要：无显式 model 时按三能力给准确措辞（native 内置映射 / relay 跟随 / 需指定），
-// 取代旧「（透传）」字样（三能力语义下不再有「透传」）。
-function modelSummary(p) {
+// 列表卡片第二行：弱化模型 ID，突出能力与 key 状态。
+function profileMetaLine(p) {
   const models = profileModels(p);
-  if (models.length > 1) return escapeHtml(models[0] + " +" + (models.length - 1));
-  if (models.length === 1) return escapeHtml(models[0]);
   const cap = modelCapability(p.capabilities ? p : tplById(p.template_id));
+  if (models.length > 1) return escapeHtml(models.length + " 个模型已启用");
+  if (models.length === 1) {
+    if (cap === CAP.NATIVE) return "内置映射";
+    if (cap === CAP.FOLLOW) return "跟随 Science";
+    return "1 个模型已启用";
+  }
   if (cap === CAP.NATIVE) return "内置映射";
   if (cap === CAP.FOLLOW) return "跟随 Science";
   return "未选模型";
@@ -502,7 +503,7 @@ function renderList() {
   const list = els.profileList;
   const ps = configState.profiles || [];
   if (!ps.length) {
-    list.innerHTML = '<div class="empty">还没有配置。点右上「＋ 新建」加一条第三方来源。</div>';
+    list.innerHTML = '<div class="empty">还没有配置。点右上「＋ 新建」添加一条。</div>';
     return;
   }
   list.innerHTML = ps.map((p) => {
@@ -510,7 +511,7 @@ function renderList() {
     const catLabel = CAT_LABELS[p.category] || p.category || "";
     const hasKey = typeof p.has_key === "boolean" ? p.has_key : !!p.key;
     const keyMask = hasKey ? escapeHtml(p.key_masked || p.key || "已保存") : "未填 key";
-    const modelTxt = modelSummary(p);
+    const metaTxt = profileMetaLine(p);
     const dotStyle = p.icon_color ? ' style="background:' + escapeHtml(p.icon_color) + '"' : "";
     return (
       '<div class="prow' + (active ? " pactive" : "") + '" data-id="' + escapeHtml(p.id) + '">' +
@@ -521,71 +522,23 @@ function renderList() {
           (active ? '<span class="badge on">当前生效</span>' : "") +
         "</div>" +
         '<div class="pmeta">' + escapeHtml(p.base_url || "（未填地址）") + "</div>" +
-        '<div class="pmeta">模型：' + modelTxt + " · Key：" + keyMask + "</div>" +
+        '<div class="pmeta">' + metaTxt + " · Key：" + keyMask + "</div>" +
         '<div class="prow-acts">' +
           (active ? "" : '<button class="abtn prim" data-act="activate">设为当前</button>') +
-          '<button class="abtn" data-act="editconn">编辑连接</button>' +
-          '<button class="abtn" data-act="editmeta">改名</button>' +
-          '<button class="abtn" data-act="clearkey">清 key</button>' +
-          '<button class="abtn danger" data-act="delete">删除</button>' +
+          '<button class="abtn" data-act="editconn">编辑</button>' +
+          '<div class="pmenu-wrap">' +
+            '<button type="button" class="abtn pmenu-btn" data-act="menu" aria-haspopup="true" aria-expanded="false" title="更多">⋯</button>' +
+            '<div class="pmenu" hidden role="menu">' +
+              '<button type="button" class="pmenu-item" data-act="editmeta" role="menuitem">改名</button>' +
+              '<button type="button" class="pmenu-item" data-act="clearkey" role="menuitem">清除 key</button>' +
+              '<button type="button" class="pmenu-item danger" data-act="delete" role="menuitem">删除</button>' +
+            "</div>" +
+          "</div>" +
         "</div>" +
       "</div>"
     );
   }).join("");
   syncProfileBusyState();
-}
-
-// ── 模式（第三方 / 官方）──
-function applyMode(m) {
-  mode = m === "official" ? "official" : "proxy";
-  els.panel.classList.toggle("mode-official", mode === "official");
-  els.modeSeg.querySelectorAll(".seg-btn").forEach((b) =>
-    b.classList.toggle("active", b.dataset.mode === mode)
-  );
-  els.oneClickBtn.textContent =
-    mode === "official" ? "打开官方 Claude Science ↗" : "⚡ 一键开始";
-}
-
-async function switchMode(m) {
-  if (m === mode) return;
-  if (busy) return; // 忙碌中不切模式（防与「一键开始」竞态；按钮亦已禁用，此为双保险）。修 P1-b
-  setBusy(true, { kind: "switchMode", id: m });
-  startSwitchModeFeedback(m);
-  try {
-    await call("set_mode", { mode: m });
-  } catch (e) {
-    setMsg("切换模式失败：" + e, "err");
-    setBusy(false);
-    return;
-  }
-  applyMode(m);
-  setBusy(false);
-  showView("list");
-  setMsg(
-    mode === "official"
-      ? "已切到官方模式：第三方代理/沙箱已停，点上方按钮打开你真实的 Claude Science。"
-      : "已切到第三方模式：选一条配置「设为当前」后点「一键开始」。"
-  );
-  await refreshStatus();
-}
-
-async function openOfficial() {
-  setBusy(true);
-  setMsg("正在打开官方 Claude Science…");
-  try {
-    await call("open_official");
-    setMsg("已打开官方 Claude Science（走你自己的官方登录与订阅）。", "ok");
-  } catch (e) {
-    setMsg("打开失败：" + e, "err");
-  } finally {
-    setBusy(false);
-  }
-}
-
-// hero 按钮按当前模式分派。
-async function heroClick() {
-  if (mode === "official") await openOfficial();
-  else await oneClick();
 }
 
 // ── 端口设置（替旧 set_config；纯端口，不含 provider/连接）──
@@ -604,7 +557,7 @@ async function persistPorts() {
     configState.sandbox_port = s;
     // 后端在端口变化时会拆掉旧代理/沙箱（否则会复用指向旧端口的死链路），如实告知需重开。修 P1-c
     if (changed) {
-      setMsg("端口已保存。改端口会重置正在运行的代理/沙箱，请重新「一键开始」。", "ok");
+      setMsg("端口已保存。改端口会重置正在运行的代理/沙箱，请重新启动 Claude Science。", "ok");
       await refreshStatus();
     } else {
       setMsg("端口未变化。", "ok");
@@ -1042,21 +995,20 @@ async function activate(id, skipVerify) {
   }
 }
 
-// ── 一键开始：读 active profile。无生效则引导先建/选一条（不再对旧 provider 槽落未提交输入）。──
+// ── 启动 Claude Science：读 active profile。无生效则引导先建/选一条。──
 async function oneClick() {
   if (!configState.active_id) {
-    setMsg("还没有「当前生效」的配置。请先「＋ 新建」或在列表点「设为当前」选一条，再一键开始。", "err");
+    setMsg("还没有「当前生效」的配置。请先「＋ 新建」或在列表点「设为当前」选一条，再点「启动 Claude Science」。", "err");
     return;
   }
   setBusy(true, { kind: "oneClick" });
   startOneClickFeedback();
   try {
     const r = await call("one_click_login");
-    // 透传后端据实回传的 msg（已重开 / 已用新配置重启 / 沿用原对话 / 已启动 / 打开失败请手动打开）。
     setMsg((r.msg || "已就绪，正在打开面板…") + "\n" + (r.url || ""), "ok");
     await refreshStatus();
   } catch (e) {
-    setMsg("一键开始失败：" + e, "err");
+    setMsg("启动失败：" + e, "err");
   } finally {
     setBusy(false);
   }
@@ -1076,14 +1028,6 @@ async function stopAll() {
   }
 }
 
-async function openBrowser() {
-  try {
-    await call("open_url");
-  } catch (e) {
-    setMsg("打开浏览器失败：" + e, "err");
-  }
-}
-
 async function runDoctor() {
   if (busy) return;
   setBusy(true, { kind: "doctor" });
@@ -1095,42 +1039,6 @@ async function runDoctor() {
     setMsg("自检失败：" + e, "err");
   } finally {
     setBusy(false);
-  }
-}
-
-// 简单 semver 比较：a 是否比 b 新。
-function isNewer(a, b) {
-  const pa = String(a).split(".").map((n) => parseInt(n, 10) || 0);
-  const pb = String(b).split(".").map((n) => parseInt(n, 10) || 0);
-  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
-    const x = pa[i] || 0, y = pb[i] || 0;
-    if (x !== y) return x > y;
-  }
-  return false;
-}
-
-async function checkUpdate() {
-  setMsg("检查更新中…");
-  let cur = "";
-  try { cur = await call("app_version"); } catch (e) {}
-  try {
-    const resp = await fetch(
-      "https://api.github.com/repos/SuperJJ007/CSSwitch/releases/latest",
-      { headers: { Accept: "application/vnd.github+json" } }
-    );
-    if (!resp.ok) throw new Error("HTTP " + resp.status);
-    const data = await resp.json();
-    const latest = (data.tag_name || "").replace(/^v/, "");
-    if (!latest) throw new Error("无版本信息");
-    if (isNewer(latest, cur)) {
-      setMsg("发现新版本 v" + latest + "（当前 v" + cur + "）。正在打开下载页…", "ok");
-      try { await call("open_release_page"); } catch (_) {}
-    } else {
-      setMsg("已是最新版本（v" + cur + "）。", "ok");
-    }
-  } catch (e) {
-    setMsg("无法自动检查更新（多为网络或代理限制）。已打开 Releases 页，请手动查看。", "err");
-    try { await call("open_release_page"); } catch (_) {}
   }
 }
 
@@ -1149,8 +1057,7 @@ async function refreshStatus() {
 function wire() {
   [
     "oneClickBtn", "stopBtn", "ltProxy", "ltSandbox", "ltUpstream",
-    "msg", "brandDot", "openBrowserBtn", "doctorBtn", "updateBtn", "verLabel",
-    "reportBtn", "logsBtn", "quitBtn", "modeSeg", "proxyPort", "sandboxPort", "advSec",
+    "msg", "brandDot", "doctorBtn", "logsBtn", "quitBtn", "proxyPort", "sandboxPort", "advSec",
     "listSec", "profileList", "newBtn", "skipActivateBtn",
     "wizSec", "wizTemplate", "wizTemplateChips", "wizTplLabel", "wizTplHint", "wizName", "wizBase", "wizBaseHint",
     "wizFetchBtn", "wizModelInfo", "wizModel", "wizModelHint", "wizModelPick", "wizDefaultModelLabel", "wizDefaultModel", "wizKey", "wizSaveBtn", "wizCancelBtn",
@@ -1159,10 +1066,6 @@ function wire() {
     "metaSec", "metaName", "metaNotes", "metaSaveBtn", "metaCancelBtn",
   ].forEach((id) => (els[id] = $(id)));
   els.panel = document.querySelector(".panel");
-
-  els.modeSeg.querySelectorAll(".seg-btn").forEach((b) =>
-    b.addEventListener("click", () => switchMode(b.dataset.mode))
-  );
 
   els.proxyPort.addEventListener("change", persistPorts);
   els.sandboxPort.addEventListener("change", persistPorts);
@@ -1175,11 +1078,27 @@ function wire() {
     if (!btn || !row) return;
     const id = row.getAttribute("data-id");
     const act = btn.getAttribute("data-act");
+    if (act === "menu") {
+      const wrap = btn.closest(".pmenu-wrap");
+      const menu = wrap && wrap.querySelector(".pmenu");
+      if (!menu) return;
+      const wasOpen = !menu.hidden;
+      closeAllMenus();
+      if (!wasOpen) {
+        menu.hidden = false;
+        btn.setAttribute("aria-expanded", "true");
+      }
+      return;
+    }
+    closeAllMenus();
     if (act === "activate") activate(id, false);
     else if (act === "editconn") openConn(id);
     else if (act === "editmeta") openMeta(id);
     else if (act === "clearkey") clearKey(id);
     else if (act === "delete") del(id);
+  });
+  document.addEventListener("click", (e) => {
+    if (!e.target.closest(".pmenu-wrap")) closeAllMenus();
   });
 
   els.newBtn.addEventListener("click", openWizard);
@@ -1207,14 +1126,9 @@ function wire() {
   els.metaSaveBtn.addEventListener("click", metaSave);
   els.metaCancelBtn.addEventListener("click", cancelForm);
 
-  els.oneClickBtn.addEventListener("click", heroClick);
+  els.oneClickBtn.addEventListener("click", oneClick);
   els.stopBtn.addEventListener("click", stopAll);
-  els.openBrowserBtn.addEventListener("click", openBrowser);
   els.doctorBtn.addEventListener("click", runDoctor);
-  els.updateBtn.addEventListener("click", checkUpdate);
-  els.reportBtn.addEventListener("click", () =>
-    call("report_bug").catch((e) => setMsg("打开反馈页失败：" + e, "err"))
-  );
   els.logsBtn.addEventListener("click", () =>
     call("open_logs").catch((e) => setMsg("打开日志失败：" + e, "err"))
   );
@@ -1224,7 +1138,6 @@ function wire() {
 window.addEventListener("DOMContentLoaded", async () => {
   wire();
   await loadConfig();
-  try { els.verLabel.textContent = "v" + (await call("app_version")); } catch (e) {}
   await refreshStatus();
   if (PREVIEW) {
     setMsg("预览模式：仅看界面，按钮不连后端（真实 app 里会连进程管家）。");
