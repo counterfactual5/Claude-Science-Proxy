@@ -7,15 +7,13 @@ use crate::runtime::diagnostics::{
     build_status_response, science_diagnostics, status_lights, ScienceDiagnosticsInput,
     StatusProbeInput,
 };
-use crate::runtime::operation::{self, OperationKind, OperationStage, OperationTrace};
+use crate::runtime::operation;
 use crate::runtime::profile::profile_capabilities;
 use crate::runtime::provider::{
     adapter_for_profile, current_shim_mode_for_adapter, gateway_kind_for_adapter, upstream_endpoint,
 };
-use crate::runtime::proxy_lifecycle::ensure_proxy;
 use crate::runtime::science::{settings_change_needs_teardown, stop_sandbox};
 use crate::runtime::settings::validate_runtime_ports;
-use crate::runtime::system::open_in_browser;
 use crate::{config, lock, proc, run_blocking, AppState, SharedAppState, SharedLifecycle};
 
 fn config_last_error_json(error: &dyn std::fmt::Display) -> serde_json::Value {
@@ -109,89 +107,6 @@ fn set_settings_inner(
     })
 }
 
-#[tauri::command]
-pub(crate) async fn start_proxy(
-    app: tauri::AppHandle,
-    state: State<'_, SharedAppState>,
-    lifecycle: State<'_, SharedLifecycle>,
-) -> Result<serde_json::Value, String> {
-    let state = state.inner().clone();
-    let lifecycle = lifecycle.inner().clone();
-    run_blocking(move || start_proxy_inner_cmd(app, state, lifecycle)).await
-}
-
-fn start_proxy_inner_cmd(
-    app: tauri::AppHandle,
-    state: SharedAppState,
-    lifecycle: SharedLifecycle,
-) -> Result<serde_json::Value, String> {
-    // 经串行器：与切换/连接编辑/清 key/删/停等 ensure_proxy 竞争串行化，防陈旧读起旧配置代理
-    // 又写回运行态（修 P1-a，比照 spec §8.1「ensure_proxy 都经一把 app 级 mutex」）。
-    lifecycle.with_serialized(|| {
-        let trace = OperationTrace::start(OperationKind::StartProxy, "command=start_proxy");
-        let (port, _secret, _action) =
-            ensure_proxy(&app, &state, lifecycle.as_ref(), Some(&trace))?;
-        trace.finish(format!("ok port={port}"));
-        Ok(json!({ "port": port }))
-    })
-}
-
-/// 「存 key 即验证」：确保代理在跑，再经代理向上游发一个最小请求，据状态码判断 key 是否可用。
-#[tauri::command]
-pub(crate) async fn verify_key(
-    app: tauri::AppHandle,
-    state: State<'_, SharedAppState>,
-    lifecycle: State<'_, SharedLifecycle>,
-) -> Result<serde_json::Value, String> {
-    let state = state.inner().clone();
-    let lifecycle = lifecycle.inner().clone();
-    run_blocking(move || verify_key_inner_cmd(app, state, lifecycle)).await
-}
-
-fn verify_key_inner_cmd(
-    app: tauri::AppHandle,
-    state: SharedAppState,
-    lifecycle: SharedLifecycle,
-) -> Result<serde_json::Value, String> {
-    // 经串行器（修 P1-a）：ensure_proxy 与其它生命周期操作不并发交叠。
-    lifecycle.with_serialized(|| {
-        let trace = OperationTrace::start(OperationKind::VerifyKey, "command=verify_key");
-        let (port, secret, _action) =
-            ensure_proxy(&app, &state, lifecycle.as_ref(), Some(&trace))?;
-        let body = br#"{"model":"claude-opus-4-8","max_tokens":1,"messages":[{"role":"user","content":"ping"}]}"#;
-        trace.stage(OperationStage::UpstreamProbe, "POST /v1/messages via active proxy");
-        match proc::http_post_status(
-            port,
-            Some(&secret),
-            "/v1/messages",
-            body,
-            operation::VERIFY_KEY_TIMEOUT_MS,
-        ) {
-            Some(200) => {
-                trace.finish("ok status=200");
-                Ok(json!({ "ok": true, "hint": "key 有效，上游已接受。" }))
-            }
-            Some(code @ (401 | 403)) => {
-                trace.finish(format!("rejected status={code}"));
-                Ok(
-                    json!({ "ok": false, "hint": format!("上游拒绝（{code}），key 可能无效或无权限。") }),
-                )
-            }
-            Some(code) => {
-                trace.finish(format!("upstream_status={code}"));
-                Ok(json!({
-                    "ok": false,
-                    "hint": format!("上游返回 {code}，可能是 key 无效、额度不足或上游异常。")
-                }))
-            }
-            None => {
-                trace.finish("error=no_response");
-                Err("验证请求无响应（多为网络或上游不通）。".to_string())
-            }
-        }
-    })
-}
-
 #[derive(Deserialize)]
 pub(crate) struct FetchModelsReq {
     /// 模板 id（决定 builtin / base_url 可编辑性 / 默认 base_url）。
@@ -278,7 +193,7 @@ fn one_click_login_cmd(
     })
 }
 
-#[tauri::command]
+#[allow(dead_code)]
 pub(crate) fn status(state: State<'_, SharedAppState>) -> serde_json::Value {
     // 只在锁内取值，锁外做短超时探活。这里是高频 UI 状态灯，
     // 不能反复调用外部 `claude-science status`，否则前端轮询会卡住主线程。
@@ -355,13 +270,6 @@ pub(crate) fn status(state: State<'_, SharedAppState>) -> serde_json::Value {
         }),
         None,
     )
-}
-
-#[tauri::command]
-pub(crate) fn open_url(state: State<'_, SharedAppState>) -> Result<(), String> {
-    let url = { lock(state.inner()).sandbox_url.clone() };
-    let url = url.ok_or("还没有沙箱 URL，请先「一键开始」。")?;
-    open_in_browser(&url)
 }
 
 #[cfg(test)]

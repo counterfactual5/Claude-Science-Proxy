@@ -5,10 +5,7 @@ use crate::runtime::profile::{
     build_get_config, create_profile_inner, delete_profile_inner,
     update_profile_connection_inner, update_profile_metadata_inner, ConnectionEdit,
 };
-use crate::runtime::profile_switch::{
-    activate_profile_in_pool_txn, deactivate_profile_from_pool_txn, scratch_validate_candidate,
-    set_active_profile_txn, toggle_profile_active_txn,
-};
+use crate::runtime::profile_switch::{scratch_validate_candidate, set_active_profile_txn};
 use crate::runtime::provider::{
     adapter_for_profile, reject_openai_custom_anthropic_base, relay_missing_base_url,
     relay_missing_profile_models,
@@ -204,62 +201,6 @@ fn set_active_profile_inner_cmd(
     lifecycle.with_serialized(|| {
         set_active_profile_txn(&app, &state, lifecycle.as_ref(), &id, skip_verify, None)
     })
-}
-
-/// 将 profile 加入 provider pool（保留其它 active）。
-#[tauri::command]
-pub(crate) async fn activate_profile_in_pool(
-    app: tauri::AppHandle,
-    state: State<'_, SharedAppState>,
-    lifecycle: State<'_, SharedLifecycle>,
-    id: String,
-    skip_verify: bool,
-) -> Result<serde_json::Value, String> {
-    let state = state.inner().clone();
-    let lifecycle = lifecycle.inner().clone();
-    run_blocking(move || {
-        lifecycle.with_serialized(|| {
-            activate_profile_in_pool_txn(&app, &state, lifecycle.as_ref(), &id, skip_verify)
-        })
-    })
-    .await
-}
-
-/// 从 provider pool 移除 profile。
-#[tauri::command]
-pub(crate) async fn deactivate_profile_from_pool(
-    app: tauri::AppHandle,
-    state: State<'_, SharedAppState>,
-    lifecycle: State<'_, SharedLifecycle>,
-    id: String,
-) -> Result<serde_json::Value, String> {
-    let state = state.inner().clone();
-    let lifecycle = lifecycle.inner().clone();
-    run_blocking(move || {
-        lifecycle.with_serialized(|| {
-            deactivate_profile_from_pool_txn(&app, &state, lifecycle.as_ref(), &id)
-        })
-    })
-    .await
-}
-
-/// 切换 profile 在 pool 中的 active 状态。
-#[tauri::command]
-pub(crate) async fn toggle_profile_active(
-    app: tauri::AppHandle,
-    state: State<'_, SharedAppState>,
-    lifecycle: State<'_, SharedLifecycle>,
-    id: String,
-    skip_verify: bool,
-) -> Result<serde_json::Value, String> {
-    let state = state.inner().clone();
-    let lifecycle = lifecycle.inner().clone();
-    run_blocking(move || {
-        lifecycle.with_serialized(|| {
-            toggle_profile_active_txn(&app, &state, lifecycle.as_ref(), &id, skip_verify)
-        })
-    })
-    .await
 }
 
 #[tauri::command]

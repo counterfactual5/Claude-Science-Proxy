@@ -10,7 +10,6 @@ pub(crate) const SCRATCH_READY_BUDGET_MS: u64 = 4_000;
 pub(crate) const UPSTREAM_PROBE_TIMEOUT_MS: u64 = 20_000;
 pub(crate) const PROXY_REUSE_HEALTH_TIMEOUT_MS: u64 = 500;
 pub(crate) const PROXY_HEALTH_BUDGET_MS: u64 = 4_000;
-pub(crate) const VERIFY_KEY_TIMEOUT_MS: u64 = 15_000;
 pub(crate) const SANDBOX_HEALTH_BUDGET_MS: u64 = 8_000;
 pub(crate) const STATUS_HEALTH_TIMEOUT_MS: u64 = 150;
 pub(crate) const STATUS_UPSTREAM_TIMEOUT_MS: u64 = 250;
@@ -23,8 +22,6 @@ pub(crate) enum OperationKind {
     UpdateActiveConnection,
     ValidateConnection,
     FetchModels,
-    StartProxy,
-    VerifyKey,
     OneClickLogin,
 }
 
@@ -35,8 +32,6 @@ impl OperationKind {
             OperationKind::UpdateActiveConnection => "update_active_connection",
             OperationKind::ValidateConnection => "validate_connection",
             OperationKind::FetchModels => "fetch_models",
-            OperationKind::StartProxy => "start_proxy",
-            OperationKind::VerifyKey => "verify_key",
             OperationKind::OneClickLogin => "one_click_login",
         }
     }
@@ -48,7 +43,6 @@ pub(crate) enum OperationStage {
     ScratchSpawn,
     ScratchHealth,
     ScratchUpstreamProbe,
-    UpstreamProbe,
     ProxySpawn,
     ProxyHealth,
     Commit,
@@ -67,7 +61,6 @@ impl OperationStage {
             OperationStage::ScratchSpawn => "scratch_spawn",
             OperationStage::ScratchHealth => "scratch_health",
             OperationStage::ScratchUpstreamProbe => "scratch_upstream_probe",
-            OperationStage::UpstreamProbe => "upstream_probe",
             OperationStage::ProxySpawn => "proxy_spawn",
             OperationStage::ProxyHealth => "proxy_health",
             OperationStage::Commit => "commit",

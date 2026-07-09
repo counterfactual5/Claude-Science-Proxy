@@ -89,17 +89,10 @@ pub fn run() {
             commands::profiles::update_profile_connection,
             commands::profiles::delete_profile,
             commands::profiles::set_active_profile,
-            commands::profiles::activate_profile_in_pool,
-            commands::profiles::deactivate_profile_from_pool,
-            commands::profiles::toggle_profile_active,
             commands::profiles::open_csp_json,
-            commands::runtime::start_proxy,
-            commands::runtime::verify_key,
             commands::runtime::fetch_models,
             commands::runtime::stop_all,
             commands::runtime::one_click_login,
-            commands::runtime::status,
-            commands::runtime::open_url,
         ])
         .setup(|app| {
             // 正常桌面应用：进 Dock、走常规应用生命周期。窗口在 tauri.conf.json 里配了

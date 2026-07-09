@@ -46,7 +46,6 @@
       "../../proxy/model_discovery.py": "proxy/model_discovery.py",
       "../../proxy/model_registry.py": "proxy/model_registry.py",
       "../../proxy/model_sort.py": "proxy/model_sort.py",
-      "../../proxy/provider_pool.py": "proxy/provider_pool.py",
       "../../proxy/openai_chat_compat.py": "proxy/openai_chat_compat.py",
       "../../proxy/provider_policy.py": "proxy/provider_policy.py",
       "../../proxy/qwen_proxy.py": "proxy/qwen_proxy.py",
