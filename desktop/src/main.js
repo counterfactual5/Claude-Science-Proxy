@@ -174,7 +174,7 @@ function sourceHint(t) {
 const MODEL_HINT = {
   native: "由 Science 选择器 + 内置映射自动选择（opus 深度 / haiku 快速）。",
   follow: "留空＝跟随 Science 选择器（保留 opus/haiku 各档）；选一个＝固定用于所有请求。",
-  fixed: "勾选的模型会出现在 Science；列表第一个用于后台任务兜底。",
+  fixed: "勾选要在 Science 中启用的模型；列表第一个用于后台任务兜底。",
 };
 
 function profileModels(p) {
@@ -235,8 +235,7 @@ function applyModelCapability(t, ui, profileOrModel) {
     return cap;
   }
   ui.info.hidden = true;
-  ui.sel.hidden = false;
-  if (ui.fetchBtn) ui.fetchBtn.hidden = false;
+  if (ui.fetchBtn) ui.fetchBtn.hidden = true;
   const builtin = ((t && t.builtin_models) || []).slice();
   if (currentModel && !builtin.includes(currentModel)) builtin.unshift(currentModel);
   const models = builtin.map((id) => ({ id, supports_tools: null }));
@@ -258,14 +257,13 @@ function applyModelCapability(t, ui, profileOrModel) {
 }
 
 function setMsg(text, kind) {
-  // 去掉常驻「就绪。」：空消息或纯 idle 时整条反馈栏不占位，有真实反馈（结果/错误/自检）才冒出来。
+  // 仅在出错时显示反馈条；成功/进行中的提示不占界面空间。
   const t = text && text !== "就绪。" ? text : "";
-  els.msg.textContent = t;
-  els.msg.className = "msg" + (kind ? " " + kind : "");
-  els.msg.parentElement.hidden = !t;
-  // 表单视图里反馈区可能落在折叠线以下：给出结果（ok/err）时滚到可见；
-  // 中性提示（无 kind，多为打开表单时）不滚，避免把页面拽到底部。
-  if (t && kind && els.panel && els.panel.classList.contains("view-form")) {
+  const show = !!(t && kind === "err");
+  els.msg.textContent = show ? t : "";
+  els.msg.className = "msg err";
+  els.msg.parentElement.hidden = !show;
+  if (show && els.panel && els.panel.classList.contains("view-form")) {
     els.msg.scrollIntoView({ block: "nearest" });
   }
 }
@@ -383,8 +381,8 @@ function setBusy(on, op) {
   if (!on) clearBusyMsgTimers();
   [
     els.oneClickBtn, els.stopBtn, els.newBtn,
-    els.wizSaveBtn, els.wizFetchBtn, els.wizCancelBtn,
-    els.connSaveBtn, els.connFetchBtn, els.connCancelBtn,
+    els.wizSaveBtn, els.wizCancelBtn,
+    els.connSaveBtn, els.connCancelBtn,
     els.skipActivateBtn,
     // 端口输入也纳入忙碌禁用：忙碌中改端口会与在途操作竞态（修 P1-c 前端侧）。
     els.proxyPort, els.sandboxPort,
@@ -560,96 +558,127 @@ function renderModelOptions(sel, models, sourceLabel) {
   }
 }
 
-// fetch_models 返回体 → 刷新 datalist 候选 + 提示（向导与连接编辑共用）。
-// requiresOverride 保留形参（调用点仍传），但 datalist 无「跟随」空项，故此处不用。
-function applyFetchResult(sel, requiresOverride, r, pickUi) {
-  void requiresOverride;
-  const models = (r && r.models) || [];
-  const src = r && r.source;
-  const srcLabel = src === "live" ? "实时" : src === "builtin" || src === "unsupported" ? "内置" : "未验证";
-  const prev = sel.value;
-  const ids = models.map((m) => m.id);
-  if (pickUi && pickUi.pick && !pickUi.pick.hidden) {
-    const pool = ids.length ? ids : (pickUi.builtin || []);
-    const use = pool.length ? pool : (prev ? [prev] : []);
-    renderModelPick(pickUi.pick, pool, use, pickUi.onPickChange);
-  } else {
-    renderModelOptions(sel, models, srcLabel);
-    if (prev) sel.value = prev;
-  }
-  if (src === "unsupported") {
-    setMsg("该端点未提供模型列表，已用内置模型（可直接选择保存）。", "ok");
-  } else if (r && r.error_kind === "network") {
-    setMsg("未能连上上游验证，已铺内置模型（标「未验证」）。可仍试保存或重试。", "err");
-  } else {
-    setMsg("已获取 " + models.length + " 个模型（工具✓ 优先）。", "ok");
-  }
+// fetch_models → 模型 id 列表（创建/编辑自动拉取用）。
+async function discoverModelIds({ templateId, baseUrl, key, profileId, builtin }) {
+  const t = tplById(templateId);
+  const cap = modelCapability(t);
+  const fallback = (builtin || []).slice();
+  if (cap === CAP.NATIVE && fallback.length) return fallback;
+  try {
+    const r = await call("fetch_models", {
+      req: {
+        template_id: templateId,
+        api_format: t ? t.api_format : "",
+        base_url: baseUrl,
+        key: key || "",
+        profile_id: profileId || "",
+      },
+    });
+    const ids = ((r && r.models) || []).map((m) => m.id).filter(Boolean);
+    if (ids.length) return ids;
+  } catch (_) { /* 回落内置 */ }
+  return fallback;
 }
 
-// ── C2：新建向导 ──
+// fetch_models 返回体 → 刷新 checkbox 池（编辑页自动拉取用）。
+function applyFetchToPick(r, pickUi, selected) {
+  const models = (r && r.models) || [];
+  const ids = models.map((m) => m.id).filter(Boolean);
+  const pool = ids.length ? ids : (pickUi.builtin || []);
+  const sel = (selected && selected.length) ? selected : pool;
+  if (pickUi.pick) renderModelPick(pickUi.pick, pool, sel, pickUi.onPickChange);
+  return ids.length;
+}
+
+// ── C2：新建（名称 + base_url + key）──
+function normBaseUrl(url) {
+  return (url || "").trim().replace(/\/+$/, "").toLowerCase();
+}
+
+function inferTemplateId(baseUrl) {
+  const norm = normBaseUrl(baseUrl);
+  if (!norm) return "custom";
+  for (const t of configState.templates || []) {
+    const tb = normBaseUrl(t.base_url);
+    if (tb && tb === norm) return t.id;
+  }
+  if (norm.includes("deepseek.com")) return "deepseek";
+  if (norm.includes("dashscope.aliyuncs.com")) return "qwen";
+  if (norm.includes("open.bigmodel.cn") && norm.includes("/anthropic")) return "glm";
+  if (norm.includes("xiaomimimo.com")) return "xiaomi";
+  if (norm.includes("siliconflow.cn")) return "siliconflow";
+  if (norm.includes("moonshot.cn")) return "kimi";
+  if (norm.includes("minimaxi.com")) return "minimax";
+  if (norm.includes("openrouter.ai")) return "openrouter";
+  if (norm.includes("/responses") && !norm.includes("/anthropic")) return "custom-openai-responses";
+  if (norm.includes("/v1") || norm.includes("/paas/") || norm.includes("compatible-mode") || norm.includes("/coding/")) {
+    return "custom-openai";
+  }
+  return "custom";
+}
+
 function openWizard() {
   hideSkip();
-  renderTemplateChips();
-  const first = (configState.templates || [])[0];
-  selectWizTemplate(first ? first.id : "");
-  showView("wizard");
-  setMsg("选择来源，填 key 即可创建。");
-}
-
-function renderTemplateChips() {
-  els.wizTemplateChips.innerHTML = (configState.templates || []).map((t) => {
-    const dot = t.icon_color ? ' style="background:' + escapeHtml(t.icon_color) + '"' : "";
-    const cat = CAT_LABELS[t.category] || t.category || "";
-    return (
-      '<button type="button" class="chip" aria-pressed="false" data-tid="' + escapeHtml(t.id) + '">' +
-        '<span class="chip-dot"' + dot + "></span>" +
-        '<span class="chip-name">' + escapeHtml(t.name) + "</span>" +
-        '<span class="chip-cat">' + escapeHtml(cat) + "</span>" +
-      "</button>"
-    );
-  }).join("");
-}
-
-function selectWizTemplate(id) {
-  els.wizTemplate.value = id;
-  els.wizTemplateChips.querySelectorAll(".chip").forEach((c) => {
-    const on = c.getAttribute("data-tid") === id;
-    c.classList.toggle("sel", on);
-    c.setAttribute("aria-pressed", on ? "true" : "false");
-  });
-  onWizTemplate();
-}
-
-function onWizTemplate() {
-  const t = tplById(els.wizTemplate.value);
-  if (!t) return;
-  els.wizName.value = t.name;
-  // 把「新建不自动生效」放进顶部常驻提示（默认窗口下反馈区首屏可能在折叠线下，见 #6）。
-  els.wizTplHint.textContent = sourceHint(t) + " 新建后点击列表中的卡片即可切换启用。";
-  if (t.base_url_editable) {
-    // 预设：预填官方默认地址（仍可改到套餐 / 区域端点）；真·自定义：留空 + 占位提示。
-    els.wizBase.value = t.base_url || "";
-    els.wizBase.readOnly = false;
-    els.wizBase.placeholder = t.api_format === "openai_chat" || t.api_format === "openai_responses"
-      ? "https://open.bigmodel.cn/api/paas/v4"
-      : "https://your-relay/claude";
-    els.wizBaseHint.textContent = t.base_url
-      ? "官方默认地址，可改到 token 套餐 / 区域端点（如小米 token plan）。"
-      : (t.api_format === "openai_chat"
-        ? "OpenAI 兼容 base root，代理自动补 /chat/completions 与 /models。"
-        : t.api_format === "openai_responses"
-        ? "OpenAI 兼容 base root，代理自动补 /responses 与 /models。"
-        : "自定义端点根地址（自动补 /v1/messages 与 /v1/models）。");
-  } else {
-    els.wizBase.value = t.base_url;
-    els.wizBase.readOnly = true;
-    els.wizBaseHint.textContent = "模板地址已填好（只读）。";
-  }
-  applyModelCapability(t, {
-    info: els.wizModelInfo, sel: els.wizModel, hint: els.wizModelHint, fetchBtn: els.wizFetchBtn,
-    pick: els.wizModelPick, modelLabel: els.wizModelLabel, onPickChange: refreshWizGate,
-  }, null);
+  els.wizName.value = "";
+  els.wizBase.value = "";
+  els.wizKey.value = "";
   refreshWizGate();
+  showView("wizard");
+  setMsg("填写名称、地址和 Key；创建时自动拉取可用模型。");
+}
+
+function refreshWizGate() {
+  const ok = els.wizName.value.trim() && els.wizBase.value.trim() && els.wizKey.value.trim();
+  els.wizSaveBtn.disabled = busy || !ok;
+}
+
+function openaiCustomAnthropicBaseMessage(t, base) {
+  if (t && (t.id === "custom-openai" || t.id === "custom-openai-responses") && (base || "").trim().toLowerCase().includes("/anthropic")) {
+    return "这个地址看起来是 Anthropic 兼容端点，请填写 OpenAI 兼容 base root（如 https://api.example.com/v1）。";
+  }
+  return "";
+}
+
+async function wizSave() {
+  const name = els.wizName.value.trim();
+  const base = els.wizBase.value.trim();
+  const key = els.wizKey.value.trim();
+  if (!name) { setMsg("请填写名称。", "err"); return; }
+  if (!base) { setMsg("请填写 base_url。", "err"); return; }
+  if (!key) { setMsg("请填写 API Key。", "err"); return; }
+  const templateId = inferTemplateId(base);
+  const t = tplById(templateId);
+  const baseErr = openaiCustomAnthropicBaseMessage(t, base);
+  if (baseErr) { setMsg(baseErr, "err"); return; }
+  setBusy(true);
+  setMsg("创建中…");
+  try {
+    const id = await call("create_profile", { templateId, name, key, baseUrl: base, model: "" });
+    setMsg("正在拉取模型…");
+    const builtin = (t && t.builtin_models) || [];
+    const modelIds = await discoverModelIds({ templateId, baseUrl: base, key, builtin });
+    if (modelIds.length) {
+      await call("update_profile_connection", {
+        id,
+        baseUrl: base,
+        model: modelIds[0],
+        activeModels: modelIds,
+        defaultModel: modelIds[0],
+        key: "",
+      });
+    }
+    els.wizKey.value = "";
+    await loadConfig();
+    if (modelIds.length) {
+      setMsg("已创建「" + name + "」，发现 " + modelIds.length + " 个模型（默认全部启用）。点击卡片启用，或在编辑里勾选。", "ok");
+    } else {
+      setMsg("已创建「" + name + "」，未能拉取模型列表。请在编辑里重试或手动配置。", "ok");
+    }
+  } catch (e) {
+    setMsg("创建失败：" + e, "err");
+  } finally {
+    setBusy(false);
+  }
 }
 
 function resolvedConnectionModels(cap, modelInput, pickContainer) {
@@ -661,86 +690,6 @@ function resolvedConnectionModels(cap, modelInput, pickContainer) {
   }
   const one = (modelInput || "").trim();
   return { models: one ? [one] : [], defaultModel: one };
-}
-
-function refreshWizGate() {
-  const t = tplById(els.wizTemplate ? els.wizTemplate.value : "");
-  const need = t && modelRequired(t);
-  const cap = t ? modelCapability(t) : CAP.FIXED;
-  const resolved = resolvedConnectionModels(cap, els.wizModel.value, els.wizModelPick);
-  els.wizSaveBtn.disabled = busy || !!(need && !resolved.models.length);
-}
-
-function openaiCustomAnthropicBaseMessage(t, base) {
-  if (t && (t.id === "custom-openai" || t.id === "custom-openai-responses") && (base || "").trim().toLowerCase().includes("/anthropic")) {
-    return "这个地址看起来是 Anthropic 兼容端点。请改选「自定义 Anthropic」，或填写 OpenAI 兼容 base root（如 https://api.moonshot.cn/v1）。";
-  }
-  return "";
-}
-
-async function wizFetch() {
-  const t = tplById(els.wizTemplate.value);
-  if (!t) return;
-  const base = t.base_url_editable ? els.wizBase.value.trim() : t.base_url;
-  if (!base) { setMsg("请先填写 base_url。", "err"); return; }
-  const baseErr = openaiCustomAnthropicBaseMessage(t, base);
-  if (baseErr) { setMsg(baseErr, "err"); return; }
-  const key = els.wizKey.value.trim();
-  if (!key) { setMsg("请先填 key 再获取模型。", "err"); return; }
-  setBusy(true, { kind: "fetchModels", id: "wizard" });
-  startFetchModelsFeedback("wizard");
-  try {
-    const r = await call("fetch_models", { req: { template_id: t.id, base_url: base, key } });
-    applyFetchResult(els.wizModel, modelRequired(t), r, {
-      pick: els.wizModelPick, onPickChange: refreshWizGate, builtin: (t.builtin_models || []).slice(),
-    });
-  } catch (e) {
-    setMsg("获取模型失败：" + e, "err");
-  } finally {
-    setBusy(false);
-    refreshWizGate();
-  }
-}
-
-async function wizSave() {
-  const t = tplById(els.wizTemplate.value);
-  if (!t) { setMsg("模板未加载。", "err"); return; }
-  const name = els.wizName.value.trim() || t.name;
-  const cap = modelCapability(t);
-  const resolved = resolvedConnectionModels(cap, els.wizModel.value, els.wizModelPick);
-  if (modelRequired(t) && !resolved.models.length) {
-    setMsg("该来源需要选一个模型才能创建。", "err");
-    return;
-  }
-  const model = resolved.defaultModel || resolved.models[0] || "";
-  const args = { templateId: t.id, name, key: els.wizKey.value.trim(), model };
-  if (t.base_url_editable) {
-    const base = els.wizBase.value.trim();
-    if (!base) { setMsg("请先填写 base_url。", "err"); return; }
-    const baseErr = openaiCustomAnthropicBaseMessage(t, base);
-    if (baseErr) { setMsg(baseErr, "err"); return; }
-    args.baseUrl = base;
-  }
-  setBusy(true);
-  setMsg("创建中…");
-  try {
-    const id = await call("create_profile", args);
-    if (cap === CAP.FIXED && resolved.models.length > 1) {
-      await call("update_profile_connection", {
-        id,
-        model,
-        activeModels: resolved.models,
-        defaultModel: model,
-      });
-    }
-    els.wizKey.value = "";
-    await loadConfig();
-    setMsg("已创建「" + name + "」。点击卡片可切换启用。", "ok");
-  } catch (e) {
-    setMsg("创建失败：" + e, "err");
-  } finally {
-    setBusy(false);
-  }
 }
 
 // ── C3：连接编辑（base_url/model/key）+ 清 key ──
@@ -775,9 +724,9 @@ function openConn(id) {
           : "自定义端点根地址。"))
     : (modelCapability(capSrc) === CAP.NATIVE
         ? "模板地址（只读），模型由内置映射自动选择。"
-        : "模板地址（只读）。填 key 后可「获取模型」。");
-  applyModelCapability(capSrc, {
-    info: els.connModelInfo, sel: els.connModel, hint: els.connModelHint, fetchBtn: els.connFetchBtn,
+        : "模板地址（只读）。");
+  const cap = applyModelCapability(capSrc, {
+    info: els.connModelInfo, sel: els.connModel, hint: els.connModelHint,
     pick: els.connModelPick, modelLabel: els.connModelLabel, onPickChange: refreshConnGate,
   }, p);
   els.connKey.value = "";
@@ -786,7 +735,46 @@ function openConn(id) {
   refreshConnGate();
   setMsg(active
     ? "编辑当前生效配置：保存会先校验→切换，失败自动回退到原配置（不谎报生效）。"
-    : "编辑连接后点「保存连接」。");
+    : "编辑连接后点「保存」。");
+  if (cap !== CAP.NATIVE) autoFetchConnModels();
+}
+
+async function autoFetchConnModels() {
+  const p = currentConn();
+  if (!p) return;
+  const t = tplById(p.template_id);
+  const capSrc = profileCapabilitySource(p, t);
+  if (modelCapability(capSrc) === CAP.NATIVE) return;
+  const editable = t ? t.base_url_editable : true;
+  const base = editable ? els.connBase.value.trim() : (t ? t.base_url : els.connBase.value.trim());
+  if (!base) return;
+  const baseErr = openaiCustomAnthropicBaseMessage(t, base);
+  if (baseErr) return;
+  setBusy(true, { kind: "fetchModels", id: p.id });
+  try {
+    const key = els.connKey.value.trim();
+    const r = await call("fetch_models", {
+      req: {
+        template_id: p.template_id,
+        api_format: p.api_format || (t ? t.api_format : ""),
+        base_url: base,
+        key,
+        profile_id: p.id,
+      },
+    });
+    const n = applyFetchToPick(r, {
+      pick: els.connModelPick,
+      builtin: ((t && t.builtin_models) || []).slice(),
+      onPickChange: refreshConnGate,
+    }, profileModels(p));
+    if (n) setMsg("已刷新 " + n + " 个可用模型，勾选要启用的项。", "ok");
+    else setMsg("未能拉取模型列表，已显示已保存的模型。", "ok");
+  } catch (e) {
+    setMsg("拉取模型失败：" + e, "err");
+  } finally {
+    setBusy(false);
+    refreshConnGate();
+  }
 }
 
 function refreshConnGate() {
@@ -797,33 +785,6 @@ function refreshConnGate() {
   const cap = capSrc ? modelCapability(capSrc) : CAP.FIXED;
   const resolved = resolvedConnectionModels(cap, els.connModel.value, els.connModelPick);
   els.connSaveBtn.disabled = busy || !!(need && !resolved.models.length);
-}
-
-async function connFetch() {
-  const p = currentConn();
-  if (!p) return;
-  const t = tplById(p.template_id);
-  const editable = t ? t.base_url_editable : true;
-  const base = editable ? els.connBase.value.trim() : (t ? t.base_url : els.connBase.value.trim());
-  if (!base) { setMsg("请先填写 base_url。", "err"); return; }
-  const baseErr = openaiCustomAnthropicBaseMessage(t, base);
-  if (baseErr) { setMsg(baseErr, "err"); return; }
-  setBusy(true, { kind: "fetchModels", id: p.id });
-  startFetchModelsFeedback(p.id);
-  try {
-    const key = els.connKey.value.trim(); // 有新 key 带上；空则后端用已存 key（profileId）
-    const r = await call("fetch_models", {
-      req: { template_id: p.template_id, api_format: p.api_format || (t ? t.api_format : ""), base_url: base, key, profile_id: p.id },
-    });
-    applyFetchResult(els.connModel, p.capabilities ? modelRequired(p) : (t ? modelRequired(t) : true), r, {
-      pick: els.connModelPick, onPickChange: refreshConnGate, builtin: ((t && t.builtin_models) || []).slice(),
-    });
-  } catch (e) {
-    setMsg("获取模型失败：" + e, "err");
-  } finally {
-    setBusy(false);
-    refreshConnGate();
-  }
 }
 
 async function connSave() {
@@ -992,9 +953,8 @@ function wire() {
     "oneClickBtn", "stopBtn",
     "msg", "proxyPort", "sandboxPort", "advSec",
     "listSec", "profileList", "newBtn", "skipActivateBtn",
-    "wizSec", "wizTemplate", "wizTemplateChips", "wizTplLabel", "wizTplHint", "wizName", "wizBase", "wizBaseHint",
-    "wizFetchBtn", "wizModelInfo", "wizModel", "wizModelHint", "wizModelPick", "wizKey", "wizSaveBtn", "wizCancelBtn",
-    "connSec", "connTitle", "connName", "connBase", "connBaseHint", "connFetchBtn",
+    "wizSec", "wizName", "wizBase", "wizBaseHint", "wizKey", "wizSaveBtn", "wizCancelBtn",
+    "connSec", "connTitle", "connName", "connBase", "connBaseHint",
     "connModelInfo", "connModel", "connModelHint", "connModelPick", "connKey", "connSaveBtn", "connCancelBtn",
   ].forEach((id) => (els[id] = $(id)));
   els.panel = document.querySelector(".panel");
@@ -1044,18 +1004,13 @@ function wire() {
     if (id) activate(id, true);
   });
 
-  els.wizTemplateChips.addEventListener("click", (e) => {
-    if (busy) return;
-    const chip = e.target.closest(".chip");
-    if (chip) selectWizTemplate(chip.getAttribute("data-tid"));
-  });
-  els.wizModel.addEventListener("input", refreshWizGate); // input：键入即刷新保存门（#9 P1-b）
-  els.wizFetchBtn.addEventListener("click", wizFetch);
+  els.wizName.addEventListener("input", refreshWizGate);
+  els.wizBase.addEventListener("input", refreshWizGate);
+  els.wizKey.addEventListener("input", refreshWizGate);
   els.wizSaveBtn.addEventListener("click", wizSave);
   els.wizCancelBtn.addEventListener("click", cancelForm);
 
-  els.connModel.addEventListener("input", refreshConnGate); // input：键入即刷新保存门（#9 P1-b）
-  els.connFetchBtn.addEventListener("click", connFetch);
+  els.connModel.addEventListener("input", refreshConnGate);
   els.connSaveBtn.addEventListener("click", connSave);
   els.connCancelBtn.addEventListener("click", cancelForm);
 

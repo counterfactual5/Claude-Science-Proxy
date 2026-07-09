@@ -4,7 +4,7 @@ use serde_json::json;
 
 use crate::runtime::provider::{
     adapter_for_profile, assert_format_supported, is_native_adapter, is_openai_adapter,
-    reject_openai_custom_anthropic_base, relay_missing_profile_models,
+    reject_openai_custom_anthropic_base,
 };
 use crate::{config, scratch, templates};
 
@@ -172,10 +172,7 @@ pub(crate) fn create_profile_inner(
     assert_format_supported(&p)?; // custom 选了不支持格式则拒
     let adapter = adapter_for_profile(&p);
     reject_openai_custom_anthropic_base(adapter, &p.base_url)?;
-    // 守卫（修 #9 P1-a）：relay/自定义端点必须带 model（force 前提）。
-    if relay_missing_profile_models(adapter, &p) {
-        return Err("中转 / 自定义端点必须选择或填写一个模型，未创建。".to_string());
-    }
+    // 创建时可先不配模型；激活前在 profile_switch 层仍会校验。
     let mut p = p;
     p.sync_model_fields();
     config::update(dir, |c| c.profiles.push(p)).map_err(|e| e.to_string())?;
@@ -541,13 +538,12 @@ mod tests {
     }
 
     #[test]
-    fn create_relay_without_model_is_rejected() {
-        // 修 #9 P1-a：后端命令层直接创建 relay/自定义端点空 model 也被拦（不变量不可绕过）。
+    fn create_relay_without_model_is_allowed() {
         let d = tmpdir_profile();
-        let e = create_profile_inner(&d, "glm", "GLM", Some("gk"), None, None);
-        assert!(e.is_err(), "relay 空 model 应拒绝创建");
-        assert!(e.unwrap_err().contains("模型"));
-        // native 不受约束（model 可空）。
+        let id = create_profile_inner(&d, "glm", "GLM", Some("gk"), None, None).unwrap();
+        let cfg = config::load_from(&d).unwrap();
+        let p = cfg.profile_by_id(&id).unwrap();
+        assert!(p.effective_models().is_empty());
         assert!(create_profile_inner(&d, "deepseek", "DS", Some("gk"), None, None).is_ok());
     }
 
