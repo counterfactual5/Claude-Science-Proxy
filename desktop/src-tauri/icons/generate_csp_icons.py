@@ -23,6 +23,9 @@ TEXT = (245, 244, 240)        # #F5F4F0
 # Deterministic organic jitter for the starburst (hand-drawn feel).
 _STAR_SEED = 42
 
+# macOS Big Sur+ squircle: superellipse exponent ≈ 5 matches Apple's continuous corners.
+_SQUIRCLE_EXPONENT = 5.0
+
 
 def _load_font(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
     candidates = [
@@ -77,6 +80,32 @@ def _draw_starburst(draw: ImageDraw.ImageDraw, size: int) -> None:
         draw.line([(x0, y0), (ctrl_x, ctrl_y), (x1, y1)], fill=TEXT, width=line_w)
 
 
+def _squircle_mask(size: int) -> Image.Image:
+    """macOS-style squircle alpha mask (superellipse, ~22% effective corner radius)."""
+    mask = Image.new("L", (size, size), 0)
+    data = mask.load()
+    half = (size - 1) / 2.0
+    inv_half = 1.0 / half if half else 1.0
+    exp = _SQUIRCLE_EXPONENT
+
+    for y in range(size):
+        ny = abs((y - half) * inv_half) ** exp
+        for x in range(size):
+            nx = abs((x - half) * inv_half) ** exp
+            if nx + ny <= 1.0:
+                data[x, y] = 255
+
+    return mask
+
+
+def _apply_squircle_mask(img: Image.Image) -> Image.Image:
+    """Clip icon to squircle; transparent outside the macOS app-icon shape."""
+    mask = _squircle_mask(img.width)
+    out = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    out.paste(img, mask=mask)
+    return out
+
+
 def _draw_letterspaced_text(
     draw: ImageDraw.ImageDraw,
     label: str,
@@ -101,7 +130,7 @@ def _draw_letterspaced_text(
         x += w + tracking
 
 
-def render_icon(size: int) -> Image.Image:
+def render_icon(size: int, *, mask: bool = True) -> Image.Image:
     img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     px = img.load()
 
@@ -130,7 +159,7 @@ def render_icon(size: int) -> Image.Image:
 
     _draw_letterspaced_text(draw, label, font, ty, size, tracking)
 
-    return img
+    return _apply_squircle_mask(img) if mask else img
 
 
 def write_png(path: Path, size: int) -> None:
@@ -139,7 +168,8 @@ def write_png(path: Path, size: int) -> None:
 
 
 def write_ico(path: Path) -> None:
-    frames = [render_icon(s) for s in (16, 24, 32, 48, 64, 128, 256)]
+    # Windows expects square icons; keep ICO unmasked.
+    frames = [render_icon(s, mask=False) for s in (16, 24, 32, 48, 64, 128, 256)]
     frames[0].save(
         path,
         format="ICO",
