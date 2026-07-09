@@ -59,6 +59,15 @@ if [[ ! -d "$DATA_DIR/bin" ]]; then
   echo "运行时就绪。"
 fi
 
+# 迁移 ~/.csswitch → ~/.csp 时 atomic_copy 会写成 0600、丢掉 +x；cp -Rc 一般保留源权限。
+# 每次启动都幂等修复 conda/bin 与 bin/claude-science，避免 Environments 里 micromamba 报 permission denied。
+if [[ -f "$DATA_DIR/bin/claude-science" ]]; then
+  chmod +x "$DATA_DIR/bin/claude-science" 2>/dev/null || true
+fi
+if [[ -d "$DATA_DIR/conda/bin" ]]; then
+  chmod +x "$DATA_DIR/conda/bin"/* 2>/dev/null || true
+fi
+
 # 优先级：显式 SCIENCE_BIN > 沙箱内已克隆 runtime > App 内置 binary。
 # 沙箱内 runtime 优先，App 内置 binary 仅作缺省 fallback。
 if [[ -z "$BIN" ]]; then
