@@ -270,10 +270,10 @@ class StreamHeadersOpenBeforeUpstreamTtft(unittest.TestCase):
                b'"messages":[{"role":"user","content":"hi"}]}'
         raw, elapsed = raw_post_until(
             "127.0.0.1", self.port, f"/{SEC}/v1/messages", body,
-            b": csswitch-keepalive", timeout=1.1)
+            b": csp-keepalive", timeout=1.1)
         self.assertIn(b"HTTP/1.1 200", raw)
         self.assertIn(b"Content-Type: text/event-stream", raw)
-        self.assertIn(b": csswitch-keepalive", raw)
+        self.assertIn(b": csp-keepalive", raw)
         self.assertLess(elapsed, 1.1)
 
 

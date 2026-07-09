@@ -1,4 +1,4 @@
-"""HTTP transport helpers for the CSSwitch Python proxy.
+"""HTTP transport helpers for the Claude Science Proxy (CSP) Python gateway.
 
 This module owns outbound urllib retry/stream mechanics. The main proxy keeps
 thin wrappers so older tests can still monkeypatch ``csp_proxy.http_post``
@@ -79,7 +79,7 @@ def open_stream_with_keepalive(write_chunk, url, data, headers, log_fn):
             q.put(("err", e))
 
     threading.Thread(target=_open, daemon=True).start()
-    keepalive = b": csswitch-keepalive\n\n"
+    keepalive = b": csp-keepalive\n\n"
     while True:
         try:
             kind, payload = q.get(timeout=1.0)

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""CSSwitch 代理：把 Claude Science 的推理转发到第三方模型（provider 可切）。
+"""Claude Science Proxy (CSP) gateway: forward Claude Science inference to third-party models (switchable providers).
 
 Providers:
-  deepseek (默认)：https://api.deepseek.com/anthropic —— DeepSeek 原生 Anthropic 端点，
+  deepseek (default): https://api.deepseek.com/anthropic — native Anthropic endpoint;
                    代理只做「透传 + 改模型名 + 换鉴权头 + max_tokens 夹取 + 连接重试」，
                    thinking/tool_use 全部原生保真（不翻译协议）。
   qwen           ：DashScope compatible-mode —— Anthropic↔OpenAI 双向翻译（流式以 SSE 回放保真 tool_use）。
@@ -451,7 +451,7 @@ def openai_responses_to_anthropic(resp, model_id):
 
 class H(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
-    server_version = "csswitch-proxy"
+    server_version = "csp-proxy"
 
     def log_message(self, *a):
         pass
@@ -871,7 +871,7 @@ if __name__ == "__main__":
         sys.exit(1)
     # DSML 兜底 shim 模式（默认 off；relay 恒 off；deepseek 且 dsml_capable 才读环境变量）。
     SHIM_MODE = dsml_shim.shim_mode(PROV_NAME, PROV)
-    log(f"CSSwitch 代理启动 127.0.0.1:{args.port}  provider={PROV_NAME}  "
+    log(f"CSP proxy listening 127.0.0.1:{args.port}  provider={PROV_NAME}  "
         f"key=已加载(未显示)  上游={PROV['url']}  dsml_shim={SHIM_MODE}  "
         f"registry={'on' if MODEL_REGISTRY else 'off'}")
     # 绑定重试：上次会话遗留的孤儿代理可能还占着端口（app 侧会主动清，但退干净需一点时间）。
@@ -883,8 +883,8 @@ if __name__ == "__main__":
             break
         except OSError as e:
             if attempt == 9:
-                print(f"[csswitch] 端口 {args.port} 无法绑定：{e}。"
-                      f"可能被占用（结束占用进程，或在面板「高级」里换个端口）。",
+                print(f"[csp] port {args.port} bind failed: {e}. "
+                      f"Port may be in use (stop the other process, or pick another port in Advanced settings).",
                       file=sys.stderr, flush=True)
                 sys.exit(2)
             time.sleep(0.3)
