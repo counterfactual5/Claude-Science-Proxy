@@ -1,14 +1,14 @@
 {
-  "productName": "CSSwitch Acceptance",
-  "identifier": "com.csswitch.acceptance",
+  "productName": "CSP Acceptance",
+  "identifier": "com.csp.acceptance",
   "app": {
     "windows": [
       {
         "label": "main",
-        "title": "CSSwitch Acceptance",
+        "title": "CSP Acceptance",
         "width": 340,
         "height": 560,
-        "minWidth": 320,
+        "minWidth": 300,
         "minHeight": 520,
         "resizable": true,
         "decorations": true,
