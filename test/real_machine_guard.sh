@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Claude Science Proxy（CSP）真机验收护栏。
+# Claude Science Proxy (CSP) real-machine acceptance guard.
 #
-# 只管理独立测试 HOME 与测试端口；不会读取、复制、修改或删除真实
-# ~/.claude-science。真实实例只通过 lsof 记录 8765 的监听 PID，并在每个
-# 阶段比较是否保持不变。
+# Manages isolated test HOME and test ports only; never reads, copies, modifies, or deletes real
+# ~/.claude-science. Real instance is tracked via lsof on port 8765 listener PIDs and compared at each
+# stage to ensure they stay unchanged.
 set -euo pipefail
 
 PROJ="$(cd "$(dirname "$0")/.." && pwd)"
@@ -18,9 +18,9 @@ SCIENCE_BIN="${SCIENCE_BIN:-/Applications/Claude Science.app/Contents/Resources/
 die() { echo "FAIL: $*" >&2; exit 1; }
 pass() { echo "PASS: $*"; }
 
-# 隔离护栏（修 GPT 三轮 P1）：拒绝把「我们创建的」隔离目录预置成符号链接。防有人先把 TEST_HOME
-# 软链到真实 HOME，导致 prepare-legacy 经软链覆写真实 ~/.csswitch/config.json（或 chmod 真实目录）。
-# 只查我们掌控的目录本身，不查 /var 这类系统父级软链（macOS 默认 TMPDIR 就在 /var/folders 下）。
+# Isolation guard (GPT round-3 P1): reject pre-placed symlinks on directories we create. Prevents TEST_HOME
+# symlinked to real HOME so prepare-legacy would overwrite real ~/.csswitch/config.json via symlink (or chmod real dir).
+# Only checks directories we control, not system parents like /var (macOS TMPDIR defaults under /var/folders).
 reject_symlinks() {
   local p
   for p in "$@"; do
@@ -30,8 +30,8 @@ reject_symlinks() {
   done
 }
 
-# canonicalize 隔离目录：解析所有父级软链后，测试 HOME 不得等于或位于真实 HOME 之内，
-# 否则会往用户真实主目录里写测试配置。默认 TEST_ROOT 在 TMPDIR 下、天然通过。
+# Canonicalize isolation dir: after resolving parent symlinks, test HOME must not equal or sit inside real HOME,
+# or test config would be written into the user's real home. Default TEST_ROOT under TMPDIR passes naturally.
 assert_isolated_from_real_home() {
   local dir="$1" real_home canon
   real_home="$(cd "$HOME" 2>/dev/null && pwd -P)" || die "无法解析真实 HOME"
@@ -43,10 +43,10 @@ assert_isolated_from_real_home() {
   esac
 }
 
-# 安全写入状态/配置文件（修 GPT 四轮 P1）：先删掉目标处任何预置软链（`rm -f` 删的是链本身、
-# 不跟随），再从 stdin 写一个全新普通文件。杜绝「`>` 跟随预置软链把内容写进真实文件」（如真实
-# ~/.csswitch/config.json、或 STATE_DIR 里被软链的 port-8765.now）。**注意：这消除的是「跟随预置
-# 软链」，非原子、不宣称消除检查与写入之间的并发竞态**（本地测试助手，非对抗实时攻击者的威胁模型）。
+# Safe write for state/config files (GPT round-4 P1): remove any pre-placed symlink at target (`rm -f` removes link,
+# does not follow), then write a fresh regular file from stdin. Prevents `>` following a pre-placed symlink into
+# a real file (e.g. real ~/.csswitch/config.json or port-8765.now symlinked in STATE_DIR). **Note: eliminates
+# follow-preplaced-symlink writes, not atomicity or check-then-write races** (local test helper, not adversarial threat model).
 write_fresh() {
   local target="$1"
   if [ -d "$target" ] && [ ! -L "$target" ]; then
@@ -72,7 +72,7 @@ listener_pids() {
 assert_real_unchanged() {
   [ -f "$BASELINE" ] || die "缺少 8765 基线；先运行 preflight"
   local now="$STATE_DIR/port-8765.now"
-  listener_pids 8765 | write_fresh "$now" # 删任何预置软链后写全新文件，绝不经软链写真实文件
+  listener_pids 8765 | write_fresh "$now" # remove pre-placed symlinks then write fresh file, never via symlink to real files
   if ! cmp -s "$BASELINE" "$now"; then
     echo "基线 PID: $(tr '\n' ' ' <"$BASELINE")" >&2
     echo "当前 PID: $(tr '\n' ' ' <"$now")" >&2
@@ -88,12 +88,12 @@ assert_port_free() {
 
 preflight() {
   validate_ports
-  reject_symlinks "$TEST_ROOT" "$TEST_HOME" "$STATE_DIR" # mkdir/chmod 前：拒绝预置软链
+  reject_symlinks "$TEST_ROOT" "$TEST_HOME" "$STATE_DIR" # before mkdir/chmod: reject pre-placed symlinks
   umask 077
   mkdir -p "$TEST_HOME" "$STATE_DIR"
   chmod 700 "$TEST_ROOT" "$TEST_HOME" "$STATE_DIR"
-  assert_isolated_from_real_home "$TEST_HOME" # mkdir 后：解析父链，确认不在真实 HOME 内
-  listener_pids 8765 | write_fresh "$BASELINE" # 同理：删软链后写全新基线文件
+  assert_isolated_from_real_home "$TEST_HOME" # after mkdir: resolve parent chain, confirm not inside real HOME
+  listener_pids 8765 | write_fresh "$BASELINE" # same: remove symlink then write fresh baseline file
   assert_port_free "$PROXY_PORT"
   assert_port_free "$SANDBOX_PORT"
   [ -x "$SCIENCE_BIN" ] || die "未找到可执行 Science：$SCIENCE_BIN"
@@ -110,16 +110,16 @@ prepare_legacy() {
   [ -n "${DEEPSEEK_API_KEY:-}" ] || die "DEEPSEEK_API_KEY 未设置"
   [ -n "${DASHSCOPE_API_KEY:-}" ] || die "DASHSCOPE_API_KEY 未设置"
   command -v jq >/dev/null 2>&1 || die "prepare-legacy 需要 jq"
-  # 写盘前再验隔离目录（含 STATE_DIR）都不是软链：这一步缩小 preflight 之后被换软链的窗口，并给出
-  # 清晰早失败；真正的写安全由下面 write_fresh（删软链再写全新文件）保证，故不宣称消除竞态。
+  # Re-verify isolation dirs (incl. STATE_DIR) are not symlinks before write: narrows window after preflight,
+  # gives clear early fail; real write safety is write_fresh below (remove symlink then write), not race-free.
   reject_symlinks "$TEST_ROOT" "$TEST_HOME" "$STATE_DIR" "$TEST_HOME/.csswitch"
   assert_isolated_from_real_home "$TEST_HOME"
   local cfg_dir="$TEST_HOME/.csswitch"
   umask 077
   mkdir -p "$cfg_dir"
   chmod 700 "$cfg_dir"
-  # config.json 本身若被预置成软链（指向真实 ~/.csswitch/config.json），write_fresh 会先删掉该软链
-  # 再写全新普通文件，绝不经软链覆写真实配置。
+  # If config.json was pre-placed as symlink (to real ~/.csswitch/config.json), write_fresh removes it first
+  # then writes a fresh regular file, never overwriting real config via symlink.
   jq -n \
     --arg deepseek "$DEEPSEEK_API_KEY" \
     --arg qwen "$DASHSCOPE_API_KEY" \
