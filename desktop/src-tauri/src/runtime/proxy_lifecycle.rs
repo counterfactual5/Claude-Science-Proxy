@@ -220,6 +220,7 @@ mod tests {
         }
     }
 
+    #[test]
     fn formal_proxy_env_uses_registry_instead_of_force_model() {
         let mut launch = launch("relay", "glm-5.2");
         launch.model_registry_json = Some(
