@@ -16,6 +16,138 @@ const invoke = PREVIEW
   ? (cmd, args) => mockInvoke(cmd, args)
   : window.__TAURI__.core.invoke;
 
+// ── 版本：国内 cn / 国际 intl（语言 + 提供商列表）────────────────────────────
+function detectEdition() {
+  const q = new URLSearchParams(location.search).get("edition");
+  if (q === "cn" || q === "intl") return q;
+  const lang = (navigator.language || "en").toLowerCase();
+  return lang.startsWith("zh") ? "cn" : "intl";
+}
+const EDITION = detectEdition();
+
+const I18N = {
+  cn: {
+    myConfigs: "我的配置",
+    newBtn: "＋ 新建",
+    presetPicker: "预设…",
+    presetTitle: "快速填入名称与地址",
+    provider: "Provider",
+    baseUrl: "Base_URL",
+    apiKey: "API Key",
+    create: "创建",
+    cancel: "取消",
+    save: "保存",
+    edit: "编辑",
+    delete: "删除",
+    models: "启用模型",
+    ports: "端口管理",
+    proxyPort: "代理",
+    sandboxPort: "沙箱",
+    startScience: "启动 Claude Science",
+    stop: "停止",
+    stopTitle: "停止本地代理与 Science 沙箱",
+    editCspJson: "Edit CSP.json",
+    activeBadge: "当前生效",
+    emptyTitle: "还没有模型配置",
+    emptyHint: "点右上「＋ 新建」添加一条连接",
+    noUrl: "（未填地址）",
+    keyLabel: "Key",
+    keyMissing: "未填 key",
+    fillProvider: "请填写 Provider。",
+    fillBaseUrl: "请填写 Base_URL。",
+    fillApiKey: "请填写 API Key。",
+    skipActivate: "校验没过，仍要启用这条",
+    menuMore: "更多",
+  },
+  intl: {
+    myConfigs: "Profiles",
+    newBtn: "+ New",
+    presetPicker: "Preset…",
+    presetTitle: "Fill name and URL",
+    provider: "Provider",
+    baseUrl: "Base URL",
+    apiKey: "API Key",
+    create: "Create",
+    cancel: "Cancel",
+    save: "Save",
+    edit: "Edit",
+    delete: "Delete",
+    models: "Enabled models",
+    ports: "Ports",
+    proxyPort: "Proxy",
+    sandboxPort: "Sandbox",
+    startScience: "Start Claude Science",
+    stop: "Stop",
+    stopTitle: "Stop local proxy and Science sandbox",
+    editCspJson: "Edit CSP.json",
+    activeBadge: "Active",
+    emptyTitle: "No profiles yet",
+    emptyHint: "Tap + New to add a connection",
+    noUrl: "(no URL)",
+    keyLabel: "Key",
+    keyMissing: "no key",
+    fillProvider: "Enter a provider name.",
+    fillBaseUrl: "Enter a base URL.",
+    fillApiKey: "Enter an API key.",
+    skipActivate: "Activate anyway (skip verify)",
+    menuMore: "More",
+  },
+};
+function S() { return I18N[EDITION]; }
+
+/** 国内版：每家一个默认端点，仅保留国内常用线路。 */
+const WIZ_PRESETS_CN = [
+  { id: "deepseek", templateId: "deepseek", name: "DeepSeek", label: "DeepSeek", baseUrl: "https://api.deepseek.com/anthropic", lockUrl: true },
+  { id: "glm", templateId: "glm", name: "GLM", label: "智谱 GLM", baseUrl: "https://open.bigmodel.cn/api/anthropic" },
+  { id: "glm-coding", templateId: "custom-openai", name: "GLM Coding Plan", label: "智谱 Coding Plan", baseUrl: "https://open.bigmodel.cn/api/coding/paas/v4" },
+  { id: "kimi", templateId: "kimi", name: "Moonshot", label: "Moonshot", baseUrl: "https://api.moonshot.cn/anthropic" },
+  { id: "minimax", templateId: "minimax", name: "MiniMax", label: "MiniMax", baseUrl: "https://api.minimaxi.com/anthropic" },
+  { id: "xiaomi", templateId: "xiaomi", name: "MiMo", label: "小米 MiMo", baseUrl: "https://api.xiaomimimo.com/anthropic" },
+  { id: "xiaomi-token", templateId: "xiaomi", name: "MiMo", label: "小米 MiMo · Token 套餐", baseUrl: "https://token-plan-cn.xiaomimimo.com/anthropic" },
+  { id: "custom", templateId: "custom", name: "自定义", label: "自定义端点", baseUrl: "" },
+];
+
+/** 国际版：海外常用端点。 */
+const WIZ_PRESETS_INTL = [
+  { id: "deepseek", templateId: "deepseek", name: "DeepSeek", label: "DeepSeek", baseUrl: "https://api.deepseek.com/anthropic", lockUrl: true },
+  { id: "glm", templateId: "glm", name: "ZAI", label: "ZAI", baseUrl: "https://api.z.ai/api/anthropic" },
+  { id: "kimi", templateId: "kimi", name: "Moonshot", label: "Moonshot", baseUrl: "https://api.moonshot.ai/anthropic" },
+  { id: "minimax", templateId: "minimax", name: "MiniMax", label: "MiniMax", baseUrl: "https://api.minimax.io/anthropic" },
+  { id: "openrouter", templateId: "openrouter", name: "OpenRouter", label: "OpenRouter", baseUrl: "https://openrouter.ai/api" },
+];
+
+function wizPresets() {
+  return EDITION === "cn" ? WIZ_PRESETS_CN : WIZ_PRESETS_INTL;
+}
+
+function applyEditionUI() {
+  const t = S();
+  document.documentElement.lang = EDITION === "cn" ? "zh-CN" : "en";
+  if (els.i18nMyConfigs) els.i18nMyConfigs.textContent = t.myConfigs;
+  if (els.newBtn) els.newBtn.textContent = t.newBtn;
+  if (els.i18nLabelProvider) els.i18nLabelProvider.textContent = t.provider;
+  if (els.i18nLabelBase) els.i18nLabelBase.textContent = t.baseUrl;
+  if (els.i18nLabelKey) els.i18nLabelKey.textContent = t.apiKey;
+  if (els.wizSaveBtn) els.wizSaveBtn.textContent = t.create;
+  if (els.wizCancelBtn) els.wizCancelBtn.textContent = t.cancel;
+  if (els.connTitle) els.connTitle.textContent = t.edit;
+  if (els.i18nConnName) els.i18nConnName.textContent = t.provider;
+  if (els.i18nConnBase) els.i18nConnBase.textContent = t.baseUrl;
+  if (els.i18nConnKey) els.i18nConnKey.textContent = t.apiKey;
+  if (els.connModelLabel) els.connModelLabel.textContent = t.models;
+  if (els.connSaveBtn) els.connSaveBtn.textContent = t.save;
+  if (els.connCancelBtn) els.connCancelBtn.textContent = t.cancel;
+  if (els.i18nPorts) els.i18nPorts.textContent = t.ports;
+  if (els.i18nProxyPort) els.i18nProxyPort.textContent = t.proxyPort;
+  if (els.i18nSandboxPort) els.i18nSandboxPort.textContent = t.sandboxPort;
+  if (els.oneClickBtn) els.oneClickBtn.textContent = t.startScience;
+  if (els.stopBtn) { els.stopBtn.textContent = t.stop; els.stopBtn.title = t.stopTitle; }
+  if (els.editCspJsonBtn) els.editCspJsonBtn.textContent = t.editCspJson;
+  if (els.skipActivateBtn) els.skipActivateBtn.textContent = t.skipActivate;
+  if (els.listhdMoreBtn) els.listhdMoreBtn.title = t.menuMore;
+  populateWizPresetSelect();
+}
+
 // ── 预览兜底 mock（仅浏览器预览用；node --check 只验语法，真实 app 走真后端） ──
 const MOCK_TEMPLATES = [
   { id: "deepseek", name: "DeepSeek", category: "cn_official", api_format: "anthropic", adapter: "deepseek", base_url: "https://api.deepseek.com/anthropic", base_url_editable: false, requires_model_override: false, builtin_models: ["claude-opus-4-8", "claude-haiku-4-5"], icon: "deepseek", icon_color: "#1E88E5", website_url: "https://platform.deepseek.com" },
@@ -50,8 +182,6 @@ function mockInvoke(cmd, args) {
         templates: MOCK_TEMPLATES,
         profiles: mockStore.profiles.map((p) => ({ ...p })),
       });
-    case "list_templates":
-      return Promise.resolve(MOCK_TEMPLATES);
     case "create_profile": {
       const t = MOCK_TEMPLATES.find((x) => x.id === args.templateId) || {};
       const id = "p-" + Math.random().toString(16).slice(2, 10);
@@ -78,11 +208,6 @@ function mockInvoke(cmd, args) {
       if (args.key) p.key = mockMask(args.key);
       return Promise.resolve({ validated: true });
     }
-    case "clear_profile_key": {
-      const p = mockStore.profiles.find((x) => x.id === args.id);
-      if (p) p.key = "";
-      return Promise.resolve(null);
-    }
     case "delete_profile":
       mockStore.profiles = mockStore.profiles.filter((x) => x.id !== args.id);
       if (mockStore.active_id === args.id) mockStore.active_id = "";
@@ -100,6 +225,8 @@ function mockInvoke(cmd, args) {
       return Promise.resolve(null);
     case "one_click_login":
       return Promise.resolve({ url: "http://127.0.0.1:8990", msg: "（预览模式：假装已就绪）", action: "started" });
+    case "open_csp_json":
+      return Promise.resolve("~/.csp/CSP.json");
     default:
       return Promise.resolve(null);
   }
@@ -114,8 +241,6 @@ let busyMsgTimers = [];
 let configState = { profiles: [], templates: [], active_id: "", proxy_port: 18991, sandbox_port: 8990 };
 let pendingSkipActivateId = null;   // set_active 校验含糊时，允许「跳过验证」再切
 let pendingConfirm = null;          // 危险操作（清 key / 删除）的「再点一次确认」态
-
-const CAT_LABELS = { cn_official: "国内", custom: "自定义" };
 
 // ── 模型能力（三态，纯函数，无 DOM）：native 映射 / relay 跟随 / relay 固定。──
 const CAP = { NATIVE: "native", FOLLOW: "follow", FIXED: "fixed" };
@@ -233,14 +358,12 @@ function applyModelCapability(t, ui, profileOrModel) {
 }
 
 function setMsg(text, kind) {
-  // 去掉常驻「就绪。」：空消息或纯 idle 时整条反馈栏不占位，有真实反馈（结果/错误/自检）才冒出来。
-  const t = text && text !== "就绪。" ? text : "";
+  // 反馈区仅展示错误；成功/进度/中性提示一律不占位。
+  const t = kind === "err" && text && text !== "就绪。" ? text : "";
   els.msg.textContent = t;
-  els.msg.className = "msg" + (kind ? " " + kind : "");
+  els.msg.className = "msg" + (t ? " err" : "");
   els.msg.parentElement.hidden = !t;
-  // 表单视图里反馈区可能落在折叠线以下：给出结果（ok/err）时滚到可见；
-  // 中性提示（无 kind，多为打开表单时）不滚，避免把页面拽到底部。
-  if (t && kind && els.panel && els.panel.classList.contains("view-form")) {
+  if (t && els.panel && els.panel.classList.contains("view-form")) {
     els.msg.scrollIntoView({ block: "nearest" });
   }
 }
@@ -264,6 +387,23 @@ function closeAllMenus() {
   els.profileList.querySelectorAll(".pmenu-btn").forEach((b) => {
     b.setAttribute("aria-expanded", "false");
   });
+}
+
+function closeListhdMenu() {
+  if (!els.listhdMenu) return;
+  els.listhdMenu.hidden = true;
+  if (els.listhdMoreBtn) els.listhdMoreBtn.setAttribute("aria-expanded", "false");
+}
+
+function toggleListhdMenu() {
+  if (!els.listhdMenu || !els.listhdMoreBtn) return;
+  const wasOpen = !els.listhdMenu.hidden;
+  closeListhdMenu();
+  closeAllMenus();
+  if (!wasOpen) {
+    els.listhdMenu.hidden = false;
+    els.listhdMoreBtn.setAttribute("aria-expanded", "true");
+  }
 }
 
 function positionProfileMenu(menu, btn) {
@@ -352,7 +492,7 @@ function setBusy(on, op) {
   busyOp = on ? (op || { kind: "global" }) : null;
   if (!on) clearBusyMsgTimers();
   [
-    els.oneClickBtn, els.stopBtn, els.newBtn,
+    els.oneClickBtn, els.stopBtn, els.newBtn, els.listhdMoreBtn,
     els.wizSaveBtn, els.wizCancelBtn,
     els.connSaveBtn, els.connCancelBtn,
     els.skipActivateBtn,
@@ -447,14 +587,15 @@ function renderList() {
   const list = els.profileList;
   const ps = configState.profiles || [];
   if (!ps.length) {
-    list.innerHTML = '<div class="empty"><span class="empty-icon" aria-hidden="true">☁</span>还没有模型配置<span class="empty-hint">点右上「＋ 新建」添加一条连接</span></div>';
+    const t = S();
+    list.innerHTML = '<div class="empty"><span class="empty-icon" aria-hidden="true">☁</span>' +
+      escapeHtml(t.emptyTitle) + '<span class="empty-hint">' + escapeHtml(t.emptyHint) + "</span></div>";
     return;
   }
   list.innerHTML = ps.map((p) => {
     const active = p.id === configState.active_id;
-    const catLabel = CAT_LABELS[p.category] || p.category || "";
     const hasKey = typeof p.has_key === "boolean" ? p.has_key : !!p.key;
-    const keyMask = hasKey ? escapeHtml(p.key_masked || p.key || "已保存") : "未填 key";
+    const keyMask = hasKey ? escapeHtml(p.key_masked || p.key || S().keyLabel) : S().keyMissing;
     const metaTxt = profileMetaLine(p);
     const dotStyle = p.icon_color ? ' style="background:' + escapeHtml(p.icon_color) + '"' : "";
     return (
@@ -462,18 +603,16 @@ function renderList() {
         '<div class="prow-top">' +
           '<span class="pico"' + dotStyle + "></span>" +
           '<span class="pname">' + escapeHtml(p.name) + "</span>" +
-          '<span class="badge">' + escapeHtml(catLabel) + "</span>" +
-          (active ? '<span class="badge on">当前生效</span>' : "") +
+          (active ? '<span class="badge on">' + escapeHtml(S().activeBadge) + "</span>" : "") +
         "</div>" +
-        '<div class="pmeta">' + escapeHtml(p.base_url || "（未填地址）") + "</div>" +
-        '<div class="pmeta">' + metaTxt + " · Key：" + keyMask + "</div>" +
+        '<div class="pmeta">' + escapeHtml(p.base_url || S().noUrl) + "</div>" +
+        '<div class="pmeta">' + metaTxt + " · " + escapeHtml(S().keyLabel) + "：" + keyMask + "</div>" +
         '<div class="prow-acts">' +
           '<div class="pmenu-wrap">' +
             '<button type="button" class="abtn pmenu-btn" data-act="menu" aria-haspopup="true" aria-expanded="false" title="更多">⋯</button>' +
             '<div class="pmenu" hidden role="menu">' +
-              '<button type="button" class="pmenu-item" data-act="editconn" role="menuitem">编辑</button>' +
-              '<button type="button" class="pmenu-item" data-act="clearkey" role="menuitem">清除 key</button>' +
-              '<button type="button" class="pmenu-item danger" data-act="delete" role="menuitem">删除</button>' +
+              '<button type="button" class="pmenu-item" data-act="editconn" role="menuitem">' + escapeHtml(S().edit) + "</button>" +
+              '<button type="button" class="pmenu-item danger" data-act="delete" role="menuitem">' + escapeHtml(S().delete) + "</button>" +
             "</div>" +
           "</div>" +
         "</div>" +
@@ -552,6 +691,16 @@ async function discoverModelIds({ templateId, baseUrl, key, profileId, builtin }
   return fallback;
 }
 
+/** 新建 profile 时默认启用前 N 个模型；其余在编辑页勾选或改 CSP.json。 */
+const MAX_AUTO_ENABLE_MODELS = 10;
+
+function modelsToEnableOnCreate(discoveredIds, builtin) {
+  const ids = (discoveredIds || []).filter(Boolean);
+  const builtins = (builtin || []).filter(Boolean);
+  const pool = ids.length ? ids : builtins;
+  return pool.slice(0, MAX_AUTO_ENABLE_MODELS);
+}
+
 // fetch_models 返回体 → 刷新 checkbox 池（编辑页自动拉取用）。
 function applyFetchToPick(r, pickUi, selected) {
   const models = (r && r.models) || [];
@@ -562,7 +711,39 @@ function applyFetchToPick(r, pickUi, selected) {
   return ids.length;
 }
 
-// ── C2：新建（名称 + base_url + key）──
+// ── C2：新建（Provider 预设 + base_url + key）──
+
+function wizPresetById(id) {
+  return wizPresets().find((item) => item.id === id) || null;
+}
+
+function populateWizPresetSelect() {
+  const sel = els.wizPreset;
+  if (!sel) return;
+  const t = S();
+  sel.title = t.presetTitle;
+  sel.innerHTML = '<option value="">' + escapeHtml(t.presetPicker) + "</option>";
+  for (const item of wizPresets()) {
+    const opt = document.createElement("option");
+    opt.value = item.id;
+    opt.textContent = item.label;
+    sel.appendChild(opt);
+  }
+}
+
+function applyWizPreset() {
+  const preset = wizPresetById(els.wizPreset.value);
+  if (!preset) {
+    refreshWizGate();
+    return;
+  }
+  els.wizName.value = preset.name;
+  els.wizBase.value = preset.baseUrl;
+  els.wizBase.readOnly = !!preset.lockUrl;
+  if (!preset.baseUrl) els.wizBase.focus();
+  refreshWizGate();
+}
+
 function normBaseUrl(url) {
   return (url || "").trim().replace(/\/+$/, "").toLowerCase();
 }
@@ -576,11 +757,11 @@ function inferTemplateId(baseUrl) {
   }
   if (norm.includes("deepseek.com")) return "deepseek";
   if (norm.includes("dashscope.aliyuncs.com")) return "qwen";
-  if (norm.includes("open.bigmodel.cn") && norm.includes("/anthropic")) return "glm";
-  if (norm.includes("xiaomimimo.com")) return "xiaomi";
-  if (norm.includes("siliconflow.cn")) return "siliconflow";
-  if (norm.includes("moonshot.cn")) return "kimi";
-  if (norm.includes("minimaxi.com")) return "minimax";
+  if ((norm.includes("open.bigmodel.cn") || norm.includes("api.z.ai")) && norm.includes("/anthropic")) return "glm";
+  if (norm.includes("xiaomimimo.com") || norm.includes("token-plan")) return "xiaomi";
+  if (norm.includes("siliconflow.cn") || norm.includes("siliconflow.com")) return "siliconflow";
+  if (norm.includes("moonshot.cn") || norm.includes("moonshot.ai")) return "kimi";
+  if (norm.includes("minimaxi.com") || norm.includes("minimax.io")) return "minimax";
   if (norm.includes("openrouter.ai")) return "openrouter";
   if (norm.includes("/responses") && !norm.includes("/anthropic")) return "custom-openai-responses";
   if (norm.includes("/v1") || norm.includes("/paas/") || norm.includes("compatible-mode") || norm.includes("/coding/")) {
@@ -592,11 +773,12 @@ function inferTemplateId(baseUrl) {
 function openWizard() {
   hideSkip();
   els.wizName.value = "";
+  els.wizPreset.value = "";
   els.wizBase.value = "";
+  els.wizBase.readOnly = false;
   els.wizKey.value = "";
   refreshWizGate();
   showView("wizard");
-  setMsg("填写名称、地址和 Key；创建时自动拉取可用模型。");
 }
 
 function refreshWizGate() {
@@ -615,9 +797,9 @@ async function wizSave() {
   const name = els.wizName.value.trim();
   const base = els.wizBase.value.trim();
   const key = els.wizKey.value.trim();
-  if (!name) { setMsg("请填写名称。", "err"); return; }
-  if (!base) { setMsg("请填写 base_url。", "err"); return; }
-  if (!key) { setMsg("请填写 API Key。", "err"); return; }
+  if (!name) { setMsg(S().fillProvider, "err"); return; }
+  if (!base) { setMsg(S().fillBaseUrl, "err"); return; }
+  if (!key) { setMsg(S().fillApiKey, "err"); return; }
   const templateId = inferTemplateId(base);
   const t = tplById(templateId);
   const baseErr = openaiCustomAnthropicBaseMessage(t, base);
@@ -628,7 +810,8 @@ async function wizSave() {
     const id = await call("create_profile", { templateId, name, key, baseUrl: base, model: "" });
     setMsg("正在拉取模型…");
     const builtin = (t && t.builtin_models) || [];
-    const modelIds = await discoverModelIds({ templateId, baseUrl: base, key, builtin });
+    const discovered = await discoverModelIds({ templateId, baseUrl: base, key, builtin });
+    const modelIds = modelsToEnableOnCreate(discovered, builtin);
     if (modelIds.length) {
       await call("update_profile_connection", {
         id,
@@ -642,7 +825,12 @@ async function wizSave() {
     els.wizKey.value = "";
     await loadConfig();
     if (modelIds.length) {
-      setMsg("已创建「" + name + "」，发现 " + modelIds.length + " 个模型（默认全部启用）。点击卡片启用，或在编辑里勾选。", "ok");
+      const total = discovered.length || modelIds.length;
+      if (total > modelIds.length) {
+        setMsg("已创建「" + name + "」，发现 " + total + " 个模型，已启用前 " + modelIds.length + " 个。其余可在编辑里勾选，或直接改 CSP.json。", "ok");
+      } else {
+        setMsg("已创建「" + name + "」，已启用 " + modelIds.length + " 个模型。更多可在编辑里勾选，或直接改 CSP.json。", "ok");
+      }
     } else {
       setMsg("已创建「" + name + "」，未能拉取模型列表。请在编辑里重试或手动配置。", "ok");
     }
@@ -702,7 +890,7 @@ function openConn(id) {
     pick: els.connModelPick, modelLabel: els.connModelLabel, onPickChange: refreshConnGate,
   }, p);
   els.connKey.value = "";
-  els.connKey.placeholder = p.key ? "已保存（留空不改）" : "粘贴 key（只存本地）";
+  els.connKey.placeholder = p.key ? "已保存（留空不改）" : "sk-...";
   showView("conn");
   refreshConnGate();
   setMsg(active
@@ -763,7 +951,7 @@ async function connSave() {
   const p = currentConn();
   if (!p) { setMsg("配置不存在。", "err"); return; }
   const name = els.connName.value.trim();
-  if (!name) { setMsg("名称不能为空。", "err"); return; }
+  if (!name) { setMsg("Provider 不能为空。", "err"); return; }
   const t = tplById(p.template_id);
   const capSrc = profileCapabilitySource(p, t);
   const req = p.capabilities ? modelRequired(p) : (t ? modelRequired(t) : true);
@@ -775,7 +963,7 @@ async function connSave() {
   const base = editable ? els.connBase.value.trim() : (t ? t.base_url : els.connBase.value.trim());
   // 可编辑地址的模板都是中转/自定义端点，必须带 base_url；清空后保存会得到不可用连接（激活必失败）。
   // 保存前就拦（后端也有同款守卫兜底，修 P2）。
-  if (editable && !base) { setMsg("中转 / 自定义端点必须填写连接地址（base_url）。", "err"); return; }
+  if (editable && !base) { setMsg("请填写 Base_URL。", "err"); return; }
   const baseErr = openaiCustomAnthropicBaseMessage(t, base);
   if (baseErr) { setMsg(baseErr, "err"); return; }
   const active = p.id === configState.active_id;
@@ -807,32 +995,6 @@ async function connSave() {
     }
   } catch (e) {
     setMsg("连接未保存：" + e, "err");
-  } finally {
-    setBusy(false);
-  }
-}
-
-// 清 key（行内 / 连接表单都可触发）：二次确认后 clear_profile_key。
-function clearKey(id) {
-  const p = (configState.profiles || []).find((x) => x.id === id);
-  const nm = p ? p.name : id;
-  confirmAction("clearkey:" + id, "将清除「" + nm + "」的 API key（需重填才能用）", () => doClearKey(id));
-}
-async function doClearKey(id) {
-  const wasActive = id === configState.active_id;
-  setBusy(true);
-  setMsg("清除 key 中…");
-  try {
-    await call("clear_profile_key", { id });
-    await loadConfig();
-    setMsg(
-      wasActive
-        ? "已清除 key（该配置是当前生效，链路已断，请重新填 key 并保存）。"
-        : "已清除 key。",
-      "ok"
-    );
-  } catch (e) {
-    setMsg("清除失败：" + e, "err");
   } finally {
     setBusy(false);
   }
@@ -922,14 +1084,17 @@ function wire() {
   [
     "oneClickBtn", "stopBtn",
     "msg", "proxyPort", "sandboxPort", "advSec",
-    "listSec", "profileList", "newBtn", "editCspJsonBtn", "skipActivateBtn",
-    "wizSec", "wizName", "wizBase", "wizBaseHint", "wizKey", "wizSaveBtn", "wizCancelBtn",
+    "listSec", "profileList", "newBtn", "listhdMoreBtn", "listhdMenu", "editCspJsonBtn", "skipActivateBtn",
+    "i18nMyConfigs", "i18nLabelProvider", "i18nLabelBase", "i18nLabelKey",
+    "i18nConnName", "i18nConnBase", "i18nConnKey", "i18nPorts", "i18nProxyPort", "i18nSandboxPort",
+    "wizSec", "wizName", "wizPreset", "wizBase", "wizKey", "wizSaveBtn", "wizCancelBtn",
     "connSec", "connTitle", "connName", "connBase", "connBaseHint",
     "connModelInfo", "connModel", "connModelHint", "connModelPick", "connKey", "connSaveBtn", "connCancelBtn",
   ].forEach((id) => (els[id] = $(id)));
   els.panel = document.querySelector(".panel");
   els.panelBody = document.querySelector(".panel-body");
 
+  applyEditionUI();
   els.proxyPort.addEventListener("change", persistPorts);
   els.sandboxPort.addEventListener("change", persistPorts);
 
@@ -946,6 +1111,7 @@ function wire() {
         const menu = wrap && wrap.querySelector(".pmenu");
         if (!menu) return;
         const wasOpen = !menu.hidden;
+        closeListhdMenu();
         closeAllMenus();
         if (!wasOpen) {
           positionProfileMenu(menu, btn);
@@ -955,7 +1121,6 @@ function wire() {
       }
       closeAllMenus();
       if (act === "editconn") openConn(id);
-      else if (act === "clearkey") clearKey(id);
       else if (act === "delete") del(id);
       return;
     }
@@ -966,14 +1131,20 @@ function wire() {
   });
   document.addEventListener("click", (e) => {
     if (!e.target.closest(".pmenu-wrap")) closeAllMenus();
+    if (!e.target.closest(".listhd-more")) closeListhdMenu();
   });
 
   els.newBtn.addEventListener("click", openWizard);
+  els.listhdMoreBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (busy) return;
+    toggleListhdMenu();
+  });
   els.editCspJsonBtn.addEventListener("click", async () => {
     if (busy) return;
+    closeListhdMenu();
     try {
-      const path = await call("open_csp_json");
-      setMsg("已在系统编辑器中打开 " + path, "ok");
+      await call("open_csp_json");
     } catch (e) {
       setMsg("打开 CSP.json 失败：" + e, "err");
     }
@@ -983,6 +1154,7 @@ function wire() {
     if (id) activate(id, true);
   });
 
+  els.wizPreset.addEventListener("change", applyWizPreset);
   els.wizName.addEventListener("input", refreshWizGate);
   els.wizBase.addEventListener("input", refreshWizGate);
   els.wizKey.addEventListener("input", refreshWizGate);
