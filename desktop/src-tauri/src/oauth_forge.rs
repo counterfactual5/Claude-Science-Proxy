@@ -1,3 +1,7 @@
+//! Virtual OAuth forger (Rust-native). Writes **sandbox-only** fake login material so Claude Science
+//! can start without touching real `~/.claude-science`. Zero network, zero real credentials.
+//! Wire format matches `scripts/make-virtual-oauth.mjs` — see `docs/verified-facts.md`.
+//!
 //! 虚拟 OAuth 伪造器（Rust 原生，替代 `scripts/make-virtual-oauth.mjs`，去 node 依赖）。
 //!
 //! 在【沙箱】auth_dir 里写一套本地自造、绝不联网的登录凭证，让 Claude Science 认为已登录

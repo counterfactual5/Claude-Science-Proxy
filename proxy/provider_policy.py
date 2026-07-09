@@ -1,7 +1,7 @@
-"""Provider 策略纯函数 + 状态结构（S1a：从 csp_proxy 下沉，改显式收 ProviderState，不读全局）。
+"""Provider policy pure functions + state (extracted from csp_proxy).
 
-依赖方向：本模块是最底层，不 import csp_proxy / anthropic_compat（无循环依赖）。
-compat 三入口只吃 ProviderState，骨架从模块全局一次性组装后传入。
+Depends on nothing above this layer (no import of csp_proxy / anthropic_compat).
+Compat handlers take an explicit ProviderState assembled once at proxy startup.
 """
 import random
 import re
