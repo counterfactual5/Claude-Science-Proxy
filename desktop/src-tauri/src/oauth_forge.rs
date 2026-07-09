@@ -787,7 +787,10 @@ mod tests {
         let sandbox_root = sandbox_link.join("home");
         let auth_dir = sandbox_root.join(".claude-science");
         let r = forge_guarded(&auth_dir, "virtual@localhost.invalid", &sandbox_root, &real);
-        assert!(r.is_err(), "sandbox root resolving into real tree via symlink must be rejected");
+        assert!(
+            r.is_err(),
+            "sandbox root resolving into real tree via symlink must be rejected"
+        );
         assert!(r.unwrap_err().contains("真实 Science 目录"));
         // Real directory unchanged.
         assert_eq!(
@@ -798,7 +801,10 @@ mod tests {
             real.join(".oauth-tokens/victim.enc").exists(),
             "real .enc must not be touched"
         );
-        assert!(!real.join("home").exists(), "must not create anything in real tree");
+        assert!(
+            !real.join("home").exists(),
+            "must not create anything in real tree"
+        );
         for d in [real, csw] {
             let _ = std::fs::remove_dir_all(&d);
         }
@@ -832,7 +838,10 @@ mod tests {
             outside.join(".oauth-tokens/victim.enc").exists(),
             "stale .enc must not be deleted"
         );
-        assert!(!outside.join("active-org.json").exists(), "must not write to symlink target");
+        assert!(
+            !outside.join("active-org.json").exists(),
+            "must not write to symlink target"
+        );
         for d in [root, outside, fake_real] {
             let _ = std::fs::remove_dir_all(&d);
         }
@@ -1026,7 +1035,10 @@ mod tests {
         assert_eq!(r.org_uuid, org0, "org unchanged when key rotated");
         let key = read_oauth_key(&dir);
         let body = std::fs::read_to_string(the_enc_file(&dir)).unwrap();
-        assert!(decrypt_token_v2(&body, &key).is_ok(), "reminted token should decrypt");
+        assert!(
+            decrypt_token_v2(&body, &key).is_ok(),
+            "reminted token should decrypt"
+        );
         for d in [dir, fake_real] {
             let _ = std::fs::remove_dir_all(&d);
         }
@@ -1109,7 +1121,11 @@ mod tests {
             !dir.join("active-org.json").exists(),
             "error path must not write active-org.json"
         );
-        assert_eq!(scan_org_dirs(&dir).len(), 2, "must not silently mint new org");
+        assert_eq!(
+            scan_org_dirs(&dir).len(),
+            2,
+            "must not silently mint new org"
+        );
         for d in [dir, fake_real] {
             let _ = std::fs::remove_dir_all(&d);
         }
@@ -1133,7 +1149,11 @@ mod tests {
         }
         std::fs::write(dir.join("encryption.key"), blob).unwrap();
         let (r, action) = ensure_virtual_login_guarded(&dir, email, &dir, &fake_real).unwrap();
-        assert_eq!(action, LoginAction::Repaired, "active-org.json still present → repair");
+        assert_eq!(
+            action,
+            LoginAction::Repaired,
+            "active-org.json still present → repair"
+        );
         assert_eq!(r.org_uuid, org0, "org unchanged when key rotated");
         let key = read_oauth_key(&dir);
         let body = std::fs::read_to_string(the_enc_file(&dir)).unwrap();
@@ -1166,7 +1186,11 @@ mod tests {
         let enc = encrypt_token_v2(&serde_json::to_vec(&bad).unwrap(), &key).unwrap();
         std::fs::write(the_enc_file(&dir), enc).unwrap();
         let (r, action) = ensure_virtual_login_guarded(&dir, email, &dir, &fake_real).unwrap();
-        assert_eq!(action, LoginAction::Repaired, "structural damage should repair not reuse");
+        assert_eq!(
+            action,
+            LoginAction::Repaired,
+            "structural damage should repair not reuse"
+        );
         assert_eq!(r.org_uuid, org0, "repair still keeps org");
         // After repair should be self-consistent again (provider=claude_ai, valid UUID account)
         assert!(
@@ -1198,7 +1222,11 @@ mod tests {
         let enc = encrypt_token_v2(&serde_json::to_vec(&expired).unwrap(), &key).unwrap();
         std::fs::write(the_enc_file(&dir), enc).unwrap();
         let (r, action) = ensure_virtual_login_guarded(&dir, email, &dir, &fake_real).unwrap();
-        assert_eq!(action, LoginAction::Repaired, "expired token must not be misclassified as Reused");
+        assert_eq!(
+            action,
+            LoginAction::Repaired,
+            "expired token must not be misclassified as Reused"
+        );
         assert_eq!(r.org_uuid, org0);
         // After repair new token is far-future → second ensure should reuse.
         let (_r2, a2) = ensure_virtual_login_guarded(&dir, email, &dir, &fake_real).unwrap();
@@ -1279,7 +1307,10 @@ mod tests {
         assert!(!token_not_expired("2000-01-01T00:00:00.000Z"));
         assert!(!token_not_expired(""), "empty string counts as expired");
         assert!(!token_not_expired("2099-13"), "too short counts as expired");
-        assert!(!token_not_expired("20990101ZZ"), "malformed date counts as expired");
+        assert!(
+            !token_not_expired("20990101ZZ"),
+            "malformed date counts as expired"
+        );
         let t = today_utc_ymd();
         assert_eq!(t.len(), 10);
         assert_eq!(&t[4..5], "-");
