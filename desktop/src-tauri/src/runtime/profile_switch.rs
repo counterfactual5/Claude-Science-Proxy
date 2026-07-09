@@ -126,7 +126,8 @@ pub(crate) fn set_active_profile_txn(
         true
     } else {
         let root = asset_root(app).ok_or_else(|| i18n_err("errProxyScriptMissing", json!({})))?;
-        let py = proc::find_exe("python3").ok_or_else(|| i18n_err("errPythonMissing", json!({})))?;
+        let py =
+            proc::find_exe("python3").ok_or_else(|| i18n_err("errPythonMissing", json!({})))?;
         let script = root.join("proxy/csp_proxy.py");
         let res = scratch::scratch_probe(
             &py,
@@ -152,10 +153,7 @@ pub(crate) fn set_active_profile_txn(
             scratch::ProbeOutcome::Auth(code) => {
                 trace.finish(format!("rejected status={code}"));
                 return Ok(merge_hint(
-                    hint_payload(
-                        &format!("switchUpstreamAuth{ctx}"),
-                        json!({ "code": code }),
-                    ),
+                    hint_payload(&format!("switchUpstreamAuth{ctx}"), json!({ "code": code })),
                     json!({ "committed": false }),
                 ));
             }
@@ -229,7 +227,8 @@ pub(crate) fn set_active_profile_txn(
         }
         SwitchOutcome::RollbackToOld => {
             trace.stage(OperationStage::Rollback, "reason=proxy_unhealthy");
-            let restored = restore_proxy_for_active_profile(app, state, lifecycle, &cfg, Some(&trace));
+            let restored =
+                restore_proxy_for_active_profile(app, state, lifecycle, &cfg, Some(&trace));
             trace.finish(format!("rollback restored={restored}"));
             Err(i18n_err(
                 &format!("switchProxyRollback{ctx}"),
@@ -238,10 +237,7 @@ pub(crate) fn set_active_profile_txn(
         }
         SwitchOutcome::AbortBeforeStart => {
             trace.finish("aborted_before_start");
-            Err(i18n_err(
-                &format!("switchAbortBeforeStart{ctx}"),
-                json!({}),
-            ))
+            Err(i18n_err(&format!("switchAbortBeforeStart{ctx}"), json!({})))
         }
     }
 }

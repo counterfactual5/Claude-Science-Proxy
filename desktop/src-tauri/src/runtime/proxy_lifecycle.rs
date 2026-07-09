@@ -32,10 +32,7 @@ fn formal_proxy_env(launch: &ProxyLaunch) -> Vec<(&'static str, String)> {
                 env.push(("CSP_RELAY_MODEL", launch.model.clone()));
             }
             if !launch.thinking_policy.is_empty() {
-                env.push((
-                    "CSP_RELAY_THINKING",
-                    launch.thinking_policy.to_string(),
-                ));
+                env.push(("CSP_RELAY_THINKING", launch.thinking_policy.to_string()));
             }
         }
     }
@@ -58,10 +55,7 @@ fn validate_profiles_for_proxy(profiles: &[config::Profile]) -> Result<(), Strin
         assert_format_supported(p)?;
         let launch = proxy_args_for(p);
         if launch.key.is_empty() {
-            return Err(i18n_err(
-                "errMissingApiKeyPanel",
-                json!({ "name": p.name }),
-            ));
+            return Err(i18n_err("errMissingApiKeyPanel", json!({ "name": p.name })));
         }
         let native = is_native_adapter(&launch.adapter);
         if !native && launch.base_url.is_empty() {
@@ -102,15 +96,14 @@ pub(crate) fn start_proxy_for_profiles<R: Runtime>(
     let dir = config::default_dir();
     let cfg = config::load_from(&dir).map_err(|e| e.to_string())?;
     let port = cfg.proxy_port;
-    let root = asset_root(app)
-        .ok_or_else(|| i18n_err("errProxyScriptMissing", json!({})))?;
-    let py = proc::find_exe("python3")
-        .ok_or_else(|| i18n_err("errPythonMissing", json!({})))?;
+    let root = asset_root(app).ok_or_else(|| i18n_err("errProxyScriptMissing", json!({})))?;
+    let py = proc::find_exe("python3").ok_or_else(|| i18n_err("errPythonMissing", json!({})))?;
 
     let secret = if !cfg.secret.is_empty() {
         cfg.secret.clone()
     } else {
-        let s = proc::gen_secret().map_err(|e| i18n_err("errGenSecretFailed", json!({ "error": e.to_string() })))?;
+        let s = proc::gen_secret()
+            .map_err(|e| i18n_err("errGenSecretFailed", json!({ "error": e.to_string() })))?;
         let s2 = s.clone();
         config::update(&dir, move |c| c.secret = s2).map_err(|e| e.to_string())?;
         s
@@ -145,7 +138,8 @@ pub(crate) fn start_proxy_for_profiles<R: Runtime>(
         let pat = format!("{}.*--port {port}", ere_escape(&script.to_string_lossy()));
         let _ = Command::new("pkill").arg("-f").arg(&pat).status();
 
-        let logf = open_log("proxy.log").map_err(|e| i18n_err("errLogOpenFailed", json!({ "error": e.to_string() })))?;
+        let logf = open_log("proxy.log")
+            .map_err(|e| i18n_err("errLogOpenFailed", json!({ "error": e.to_string() })))?;
         let logf2 = logf.try_clone().map_err(|e| e.to_string())?;
         let mut cmd = Command::new(&py);
         if let Some(t) = trace {

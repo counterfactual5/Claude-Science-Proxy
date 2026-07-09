@@ -133,8 +133,9 @@ pub(crate) fn fetch_models(
     match scratch::classify(res.status) {
         scratch::ProbeOutcome::Ok => {
             trace.stage(OperationStage::ScratchUpstreamProbe, "outcome=ok");
-            let v: Value = serde_json::from_str(&res.body)
-                .map_err(|e| i18n_err("errParseModelListFailed", json!({ "error": e.to_string() })))?;
+            let v: Value = serde_json::from_str(&res.body).map_err(|e| {
+                i18n_err("errParseModelListFailed", json!({ "error": e.to_string() }))
+            })?;
             let live: Vec<(String, Option<bool>)> = v
                 .get("data")
                 .and_then(|d| d.as_array())

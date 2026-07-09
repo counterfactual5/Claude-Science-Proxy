@@ -10,6 +10,5 @@ pub(crate) fn hint_payload(key: &str, vars: Value) -> Value {
 }
 
 pub(crate) fn i18n_err(key: &str, vars: Value) -> String {
-    serde_json::to_string(&json!({ "i18n": key, "vars": vars }))
-        .unwrap_or_else(|_| key.to_string())
+    serde_json::to_string(&json!({ "i18n": key, "vars": vars })).unwrap_or_else(|_| key.to_string())
 }

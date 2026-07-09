@@ -62,28 +62,30 @@ mod tests {
 
     #[test]
     fn glm_minor_versions() {
-        assert_eq!(
-            sorted(&["glm-5.1", "glm-5.2"]),
-            vec!["glm-5.2", "glm-5.1"]
-        );
+        assert_eq!(sorted(&["glm-5.1", "glm-5.2"]), vec!["glm-5.2", "glm-5.1"]);
     }
 
     #[test]
     fn kimi_k_series() {
         assert_eq!(
             sorted(&["kimi-k2.6", "kimi-k2.7-code", "kimi-k2.7-code-highspeed"]),
-            vec![
-                "kimi-k2.7-code-highspeed",
-                "kimi-k2.7-code",
-                "kimi-k2.6"
-            ]
+            vec!["kimi-k2.7-code-highspeed", "kimi-k2.7-code", "kimi-k2.6"]
         );
     }
 
     #[test]
     fn compare_is_consistent_with_sort() {
-        assert_eq!(compare_models_desc("glm-5.2", "glm-4.5"), std::cmp::Ordering::Less);
-        assert_eq!(compare_models_desc("glm-4.5", "glm-5.2"), std::cmp::Ordering::Greater);
-        assert_eq!(compare_models_desc("glm-5.2", "glm-5.2"), std::cmp::Ordering::Equal);
+        assert_eq!(
+            compare_models_desc("glm-5.2", "glm-4.5"),
+            std::cmp::Ordering::Less
+        );
+        assert_eq!(
+            compare_models_desc("glm-4.5", "glm-5.2"),
+            std::cmp::Ordering::Greater
+        );
+        assert_eq!(
+            compare_models_desc("glm-5.2", "glm-5.2"),
+            std::cmp::Ordering::Equal
+        );
     }
 }

@@ -3,8 +3,8 @@ use tauri::State;
 
 use crate::runtime::i18n::i18n_err;
 use crate::runtime::profile::{
-    build_get_config, create_profile_inner, delete_profile_inner,
-    update_profile_connection_inner, update_profile_metadata_inner, ConnectionEdit,
+    build_get_config, create_profile_inner, delete_profile_inner, update_profile_connection_inner,
+    update_profile_metadata_inner, ConnectionEdit,
 };
 use crate::runtime::profile_switch::{scratch_validate_candidate, set_active_profile_txn};
 use crate::runtime::provider::{
@@ -92,8 +92,16 @@ pub(crate) async fn update_profile_connection(
     let lifecycle = lifecycle.inner().clone();
     run_blocking(move || {
         update_profile_connection_inner_cmd(
-            app, state, lifecycle, id, base_url, api_format, model, active_models,
-            default_model, key,
+            app,
+            state,
+            lifecycle,
+            id,
+            base_url,
+            api_format,
+            model,
+            active_models,
+            default_model,
+            key,
         )
     })
     .await

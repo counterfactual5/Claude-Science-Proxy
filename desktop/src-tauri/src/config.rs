@@ -1,18 +1,15 @@
-//! 本地配置读写：`~/.csp/CSP.json`。多 profile 形态（schema v2）。
+//! Local config I/O: `~/.csp/CSP.json` (multi-profile, schema v4).
 //!
-//! 安全要求（对齐 spec §3 / §5.1，参考 CC Switch 的明文本地存储但加严文件安全）：
-//!   - 目录 0700，文件 0600。
-//!   - 读/写前 `lstat`（symlink_metadata）拒绝符号链接，绝不跟随写到别处或读到别处。
-//!   - 写用「临时文件（O_CREAT|O_EXCL, 0600）+ 原子 rename」，避免半写与竞态。
-//!   - profile key 明文存盘（用户已知悉），但**绝不进日志**；回显给前端只给掩码（末 4 位）。
+//! Security (see also [`crate::CLAUDE`] iron rules):
+//!   - dir `0700`, file `0600`; reject symlinks via `lstat` before read/write.
+//!   - atomic write: temp file `O_CREAT|O_EXCL` + rename.
+//!   - profile keys stored in plaintext (user-aware); never logged; API returns masked tail only.
 //!
-//! 存储升级：schema_version 探测 + v1（旧固定槽）一次性迁移 → v2（profile 列表 + active_id），
-//! v3（多模型 active_models）→ v4（`active_ids[]` 向后兼容字段，运行时仅单条生效），
-//! 迁移前留 `CSP.json.v1.bak`（失败即中止），普通覆盖前留滚动 `CSP.json.bak`，
-//! 清 key / 删 profile 后净化滚动备份（旧明文 key 不可从 .bak 恢复）。
+//! Migrations: v1 fixed slots → v2 profiles → v3 `active_models` → v4 `active_ids` (runtime: 0–1).
+//! Backups: `CSP.json.v1.bak` on v1 migration; rolling `CSP.json.bak` before overwrite; rolling
+//! backup sanitized after key clear / profile delete.
 //!
-//! 所有函数以显式 `dir` 参数工作，便于用临时目录做无副作用的单元测试；
-//! 生产代码用 [`default_dir`]（`$HOME/.csp`）。
+//! All APIs take an explicit `dir` for tests; production uses [`default_dir`] (`$HOME/.csp`).
 
 use std::fs;
 use std::io::{self, Write};
@@ -446,10 +443,8 @@ fn copy_dir_contents(from: &Path, to: &Path) -> io::Result<()> {
                 fs::set_permissions(&dest, fs::Permissions::from_mode(0o700))?;
             }
             copy_dir_contents(&src, &dest)?;
-        } else if ft.is_file() {
-            if !dest.exists() {
-                atomic_copy(&src, &dest)?;
-            }
+        } else if ft.is_file() && !dest.exists() {
+            atomic_copy(&src, &dest)?;
         }
     }
     Ok(())
@@ -640,10 +635,11 @@ fn normalize_active(mut cfg: Config) -> Config {
             p.template_id = "custom".to_string();
         }
     }
-    if cfg.active_ids.is_empty() && !cfg.active_id.is_empty() {
-        if cfg.profile_by_id(&cfg.active_id).is_some() {
-            cfg.active_ids.push(cfg.active_id.clone());
-        }
+    if cfg.active_ids.is_empty()
+        && !cfg.active_id.is_empty()
+        && cfg.profile_by_id(&cfg.active_id).is_some()
+    {
+        cfg.active_ids.push(cfg.active_id.clone());
     }
     cfg.active_ids = cfg
         .active_ids
@@ -676,10 +672,11 @@ fn migrate_v2_to_v3(mut cfg: Config) -> Config {
 /// v3 → v4：active_id → active_ids，并 bump schema_version。
 fn migrate_v3_to_v4(mut cfg: Config) -> Config {
     cfg.schema_version = CURRENT_SCHEMA_VERSION;
-    if cfg.active_ids.is_empty() && !cfg.active_id.is_empty() {
-        if cfg.profile_by_id(&cfg.active_id).is_some() {
-            cfg.active_ids = vec![cfg.active_id.clone()];
-        }
+    if cfg.active_ids.is_empty()
+        && !cfg.active_id.is_empty()
+        && cfg.profile_by_id(&cfg.active_id).is_some()
+    {
+        cfg.active_ids = vec![cfg.active_id.clone()];
     }
     cfg.sync_active_id();
     cfg
@@ -1326,11 +1323,7 @@ mod tests {
         let leftovers: Vec<_> = fs::read_dir(&d)
             .unwrap()
             .filter_map(|e| e.ok())
-            .filter(|e| {
-                e.file_name()
-                    .to_string_lossy()
-                    .starts_with(".CSP.json.tmp")
-            })
+            .filter(|e| e.file_name().to_string_lossy().starts_with(".CSP.json.tmp"))
             .collect();
         assert!(leftovers.is_empty(), "临时文件应已 rename 掉");
     }

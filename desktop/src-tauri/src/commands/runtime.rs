@@ -181,7 +181,6 @@ mod tests {
         thread,
         time::{SystemTime, UNIX_EPOCH},
     };
-    use tauri::Manager;
 
     struct EnvGuard {
         saved: Vec<(String, Option<std::ffi::OsString>)>,
@@ -460,7 +459,6 @@ esac
         let doctor = std::process::Command::new(root.join("scripts/doctor.sh"))
             .env("HOME", &home)
             .env("SCIENCE_BIN", &fake_science)
-            .env("CSP_CONFIG", &csp_config)
             .env("CSP_CONFIG", &csp_config)
             .env("CSP_PROXY_PORT", proxy_port.to_string())
             .env("CSP_SANDBOX_PORT", sandbox_port.to_string())

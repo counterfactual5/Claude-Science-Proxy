@@ -187,14 +187,18 @@ pub(crate) fn stop_sandbox<R: Runtime>(
                     .status()
                 {
                     Ok(s) if s.success() => {}
-                    Ok(s) => err = Some(i18n_err(
-                        "errStopSandboxScriptExit",
-                        json!({ "code": format!("{:?}", s.code()) }),
-                    )),
-                    Err(e) => err = Some(i18n_err(
-                        "errStopSandboxScriptInvokeFailed",
-                        json!({ "error": e.to_string() }),
-                    )),
+                    Ok(s) => {
+                        err = Some(i18n_err(
+                            "errStopSandboxScriptExit",
+                            json!({ "code": format!("{:?}", s.code()) }),
+                        ))
+                    }
+                    Err(e) => {
+                        err = Some(i18n_err(
+                            "errStopSandboxScriptInvokeFailed",
+                            json!({ "error": e.to_string() }),
+                        ))
+                    }
                 }
             } else {
                 err = Some(i18n_err(
@@ -224,8 +228,7 @@ mod tests {
 
     use super::{
         ensure_sandbox_runtime_permissions, first_http_url, sandbox_home, sandbox_running_ours,
-        sandbox_url, science_bin_for_paths, science_status_running,
-        settings_change_needs_teardown,
+        sandbox_url, science_bin_for_paths, science_status_running, settings_change_needs_teardown,
     };
 
     // ---------- P1-c: 端口变更是否需拆链路（纯函数，4 组合） ----------
@@ -377,14 +380,7 @@ mod tests {
 
         write_fake_bin(&science_bin, 0o755)?;
         ensure_sandbox_runtime_permissions(&data_dir);
-        assert_eq!(
-            science_bin
-                .metadata()?
-                .permissions()
-                .mode()
-                & 0o777,
-            0o755
-        );
+        assert_eq!(science_bin.metadata()?.permissions().mode() & 0o777, 0o755);
         fs::remove_dir_all(root)?;
         Ok(())
     }
@@ -393,10 +389,7 @@ mod tests {
     fn sandbox_home_is_writable_under_config_dir() {
         let h = sandbox_home();
         assert!(h.ends_with("sandbox/home"), "应以 sandbox/home 结尾：{h:?}");
-        assert!(
-            h.to_string_lossy().contains(".csp"),
-            "应在 .csp 下：{h:?}"
-        );
+        assert!(h.to_string_lossy().contains(".csp"), "应在 .csp 下：{h:?}");
     }
 
     #[test]
