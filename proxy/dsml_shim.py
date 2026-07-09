@@ -17,7 +17,7 @@ def shim_mode(prov_name, prov):
         return "off"
     if not (prov or {}).get("dsml_capable"):
         return "off"
-    m = os.environ.get("CSSWITCH_TOOLUSE_SHIM", "").lower()
+    m = os.environ.get("CSP_TOOLUSE_SHIM", "").lower()
     return m if m in ("detect", "rewrite") else "off"
 
 

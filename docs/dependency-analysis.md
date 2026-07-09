@@ -18,7 +18,7 @@
 | WKWebView | 面板 UI（Tauri 用系统 WebView） | ✅ macOS 自带 |
 | Claude Science.app | 沙箱要跑的本体 | ⭘ 目标用户必装 = 给定 |
 | **`node`** | 伪造虚拟 OAuth（`make-virtual-oauth.mjs`） | ❌ **不保证** ← 缺口 |
-| **`python3`** | 翻译代理（`csswitch_proxy.py`，纯标准库、无 pip 依赖） | ❌ **不保证**（见洞察 2） ← 缺口 |
+| **`python3`** | 翻译代理（`csp_proxy.py`，纯标准库、无 pip 依赖） | ❌ **不保证**（见洞察 2） ← 缺口 |
 
 代理是**纯 Python 标准库**（无第三方包）→ 只要 python3 能跑就行，不需要 pip install。这也意味着把它移 Rust 时没有隐藏的第三方逻辑要搬。
 

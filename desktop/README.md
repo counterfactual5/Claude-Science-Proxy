@@ -2,7 +2,7 @@
 
 macOS 桌面 app（正常窗口，非菜单栏），把 CSP 的日常操作收进一个面板：新建/切换配置、填第三方 key、启动 Claude Science、起停代理与沙箱。
 
-架构上它只是**进程管家**：Rust 后端负责起停子进程、注入环境变量、读写配置、探活。虚拟 OAuth 伪造已在 v0.1.4 移进 Rust 原生实现（`src/oauth_forge.rs`，app 运行时不再需要 node）；翻译逻辑仍在 `proxy/csswitch_proxy.py` 作子进程调用（下一步移 axum 拔 python），沙箱启动仍走 `scripts/launch-virtual-sandbox.sh`，以保住铁律护栏与已验证行为。
+架构上它只是**进程管家**：Rust 后端负责起停子进程、注入环境变量、读写配置、探活。虚拟 OAuth 伪造已在 v0.1.4 移进 Rust 原生实现（`src/oauth_forge.rs`，app 运行时不再需要 node）；翻译逻辑仍在 `proxy/csp_proxy.py` 作子进程调用（下一步移 axum 拔 python），沙箱启动仍走 `scripts/launch-virtual-sandbox.sh`，以保住铁律护栏与已验证行为。
 
 ## 组成
 
@@ -39,8 +39,8 @@ CSP 以正常窗口打开面板（约 340×700，已去托盘/菜单栏）。
 
 后端定位 `proxy/` 与 `scripts/` 的顺序（`asset_root()`）：**① 打包后**优先用 Tauri 资源目录
 （`Contents/Resources/`，见下「构建」——运行所需的 proxy 与 scripts allowlist 已被 bundle 进去）；**② 开发态**回退到
-从可执行文件位置逐级上溯找仓库根（含 `proxy/csswitch_proxy.py`）。刻意**不看当前工作目录**，
-避免据启动目录找到来路不明的脚本；开发时也可用 `CSSWITCH_REPO=/path/to/CSSwitch` 显式指定。
+从可执行文件位置逐级上溯找仓库根（含 `proxy/csp_proxy.py`）。刻意**不看当前工作目录**，
+避免据启动目录找到来路不明的脚本；开发时也可用 `CSP_REPO=/path/to/CSSwitch` 显式指定。
 
 ## 构建
 
@@ -51,7 +51,7 @@ npm run tauri build
 
 产物是 `.app` / `.dmg`。运行所需的 proxy 文件与脚本 allowlist 已通过 `tauri.conf.json` 的 `bundle.resources`
 打进 `Contents/Resources/`，从 Finder 启动的正式 `.app` 也能找到并调用它们（自包含）。其中
-`proxy/qwen_proxy.py` 是 legacy/compat 资源，当前主链路由 `proxy/csswitch_proxy.py` 承载。
+`proxy/qwen_proxy.py` 是 legacy/compat 资源，当前主链路由 `proxy/csp_proxy.py` 承载。
 沙箱运行状态落在可写的 `~/.csp/sandbox/home`（不写进只读的 `.app` 包内）。
 
 > **签名/分发说明**：本版做 **ad-hoc 签名**（`bundle.macOS.signingIdentity: "-"`，正确封装资源），

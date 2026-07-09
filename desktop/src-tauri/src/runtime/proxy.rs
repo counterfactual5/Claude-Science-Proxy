@@ -1,3 +1,7 @@
+use serde_json::json;
+
+use crate::runtime::i18n::i18n_err;
+
 /// 本次 ensure_proxy 对代理做了什么（供一键据实提示）。
 #[derive(Clone, Copy, PartialEq)]
 pub(crate) enum ProxyAction {
@@ -36,11 +40,9 @@ pub(crate) fn health_timeout_reason(port: u16, tail: &str) -> String {
         || tail.contains("Errno 48") // macOS EADDRINUSE
         || tail.contains("Errno 98"); // Linux EADDRINUSE
     if occupied {
-        format!("端口 {port} 已被占用，换个端口或先停掉占用进程后重试。")
+        i18n_err("errProxyPortOccupied", json!({ "port": port }))
     } else {
-        format!(
-            "代理起后探活超时（端口 {port}）：多为 python 依赖缺失或代理脚本异常，请查看代理日志。"
-        )
+        i18n_err("errProxyHealthTimeout", json!({ "port": port }))
     }
 }
 
@@ -77,12 +79,12 @@ mod tests {
         // 端口占用：明确报占用、带端口号，绝不提「key 无效」。
         let occ = health_timeout_reason(18991, "OSError: [Errno 48] Address already in use");
         assert!(occ.contains("18991"));
-        assert!(occ.contains("占用"), "应明确报端口占用：{occ}");
+        assert!(occ.contains("errProxyPortOccupied"), "应明确报端口占用：{occ}");
         assert!(!occ.contains("key"), "端口占用不该扯上 key：{occ}");
         // 其它探活失败（依赖缺失等）：本地探活与 key 有效性无关，不得说「key 无效」。
         let generic = health_timeout_reason(18991, "ModuleNotFoundError: No module named 'x'");
         assert!(
-            !generic.contains("key 无效"),
+            generic.contains("errProxyHealthTimeout"),
             "本地探活超时与 key 有效性无关：{generic}"
         );
     }

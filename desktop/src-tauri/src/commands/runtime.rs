@@ -234,8 +234,8 @@ mod tests {
         write_executable(
             &dir.join("open"),
             r#"#!/bin/sh
-if [ -n "${CSSWITCH_FAKE_OPEN_LOG:-}" ]; then
-  printf '%s\n' "$*" >> "$CSSWITCH_FAKE_OPEN_LOG"
+if [ -n "${CSP_FAKE_OPEN_LOG:-}" ]; then
+  printf '%s\n' "$*" >> "$CSP_FAKE_OPEN_LOG"
 fi
 exit 0
 "#,
@@ -371,10 +371,10 @@ esac
 
         let mut env_guard = EnvGuard::new();
         env_guard.set("HOME", &home);
-        env_guard.set("CSSWITCH_REPO", &root);
+        env_guard.set("CSP_REPO", &root);
         env_guard.set("SCIENCE_BIN", &fake_science);
-        env_guard.set("CSSWITCH_FAKE_OPEN_LOG", &open_log);
-        env_guard.set("CSSWITCH_DOCTOR_CHECK_REAL_HOME", "0");
+        env_guard.set("CSP_FAKE_OPEN_LOG", &open_log);
+        env_guard.set("CSP_DOCTOR_CHECK_REAL_HOME", "0");
         env_guard.set(
             "PATH",
             format!(
@@ -461,9 +461,9 @@ esac
             .env("HOME", &home)
             .env("SCIENCE_BIN", &fake_science)
             .env("CSP_CONFIG", &csp_config)
-            .env("CSSWITCH_CONFIG", &csp_config)
-            .env("CSSWITCH_PROXY_PORT", proxy_port.to_string())
-            .env("CSSWITCH_SANDBOX_PORT", sandbox_port.to_string())
+            .env("CSP_CONFIG", &csp_config)
+            .env("CSP_PROXY_PORT", proxy_port.to_string())
+            .env("CSP_SANDBOX_PORT", sandbox_port.to_string())
             .output()
             .expect("doctor should run");
         assert!(doctor.status.success());

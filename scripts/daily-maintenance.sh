@@ -1,5 +1,5 @@
 #!/bin/bash
-# CSSwitch 每日维护巡检 —— 由 launchd 每天 09:00 / 21:00 触发（Asia/Shanghai）。
+# Claude Science Proxy（CSP）每日维护巡检 —— 由 launchd 每天 09:00 / 21:00 触发（Asia/Shanghai）。
 # 无人值守地跑一个受限 `claude -p` session：只读仓库 + 抓公开网页 + 把巡检报告写进
 # findings/auto-maint/。绝不改代码、不提交、不推送、不碰 ~/.claude-science、不启动任何 Science。
 # 详见 scripts/daily-maintenance.prompt.md。
@@ -35,7 +35,7 @@ CLAUDE_BIN="$(command -v claude || echo /Users/superjj/.local/bin/claude)"
 PROMPT="$(cat "$PROMPT_FILE")"
 
 {
-  echo "===== CSSwitch daily-maintenance @ $STAMP ====="
+  echo "===== CSP daily-maintenance @ $STAMP ====="
   echo "repo=$REPO branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo '?') claude=$CLAUDE_BIN"
   echo "-----------------------------------------------"
 } >>"$LOG"

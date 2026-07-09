@@ -12,7 +12,7 @@ Providers:
                    代理拼 /responses 与 /models，并做 Anthropic↔Responses 翻译。
   relay          ：任意「中转站」（Anthropic 兼容端点，base_url + token）。原生透传、【不重映射模型】，
                    /v1/models 回源直拉让 Science 选择器自动铺满中转站真实模型。base_url 经
-                   CSSWITCH_RELAY_BASE_URL 提供、token 经 CSSWITCH_RELAY_KEY 提供。
+                   CSP_RELAY_BASE_URL 提供、token 经 CSP_RELAY_KEY 提供。
 
 安全约束：
   - 入站 Authorization / x-api-key（Science 带来的 OAuth Bearer）一律剥离，不记录、不转发。
@@ -20,8 +20,8 @@ Providers:
   - 只监听回环地址；除所选 provider 端点外不外连。
 
 用法：
-  DEEPSEEK_API_KEY=... python3 csswitch_proxy.py --provider deepseek --port 18991
-  DASHSCOPE_API_KEY=... python3 csswitch_proxy.py --provider qwen --port 18991
+  DEEPSEEK_API_KEY=... python3 csp_proxy.py --provider deepseek --port 18991
+  DASHSCOPE_API_KEY=... python3 csp_proxy.py --provider qwen --port 18991
 """
 import argparse
 import json
@@ -45,7 +45,7 @@ import responses_compat
 import anthropic_compat
 
 # DSML 兜底 shim 的运行模式：off（默认，字节级透传）/ detect（透传 + 遥测）/ rewrite（改写）。
-# 由 __main__ 依 shim_mode(PROV_NAME, PROV) 覆写（读环境变量 CSSWITCH_TOOLUSE_SHIM）。
+# 由 __main__ 依 shim_mode(PROV_NAME, PROV) 覆写（读环境变量 CSP_TOOLUSE_SHIM）。
 SHIM_MODE = "off"
 
 # ---------- provider 注册表 ----------
@@ -112,7 +112,7 @@ PROVIDERS = {
         "api_format": "openai_chat",
         "url": None,
         "models_url": None,
-        "key_env": "CSSWITCH_OPENAI_KEY",
+        "key_env": "CSP_OPENAI_KEY",
         "auth_style": "bearer",
         "force_model_override": True,
         "models": [],
@@ -126,7 +126,7 @@ PROVIDERS = {
         "api_format": "openai_responses",
         "url": None,
         "models_url": None,
-        "key_env": "CSSWITCH_OPENAI_KEY",
+        "key_env": "CSP_OPENAI_KEY",
         "auth_style": "bearer",
         "force_model_override": True,
         "models": [],
@@ -140,12 +140,12 @@ PROVIDERS = {
     },
     "relay": {
         # 「中转站」：任意 Anthropic 兼容端点（base_url + token）。原生透传、【不重映射模型】
-        # ——中转站原生认 claude-* 名。上游 url / models_url 在 __main__ 里按 CSSWITCH_RELAY_BASE_URL
+        # ——中转站原生认 claude-* 名。上游 url / models_url 在 __main__ 里按 CSP_RELAY_BASE_URL
         # 装配（base + /v1/messages、base + /v1/models）。
         "mode": "anthropic",       # 复用原生透传 handler（流式/非流式/重试都现成）
         "url": None,               # __main__ 装配
         "models_url": None,        # __main__ 装配；存在即 /v1/models 回源直拉
-        "key_env": "CSSWITCH_RELAY_KEY",
+        "key_env": "CSP_RELAY_KEY",
         "passthrough": True,       # resolve_model 原样透传模型名（不映射）
         "force_model_override": True,
         "auth_style": "both",      # 同时带 x-api-key + Authorization: Bearer（最大兼容各家中转站）
@@ -168,13 +168,13 @@ AUTH_SECRET = None  # 未设则不启用鉴权（保持旧行为）
 # （如 claude-haiku-4-5-20251001）。首拉前为空 → 纯透传。
 RELAY_MODELS = []
 # 强制模型 override：面板选了模型时，代理无条件把所有请求模型改成它（relay 覆盖透传；
-# openai-custom/openai-responses 覆盖 Science 发来的 claude-* 壳）。由 CSSWITCH_RELAY_MODEL 或
-# CSSWITCH_OPENAI_MODEL 环境变量在 __main__ 里装配；留空 → None。
+# openai-custom/openai-responses 覆盖 Science 发来的 claude-* 壳）。由 CSP_RELAY_MODEL 或
+# CSP_OPENAI_MODEL 环境变量在 __main__ 里装配；留空 → None。
 RELAY_FORCE_MODEL = None
-# relay thinking 策略（来自模板 thinking_policy）：由 CSSWITCH_RELAY_THINKING 在 __main__ 装配。
+# relay thinking 策略（来自模板 thinking_policy）：由 CSP_RELAY_THINKING 在 __main__ 装配。
 # None/"adaptive" → auto→adaptive（现状，如 MiniMax）；"enabled" → 强制 enabled（如 Kimi）。
 RELAY_THINKING = None
-# 多模型虚拟注册表（CSSWITCH_MODEL_REGISTRY JSON）。设了则按 shell id 路由，不走 force。
+# 多模型虚拟注册表（CSP_MODEL_REGISTRY JSON）。设了则按 shell id 路由，不走 force。
 MODEL_REGISTRY = None
 
 @dataclass(frozen=True)
@@ -812,57 +812,57 @@ class H(BaseHTTPRequestHandler):
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("--provider", default=os.environ.get("CSSWITCH_PROVIDER", "deepseek"),
+    ap.add_argument("--provider", default=os.environ.get("CSP_PROVIDER", "deepseek"),
                     choices=list(PROVIDERS.keys()))
     ap.add_argument("--port", type=int, default=18991)
     ap.add_argument("--env-file", default=None)
     ap.add_argument("--log", default=None)
     ap.add_argument("--auth-token", default=None)
     ap.add_argument("--relay-base", default=None,
-                    help="relay provider 的中转站 base_url（也可用环境变量 CSSWITCH_RELAY_BASE_URL）")
+                    help="relay provider 的中转站 base_url（也可用环境变量 CSP_RELAY_BASE_URL）")
     ap.add_argument("--openai-base", default=None,
-                    help="openai-custom provider 的 OpenAI base root（也可用环境变量 CSSWITCH_OPENAI_BASE_URL）")
+                    help="openai-custom provider 的 OpenAI base root（也可用环境变量 CSP_OPENAI_BASE_URL）")
     args = ap.parse_args()
-    reg_raw = (os.environ.get("CSSWITCH_MODEL_REGISTRY") or "").strip()
+    reg_raw = (os.environ.get("CSP_MODEL_REGISTRY") or "").strip()
     if reg_raw:
         MODEL_REGISTRY = model_registry.ModelRegistry.from_json(reg_raw)
     PROV_NAME = args.provider
     PROV = PROVIDERS[PROV_NAME]
     LOG = args.log
     KEY = load_key(PROV, args)
-    AUTH_SECRET = os.environ.get("CSSWITCH_AUTH_TOKEN") or args.auth_token
+    AUTH_SECRET = os.environ.get("CSP_AUTH_TOKEN") or args.auth_token
     # relay：按中转站 base_url 装配上游端点（base + /v1/messages、base + /v1/models）。
     if PROV_NAME == "relay":
         base = normalize_relay_base(
-            os.environ.get("CSSWITCH_RELAY_BASE_URL") or args.relay_base or "")
+            os.environ.get("CSP_RELAY_BASE_URL") or args.relay_base or "")
         if not base or not re.match(r"^https?://", base):
             print("relay 需要中转站 base_url（http(s)://…）。用 --relay-base 或环境变量 "
-                  "CSSWITCH_RELAY_BASE_URL 提供。", file=sys.stderr)
+                  "CSP_RELAY_BASE_URL 提供。", file=sys.stderr)
             sys.exit(1)
         PROV = dict(PROV)
         PROV["url"] = base + "/v1/messages"
         PROV["models_url"] = base + "/v1/models"
-        forced = (os.environ.get("CSSWITCH_RELAY_MODEL") or "").strip()
+        forced = (os.environ.get("CSP_RELAY_MODEL") or "").strip()
         if forced and MODEL_REGISTRY is None:
             RELAY_FORCE_MODEL = forced
-        RELAY_THINKING = (os.environ.get("CSSWITCH_RELAY_THINKING") or "").strip() or None
+        RELAY_THINKING = (os.environ.get("CSP_RELAY_THINKING") or "").strip() or None
     elif PROV_NAME in ("openai-custom", "openai-responses"):
-        base = normalize_openai_base(os.environ.get("CSSWITCH_OPENAI_BASE_URL") or args.openai_base or "")
+        base = normalize_openai_base(os.environ.get("CSP_OPENAI_BASE_URL") or args.openai_base or "")
         if not base or not re.match(r"^https?://", base):
             print(f"{PROV_NAME} 需要 OpenAI base root（http(s)://…）。用 --openai-base 或环境变量 "
-                  "CSSWITCH_OPENAI_BASE_URL 提供。", file=sys.stderr)
+                  "CSP_OPENAI_BASE_URL 提供。", file=sys.stderr)
             sys.exit(1)
-        forced = (os.environ.get("CSSWITCH_OPENAI_MODEL") or "").strip()
+        forced = (os.environ.get("CSP_OPENAI_MODEL") or "").strip()
         PROV = dict(PROV)
         suffix = "/responses" if PROV.get("api_format") == "openai_responses" else "/chat/completions"
         PROV["url"] = openai_endpoint(base, suffix)
         PROV["models_url"] = openai_endpoint(base, "/models")
-        # 模型发现 scratch 只需要 /models，不能要求 CSSWITCH_OPENAI_MODEL；
+        # 模型发现 scratch 只需要 /models，不能要求 CSP_OPENAI_MODEL；
         # 正式推理由 Rust 侧 relay_missing_model + Message 探针保证 model 必填。
         if forced and MODEL_REGISTRY is None:
             PROV["default_model"] = forced
             RELAY_FORCE_MODEL = forced
-    _up = os.environ.get("CSSWITCH_UPSTREAM_URL")
+    _up = os.environ.get("CSP_UPSTREAM_URL")
     if _up:
         PROV = dict(PROV)
         PROV["url"] = _up

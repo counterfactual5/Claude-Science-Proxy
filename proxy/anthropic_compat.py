@@ -1,6 +1,6 @@
 """Anthropic 透传路径「兼容层」（S1a）：暴露三入口给薄骨架。内部调 provider_policy + dsml_shim。
 
-依赖方向：骨架 → 本模块 → provider_policy；本模块不反向 import csswitch_proxy（无循环依赖）。
+依赖方向：骨架 → 本模块 → provider_policy；本模块不反向 import csp_proxy（无循环依赖）。
 三入口无状态可序列化 + nonce 可注入 + ProviderState 显式传参 → 为 S1b 跨语言接缝铺路。
 """
 import json

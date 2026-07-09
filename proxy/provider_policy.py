@@ -1,6 +1,6 @@
-"""Provider 策略纯函数 + 状态结构（S1a：从 csswitch_proxy 下沉，改显式收 ProviderState，不读全局）。
+"""Provider 策略纯函数 + 状态结构（S1a：从 csp_proxy 下沉，改显式收 ProviderState，不读全局）。
 
-依赖方向：本模块是最底层，不 import csswitch_proxy / anthropic_compat（无循环依赖）。
+依赖方向：本模块是最底层，不 import csp_proxy / anthropic_compat（无循环依赖）。
 compat 三入口只吃 ProviderState，骨架从模块全局一次性组装后传入。
 """
 import random
@@ -121,7 +121,7 @@ def _append_rule_id(rule_ids, rule_id):
 
 
 def normalize_thinking(body, prov_name, relay_thinking=None, rule_ids=None):
-    """thinking 归一化（纯函数，签名与语义与旧 csswitch_proxy 版一致）。
+    """thinking 归一化（纯函数，签名与语义与旧 csp_proxy 版一致）。
       (A) 强制 tool_choice(any/tool) → disabled：仅 deepseek。
       (B) relay 的 thinking 策略：enabled（如 Kimi）/ adaptive|None（默认，如 MiniMax）。
           Kimi thinking 模型拒绝“thinking enabled + 指定 tool_choice”组合；保留 tools，

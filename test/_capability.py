@@ -6,7 +6,7 @@ import socket
 def loopback_available():
     """能否在 127.0.0.1 上 bind 并 connect。禁 loopback 的沙箱返 False（不抛）。"""
     import os
-    if os.environ.get("CSSWITCH_FORCE_NO_LOOPBACK") == "1":
+    if os.environ.get("CSP_FORCE_NO_LOOPBACK") == "1":
         return False
     srv = cli = None
     try:

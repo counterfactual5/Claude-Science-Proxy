@@ -44,7 +44,7 @@ class ProxyPackagingSmoke(unittest.TestCase):
             for dst in resources.values()
             if str(dst).startswith("proxy/")
         }
-        needed = local_proxy_module_closure("csswitch_proxy")
+        needed = local_proxy_module_closure("csp_proxy")
         self.assertTrue(needed.issubset(proxy_resources))
 
         old_dont_write = sys.dont_write_bytecode
@@ -59,7 +59,7 @@ class ProxyPackagingSmoke(unittest.TestCase):
             }
             try:
                 result = subprocess.run(
-                    [sys.executable, "-S", "-c", "import csswitch_proxy"],
+                    [sys.executable, "-S", "-c", "import csp_proxy"],
                     cwd=td,
                     env=env,
                     capture_output=True,

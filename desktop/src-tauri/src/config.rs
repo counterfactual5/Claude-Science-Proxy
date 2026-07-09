@@ -20,6 +20,9 @@ use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
+use serde_json::json;
+
+use crate::runtime::i18n::i18n_err;
 
 pub(crate) fn default_proxy_port() -> u16 {
     18991
@@ -33,13 +36,13 @@ pub(crate) fn default_mode() -> String {
 
 pub(crate) fn validate_runtime_ports(proxy_port: u16, sandbox_port: u16) -> Result<(), String> {
     if proxy_port == 8765 || sandbox_port == 8765 {
-        return Err("端口 8765 是真实 Science 实例保留端口，不能用。".into());
+        return Err(i18n_err("errPortReserved8765", json!({})));
     }
     if proxy_port == 0 || sandbox_port == 0 {
-        return Err("端口不能为 0。".into());
+        return Err(i18n_err("errPortZero", json!({})));
     }
     if proxy_port == sandbox_port {
-        return Err("代理端口与沙箱端口不能相同。".into());
+        return Err(i18n_err("errPortSame", json!({})));
     }
     Ok(())
 }

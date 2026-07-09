@@ -6,16 +6,16 @@
 
 | 条目 | 结论 | 处置 |
 |---|---|---|
-| P0 DSML shim 从未接进代理（`csswitch_proxy` 从不 import，三路径全透传，绿测只覆盖孤立模块） | 属实 | **已修**：接进 `_handle_anthropic`，`shim_mode()` 定 off/detect/rewrite，仅 deepseek+有 tools 时介入 |
+| P0 DSML shim 从未接进代理（`csp_proxy` 从不 import，三路径全透传，绿测只覆盖孤立模块） | 属实 | **已修**：接进 `_handle_anthropic`，`shim_mode()` 定 off/detect/rewrite，仅 deepseek+有 tools 时介入 |
 | P1 EOF `flush_tail` 形参未用（末帧无空行→吞 message_stop，实测 `b''`） | 属实 | **已修**：`finalize()` 补吐残留末帧 |
 | P1 非法布尔臆断 false 过校验（`maybe`→`{flag:false}`） | 属实 | **已修**：只认 true/1/yes、false/0/no，余留字符串判非法整块作废 |
 | P1 rewrite 合法 DSML 示例可能被误执行 | 已知阶段二闸门 | **默认 off 化解**，rewrite 仅供显式验证 |
 | P1 lib.rs:1524「健康≠登录可用/应打 `/auth/status`」 | **架构性驳回** | CSSwitch 登录是本地虚拟伪造，打 claude.ai/auth/status 会破坏越过机制且可能 hang；正解是 0.2.1 已发的 `login_intact` 本地自洽校验。仅「丢弃 stop 错误」是小 nit → 归多 profile 轨道 |
-| P2 `--auth-token` argv 泄漏（`ps` 可见） | 属实但轻 | 代理已支持 `CSSWITCH_AUTH_TOKEN` env，2 行可改；触未提交多 profile lib.rs → 归多 profile 轨道 |
+| P2 `--auth-token` argv 泄漏（`ps` 可见） | 属实但轻 | 代理已支持 `CSP_AUTH_TOKEN` env，2 行可改；触未提交多 profile lib.rs → 归多 profile 轨道 |
 
 ## 2. DSML shim 接线 + 实机验证
 
-- **接线**（`proxy/csswitch_proxy.py`）：启动时 `SHIM_MODE = dsml_shim.shim_mode(PROV_NAME, PROV)`（读 `CSSWITCH_TOOLUSE_SHIM`，默认 off）。`off`=字节透传（零回归）；`detect`=透传+`DsmlDetector` 遥测；`rewrite`=流式 `DsmlStreamRewriter` / 非流式 `rewrite_nonstream_body`。
+- **接线**（`proxy/csp_proxy.py`）：启动时 `SHIM_MODE = dsml_shim.shim_mode(PROV_NAME, PROV)`（读 `CSP_TOOLUSE_SHIM`，默认 off）。`off`=字节透传（零回归）；`detect`=透传+`DsmlDetector` 遥测；`rewrite`=流式 `DsmlStreamRewriter` / 非流式 `rewrite_nonstream_body`。
 - **新增测试**：`test/test_proxy_dsml_e2e.py`（起真实代理子进程打假上游，证明 rewrite 泄漏→tool_use、off 逐字）。
 - **清洁无上下文 agent 实机验证 = READY-WITH-CAVEATS**：e2e 4/4；off/detect 双向逐字（零回归）；rewrite 端到端泄漏→tool_use；**真实 DeepSeek 正常工具调用经 shim 无损往返**（原生 tool_use 保真、不臆造）；真实泄漏偶发未复现。抓出 1 真 bug：**rewrite 非流式无泄漏时 `rewrite_nonstream_body` 无条件 json 往返 → 不逐字 + 遥测误报** → **已修**（`changed=False` 原样返回原字节）。
 - 全绿：python 90 / rust 113 / node 5 / bash / gitleaks 0。session 新 commit `5038de4`/`8ae7238`/`e8fe92c`（分支 `feat/dsml-tooluse-shim` 已 push）。

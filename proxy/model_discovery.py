@@ -1,4 +1,4 @@
-"""Model discovery helpers for csswitch_proxy.
+"""Model discovery helpers for csp_proxy.
 
 This module keeps /v1/models normalization independent from the HTTP handler
 and provider globals. It intentionally does not know about keys, secrets, or

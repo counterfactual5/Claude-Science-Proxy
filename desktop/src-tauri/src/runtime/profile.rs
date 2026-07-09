@@ -2,6 +2,7 @@ use std::path::Path;
 
 use serde_json::json;
 
+use crate::runtime::i18n::i18n_err;
 use crate::runtime::provider::{
     adapter_for_profile, assert_format_supported, is_native_adapter, is_openai_adapter,
     reject_openai_custom_anthropic_base,
@@ -146,7 +147,8 @@ pub(crate) fn create_profile_inner(
     base_url_override: Option<&str>,
     model: Option<&str>,
 ) -> Result<String, String> {
-    let tpl = templates::by_id(template_id).ok_or_else(|| format!("未知模板：{template_id}"))?;
+    let tpl = templates::by_id(template_id)
+        .ok_or_else(|| i18n_err("errUnknownTemplate", json!({ "id": template_id })))?;
     let id = config::new_id();
     let base_url = base_url_override
         .map(str::to_string)
@@ -192,7 +194,7 @@ pub(crate) fn update_profile_metadata_inner(
         .profile_by_id(id)
         .is_none()
     {
-        return Err(format!("找不到 profile：{id}"));
+        return Err(i18n_err("errProfileNotFound", json!({ "id": id })));
     }
     config::update(dir, |c| {
         if let Some(p) = c.profile_by_id_mut(id) {
@@ -237,7 +239,7 @@ pub(crate) fn update_profile_connection_inner(
         .profile_by_id(id)
         .is_none()
     {
-        return Err(format!("找不到 profile：{id}"));
+        return Err(i18n_err("errProfileNotFound", json!({ "id": id })));
     }
     config::write_rolling_backup(dir).ok(); // 覆盖前留底
     config::update(dir, |c| {
@@ -285,10 +287,11 @@ pub(crate) fn nonactive_probe_verdict(outcome: &scratch::ProbeOutcome) -> Result
     match outcome {
         scratch::ProbeOutcome::Ok => Ok(true),
         scratch::ProbeOutcome::Auth(code) => {
-            Err(format!("上游拒绝（{code}），key/权限有误，连接未保存。"))
+            Err(i18n_err("errUpstreamAuthConnNotSaved", json!({ "code": code })))
         }
-        scratch::ProbeOutcome::ModelError(code) => Err(format!(
-            "上游拒绝该模型（{code}），连接未保存。请换一个模型或核对 base_url。"
+        scratch::ProbeOutcome::ModelError(code) => Err(i18n_err(
+            "errUpstreamModelRejected",
+            json!({ "code": code }),
         )),
         // 无法确认（405/429/5xx/无响应）：落盘但标记未校验，激活时再验。
         // Unsupported(405) 并入此类：save 走 Message 探测，405 罕见（端点/base_url 异常），保守标未校验（与旧行为一致）。
@@ -448,13 +451,13 @@ mod tests {
         assert!(
             nonactive_probe_verdict(&ProbeOutcome::Auth(401))
                 .unwrap_err()
-                .contains("401"),
+                .contains("errUpstreamAuthConnNotSaved"),
             "401 明确鉴权失败 → 拦下不落盘"
         );
         assert!(
             nonactive_probe_verdict(&ProbeOutcome::ModelError(404))
                 .unwrap_err()
-                .contains("404"),
+                .contains("errUpstreamModelRejected"),
             "404 模型不被接受 → 拦下不落盘"
         );
         assert_eq!(
@@ -582,7 +585,7 @@ mod tests {
         create_profile_inner(&d, "glm", "GLM", Some("k"), None, Some("glm-5.2")).unwrap();
         let e = update_profile_metadata_inner(&d, "no-such-id", "改名", None);
         assert!(e.is_err(), "未命中 id 应报错，而非静默成功");
-        assert!(e.unwrap_err().contains("找不到 profile"));
+        assert!(e.unwrap_err().contains("errProfileNotFound"));
     }
 
     #[test]
@@ -600,7 +603,7 @@ mod tests {
             None,
         );
         assert!(e.is_err(), "未命中 id 应报错，而非静默成功");
-        assert!(e.unwrap_err().contains("找不到 profile"));
+        assert!(e.unwrap_err().contains("errProfileNotFound"));
     }
 
     // ---------- B5: build_get_config / build_list_templates ----------

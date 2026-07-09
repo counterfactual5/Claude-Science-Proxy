@@ -31,12 +31,12 @@ fn resolve_probe_key_from_dir(
     if !c.is_empty() {
         return Ok(c.to_string());
     }
-    let pid = profile_id.ok_or("请先填写 API Key / Token。")?;
+    let pid = profile_id.ok_or_else(|| i18n_err("errMissingApiKeyToken", json!({})))?;
     let cfg = config::load_from(dir).map_err(|e| e.to_string())?;
     cfg.profile_by_id(pid)
         .map(|p| p.api_key.clone())
         .filter(|k| !k.is_empty())
-        .ok_or_else(|| "请先填写 API Key / Token。".to_string())
+        .ok_or_else(|| i18n_err("errMissingApiKeyToken", json!({})))
 }
 
 fn effective_api_format_from_dir(
@@ -83,7 +83,8 @@ pub(crate) fn fetch_models(
     req: ModelDiscoveryRequest,
 ) -> Result<Value, String> {
     let tid = req.template_id.trim();
-    let tpl = templates::by_id(tid).ok_or_else(|| format!("未知模板：{tid}"))?;
+    let tpl = templates::by_id(tid)
+        .ok_or_else(|| i18n_err("errUnknownTemplate", json!({ "id": tid })))?;
     let base_url = if tpl.base_url_editable {
         req.base_url.trim().to_string()
     } else {
@@ -91,7 +92,7 @@ pub(crate) fn fetch_models(
     };
     if base_url.is_empty() || !(base_url.starts_with("http://") || base_url.starts_with("https://"))
     {
-        return Err("请先填写 base_url（http:// 或 https:// 开头）。".into());
+        return Err(i18n_err("errMissingBaseUrl", json!({})));
     }
     let api_format = effective_api_format_from_dir(
         &config::default_dir(),
@@ -102,7 +103,7 @@ pub(crate) fn fetch_models(
     let key = resolve_probe_key(req.profile_id.as_deref(), &req.key)?;
     let root = asset_root(&app).ok_or_else(|| i18n_err("errProxyScriptMissing", json!({})))?;
     let py = proc::find_exe("python3").ok_or_else(|| i18n_err("errPythonMissing", json!({})))?;
-    let script = root.join("proxy/csswitch_proxy.py");
+    let script = root.join("proxy/csp_proxy.py");
     let adapter = discovery_adapter(tid, tpl.adapter, &api_format);
     reject_openai_custom_anthropic_base(adapter, &base_url)?;
     let trace = OperationTrace::start(
@@ -132,8 +133,8 @@ pub(crate) fn fetch_models(
     match scratch::classify(res.status) {
         scratch::ProbeOutcome::Ok => {
             trace.stage(OperationStage::ScratchUpstreamProbe, "outcome=ok");
-            let v: Value =
-                serde_json::from_str(&res.body).map_err(|e| format!("解析模型列表失败：{e}"))?;
+            let v: Value = serde_json::from_str(&res.body)
+                .map_err(|e| i18n_err("errParseModelListFailed", json!({ "error": e.to_string() })))?;
             let live: Vec<(String, Option<bool>)> = v
                 .get("data")
                 .and_then(|d| d.as_array())
@@ -162,7 +163,7 @@ pub(crate) fn fetch_models(
         }
         scratch::ProbeOutcome::Auth(code) => {
             trace.finish(format!("rejected status={code}"));
-            Err(format!("上游拒绝（{code}），key 或权限可能有误。"))
+            Err(i18n_err("errUpstreamAuthRejected", json!({ "code": code })))
         }
         // 非 200 且非 Auth：一律 builtin 兜底，但按语义分「发现不支持」(4xx) 与「网络/上游临时」(5xx/429/无响应)，
         // 供前端区分提示（spec v3 §3.4.3）。绝不把 Auth 混进来掩盖坏 key。

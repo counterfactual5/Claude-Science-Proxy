@@ -19,7 +19,7 @@ Evidence anchors:
 - `desktop/src-tauri/src/runtime/diagnostics.rs::build_status_response`
 - `desktop/src-tauri/src/runtime/proxy_lifecycle.rs::ensure_proxy`
 - `desktop/src-tauri/src/runtime/sandbox_session.rs::one_click_login`
-- `proxy/csswitch_proxy.py::H.do_GET`
+- `proxy/csp_proxy.py::H.do_GET`
 
 Phase implication: #12 still needs explicit diagnostics/recovery design. A future fix should not be described as closed by health endpoint wording alone; it needs typed proxy state, user-facing recovery guidance, and optionally controlled restart behavior.
 
@@ -51,7 +51,7 @@ Current source facts:
 
 Evidence anchors:
 
-- `proxy/csswitch_proxy.py::H.do_CONNECT`
+- `proxy/csp_proxy.py::H.do_CONNECT`
 - `catalog/capabilities.v1.json` rules `transport.connect.non-anthropic-direct-tunnel` and `transport.upstream-proxy.planned-for-http-mcp`
 - `test/test_proxy_connect.py`
 - open PR #14 is still outside current `main`
@@ -65,12 +65,12 @@ Phase implication: #11 should remain a transport diagnostics / future upstream p
 Current source facts for that legacy row:
 
 - Formal relay/OpenAI proxy force mode returns a single Science-visible shell model and puts the configured real model in `display_name`.
-- Formal launch env force-overrides to the configured real model when `CSSWITCH_RELAY_MODEL` / `CSSWITCH_OPENAI_MODEL` is set; the proxy maps the relay env into its internal force-model state.
+- Formal launch env force-overrides to the configured real model when `CSP_RELAY_MODEL` / `CSP_OPENAI_MODEL` is set; the proxy maps the relay env into its internal force-model state.
 - App-side `fetch_models` uses a temporary proxy without force model and is meant for discovery only.
 
 Evidence anchors:
 
-- `proxy/csswitch_proxy.py::build_models_response`
+- `proxy/csp_proxy.py::build_models_response`
 - `proxy/provider_policy.py::resolve_model`
 - `desktop/src-tauri/src/runtime/model_discovery.rs::fetch_models`
 - `findings/2026-07-08-issue-26-custom-selector-evidence.md`

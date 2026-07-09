@@ -1,5 +1,7 @@
 use crate::runtime::model_sort;
+use crate::runtime::i18n::i18n_err;
 use crate::{config, templates};
+use serde_json::json;
 
 /// key 的非加密指纹（SipHash），只用于判断「配置是否变了」。绝不打印、绝不落盘。
 pub(crate) fn key_fingerprint(s: &str) -> u64 {
@@ -14,8 +16,8 @@ pub(crate) fn key_env_for_adapter(adapter: &str) -> &'static str {
     match adapter {
         "deepseek" => "DEEPSEEK_API_KEY",
         "qwen" => "DASHSCOPE_API_KEY",
-        "openai-custom" | "openai-responses" => "CSSWITCH_OPENAI_KEY",
-        _ => "CSSWITCH_RELAY_KEY", // relay / 兜底
+        "openai-custom" | "openai-responses" => "CSP_OPENAI_KEY",
+        _ => "CSP_RELAY_KEY", // relay / 兜底
     }
 }
 
@@ -65,7 +67,7 @@ pub(crate) fn proxy_args_for_active_profiles(
     profiles
         .first()
         .map(proxy_args_for)
-        .ok_or_else(|| "无 active profile。".into())
+        .ok_or_else(|| i18n_err("noActiveProfile", json!({})))
 }
 
 pub(crate) fn proxy_fingerprint(p: &config::Profile, launch: &ProxyLaunch) -> u64 {
@@ -102,8 +104,9 @@ pub(crate) fn proxy_fingerprint_with_runtime(
 pub(crate) fn assert_format_supported(p: &config::Profile) -> Result<(), String> {
     match p.api_format.as_str() {
         "anthropic" | "openai_chat" | "openai_responses" => Ok(()),
-        other => Err(format!(
-            "api_format `{other}` 暂不支持（待 Rust 代理），请选 anthropic、openai_chat 或 openai_responses。"
+        other => Err(i18n_err(
+            "errApiFormatUnsupported",
+            json!({ "format": other }),
         )),
     }
 }
@@ -118,7 +121,7 @@ pub(crate) fn reject_openai_custom_anthropic_base(
     base_url: &str,
 ) -> Result<(), String> {
     if is_openai_adapter(adapter) && looks_like_anthropic_endpoint(base_url) {
-        Err("这个地址看起来是 Anthropic 兼容端点。请改选「自定义 Anthropic」，或使用 OpenAI 兼容 base root（如 https://api.moonshot.cn/v1）。".to_string())
+        Err(i18n_err("errAnthropicBaseUrlHint", json!({})))
     } else {
         Ok(())
     }
@@ -151,7 +154,7 @@ pub(crate) fn normalize_shim_mode(adapter: &str, raw: Option<&str>) -> &'static 
 pub(crate) fn current_shim_mode_for_adapter(adapter: &str) -> &'static str {
     normalize_shim_mode(
         adapter,
-        std::env::var("CSSWITCH_TOOLUSE_SHIM").ok().as_deref(),
+        std::env::var("CSP_TOOLUSE_SHIM").ok().as_deref(),
     )
 }
 
@@ -308,7 +311,7 @@ mod tests {
         };
         let b = proxy_args_for(&glm);
         assert_eq!(b.adapter, "relay");
-        assert_eq!(b.key_env, "CSSWITCH_RELAY_KEY");
+        assert_eq!(b.key_env, "CSP_RELAY_KEY");
         assert_eq!(b.base_url, "https://open.bigmodel.cn/api/anthropic");
         assert_eq!(b.model, "glm-5");
 
@@ -322,7 +325,7 @@ mod tests {
         };
         let c = proxy_args_for(&custom_openai);
         assert_eq!(c.adapter, "openai-custom");
-        assert_eq!(c.key_env, "CSSWITCH_OPENAI_KEY");
+        assert_eq!(c.key_env, "CSP_OPENAI_KEY");
         assert_eq!(c.base_url, "https://open.bigmodel.cn/api/paas/v4");
         assert_eq!(c.model, "glm-4.5");
 
@@ -336,7 +339,7 @@ mod tests {
         };
         let d = proxy_args_for(&custom_responses);
         assert_eq!(d.adapter, "openai-responses");
-        assert_eq!(d.key_env, "CSSWITCH_OPENAI_KEY");
+        assert_eq!(d.key_env, "CSP_OPENAI_KEY");
         assert_eq!(d.base_url, "https://api.openai.com/v1");
         assert_eq!(d.model, "gpt-5.2");
 
@@ -351,7 +354,7 @@ mod tests {
         let e = proxy_args_for(&custom_profile_openai);
         assert_eq!(adapter_for_profile(&custom_profile_openai), "openai-custom");
         assert_eq!(e.adapter, "openai-custom");
-        assert_eq!(e.key_env, "CSSWITCH_OPENAI_KEY");
+        assert_eq!(e.key_env, "CSP_OPENAI_KEY");
 
         let custom_profile_responses = Profile {
             api_format: "openai_responses".into(),
@@ -363,7 +366,7 @@ mod tests {
             "openai-responses"
         );
         assert_eq!(f.adapter, "openai-responses");
-        assert_eq!(f.key_env, "CSSWITCH_OPENAI_KEY");
+        assert_eq!(f.key_env, "CSP_OPENAI_KEY");
 
         let non_custom_openai_format = Profile {
             template_id: "glm".into(),
@@ -410,7 +413,7 @@ mod tests {
             "https://api.moonshot.cn/anthropic",
         )
         .unwrap_err();
-        assert!(err.contains("自定义 Anthropic"));
+        assert!(err.contains("errAnthropicBaseUrlHint"));
         assert!(
             reject_openai_custom_anthropic_base("openai-custom", "https://api.moonshot.cn/v1",)
                 .is_ok()
@@ -430,13 +433,13 @@ mod tests {
     fn key_env_for_adapter_maps_adapters() {
         assert_eq!(key_env_for_adapter("deepseek"), "DEEPSEEK_API_KEY");
         assert_eq!(key_env_for_adapter("qwen"), "DASHSCOPE_API_KEY");
-        assert_eq!(key_env_for_adapter("openai-custom"), "CSSWITCH_OPENAI_KEY");
+        assert_eq!(key_env_for_adapter("openai-custom"), "CSP_OPENAI_KEY");
         assert_eq!(
             key_env_for_adapter("openai-responses"),
-            "CSSWITCH_OPENAI_KEY"
+            "CSP_OPENAI_KEY"
         );
-        assert_eq!(key_env_for_adapter("relay"), "CSSWITCH_RELAY_KEY");
-        assert_eq!(key_env_for_adapter("anything-else"), "CSSWITCH_RELAY_KEY");
+        assert_eq!(key_env_for_adapter("relay"), "CSP_RELAY_KEY");
+        assert_eq!(key_env_for_adapter("anything-else"), "CSP_RELAY_KEY");
     }
 
     #[test]

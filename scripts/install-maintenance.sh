@@ -1,5 +1,5 @@
 #!/bin/bash
-# 安装/卸载/查看 CSSwitch 每日维护巡检 launchd agent。
+# 安装/卸载/查看 Claude Science Proxy（CSP）每日维护巡检 launchd agent。
 #   scripts/install-maintenance.sh install     # 拷 plist 到 ~/Library/LaunchAgents 并加载
 #   scripts/install-maintenance.sh uninstall   # 卸载并删除
 #   scripts/install-maintenance.sh status      # 查看是否已加载 + 最近日志

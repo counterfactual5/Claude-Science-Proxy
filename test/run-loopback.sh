@@ -12,10 +12,10 @@ if [ "$(python3 test/_capability.py)" != "1" ]; then
   echo "S0_LAYER loopback env-blocked (loopback not permitted)"; exit 0
 fi
 
-# CSSWITCH_LOOPBACK_TEST_CMD 仅测试用：注入确定性 pass/fail 桩以验证重试逻辑，不用于正常运行。
+# CSP_LOOPBACK_TEST_CMD 仅测试用：注入确定性 pass/fail 桩以验证重试逻辑，不用于正常运行。
 run_loopback_once() {
-  if [ -n "${CSSWITCH_LOOPBACK_TEST_CMD:-}" ]; then
-    eval "$CSSWITCH_LOOPBACK_TEST_CMD"
+  if [ -n "${CSP_LOOPBACK_TEST_CMD:-}" ]; then
+    eval "$CSP_LOOPBACK_TEST_CMD"
   else
     python3 -m unittest test.test_proxy_connect test.test_proxy_stream test.test_proxy_dsml_e2e test.test_proxy_auth test.test_proxy_golden -v
   fi

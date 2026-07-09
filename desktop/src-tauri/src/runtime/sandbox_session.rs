@@ -4,6 +4,7 @@ use std::time::Duration;
 use serde_json::{json, Value};
 use tauri::Runtime;
 
+use crate::runtime::i18n::i18n_err;
 use crate::runtime::operation::{
     self, OperationKind, OperationStage, OperationTrace, POLL_INTERVAL_MS,
 };
@@ -68,20 +69,20 @@ pub(crate) fn one_click_login<R: Runtime>(
     }
 
     let root = asset_root(&app)
-        .ok_or("找不到 scripts/launch-virtual-sandbox.sh（打包资源或仓库根均未命中）。")?;
+        .ok_or_else(|| i18n_err("errSandboxScriptMissing", json!({})))?;
 
     trace.stage(OperationStage::SandboxLogin, "ensure_virtual_login");
     let (forged, login_action) =
         oauth_forge::ensure_virtual_login(&auth_dir, "virtual@localhost.invalid", &sbx_home)
-            .map_err(|e| format!("写虚拟登录失败：{e}"))?;
+            .map_err(|e| i18n_err("errSandboxVirtualLoginFailed", json!({ "error": e })))?;
 
     let launch = root.join("scripts/launch-virtual-sandbox.sh");
     if !launch.is_file() {
-        return Err("找不到 scripts/launch-virtual-sandbox.sh。".into());
+        return Err(i18n_err("errSandboxScriptMissing", json!({})));
     }
 
     let proxy_url = format!("http://127.0.0.1:{pport}/{secret}");
-    let logf = open_log("sandbox.log").map_err(|e| format!("建日志失败：{e}"))?;
+    let logf = open_log("sandbox.log").map_err(|e| i18n_err("errSandboxLogOpenFailed", json!({ "error": e.to_string() })))?;
     {
         use std::io::Write;
         let mut lw = &logf;
@@ -108,11 +109,11 @@ pub(crate) fn one_click_login<R: Runtime>(
         .stdout(Stdio::from(logf))
         .stderr(Stdio::from(logf2))
         .status()
-        .map_err(|e| format!("起沙箱失败：{e}"))?;
+        .map_err(|e| i18n_err("errSandboxSpawnFailed", json!({ "error": e.to_string() })))?;
     if !status.success() {
         let tail = redact(&tail_file(&log_path("sandbox.log"), 600), &secret);
         trace.finish("error=sandbox_launch_failed");
-        return Err(format!("起沙箱脚本失败。\n{tail}"));
+        return Err(i18n_err("errSandboxLaunchScriptFailed", json!({ "tail": tail })));
     }
 
     let mut ok = false;
@@ -134,8 +135,9 @@ pub(crate) fn one_click_login<R: Runtime>(
             let _ = stop_sandbox_state(&app, &mut st);
         }
         trace.finish("error=sandbox_health_timeout");
-        return Err(format!(
-            "沙箱起后探活超时（端口 {sport}）。已尝试停掉刚起的沙箱。\n{tail}"
+        return Err(i18n_err(
+            "errSandboxHealthTimeout",
+            json!({ "port": sport, "tail": tail }),
         ));
     }
 
@@ -145,9 +147,7 @@ pub(crate) fn one_click_login<R: Runtime>(
             let _ = stop_sandbox_state(&app, &mut st);
         }
         trace.finish("error=sandbox_identity_mismatch");
-        return Err(format!(
-            "端口 {sport} 有服务响应，但按 data-dir 确认不是本沙箱 Science（疑似被其它服务占用）。已尝试停掉刚起的沙箱。"
-        ));
+        return Err(i18n_err("errSandboxIdentityMismatch", json!({ "port": sport })));
     }
 
     let url = sandbox_url(sport);

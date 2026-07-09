@@ -123,7 +123,7 @@ CSP 内置了只读的 capability catalog，用来把 provider、工具调用、
 
 这个 catalog 是诊断与可观测性入口，不是 live provider、真实 Claude 账号态、Science GUI E2E、DMG 签名/公证或官方托管能力的验证结果。看到 catalog rule id 只表示 CSP 记录了对应规则或边界；不表示外部 provider、Anthropic-hosted MCP、Directory connectors、remote skills 已被完整验证或修通。
 
-状态灯也只表示当前可观测的本地状态：例如沙箱灯是本地 HTTP health，不等于已证明该端口一定属于本沙箱 Science。`自检` 默认不会读取真实 `~/.claude-science`；只有显式设置 `CSSWITCH_DOCTOR_CHECK_REAL_HOME=1` 才会做真实 HOME 存在性检查。
+状态诊断只表示当前可观测的本地状态：例如沙箱健康检查是本地 HTTP 探活，不等于已证明该端口一定属于本沙箱 Science。`自检` 默认不会读取真实 `~/.claude-science`；只有显式设置 `CSP_DOCTOR_CHECK_REAL_HOME=1` 才会做真实 HOME 存在性检查。
 
 ## 它如何保护你的真实账号
 
