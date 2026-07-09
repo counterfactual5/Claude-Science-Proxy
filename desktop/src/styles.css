@@ -82,6 +82,7 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10.5px;
 .pmenu{position:absolute;right:0;top:calc(100% + 4px);z-index:30;min-width:108px;
   background:var(--panel);border:1px solid var(--line);border-radius:9px;
   box-shadow:0 6px 18px rgba(0,0,0,.10);padding:4px;display:flex;flex-direction:column;gap:2px}
+.pmenu.pmenu-up{top:auto;bottom:calc(100% + 4px)}
 .pmenu[hidden]{display:none!important}
 .pmenu-item{display:block;width:100%;text-align:left;border:none;background:transparent;
   color:var(--ink);font-size:11.5px;font-weight:600;padding:7px 10px;border-radius:6px;

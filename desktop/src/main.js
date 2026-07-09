@@ -174,7 +174,7 @@ function sourceHint(t) {
 const MODEL_HINT = {
   native: "由 Science 选择器 + 内置映射自动选择（opus 深度 / haiku 快速）。",
   follow: "留空＝跟随 Science 选择器（保留 opus/haiku 各档）；选一个＝固定用于所有请求。",
-  fixed: "勾选要暴露给 Science 的模型（可多选）；默认模型用于后台任务兜底。",
+  fixed: "勾选的模型会出现在 Science；列表第一个用于后台任务兜底。",
 };
 
 function profileModels(p) {
@@ -305,10 +305,29 @@ function profileName(id) {
 
 function closeAllMenus() {
   if (!els.profileList) return;
-  els.profileList.querySelectorAll(".pmenu").forEach((m) => { m.hidden = true; });
+  els.profileList.querySelectorAll(".pmenu").forEach((m) => {
+    m.hidden = true;
+    m.classList.remove("pmenu-up");
+  });
   els.profileList.querySelectorAll(".pmenu-btn").forEach((b) => {
     b.setAttribute("aria-expanded", "false");
   });
+}
+
+function positionProfileMenu(menu, btn) {
+  menu.classList.remove("pmenu-up");
+  menu.hidden = false;
+  const listRect = els.profileList.getBoundingClientRect();
+  const btnRect = btn.getBoundingClientRect();
+  const menuHeight = menu.offsetHeight;
+  const gap = 4;
+  const spaceBelow = listRect.bottom - btnRect.bottom - gap;
+  const spaceAbove = btnRect.top - listRect.top - gap;
+  if (menuHeight > spaceBelow && spaceAbove >= menuHeight) {
+    menu.classList.add("pmenu-up");
+  } else if (menuHeight > spaceBelow && spaceAbove > spaceBelow) {
+    menu.classList.add("pmenu-up");
+  }
 }
 
 function syncProfileBusyState() {
@@ -1020,7 +1039,7 @@ function wire() {
         const wasOpen = !menu.hidden;
         closeAllMenus();
         if (!wasOpen) {
-          menu.hidden = false;
+          positionProfileMenu(menu, btn);
           btn.setAttribute("aria-expanded", "true");
         }
         return;
