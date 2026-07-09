@@ -107,7 +107,7 @@ pub struct Config {
     /// 首次为空，由后端生成一次后写回。
     #[serde(default)]
     pub secret: String,
-    /// 运行模式："proxy"（第三方）| "official"（真实 Claude Science）。
+    /// 遗留字段：旧版「官方 Claude」模式已移除，加载时一律归一为 `proxy`。
     #[serde(default = "default_mode")]
     pub mode: String,
     /// 一次性迁移提示（#9 甲：回填默认模型后告知用户）。get_config 读后清空。
@@ -527,13 +527,14 @@ pub fn load_from(dir: &Path) -> io::Result<Config> {
             Ok(cfg)
         }
         VersionKind::V4 => {
-            let cfg: Config = serde_json::from_slice(&data).map_err(|e| {
+            let raw: Config = serde_json::from_slice(&data).map_err(|e| {
                 io::Error::new(
                     io::ErrorKind::InvalidData,
                     format!("config.json 解析失败：{e}"),
                 )
             })?;
-            let mut cfg = normalize_active(cfg);
+            let mode_migrated = raw.mode != "proxy";
+            let mut cfg = normalize_active(raw);
             for p in cfg.profiles.iter_mut() {
                 p.sync_model_fields();
             }
@@ -543,10 +544,10 @@ pub fn load_from(dir: &Path) -> io::Result<Config> {
                     "已为 {} 个旧配置补上默认模型（可在连接编辑修改）。",
                     filled.len()
                 ));
-                validate_loaded_ports(&cfg)?;
+            }
+            validate_loaded_ports(&cfg)?;
+            if mode_migrated || !filled.is_empty() {
                 save_to(dir, &cfg)?;
-            } else {
-                validate_loaded_ports(&cfg)?;
             }
             Ok(cfg)
         }
@@ -565,7 +566,8 @@ fn validate_loaded_ports(cfg: &Config) -> io::Result<()> {
 /// 加载后归一化不变式（spec §4）：
 /// - `template_id` 未命中注册表 → 归一化为 `custom`；
 /// - `active_ids` / `active_id` 悬空 → 剔除并同步；
-/// - 旧文件仅有 `active_id` → 回填 `active_ids`。
+/// - 旧文件仅有 `active_id` → 回填 `active_ids`；
+/// - 遗留 `mode: "official"` → 一律归一为 `proxy`（官方模式 UI/命令已移除）。
 fn normalize_active(mut cfg: Config) -> Config {
     for p in cfg.profiles.iter_mut() {
         if crate::templates::by_id(&p.template_id).is_none() {
@@ -589,6 +591,9 @@ fn normalize_active(mut cfg: Config) -> Config {
         cfg.active_id.clear();
     }
     cfg.sync_active_id();
+    if cfg.mode != "proxy" {
+        cfg.mode = default_mode();
+    }
     cfg
 }
 
@@ -733,6 +738,22 @@ mod tests {
         assert!(c.active_ids.is_empty());
         assert_eq!(c.proxy_port, 18991);
         assert_eq!(c.mode, "proxy");
+    }
+
+    #[test]
+    fn load_from_migrates_legacy_official_mode_to_proxy() {
+        let d = tmpdir().join(".csswitch");
+        fs::create_dir_all(&d).unwrap();
+        fs::write(
+            config_path(&d),
+            br#"{"schema_version":4,"profiles":[],"active_id":"","active_ids":[],"proxy_port":18991,"sandbox_port":8990,"mode":"official"}"#,
+        )
+        .unwrap();
+        let cfg = load_from(&d).unwrap();
+        assert_eq!(cfg.mode, "proxy");
+        let on_disk: Config =
+            serde_json::from_slice(&fs::read(config_path(&d)).unwrap()).unwrap();
+        assert_eq!(on_disk.mode, "proxy");
     }
 
     #[test]

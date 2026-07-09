@@ -1,6 +1,6 @@
 # CSSwitch 桌面 app（Tauri）
 
-macOS 桌面 app（正常窗口，非菜单栏），把 CSSwitch 的日常操作收进一个面板：第三方 / 官方模式切换、选 provider、填第三方 key、一键开始、起停代理与沙箱、三盏状态灯。
+macOS 桌面 app（正常窗口，非菜单栏），把 CSSwitch 的日常操作收进一个面板：选 provider、填第三方 key、一键开始、起停代理与沙箱、三盏状态灯。
 
 架构上它只是**进程管家**：Rust 后端负责起停子进程、注入环境变量、读写配置、探活。虚拟 OAuth 伪造已在 v0.1.4 移进 Rust 原生实现（`src/oauth_forge.rs`，app 运行时不再需要 node）；翻译逻辑仍在 `proxy/csswitch_proxy.py` 作子进程调用（下一步移 axum 拔 python），沙箱启动仍走 `scripts/launch-virtual-sandbox.sh`，以保住铁律护栏与已验证行为。
 
@@ -11,7 +11,7 @@ desktop/
   src/                    前端面板（原生 HTML/CSS/JS，无框架）
     index.html  styles.css  main.js
   src-tauri/
-    src/lib.rs            后端入口：Tauri command（进程管家；含模式切换 set_mode / open_official）
+    src/lib.rs            后端入口：Tauri command（进程管家）
     src/oauth_forge.rs    虚拟 OAuth 伪造（Rust 原生：HKDF-SHA256 + AES-256-GCM v2 令牌；护栏拒真实目录）
     src/config.rs         ~/.csswitch/config.json 读写（0700/0600、拒符号链接、原子写、掩码）
     src/proc.rs           探活 / which（含登录 shell 兜底）/ 一次性 secret / 上游可达性（纯 std）

@@ -117,7 +117,7 @@ pub(crate) fn build_get_config(dir: &Path) -> Result<serde_json::Value, String> 
         "active_ids": cfg.active_ids,
         "profiles": profiles,
         "templates": build_list_templates(), "proxy_port": cfg.proxy_port,
-        "sandbox_port": cfg.sandbox_port, "mode": cfg.mode, "pending_notice": notice,
+        "sandbox_port": cfg.sandbox_port, "pending_notice": notice,
     }))
 }
 
