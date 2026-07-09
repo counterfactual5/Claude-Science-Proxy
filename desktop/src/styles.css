@@ -15,10 +15,12 @@ body{
 }
 .panel{display:flex;flex-direction:column;width:100%;height:100vh;min-height:0;background:var(--panel);
   overflow:hidden}
-.panel.view-form{overflow-x:hidden;overflow-y:auto;-webkit-overflow-scrolling:touch}
 .hd{display:flex;align-items:center;flex-shrink:0;padding:12px 14px 10px}
-.panel-body{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch}
-.panel-body .sec#listSec{flex:1;display:flex;flex-direction:column;min-height:0}
+.panel-body{flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden}
+.panel.view-form .panel-body{overflow-x:hidden;overflow-y:auto;-webkit-overflow-scrolling:touch}
+.list-sec{flex:1;min-height:0;display:flex;flex-direction:column}
+.list-sec[hidden]{display:none!important}
+.adv{flex-shrink:0}
 .brand{font-weight:650;font-size:14px}
 .sec{padding:10px 14px;border-top:1px solid var(--line)}
 label{display:block;font-size:11px;color:var(--sub);margin:0 0 5px;letter-spacing:.02em}
@@ -49,7 +51,7 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10.5px;
 .hero:disabled{opacity:.55;cursor:default;box-shadow:none;transform:none}
 .subbtns{display:flex;gap:8px;margin-top:8px}
 .subbtns .btn{flex:1}
-.run-sec{flex-shrink:0;margin-top:auto;padding-bottom:10px}
+.run-sec{flex-shrink:0;padding-bottom:max(12px,env(safe-area-inset-bottom,0px))}
 .msg{margin-top:9px;font-size:11px;color:var(--sub);line-height:1.5;max-height:64px;overflow:auto;
   white-space:pre-wrap;-webkit-user-select:text;user-select:text}
 .msg.err{color:var(--red)}
@@ -66,7 +68,7 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10.5px;
 .listhd{display:flex;justify-content:space-between;align-items:center;gap:8px}
 .listhd label{margin:0}
 #profileList{margin-top:8px;flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:8px;
-  padding-bottom:6px}
+  padding-bottom:8px}
 .empty{font-size:12px;color:var(--sub);padding:16px 10px;text-align:center;
   border:1px dashed var(--line);border-radius:10px;line-height:1.6}
 .prow{border:1px solid var(--line);border-radius:11px;padding:9px 10px;background:var(--field);
