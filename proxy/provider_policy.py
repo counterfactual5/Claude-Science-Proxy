@@ -23,19 +23,20 @@ RULE_TOOL_DASHSCOPE_RESPONSES_WEB_SEARCH_DROP = "tool.dashscope.responses.web_se
 
 @dataclass(frozen=True)
 class Policy:
-    """provider 的模型/上下文策略字段子结构。骨架 / 启动字段（url / auth_style / key_env /
-    models_url / mode / dsml_capable）绝不进这里，防污染 S1b 跨语言接缝。"""
+    """Provider model/context policy fields only. Skeleton/startup fields (url, auth_style,
+    key_env, models_url, mode, dsml_capable) never belong here — keeps the S1b cross-language
+    seam clean."""
     passthrough: bool
     force_model_override: bool
     default_model: str
     model_map: dict
     models: list
     model_caps: dict
-    default_cap: object          # int 或 None
+    default_cap: object          # int or None
 
 
 def policy_from_prov(prov):
-    """从运行时 PROV dict 精确提取策略字段成 Policy。"""
+    """Extract policy fields from the runtime PROV dict into a Policy."""
     return Policy(
         passthrough=bool(prov.get("passthrough")),
         force_model_override=bool(prov.get("force_model_override")),
@@ -48,27 +49,29 @@ def policy_from_prov(prov):
 
 
 def _default_nonce():
-    """默认 nonce 工厂：等价于旧 id(areq) 随机（rewrite tool_use id 本就随机，
-    golden 不录 rewrite body；测试注入固定工厂做精确断言）。"""
+    """Default nonce factory: equivalent to legacy id(areq) randomness (rewrite tool_use ids
+    are already random; golden tests do not record rewrite bodies; tests inject a fixed factory
+    for exact assertions)."""
     return format(random.getrandbits(24), "x")
 
 
 @dataclass
 class ProviderState:
-    """compat 三入口只吃它，不读全局。骨架从模块全局一次性组装后传入。"""
+    """The three compat entry points consume only this — no global reads. The skeleton assembles
+    it once from module globals and passes it in."""
     policy: Policy
     prov_name: str
-    relay_force_model: object     # str 或 None
+    relay_force_model: object     # str or None
     relay_models: list
-    relay_thinking: object         # str 或 None
+    relay_thinking: object         # str or None
     shim_mode: str
     nonce_factory: Callable[[], str] = _default_nonce
     model_registry: object = None
 
 
 def _snap_relay_model(name, relay_models):
-    """relay 透传：把请求模型贴合到中转站真实 id。精确命中优先；否则找一个以
-    请求名为前缀的上游 id；都不中就原样返回。"""
+    """Relay passthrough: align the requested model to the relay's real upstream id. Exact match
+    first; else pick an upstream id prefixed with the request name; otherwise return unchanged."""
     if not relay_models or name in relay_models:
         return name
     for mid in relay_models:
@@ -78,8 +81,9 @@ def _snap_relay_model(name, relay_models):
 
 
 def resolve_model(name, state, registry=None):
-    """把 Science 传来的模型名解析成当前 provider 的目标模型。
-    优先：虚拟注册表 > 强制模型 override > 选择器选中名 > 显式映射 > 去日期后缀 > 前缀匹配 > 默认。"""
+    """Resolve a Science model name to the provider's target model.
+    Priority: virtual registry > force-model override > selector name > explicit map >
+    strip date suffix > prefix match > default."""
     registry = registry or getattr(state, "model_registry", None)
     if registry is not None:
         routed = registry.resolve(name)
@@ -108,7 +112,7 @@ def resolve_model(name, state, registry=None):
 
 
 def _enabled_budget(max_tokens):
-    """thinking:enabled 需 budget_tokens，且必须 < max_tokens（留 token 给输出）。"""
+    """thinking:enabled needs budget_tokens, and it must be < max_tokens (reserve tokens for output)."""
     default = 1024
     if isinstance(max_tokens, int) and max_tokens > 0:
         return max(1, min(default, max_tokens - 1))
@@ -121,12 +125,13 @@ def _append_rule_id(rule_ids, rule_id):
 
 
 def normalize_thinking(body, prov_name, relay_thinking=None, rule_ids=None):
-    """thinking 归一化（纯函数，签名与语义与旧 csp_proxy 版一致）。
-      (A) 强制 tool_choice(any/tool) → disabled：仅 deepseek。
-      (B) relay 的 thinking 策略：enabled（如 Kimi）/ adaptive|None（默认，如 MiniMax）。
-          Kimi thinking 模型拒绝“thinking enabled + 指定 tool_choice”组合；保留 tools，
-          去掉指定选择，让模型自主触发 tool_use（官方多步工具调用范式 + 真机验证）。
-      (C) deepseek 非强制 + auto → adaptive。原地修改并返回 body。"""
+    """Normalize thinking (pure function; signature and semantics match legacy csp_proxy).
+      (A) Forced tool_choice (any/tool) → disabled: deepseek only.
+      (B) Relay thinking policy: enabled (e.g. Kimi) / adaptive|None (default, e.g. MiniMax).
+          Kimi thinking models reject "thinking enabled + explicit tool_choice"; keep tools,
+          drop the explicit choice so the model triggers tool_use on its own (official multi-step
+          tool-call pattern + device validation).
+      (C) deepseek non-forced + auto → adaptive. Mutates body in place and returns it."""
     tc = body.get("tool_choice")
     forcing = isinstance(tc, dict) and tc.get("type") in ("any", "tool")
     if forcing and prov_name == "deepseek":

@@ -208,9 +208,9 @@ fn chmod_best_effort(p: &Path, mode: u32) {
 // the app no longer needs it. `forge_guarded` (= guards + one-shot mint) remains for tests to inject a fake
 // real_cred_dir and verify guards and writes directly.
 
-/// 可注入「真实凭证目录」的内层（供测试传入临时目录，不碰真实 `~/.claude-science`）。
-/// 一次性铸新（org/account 均新）。=`resolve_guarded` 护栏 + `write_login(None,None)`。
-/// 现仅测试使用（应用走幂等 `ensure_virtual_login`）→ `#[cfg(test)]` 避免非 test 构建 dead_code。
+/// Inner entry with injectable real credential dir (tests pass a temp dir, never touch real `~/.claude-science`).
+/// One-shot mint (new org/account). = `resolve_guarded` guards + `write_login(None,None)`.
+/// Test-only now (app uses idempotent `ensure_virtual_login`) → `#[cfg(test)]` avoids dead_code in non-test builds.
 #[cfg(test)]
 fn forge_guarded(
     auth_dir: &Path,
@@ -222,8 +222,8 @@ fn forge_guarded(
     write_login(&resolved, email, None, None)
 }
 
-/// 护栏（写任何东西之前；`real_ancestor` 已看穿符号链接）：真实目录保护（护栏 0，铁律最高
-/// 优先）→ 沙箱根内（护栏 1）→ 假账号 email。全过则返回解析后的写入根 `resolved`。
+/// Guards (before writing anything; `real_ancestor` already follows symlinks): real-dir protection (guard 0,
+/// iron rule, highest priority) → inside sandbox root (guard 1) → fake-account email. Returns resolved write root.
 fn resolve_guarded(
     auth_dir: &Path,
     email: &str,
@@ -231,11 +231,11 @@ fn resolve_guarded(
     real_cred_dir: &Path,
 ) -> Result<PathBuf, String> {
     let resolved = real_ancestor(auth_dir);
-    // 载重护栏 0（铁律 1，最高优先，先于沙箱根检查）：解析后的写入根绝不落在真实
-    // ~/.claude-science 之内或其本身。防「把 ~/.csswitch/sandbox（或其祖先）预置成指向
-    // 真实目录的符号链接」——此时 sandbox_root 也会解析进真实树，令下方『沙箱根内』检查失效
-    // （resolved 与 root 同处真实树内而放行）。这条不依赖沙箱根，是对真实目录的绝对保护：
-    // 任何异常布局都绝不触碰真实目录。
+    // Load-bearing guard 0 (iron rule 1, highest priority, before sandbox-root check): resolved write root must
+    // never fall inside or equal real ~/.claude-science. Blocks pre-setting ~/.csswitch/sandbox (or an ancestor)
+    // as a symlink into the real tree—then sandbox_root also resolves into the real tree and the sandbox-root
+    // check below would pass (resolved and root both inside the real tree). Independent of sandbox root: absolute
+    // protection of the real directory; any abnormal layout must never touch it.
     let real_root = real_ancestor(real_cred_dir);
     if resolved.starts_with(&real_root) {
         return Err(format!(
@@ -243,9 +243,9 @@ fn resolve_guarded(
             real_root.display()
         ));
     }
-    // 载重护栏 1（修 P1）：resolved 必须落在沙箱根之下。预置符号链接把 auth_dir 或其祖先
-    // 链到沙箱外任意目录会让 canonicalize 解引用到别处；把写重定向挡在写任何文件之前
-    // （Node 版的沙箱范围限制在此以「根内」形式恢复）。
+    // Load-bearing guard 1 (fix P1): resolved must stay under sandbox root. A symlink from auth_dir or an ancestor
+    // outside the sandbox makes canonicalize dereference elsewhere; block redirected writes before any file I/O
+    // (Node sandbox scope limit restored here as "must be under root").
     let root = real_ancestor(sandbox_root);
     if !resolved.starts_with(&root) {
         return Err(format!(
@@ -262,8 +262,8 @@ fn resolve_guarded(
     Ok(resolved)
 }
 
-/// 在已通过护栏的 `resolved` 写一套虚拟登录。`prefer_org`/`prefer_account` 为 Some 则复用
-/// （修复时保住 org，令旧对话 DB 仍挂得上），为 None 则新铸。写入逻辑与旧 forge 一致。
+/// Write a virtual login under guarded `resolved`. `prefer_org`/`prefer_account` Some → reuse
+/// (repair keeps org so old conversation DB still attaches); None → mint new. Write logic matches legacy forge.
 fn write_login(
     resolved: &Path,
     email: &str,
@@ -273,7 +273,7 @@ fn write_login(
     std::fs::create_dir_all(resolved).map_err(|e| format!("建 auth_dir 失败：{e}"))?;
     chmod_best_effort(resolved, 0o700);
 
-    // —— encryption.key：复用已存在的（保持旧 .enc 可解），否则新造 ——
+    // —— encryption.key: reuse existing (keeps old .enc decryptable), else mint new ——
     let key_file = resolved.join("encryption.key");
     assert_not_symlink(&key_file)?;
     let mut keys: BTreeMap<String, String> = BTreeMap::new();
@@ -291,9 +291,9 @@ fn write_login(
             }
         }
     }
-    // P2a：复用的 OAUTH_ENCRYPTION_KEY 必须能 base64 解出 ≥16 字节，否则丢弃 → 下面 fill 循环
-    // 重造。免得「present 但非法 base64」的 key 被留用 → 后续 encrypt_token_v2 里 derive_key
-    // 直接报错而非自愈。只校验这一把（我们加密 .enc 用它）；另三把 Science 内部用，present 则留。
+    // P2a: reused OAUTH_ENCRYPTION_KEY must base64-decode to ≥16 bytes, else drop → fill loop below
+    // remints. Avoids keeping "present but invalid base64" key → encrypt_token_v2 derive_key fails instead of
+    // self-healing. Only this key is validated (we encrypt .enc with it); other three are Science-internal, kept if present.
     let oauth_usable = keys
         .get("OAUTH_ENCRYPTION_KEY")
         .map(|v| B64.decode(v.trim()).map(|b| b.len() >= 16).unwrap_or(false))
@@ -314,7 +314,7 @@ fn write_login(
         + "\n";
     safe_write(&key_file, key_blob.as_bytes(), 0o600)?;
 
-    // —— 令牌 blob（字段对齐 _adapt / _tryOauthToken）：org/account 有偏好则复用，否则新铸 ——
+    // —— Token blob (fields align with _adapt / _tryOauthToken): reuse org/account when preferred, else mint ——
     let account_uuid = match prefer_account {
         Some(a) => a,
         None => uuid_v4().map_err(|e| e.to_string())?,
@@ -328,10 +328,10 @@ fn write_login(
         hex(&rand_bytes(24).map_err(|e| e.to_string())?)
     );
     let blob = json!({
-        "access_token": access,          // 代理会剥离，值任意
+        "access_token": access,          // Proxy strips it; value arbitrary
         "refresh_token": "",
         "api_key": null,
-        "token_expires_at": "2099-01-01T00:00:00.000Z", // 远期 → 绝不联网刷新
+        "token_expires_at": "2099-01-01T00:00:00.000Z", // Far future → never refresh over network
         "provider": "claude_ai",
         "scopes": "user:inference user:file_upload user:profile user:mcp_servers user:plugins",
         "email": email,
@@ -349,7 +349,7 @@ fn write_login(
         .ok_or("缺 OAUTH_ENCRYPTION_KEY")?;
     let enc_body = encrypt_token_v2(&plaintext, oauth_key)?;
 
-    // —— 写 .oauth-tokens/<sanitized>.enc；先清其它 .enc 保证唯一 ——
+    // —— Write .oauth-tokens/<sanitized>.enc; clear other .enc first so exactly one remains ——
     let tok_dir = resolved.join(".oauth-tokens");
     assert_not_symlink(&tok_dir)?;
     std::fs::create_dir_all(&tok_dir).map_err(|e| format!("建 .oauth-tokens 失败：{e}"))?;
@@ -359,8 +359,8 @@ fn write_login(
             let p = e.path();
             if p.extension().map(|x| x == "enc").unwrap_or(false) {
                 assert_not_symlink(&p)?;
-                // 删除失败必须显式失败（修 P2）：否则残留旧 .enc + 新 .enc = 多个，
-                // 而 Science 预期目录内恰好一个 → 会「显示启动成功却仍登录不上」。
+                // Delete failure must surface (fix P2): otherwise stale .enc + new .enc = multiple files,
+                // but Science expects exactly one → "starts OK but still not logged in".
                 std::fs::remove_file(&p).map_err(|err| {
                     format!(
                         "删除旧令牌 {} 失败：{err}（需目录内恰好一个 .enc）",
@@ -377,7 +377,7 @@ fn write_login(
     let enc_file = tok_dir.join(format!("{user_id}.enc"));
     safe_write(&enc_file, enc_body.as_bytes(), 0o600)?;
 
-    // —— 自校验：用同样逻辑解密回读，确保 Science 能解开 ——
+    // —— Self-check: decrypt round-trip with same logic; ensure Science can read it ——
     let roundtrip = decrypt_token_v2(&enc_body, oauth_key)?;
     let rt: serde_json::Value =
         serde_json::from_slice(&roundtrip).map_err(|e| format!("自校验解析失败：{e}"))?;
@@ -385,7 +385,7 @@ fn write_login(
         return Err("自校验失败：解密回读的 email 不符".into());
     }
 
-    // —— active-org.json（Science 只要求 org_uuid 是 UUID）——
+    // —— active-org.json (Science only requires org_uuid to be a UUID) ——
     let org_json = serde_json::to_string_pretty(&json!({ "org_uuid": org_uuid })).unwrap() + "\n";
     safe_write(
         &resolved.join("active-org.json"),
@@ -401,8 +401,8 @@ fn write_login(
     })
 }
 
-// ---------- 幂等：现有登录读取/校验 ----------
-/// 严格校验：s 形如 8-4-4-4-12 的十六进制 UUID。
+// ---------- Idempotent: read/validate existing login ----------
+/// Strict check: s is a hex UUID in 8-4-4-4-12 form.
 fn looks_like_uuid(s: &str) -> bool {
     let b = s.as_bytes();
     b.len() == 36
@@ -412,7 +412,7 @@ fn looks_like_uuid(s: &str) -> bool {
         })
 }
 
-/// 解析 encryption.key 拿 OAUTH_ENCRYPTION_KEY（非空才算）。
+/// Parse encryption.key for OAUTH_ENCRYPTION_KEY (non-empty only).
 fn parse_oauth_key(resolved: &Path) -> Option<String> {
     let txt = std::fs::read_to_string(resolved.join("encryption.key")).ok()?;
     for line in txt.lines() {
@@ -426,7 +426,7 @@ fn parse_oauth_key(resolved: &Path) -> Option<String> {
     None
 }
 
-/// `.oauth-tokens/` 下恰好一个 `.enc` 才返回其路径；零个或多于一个都返回 None。
+/// Return path only when `.oauth-tokens/` has exactly one `.enc`; zero or multiple → None.
 fn single_enc(resolved: &Path) -> Option<PathBuf> {
     let mut found: Option<PathBuf> = None;
     for e in std::fs::read_dir(resolved.join(".oauth-tokens"))
