@@ -203,17 +203,6 @@ pub(crate) fn update_profile_metadata_inner(
     Ok(())
 }
 
-pub(crate) fn clear_profile_key_inner(dir: &Path, id: &str) -> Result<(), String> {
-    config::update(dir, |c| {
-        if let Some(p) = c.profile_by_id_mut(id) {
-            p.api_key.clear();
-        }
-    })
-    .map_err(|e| e.to_string())?;
-    config::drop_rolling_backup(dir); // 清 key 后净化滚动备份，旧明文不可从 .bak 恢复
-    Ok(())
-}
-
 pub(crate) fn delete_profile_inner(dir: &Path, id: &str) -> Result<(), String> {
     config::update(dir, |c| {
         c.profiles.retain(|p| p.id != id);
@@ -436,7 +425,7 @@ pub(crate) fn probe_kind_for_model(model: &str) -> scratch::ProbeKind {
 #[cfg(test)]
 mod tests {
     use super::{
-        build_get_config, build_list_templates, clear_profile_key_inner, create_profile_inner,
+        build_get_config, build_list_templates, create_profile_inner,
         delete_profile_inner, is_main_list_model, merge_and_sort_models, nonactive_probe_verdict,
         probe_kind_for, probe_kind_for_model, profile_capabilities, template_capabilities,
         update_profile_connection_inner, update_profile_metadata_inner, ConnectionEdit,
@@ -558,18 +547,6 @@ mod tests {
         assert_eq!(p.name, "改名");
         assert_eq!(p.notes.as_deref(), Some("备注"));
         assert_eq!(p.api_key, "secret9", "元数据编辑不动 key");
-    }
-
-    #[test]
-    fn clear_key_empties_key_and_drops_backup() {
-        let d = tmpdir_profile();
-        let id = create_profile_inner(&d, "glm", "GLM", Some("secretTAIL"), None, Some("glm-5.2"))
-            .unwrap();
-        config::write_rolling_backup(&d).ok();
-        clear_profile_key_inner(&d, &id).unwrap();
-        let cfg = config::load_from(&d).unwrap();
-        assert_eq!(cfg.profile_by_id(&id).unwrap().api_key, "");
-        assert!(!d.join("CSP.json.bak").exists(), "清 key 后净化滚动备份");
     }
 
     #[test]
