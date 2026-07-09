@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# CSSwitch 真机验收护栏。
+# Claude Science Proxy（CSP）真机验收护栏。
 #
 # 只管理独立测试 HOME 与测试端口；不会读取、复制、修改或删除真实
 # ~/.claude-science。真实实例只通过 lsof 记录 8765 的监听 PID，并在每个

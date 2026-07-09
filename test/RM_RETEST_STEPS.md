@@ -37,7 +37,7 @@ PATH="$HOME/.rustup/toolchains/stable-aarch64-apple-darwin/bin:$PATH" \
 cd ..
 ```
 
-产物在 `desktop/src-tauri/target/release/bundle/macos/CSSwitch Acceptance.app`。
+产物在 `desktop/src-tauri/target/release/bundle/macos/CSP Acceptance.app`。
 
 ---
 
@@ -56,7 +56,7 @@ eval "$(bash test/real_machine_guard.sh env)"   # 导出隔离 HOME / 测试端�
 ```bash
 HOME="$(bash test/real_machine_guard.sh env | sed -n 's/^HOME=//p')" \
 CSSWITCH_REPO="$PWD" \
-"desktop/src-tauri/target/release/bundle/macos/CSSwitch Acceptance.app/Contents/MacOS/desktop"
+"desktop/src-tauri/target/release/bundle/macos/CSP Acceptance.app/Contents/MacOS/desktop"
 ```
 
 首启后面板应列出 **DeepSeek** 与 **Qwen** 两条 profile，DeepSeek 生效，key 只显示掩码。
