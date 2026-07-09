@@ -1,14 +1,14 @@
-//! CSSwitch 桌面 app 后端（进程管家）。
+//! CSP 桌面 app 后端（进程管家）。
 //!
 //! 职责：管理「翻译代理」与「沙箱 Science」两个子进程的生命周期；读写
-//! `~/.csswitch/config.json`（多 profile 形态）；把第三方 key 以【环境变量】注入代理子进程
+//! `~/.csp/CSP.json`（多 profile 形态）；把第三方 key 以【环境变量】注入代理子进程
 //! （绝不进 argv）；探活；把沙箱 URL 交系统浏览器打开。已验证的越权/翻译逻辑仍留在
 //! Python/Node/shell 里被当作子进程调用，以保住铁律护栏与已验证行为。
 //!
 //! 运行行为由生效 profile 的 `template_id` 经 [`templates`] 注册表派生出 adapter
 //! （deepseek | qwen | relay | openai-custom | openai-responses），再传给 python 代理 `--provider`。
 //!
-//! 铁律相关：key 只在内存与 0600 的 config.json；回显前端只给掩码；沙箱端口/目录护栏
+//! 铁律相关：key 只在内存与 0600 的 CSP.json；回显前端只给掩码；沙箱端口/目录护栏
 //! 由被调脚本负责（对 8765 与真实目录失败关闭）；退 app 默认停代理、保留沙箱。
 
 mod commands;
@@ -94,6 +94,7 @@ pub fn run() {
             commands::profiles::activate_profile_in_pool,
             commands::profiles::deactivate_profile_from_pool,
             commands::profiles::toggle_profile_active,
+            commands::profiles::open_csp_json,
             commands::profiles::export_csp_edit_json,
             commands::profiles::import_csp_edit_json,
             commands::runtime::start_proxy,

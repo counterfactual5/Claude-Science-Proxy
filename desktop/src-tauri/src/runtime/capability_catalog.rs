@@ -18,8 +18,6 @@ pub(crate) struct CatalogRule {
     pub(crate) action: String,
     pub(crate) reason: String,
     pub(crate) evidence: Vec<String>,
-    #[allow(dead_code)]
-    pub(crate) tests: Vec<String>,
 }
 
 #[derive(Clone, Debug, Deserialize)]

@@ -1,4 +1,4 @@
-//! 本地配置读写：`~/.csswitch/config.json`。多 profile 形态（schema v2）。
+//! 本地配置读写：`~/.csp/CSP.json`。多 profile 形态（schema v2）。
 //!
 //! 安全要求（对齐 spec §3 / §5.1，参考 CC Switch 的明文本地存储但加严文件安全）：
 //!   - 目录 0700，文件 0600。
@@ -8,11 +8,11 @@
 //!
 //! 存储升级：schema_version 探测 + v1（旧固定槽）一次性迁移 → v2（profile 列表 + active_id），
 //! v3（多模型 active_models）→ v4（provider pool：active_ids[]），
-//! 迁移前留 `config.json.v1.bak`（失败即中止），普通覆盖前留滚动 `config.json.bak`，
+//! 迁移前留 `CSP.json.v1.bak`（失败即中止），普通覆盖前留滚动 `CSP.json.bak`，
 //! 清 key / 删 profile 后净化滚动备份（旧明文 key 不可从 .bak 恢复）。
 //!
 //! 所有函数以显式 `dir` 参数工作，便于用临时目录做无副作用的单元测试；
-//! 生产代码用 [`default_dir`]（`$HOME/.csswitch`）。
+//! 生产代码用 [`default_dir`]（`$HOME/.csp`）。
 
 use std::fs;
 use std::io::{self, Write};
@@ -46,6 +46,12 @@ pub(crate) fn validate_runtime_ports(proxy_port: u16, sandbox_port: u16) -> Resu
 
 /// 当前配置 schema 版本。>4 的文件由更新版本 app 写入，本版本拒绝启动（不误改）。
 pub const CURRENT_SCHEMA_VERSION: u32 = 4;
+
+pub(crate) const CONFIG_BASENAME: &str = "CSP.json";
+pub(crate) const LEGACY_CONFIG_BASENAME: &str = "config.json";
+pub(crate) const LEGACY_DIR_BASENAME: &str = ".csswitch";
+const MIGRATION_BACKUP_NAME: &str = "CSP.json.v1.bak";
+const ROLLING_BACKUP_NAME: &str = "CSP.json.bak";
 
 fn default_schema_version() -> u32 {
     CURRENT_SCHEMA_VERSION
@@ -271,7 +277,7 @@ pub fn detect_version(data: &[u8]) -> io::Result<VersionKind> {
     let probe: VersionProbe = serde_json::from_slice(data).map_err(|e| {
         io::Error::new(
             io::ErrorKind::InvalidData,
-            format!("config.json 解析失败：{e}"),
+            format!("CSP.json 解析失败：{e}"),
         )
     })?;
     Ok(match probe.schema_version {
@@ -352,16 +358,109 @@ pub fn migrate_v1_to_v2(mut legacy: crate::config_legacy::ConfigV1) -> Config {
     }
 }
 
-/// 生产环境配置目录：`$HOME/.csswitch`。
+/// 生产环境配置目录：`$HOME/.csp`。
 pub fn default_dir() -> PathBuf {
     let home = std::env::var_os("HOME")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("."));
-    home.join(".csswitch")
+    home.join(".csp")
 }
 
 fn config_path(dir: &Path) -> PathBuf {
-    dir.join("config.json")
+    dir.join(CONFIG_BASENAME)
+}
+
+/// 一次性路径迁移：`.csswitch/config.json` → `~/.csp/CSP.json`，
+/// 以及 `~/.csp/config.json` → `CSP.json`；同步备份文件名。
+/// 仅在生产默认目录上运行（单元测试用临时 dir 时跳过）。
+fn migrate_legacy_paths(dir: &Path) -> io::Result<()> {
+    if default_dir().as_path() != dir {
+        return Ok(());
+    }
+    let target = config_path(dir);
+    if target.exists() {
+        return Ok(());
+    }
+
+    if dir.exists() {
+        let legacy_in_dir = dir.join(LEGACY_CONFIG_BASENAME);
+        if legacy_in_dir.is_file() {
+            assert_not_symlink(&legacy_in_dir)?;
+            ensure_dir(dir)?;
+            fs::rename(&legacy_in_dir, &target)?;
+            rename_legacy_backups(dir);
+            return Ok(());
+        }
+    }
+
+    let home = std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("."));
+    let legacy_dir = home.join(LEGACY_DIR_BASENAME);
+    let legacy_config = legacy_dir.join(LEGACY_CONFIG_BASENAME);
+    if !legacy_config.is_file() {
+        return Ok(());
+    }
+    assert_not_symlink(&legacy_dir)?;
+    assert_not_symlink(&legacy_config)?;
+
+    let migrate_whole_dir = !dir.exists() || dir_is_empty(dir)?;
+    if migrate_whole_dir {
+        ensure_dir(dir)?;
+        copy_dir_contents(&legacy_dir, dir)?;
+        let copied_config = dir.join(LEGACY_CONFIG_BASENAME);
+        if copied_config.is_file() && !target.exists() {
+            fs::rename(&copied_config, &target)?;
+        }
+    } else {
+        ensure_dir(dir)?;
+        atomic_copy(&legacy_config, &target)?;
+    }
+    rename_legacy_backups(dir);
+    Ok(())
+}
+
+fn dir_is_empty(dir: &Path) -> io::Result<bool> {
+    Ok(fs::read_dir(dir)?.next().is_none())
+}
+
+fn rename_legacy_backups(dir: &Path) {
+    for (old, new) in [
+        ("config.json.v1.bak", MIGRATION_BACKUP_NAME),
+        ("config.json.bak", ROLLING_BACKUP_NAME),
+    ] {
+        let from = dir.join(old);
+        let to = dir.join(new);
+        if from.is_file() && !to.exists() {
+            let _ = fs::rename(from, to);
+        }
+    }
+}
+
+/// 递归拷贝目录内容（跳过符号链接；文件用 atomic_copy 保证 0600）。
+fn copy_dir_contents(from: &Path, to: &Path) -> io::Result<()> {
+    for entry in fs::read_dir(from)? {
+        let entry = entry?;
+        let ft = entry.file_type()?;
+        if ft.is_symlink() {
+            continue;
+        }
+        let name = entry.file_name();
+        let src = entry.path();
+        let dest = to.join(&name);
+        if ft.is_dir() {
+            if !dest.exists() {
+                fs::create_dir_all(&dest)?;
+                fs::set_permissions(&dest, fs::Permissions::from_mode(0o700))?;
+            }
+            copy_dir_contents(&src, &dest)?;
+        } else if ft.is_file() {
+            if !dest.exists() {
+                atomic_copy(&src, &dest)?;
+            }
+        }
+    }
+    Ok(())
 }
 
 /// 若 path 存在且是符号链接则报错（不跟随）。path 不存在返回 Ok。
@@ -378,7 +477,7 @@ pub(crate) fn assert_not_symlink(path: &Path) -> io::Result<()> {
 }
 
 /// 确保配置目录存在且是普通目录、权限 0700。目录是符号链接则拒绝。
-fn ensure_dir(dir: &Path) -> io::Result<()> {
+pub fn ensure_dir(dir: &Path) -> io::Result<()> {
     assert_not_symlink(dir)?;
     if !dir.exists() {
         fs::create_dir_all(dir)?;
@@ -426,26 +525,27 @@ fn atomic_copy(src: &Path, dst: &Path) -> io::Result<()> {
     Ok(())
 }
 
-/// 迁移前备份旧 config.json → config.json.v1.bak。源不存在 / 备份失败 → Err（中止迁移）。
+/// 迁移前备份旧 CSP.json → CSP.json.v1.bak。源不存在 / 备份失败 → Err（中止迁移）。
 pub fn write_migration_backup(dir: &Path) -> io::Result<()> {
-    atomic_copy(&config_path(dir), &dir.join("config.json.v1.bak"))
+    atomic_copy(&config_path(dir), &dir.join(MIGRATION_BACKUP_NAME))
 }
 
-/// 普通保存前的单份滚动备份 → config.json.bak。best-effort（调用方可忽略 Err），但写法仍原子/0600。
+/// 普通保存前的单份滚动备份 → CSP.json.bak。best-effort（调用方可忽略 Err），但写法仍原子/0600。
 pub fn write_rolling_backup(dir: &Path) -> io::Result<()> {
-    atomic_copy(&config_path(dir), &dir.join("config.json.bak"))
+    atomic_copy(&config_path(dir), &dir.join(ROLLING_BACKUP_NAME))
 }
 
 /// 清 key / 删 profile 后净化滚动备份：直接删，避免旧明文 key 残留可恢复。
 pub fn drop_rolling_backup(dir: &Path) {
-    let _ = fs::remove_file(dir.join("config.json.bak"));
+    let _ = fs::remove_file(dir.join(ROLLING_BACKUP_NAME));
 }
 
-/// 从 `dir/config.json` 读配置。文件不存在返回 [`Config::default`]。
+/// 从 `dir/CSP.json` 读配置。文件不存在返回 [`Config::default`]。
 /// 旧文件（schema<2）→ 备份 v1.bak + 迁移 + 落盘 v2；schema>2 → Err（拒绝启动）。
 /// v2 悬空 active_id 归一化为空。文件/目录是符号链接则报错（不跟随读）。
 pub fn load_from(dir: &Path) -> io::Result<Config> {
-    // 目录本身也不许是符号链接：否则攻击者把 ~/.csswitch 换成软链就能让读取跟随到别处。
+    migrate_legacy_paths(dir)?;
+    // 目录本身也不许是符号链接：否则攻击者把 ~/.csp 换成软链就能让读取跟随到别处。
     assert_not_symlink(dir)?;
     let path = config_path(dir);
     assert_not_symlink(&path)?;
@@ -460,7 +560,7 @@ pub fn load_from(dir: &Path) -> io::Result<Config> {
         VersionKind::TooNew(v) => Err(io::Error::new(
             io::ErrorKind::InvalidData,
             format!(
-                "config.json 由更新版本（schema {v}）写入，请升级 Claude Science Proxy 后再打开。"
+                "CSP.json 由更新版本（schema {v}）写入，请升级 Claude Science Proxy 后再打开。"
             ),
         )),
         VersionKind::Legacy => {
@@ -481,7 +581,7 @@ pub fn load_from(dir: &Path) -> io::Result<Config> {
             let cfg: Config = serde_json::from_slice(&data).map_err(|e| {
                 io::Error::new(
                     io::ErrorKind::InvalidData,
-                    format!("config.json 解析失败：{e}"),
+                    format!("CSP.json 解析失败：{e}"),
                 )
             })?;
             let cfg = migrate_v3_to_v4(migrate_v2_to_v3(normalize_active(cfg)));
@@ -493,7 +593,7 @@ pub fn load_from(dir: &Path) -> io::Result<Config> {
             let cfg: Config = serde_json::from_slice(&data).map_err(|e| {
                 io::Error::new(
                     io::ErrorKind::InvalidData,
-                    format!("config.json 解析失败：{e}"),
+                    format!("CSP.json 解析失败：{e}"),
                 )
             })?;
             let mut cfg = migrate_v3_to_v4(normalize_active(cfg));
@@ -508,7 +608,7 @@ pub fn load_from(dir: &Path) -> io::Result<Config> {
             let raw: Config = serde_json::from_slice(&data).map_err(|e| {
                 io::Error::new(
                     io::ErrorKind::InvalidData,
-                    format!("config.json 解析失败：{e}"),
+                    format!("CSP.json 解析失败：{e}"),
                 )
             })?;
             let mode_migrated = raw.mode != "proxy";
@@ -529,7 +629,7 @@ fn validate_loaded_ports(cfg: &Config) -> io::Result<()> {
     validate_runtime_ports(cfg.proxy_port, cfg.sandbox_port).map_err(|e| {
         io::Error::new(
             io::ErrorKind::InvalidData,
-            format!("config.json 端口无效：{e}"),
+            format!("CSP.json 端口无效：{e}"),
         )
     })
 }
@@ -587,7 +687,7 @@ fn migrate_v3_to_v4(mut cfg: Config) -> Config {
     cfg
 }
 
-/// 原子写 `dir/config.json`（0600）。目录/目标文件是符号链接则拒绝。
+/// 原子写 `dir/CSP.json`（0600）。目录/目标文件是符号链接则拒绝。
 pub fn save_to(dir: &Path, cfg: &Config) -> io::Result<()> {
     ensure_dir(dir)?;
     let path = config_path(dir);
@@ -602,7 +702,7 @@ pub fn save_to(dir: &Path, cfg: &Config) -> io::Result<()> {
     // 临时文件与目标同目录（保证 rename 在同一文件系统上原子）。
     // 名字带 pid + 线程 id，避免同进程并发写者撞同一个 O_EXCL 临时名。
     let tmp = dir.join(format!(
-        ".config.json.tmp-{}-{:?}",
+        ".CSP.json.tmp-{}-{:?}",
         std::process::id(),
         std::thread::current().id()
     ));
@@ -830,7 +930,7 @@ mod tests {
             let err = load_from(&d).unwrap_err();
             assert_eq!(err.kind(), io::ErrorKind::InvalidData, "{name}");
             assert!(
-                err.to_string().contains("config.json 端口无效"),
+                err.to_string().contains("CSP.json 端口无效"),
                 "error should identify invalid config ports for {name}: {err}"
             );
         }
@@ -856,7 +956,7 @@ mod tests {
             !after.contains("\"schema_version\""),
             "invalid legacy config should not be saved as v2: {after}"
         );
-        assert!(d.join("config.json.v1.bak").is_file());
+        assert!(d.join("CSP.json.v1.bak").is_file());
     }
 
     // ---------- A2: 版本探测 ----------
@@ -1010,7 +1110,7 @@ mod tests {
         fs::create_dir_all(&d).unwrap();
         fs::write(config_path(&d), b"OLD-V1-BYTES").unwrap();
         write_migration_backup(&d).unwrap();
-        let bak = d.join("config.json.v1.bak");
+        let bak = d.join("CSP.json.v1.bak");
         assert_eq!(fs::read(&bak).unwrap(), b"OLD-V1-BYTES");
         assert_eq!(mode_of(&bak), 0o600);
     }
@@ -1026,7 +1126,7 @@ mod tests {
         fs::create_dir_all(&d).unwrap();
         fs::write(config_path(&d), br#"{"api_key":"sk-SECRET-TAIL"}"#).unwrap();
         write_rolling_backup(&d).unwrap();
-        let bak = d.join("config.json.bak");
+        let bak = d.join("CSP.json.bak");
         assert!(fs::read_to_string(&bak).unwrap().contains("sk-SECRET-TAIL"));
         drop_rolling_backup(&d);
         assert!(
@@ -1042,7 +1142,7 @@ mod tests {
         fs::write(config_path(&d), b"X").unwrap();
         let elsewhere = base.join("elsewhere");
         fs::write(&elsewhere, b"ORIG").unwrap();
-        symlink(&elsewhere, d.join("config.json.v1.bak")).unwrap();
+        symlink(&elsewhere, d.join("CSP.json.v1.bak")).unwrap();
         assert!(write_migration_backup(&d).is_err());
         assert_eq!(fs::read(&elsewhere).unwrap(), b"ORIG");
     }
@@ -1061,7 +1161,7 @@ mod tests {
         assert_eq!(cfg.schema_version, CURRENT_SCHEMA_VERSION);
         assert_eq!(cfg.profiles.len(), 1);
         assert_eq!(cfg.active_profile().unwrap().api_key, "sk-x");
-        assert!(d.join("config.json.v1.bak").exists(), "迁移必须留 v1 备份");
+        assert!(d.join("CSP.json.v1.bak").exists(), "迁移必须留 v1 备份");
         // 落盘后再读是 v4（幂等，不再迁移）。
         let again = load_from(&d).unwrap();
         assert_eq!(again, cfg);
@@ -1183,7 +1283,7 @@ mod tests {
         let base = tmpdir();
         let realdir = base.join("realdir");
         fs::create_dir_all(&realdir).unwrap();
-        fs::write(realdir.join("config.json"), b"{\"schema_version\":2}").unwrap();
+        fs::write(realdir.join("CSP.json"), b"{\"schema_version\":2}").unwrap();
         let link = base.join(".csswitch");
         symlink(&realdir, &link).unwrap();
         let err = load_from(&link).unwrap_err();
@@ -1211,7 +1311,7 @@ mod tests {
             .filter(|e| {
                 e.file_name()
                     .to_string_lossy()
-                    .starts_with(".config.json.tmp")
+                    .starts_with(".CSP.json.tmp")
             })
             .collect();
         assert!(leftovers.is_empty(), "临时文件应已 rename 掉");

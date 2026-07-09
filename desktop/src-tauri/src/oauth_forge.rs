@@ -208,8 +208,9 @@ fn chmod_best_effort(p: &Path, mode: u32) {
 
 // ---------- 主流程 ----------
 // 注：一次性 `forge`（总是铸新 org）已被幂等的 `ensure_virtual_login` 取代（修 #3/#6），
-// 应用不再需要它。`forge_guarded`（= 护栏 + 一次性铸新）仍保留：既是 `ensure_virtual_login`
-// 的「铸新/修复」写入路径基石，也供测试用注入假 real_cred_dir 直接验证护栏与写入。
+// 应用不再需要它。`forge_guarded`（= 护栏 + 一次性铸新）仍保留供测试用注入假 real_cred_dir
+// 直接验证护栏与写入。
+
 /// 可注入「真实凭证目录」的内层（供测试传入临时目录，不碰真实 `~/.claude-science`）。
 /// 一次性铸新（org/account 均新）。=`resolve_guarded` 护栏 + `write_login(None,None)`。
 /// 现仅测试使用（应用走幂等 `ensure_virtual_login`）→ `#[cfg(test)]` 避免非 test 构建 dead_code。

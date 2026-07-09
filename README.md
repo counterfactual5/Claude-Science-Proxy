@@ -29,7 +29,8 @@ CSSwitch 是一个给 Claude Science 使用的本地模型切换器。它把 Sci
 - [可以做什么](#可以做什么)
 - [快速开始](#快速开始)
 - [支持的模型来源](#支持的模型来源)
-- [状态诊断与能力 catalog](#状态诊断与能力-catalog)
+- [虚拟模型注册表（multi-model）](#虚拟模型注册表multi-model)
+- [状态诊断、能力 catalog 与 provider pool](#状态诊断能力-catalog-与-provider-pool)
 - [它如何保护你的真实账号](#它如何保护你的真实账号)
 - [哪些能力暂时用不了](#哪些能力暂时用不了)
 - [多语言](#多语言)
@@ -63,7 +64,7 @@ Claude Science sandbox
 - 同一家 provider 可以保存多套配置，例如不同 Key、不同模型、不同中转地址。
 - 点击「设为当前」前会先验证 Key；失败不会悄悄切换到坏配置。
 - 点击「一键开始」会自动启动代理、准备隔离环境、打开 Science。
-- Science 顶部模型选择器会显示你选择的真实模型名，而不是笼统的 `claude` 或 `opus`。
+- Science 顶部模型选择器会显示你选择的真实模型名，而不是笼统的 `claude` 或 `opus`。支持多模型虚拟注册表——多个 profile 同时激活时，Science 里会展示多个可选模型，后台 agent 也会按模型角色（主模型 / 快速模型）自动路由。
 
 **给进阶用户**
 
@@ -71,6 +72,7 @@ Claude Science sandbox
 - 支持自定义 `base_url`、模型名和中转站。
 - DeepSeek、Kimi、MiniMax 等原生 Anthropic 端点优先透传，尽量保留工具调用、thinking 和流式响应。
 - Qwen 与自定义 OpenAI 端点通过本地代理做协议转换。
+- 支持多 profile 同时激活（provider pool），不同 provider 的模型可共存于同一 Science 会话，请求按 shell ID 路由到对应上游。
 - 配置和日志都保存在本机，便于自查和反馈。
 
 ## 快速开始
@@ -90,6 +92,13 @@ Claude Science sandbox
 6. 验证通过后点击「一键开始」。
 7. CSSwitch 会启动隔离 Science，并在浏览器中打开入口。
 
+## 虚拟模型注册表（multi-model）
+
+Science 只认 `claude-` 开头的模型 ID。CSSwitch 内置了一个虚拟模型注册表，从固定的 `claude-opus-*` / `claude-sonnet-*` / `claude-haiku-*` 壳 ID 池中分配，每个壳 ID 映射到一个真实上游模型，并在 Science UI 中显示真实模型名。
+
+- **单 profile 模式**：激活一个 profile 时，该 profile 的模型列表分配壳 ID 后展示在 Science 模型选择器里。
+- **多 profile 池模式**：同时激活多个 profile 时，所有 profile 的模型合并注册，Science 可切换使用不同 provider 的模型；后台 agent 请求按角色（主模型 / 快速模型）自动路由到对应的默认 profile。
+
 ## 支持的模型来源
 
 | 来源 | 接入方式 | 说明 |
@@ -108,9 +117,11 @@ Claude Science sandbox
 
 > 如果你的地址是 `/anthropic` 端点，请选择「自定义 Anthropic」。如果选择「自定义 OpenAI」，请填写 OpenAI 兼容的 base root，例如 `https://example.com/v1`，不要填 Anthropic 端点。
 
-## 状态诊断与能力 catalog
+## 状态诊断、能力 catalog 与 provider pool
 
 CSSwitch 内置了只读的 capability catalog，用来把 provider、工具调用、MCP/skill、Science 版本和 transport 的已知兼容性边界显式化。运行时 `status` 诊断会返回当前 profile 命中的 catalog 规则和固定边界规则，便于定位「当前配置为什么这样处理」以及「哪些能力只能诊断或降级」。
+
+当多条 profile 同时激活时（provider pool 模式），状态诊断会展示每条 active profile 的独立状态与上游连通性，合并模型注册表的壳 ID 分配情况也会一并报告。
 
 这个 catalog 是诊断与可观测性入口，不是 live provider、真实 Claude 账号态、Science GUI E2E、DMG 签名/公证或官方托管能力的验证结果。看到 catalog rule id 只表示 CSSwitch 记录了对应规则或边界；不表示外部 provider、Anthropic-hosted MCP、Directory connectors、remote skills 已被完整验证或修通。
 

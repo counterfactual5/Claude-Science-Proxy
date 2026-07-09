@@ -163,6 +163,18 @@ pub(crate) fn kill_child(slot: &mut Option<Child>) {
     }
 }
 
+/// Open a path with the system default application (macOS `open`) and verify exit status.
+pub(crate) fn open_path_in_default_app(path: &Path) -> Result<(), String> {
+    let st = Command::new("open")
+        .arg(path)
+        .status()
+        .map_err(|e| format!("打开编辑器失败：{e}"))?;
+    if !st.success() {
+        return Err(format!("open 非零退出（{:?}）", st.code()));
+    }
+    Ok(())
+}
+
 /// Open a URL with the system browser (macOS `open`) and verify exit status.
 pub(crate) fn open_in_browser(url: &str) -> Result<(), String> {
     let st = Command::new("open")
