@@ -5,6 +5,8 @@ and provider globals. It intentionally does not know about keys, secrets, or
 process state.
 """
 
+import model_sort
+
 
 CREATED_AT = "2026-01-01T00:00:00Z"
 
@@ -27,6 +29,9 @@ def normalize_models_response(raw):
             "supports_tools": supports_tools,
             "created_at": CREATED_AT,
         })
+    ids = model_sort.sort_model_ids(ids)
+    out_by_id = {m["id"]: m for m in out}
+    out = [out_by_id[mid] for mid in ids if mid in out_by_id]
     return out, ids
 
 
