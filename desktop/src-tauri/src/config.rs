@@ -538,15 +538,8 @@ pub fn load_from(dir: &Path) -> io::Result<Config> {
             for p in cfg.profiles.iter_mut() {
                 p.sync_model_fields();
             }
-            let filled = backfill_relay_models(&mut cfg);
-            if !filled.is_empty() {
-                cfg.pending_notice = Some(format!(
-                    "已为 {} 个旧配置补上默认模型（可在连接编辑修改）。",
-                    filled.len()
-                ));
-            }
             validate_loaded_ports(&cfg)?;
-            if mode_migrated || !filled.is_empty() {
+            if mode_migrated {
                 save_to(dir, &cfg)?;
             }
             Ok(cfg)

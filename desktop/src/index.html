@@ -12,7 +12,6 @@
       <div class="hd" data-tauri-drag-region>
         <div class="brand" data-tauri-drag-region>
           <span class="brand-mark" aria-hidden="true" title="Claude Science Proxy">CSP</span>
-          <span class="brand-name">Claude Science Proxy</span>
         </div>
       </div>
 
@@ -26,29 +25,16 @@
           <button class="btn small" id="skipActivateBtn" hidden style="margin-top:8px;width:100%">校验没过，仍要启用这条</button>
         </div>
 
-        <!-- 新建向导：选模板 → 预填 → 填 key → 创建（不自动生效） -->
+        <!-- 新建：名称 + base_url + key（创建时自动拉取模型） -->
         <div class="sec" id="wizSec" hidden>
-          <label id="wizTplLabel">选择来源</label>
-          <div id="wizTemplateChips" class="chips" role="group" aria-labelledby="wizTplLabel"></div>
-          <input id="wizTemplate" type="hidden" />
-          <div class="hint" id="wizTplHint"></div>
-          <label style="margin-top:10px" for="wizName">名称</label>
+          <label for="wizName">名称</label>
           <input id="wizName" type="text" placeholder="给这套配置起个名字" autocomplete="off" spellcheck="false" />
           <label style="margin-top:10px" for="wizBase">地址 base_url</label>
-          <div class="row">
-            <input id="wizBase" type="text" placeholder="https://your-relay/claude" autocomplete="off" spellcheck="false" />
-            <button class="btn small" id="wizFetchBtn">获取模型</button>
-          </div>
-          <div class="hint" id="wizBaseHint"></div>
+          <input id="wizBase" type="text" placeholder="https://api.example.com/v1" autocomplete="off" spellcheck="false" />
+          <div class="hint" id="wizBaseHint">创建后会自动从上游拉取可用模型并全部启用；可在编辑里勾选。</div>
           <label style="margin-top:10px" for="wizKey">API Key / Token</label>
           <input id="wizKey" type="password" placeholder="粘贴 key（只存本地）" autocomplete="off" spellcheck="false" />
           <div class="hint">只存本地，不上传给本应用；使用时才作为鉴权发给你选的服务商。</div>
-          <label style="margin-top:10px" id="wizModelLabel">模型</label>
-          <div id="wizModelInfo" class="modelinfo" hidden></div>
-          <input id="wizModel" list="wizModelList" aria-labelledby="wizModelLabel" autocomplete="off" spellcheck="false" />
-          <datalist id="wizModelList"></datalist>
-          <div id="wizModelPick" class="model-pick" hidden></div>
-          <div class="hint" id="wizModelHint"></div>
           <div class="row" style="margin-top:12px">
             <button class="btn small" id="wizSaveBtn">创建</button>
             <button class="btn small" id="wizCancelBtn">取消</button>
@@ -61,17 +47,14 @@
           <label style="margin-top:6px" for="connName">名称</label>
           <input id="connName" type="text" autocomplete="off" spellcheck="false" />
           <label style="margin-top:10px" for="connBase">地址 base_url</label>
-          <div class="row">
-            <input id="connBase" type="text" autocomplete="off" spellcheck="false" />
-            <button class="btn small" id="connFetchBtn">获取模型</button>
-          </div>
+          <input id="connBase" type="text" autocomplete="off" spellcheck="false" />
           <div class="hint" id="connBaseHint"></div>
           <label style="margin-top:10px" for="connKey">API Key / Token</label>
           <input id="connKey" type="password" autocomplete="off" spellcheck="false" />
           <div class="hint">留空＝不改 key。</div>
-          <label style="margin-top:10px" id="connModelLabel">模型</label>
+          <label style="margin-top:10px" id="connModelLabel">启用模型</label>
           <div id="connModelInfo" class="modelinfo" hidden></div>
-          <input id="connModel" list="connModelList" aria-labelledby="connModelLabel" autocomplete="off" spellcheck="false" />
+          <input id="connModel" list="connModelList" hidden aria-hidden="true" tabindex="-1" autocomplete="off" spellcheck="false" />
           <datalist id="connModelList"></datalist>
           <div id="connModelPick" class="model-pick" hidden></div>
           <div class="hint" id="connModelHint"></div>
@@ -81,25 +64,26 @@
           </div>
         </div>
 
-        <!-- 反馈消息：有真实反馈（表单错误 / 回滚 / 保存结果 / 自检）才显示，空闲不占位。 -->
+        <!-- 反馈消息：有真实反馈才显示，空闲不占位。 -->
         <div class="sec feedback" hidden>
           <div class="msg" id="msg" role="status" aria-live="polite"></div>
         </div>
       </div>
 
-      <details class="sec adv list-only" id="advSec">
-        <summary>高级设置</summary>
-        <div class="ports">
-          <div class="fld"><label for="proxyPort">代理端口</label><input id="proxyPort" inputmode="numeric" value="18991" /></div>
-          <div class="fld"><label for="sandboxPort">沙箱端口</label><input id="sandboxPort" inputmode="numeric" value="8990" /></div>
-        </div>
-      </details>
+      <div class="panel-foot list-only">
+        <details class="sec adv" id="advSec">
+          <summary>端口管理</summary>
+          <div class="ports">
+            <div class="fld"><label for="proxyPort">代理</label><input id="proxyPort" inputmode="numeric" value="18991" /></div>
+            <div class="fld"><label for="sandboxPort">沙箱</label><input id="sandboxPort" inputmode="numeric" value="8990" /></div>
+          </div>
+        </details>
 
-      <!-- 运行控制区：仅列表视图显示（表单视图由 .view-form 隐藏）。 -->
-      <div class="sec list-only run-sec">
-        <button class="hero" id="oneClickBtn">启动 Claude Science</button>
-        <div class="subbtns">
-          <button class="btn" id="stopBtn" title="停止本地代理与 Science 沙箱">停止</button>
+        <div class="sec run-sec">
+          <button class="hero" id="oneClickBtn">启动 Claude Science</button>
+          <div class="subbtns">
+            <button class="btn" id="stopBtn" title="停止本地代理与 Science 沙箱">停止</button>
+          </div>
         </div>
       </div>
     </div>
