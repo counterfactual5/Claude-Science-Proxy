@@ -94,6 +94,8 @@ pub fn run() {
             commands::profiles::activate_profile_in_pool,
             commands::profiles::deactivate_profile_from_pool,
             commands::profiles::toggle_profile_active,
+            commands::profiles::export_csp_edit_json,
+            commands::profiles::import_csp_edit_json,
             commands::runtime::start_proxy,
             commands::runtime::verify_key,
             commands::runtime::fetch_models,
