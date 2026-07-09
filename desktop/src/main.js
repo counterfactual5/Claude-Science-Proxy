@@ -7,7 +7,7 @@
 //   template_id→templateId、base_url→baseUrl、api_format→apiFormat、skip_verify→skipVerify。
 // 所以 invoke 顶层 args 用【小驼峰】。而 serde 结构体入参（`req`=FetchModelsReq、
 // `cfg`=UiSettings）内部字段按结构体字段名（蛇形）：proxy_port/sandbox_port、
-// template_id/base_url/key/profile_id。核对表见任务报告。
+// template_id/base_url/key/profile_id。
 //
 // 预览兜底：在普通浏览器（没有 Tauri 后端）里打开时用 mockInvoke 返回假数据，
 // 让界面能完整渲染。真实 app 里 window.__TAURI__ 存在，走真后端，此兜底不生效。
@@ -30,7 +30,7 @@ const MOCK_TEMPLATES = [
   { id: "custom-openai-responses", name: "自定义 OpenAI Responses", category: "custom", api_format: "openai_responses", adapter: "openai-responses", base_url: "", base_url_editable: true, requires_model_override: true, builtin_models: [], icon: "custom", icon_color: "#0F766E", website_url: "" },
   { id: "custom", name: "自定义 Anthropic", category: "custom", api_format: "anthropic", adapter: "relay", base_url: "", base_url_editable: true, requires_model_override: true, builtin_models: [], icon: "custom", icon_color: "#6B7280", website_url: "" },
 ];
-const mockStore = {
+const mockStore = { 
   schema_version: 2,
   active_id: "",
   proxy_port: 18991,
@@ -110,7 +110,6 @@ const els = {};
 let busy = false;
 let busyOp = null;
 let busyMsgTimers = [];
-// 始终第三方代理模式；官方 Claude 入口已从 UI 移除。
 // 当前配置快照（get_config 结果）。全 key 绝不在此，只有掩码。
 let configState = { profiles: [], templates: [], active_id: "", proxy_port: 18991, sandbox_port: 8990 };
 let pendingSkipActivateId = null;   // set_active 校验含糊时，允许「跳过验证」再切
@@ -147,30 +146,7 @@ function profileCapabilitySource(p, t) {
     capabilities: p.capabilities,
   };
 }
-// 来源提示：据「地址是否可编辑 + 模型能力」生成，不能只看 category
-// （OpenRouter 的 category 是 custom，但地址只读、模型可跟随；只看 category 会误导）。
-function sourceHint(t) {
-  if (!t) return "选择来源后按提示填写。";
-  // 真·自定义（可编辑且无预设地址）才叫「自定义端点」；预设虽可编辑但有官方默认，另行描述。
-  if (t.base_url_editable && !t.base_url && t.api_format === "openai_chat") {
-    return "自定义 OpenAI Chat Completions 兼容端点：填 base root、key 与模型，经代理转换协议。";
-  }
-  if (t.base_url_editable && !t.base_url && t.api_format === "openai_responses") {
-    return "自定义 OpenAI Responses 兼容端点：填 base root、key 与模型，经代理转换协议。";
-  }
-  if (t.base_url_editable && !t.base_url) return "自定义 Anthropic 兼容端点：填地址与 key，用「获取模型」列出并选一个。";
-  const cap = modelCapability(t);
-  if (cap === CAP.NATIVE) {
-    // deepseek 是原生 Anthropic 透传；qwen 经代理做 Anthropic↔OpenAI 转换，别都叫「直连」。
-    return t.api_format === "openai_chat" || t.api_format === "openai_responses"
-      ? "官方端点（经代理转换协议）：填 API Key 即可，地址与模型都已内置。"
-      : "官方原生端点（无需转换）：填 API Key 即可，地址与模型都已内置。";
-  }
-  // 预设地址可编辑：默认已填好官方地址，套餐/区域端点可改（如小米 token plan）。
-  const addr = t.base_url_editable ? "地址已预填官方默认（套餐 / 区域端点可改）" : "地址已预设";
-  if (cap === CAP.FOLLOW) return `填 API Key 即可，${addr}，模型默认跟随 Science。`;
-  return `填 API Key 并选一个模型，${addr}。`;
-}
+
 const MODEL_HINT = {
   native: "由 Science 选择器 + 内置映射自动选择（opus 深度 / haiku 快速）。",
   follow: "留空＝跟随 Science 选择器（保留 opus/haiku 各档）；选一个＝固定用于所有请求。",
@@ -257,13 +233,14 @@ function applyModelCapability(t, ui, profileOrModel) {
 }
 
 function setMsg(text, kind) {
-  // 仅在出错时显示反馈条；成功/进行中的提示不占界面空间。
+  // 去掉常驻「就绪。」：空消息或纯 idle 时整条反馈栏不占位，有真实反馈（结果/错误/自检）才冒出来。
   const t = text && text !== "就绪。" ? text : "";
-  const show = !!(t && kind === "err");
-  els.msg.textContent = show ? t : "";
-  els.msg.className = "msg err";
-  els.msg.parentElement.hidden = !show;
-  if (show && els.panel && els.panel.classList.contains("view-form")) {
+  els.msg.textContent = t;
+  els.msg.className = "msg" + (kind ? " " + kind : "");
+  els.msg.parentElement.hidden = !t;
+  // 表单视图里反馈区可能落在折叠线以下：给出结果（ok/err）时滚到可见；
+  // 中性提示（无 kind，多为打开表单时）不滚，避免把页面拽到底部。
+  if (t && kind && els.panel && els.panel.classList.contains("view-form")) {
     els.msg.scrollIntoView({ block: "nearest" });
   }
 }
@@ -325,12 +302,7 @@ function scheduleBusyMsg(ms, op, text) {
   busyMsgTimers.push(timer);
 }
 
-function startFetchModelsFeedback(id) {
-  clearBusyMsgTimers();
-  setMsg("获取模型中：正在用临时代理探 /v1/models，网络慢时可能需要约 20 秒…");
-  scheduleBusyMsg(4500, { kind: "fetchModels", id }, "仍在等待上游模型列表响应。不会改动当前配置或正在运行的代理。");
-  scheduleBusyMsg(18000, { kind: "fetchModels", id }, "模型发现接近等待上限。若上游不支持或暂时不通，会回退到内置候选并据实提示。");
-}
+
 
 function startActivateFeedback(id, skipVerify) {
   const name = profileName(id);
@@ -834,8 +806,6 @@ async function connSave() {
       setMsg("已保存连接（未能连通上游校验，激活时会再验）。", "ok");
     }
   } catch (e) {
-    // 后端错误文案已如实说明回滚/代理状态（可能是「已回滚到原配置」或「回滚未成功：代理当前已停」），
-    // 前端不再盲目追加「仍在用原配置运行」，避免与「代理已停」相互矛盾。修 GPT 三轮 P2
     setMsg("连接未保存：" + e, "err");
   } finally {
     setBusy(false);

@@ -291,3 +291,18 @@ pub(crate) async fn toggle_profile_active(
     })
     .await
 }
+
+#[tauri::command]
+pub(crate) fn export_csp_edit_json() -> Result<String, String> {
+    crate::runtime::config_edit::export_csp_edit_json(&config::default_dir())
+}
+
+#[tauri::command]
+pub(crate) fn import_csp_edit_json(
+    lifecycle: State<'_, SharedLifecycle>,
+    json: String,
+) -> Result<(), String> {
+    lifecycle.with_serialized(|| {
+        crate::runtime::config_edit::import_csp_edit_json(&config::default_dir(), &json)
+    })
+}

@@ -156,10 +156,7 @@ impl Profile {
         if !d.is_empty() {
             return d.to_string();
         }
-        self.effective_models()
-            .first()
-            .cloned()
-            .unwrap_or_default()
+        self.effective_models().first().cloned().unwrap_or_default()
     }
 
     /// 写盘后保持 model/default_model/active_models 一致。
@@ -462,7 +459,9 @@ pub fn load_from(dir: &Path) -> io::Result<Config> {
     match detect_version(&data)? {
         VersionKind::TooNew(v) => Err(io::Error::new(
             io::ErrorKind::InvalidData,
-            format!("config.json 由更新版本（schema {v}）写入，请升级 Claude Science Proxy 后再打开。"),
+            format!(
+                "config.json 由更新版本（schema {v}）写入，请升级 Claude Science Proxy 后再打开。"
+            ),
         )),
         VersionKind::Legacy => {
             write_migration_backup(dir)?; // 备份失败即中止迁移，不动原文件
@@ -578,9 +577,7 @@ fn normalize_active(mut cfg: Config) -> Config {
         .filter(|id| cfg.profile_by_id(id).is_some())
         .cloned()
         .collect();
-    if !cfg.active_id.is_empty()
-        && cfg.profile_by_id(&cfg.active_id).is_none()
-    {
+    if !cfg.active_id.is_empty() && cfg.profile_by_id(&cfg.active_id).is_none() {
         cfg.active_id.clear();
     }
     cfg.sync_active_id();
@@ -609,28 +606,6 @@ fn migrate_v3_to_v4(mut cfg: Config) -> Config {
     }
     cfg.sync_active_id();
     cfg
-}
-
-/// 甲迁移（修 #9 P1-a）：relay 家族空 model → 回填模板 builtin_models 首项（旗舰默认）。
-/// native 与无默认的 custom（builtin 空）不动。返回被回填的 profile 名，供一次性提示。幂等。
-fn backfill_relay_models(cfg: &mut Config) -> Vec<String> {
-    let mut changed = Vec::new();
-    for p in cfg.profiles.iter_mut() {
-        if !p.model.trim().is_empty() {
-            continue;
-        }
-        let adapter = crate::templates::adapter_for(&p.template_id);
-        if adapter == "deepseek" || adapter == "qwen" {
-            continue; // native 不需要
-        }
-        if let Some(def) =
-            crate::templates::by_id(&p.template_id).and_then(|t| t.builtin_models.first())
-        {
-            p.model = (*def).to_string();
-            changed.push(p.name.clone());
-        }
-    }
-    changed
 }
 
 /// 原子写 `dir/config.json`（0600）。目录/目标文件是符号链接则拒绝。
@@ -744,8 +719,7 @@ mod tests {
         .unwrap();
         let cfg = load_from(&d).unwrap();
         assert_eq!(cfg.mode, "proxy");
-        let on_disk: Config =
-            serde_json::from_slice(&fs::read(config_path(&d)).unwrap()).unwrap();
+        let on_disk: Config = serde_json::from_slice(&fs::read(config_path(&d)).unwrap()).unwrap();
         assert_eq!(on_disk.mode, "proxy");
     }
 
@@ -816,49 +790,6 @@ mod tests {
         assert_eq!(cfg.schema_version, 4);
         assert_eq!(cfg.active_ids, vec!["p1"]);
         assert_eq!(cfg.active_id, "p1");
-    }
-
-    #[test]
-    fn backfill_fills_empty_relay_model_from_template_default() {
-        let mut cfg = Config {
-            profiles: vec![
-                Profile {
-                    id: "p1".into(),
-                    name: "我的GLM".into(),
-                    template_id: "glm".into(),
-                    model: String::new(), // 空 → 回填旗舰默认
-                    ..Default::default()
-                },
-                Profile {
-                    id: "p2".into(),
-                    name: "已选".into(),
-                    template_id: "glm".into(),
-                    model: "glm-4.6".into(), // 非空 → 不动
-                    ..Default::default()
-                },
-                Profile {
-                    id: "p3".into(),
-                    name: "自定义空".into(),
-                    template_id: "custom".into(),
-                    model: String::new(), // custom 无默认 → 不回填（激活时另拦）
-                    ..Default::default()
-                },
-                Profile {
-                    id: "p4".into(),
-                    name: "DS".into(),
-                    template_id: "deepseek".into(),
-                    model: String::new(), // native → 不回填
-                    ..Default::default()
-                },
-            ],
-            ..Default::default()
-        };
-        let changed = backfill_relay_models(&mut cfg);
-        assert_eq!(changed, vec!["我的GLM".to_string()]);
-        assert_eq!(cfg.profile_by_id("p1").unwrap().model, "glm-5.2");
-        assert_eq!(cfg.profile_by_id("p2").unwrap().model, "glm-4.6");
-        assert_eq!(cfg.profile_by_id("p3").unwrap().model, "");
-        assert_eq!(cfg.profile_by_id("p4").unwrap().model, "");
     }
 
     #[test]
@@ -1179,7 +1110,11 @@ mod tests {
         };
         save_to(&d, &cfg).unwrap();
         let got = load_from(&d).unwrap();
-        assert_eq!(got.active_ids, vec![] as Vec<String>, "悬空 active → 归一化为空");
+        assert_eq!(
+            got.active_ids,
+            vec![] as Vec<String>,
+            "悬空 active → 归一化为空"
+        );
         assert_eq!(got.active_id, "");
     }
 
