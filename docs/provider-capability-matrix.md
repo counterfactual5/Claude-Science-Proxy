@@ -45,7 +45,7 @@ It is not a live provider certification, real Claude account check, Science GUI 
 
 | Capability | Current catalog status | Current product stance |
 |---|---|---|
-| Anthropic-hosted HCLS MCP | `unsupported` / `diagnose` | CSSwitch can explain the hosted-account boundary; it cannot make official hosted MCP available under virtual OAuth |
+| Anthropic-hosted HCLS MCP | `unsupported` / `diagnose` | CSP can explain the hosted-account boundary; it cannot make official hosted MCP available under virtual OAuth |
 | External Streamable HTTP MCP | `limited` / `diagnose` | Direct CONNECT tunneling exists for non-Anthropic hosts, but upstream-proxy routing is not implemented |
 | Local stdio bio connectors | `unknown` / `document` | Preferred fallback direction, but install/discovery/restart persistence needs explicit verification before support is claimed |
 | Directory connectors | `unsupported` / `diagnose` | Hosted claude.ai capability; may show unavailable/session-expired under virtual login |
@@ -53,4 +53,4 @@ It is not a live provider certification, real Claude account check, Science GUI 
 
 ## Relationship To Historical Provider Research
 
-[`docs/provider-support.md`](provider-support.md) is historical research and reference material. It is useful for candidate provider discovery and CC Switch comparison, but the matrix above is the current CSSwitch support boundary for source, catalog, status, docs, and tests.
+[`docs/provider-support.md`](provider-support.md) is historical research and reference material. It is useful for candidate provider discovery and CC Switch comparison, but the matrix above is the current CSP support boundary for source, catalog, status, docs, and tests.

@@ -1,4 +1,4 @@
-# CSSwitch 能力 / 兼容性 Catalog 设计
+# CSP 能力 / 兼容性 Catalog 设计
 
 本设计定义第一版静态只读 catalog。它不是 MCP-only catalog，而是把 provider/model、工具调用、MCP/skill、Science native route/version、transport/network 的已知兼容性事实放到同一个机器可读入口里。
 
@@ -6,7 +6,7 @@
 
 ## 边界
 
-CSSwitch 能维护和逐步自动化的范围：
+CSP 能维护和逐步自动化的范围：
 
 - 代理协议兼容：Anthropic passthrough、OpenAI Chat、OpenAI Responses、model shell、tool_choice、thinking、token cap。
 - 工具兼容：工具 schema 归一化、provider/model 级工具黑名单、server-tool block 过滤、DSML tool_use 兜底。
@@ -14,7 +14,7 @@ CSSwitch 能维护和逐步自动化的范围：
 - 网络/transport：Anthropic host fast-fail、CONNECT 行为、未来 upstream proxy 诊断。
 - Science native version：已知 route/version 差异、隔离复测要求、哪些能力不能从旧版本外推。
 
-CSSwitch 不能仅靠 catalog 承诺的范围：
+CSP 不能仅靠 catalog 承诺的范围：
 
 - Anthropic-hosted MCP、Directory connectors、官方 remote skills、官方 claude.ai 托管能力。
 - 真实账号态、真实 OAuth scope、真实 `~/.claude-science` live 状态。
@@ -63,7 +63,7 @@ CSSwitch 不能仅靠 catalog 承诺的范围：
 - `id`：稳定规则 ID，用于测试、诊断、未来 UI 链接。
 - `scope`：规则所属能力域。`model` 仍放在 `providers` section 内，表示 provider/model catalog 的子类。
 - `match`：非执行 DSL，只描述当前规则适用条件；v1 不要求 runtime 解释。
-- `status`：当前事实状态。`supported` 必须已有代码和测试或明确文档证据；`limited` 表示支持有条件或存在边界；`unsupported` 表示明确不能由 CSSwitch 修通；`unknown` 表示候选方向仍需探针。
+- `status`：当前事实状态。`supported` 必须已有代码和测试或明确文档证据；`limited` 表示支持有条件或存在边界；`unsupported` 表示明确不能由 CSP 修通；`unknown` 表示候选方向仍需探针。
 - `action`：当前或未来处理方式。v1 只记录，不驱动代码。
 - `evidence`：必须非空，可以是源码、测试、docs、issue/PR URL。
 - `tests`：可以为空；为空表示该事实目前只能由文档/issue 或未来探针约束。
@@ -72,7 +72,7 @@ CSSwitch 不能仅靠 catalog 承诺的范围：
 
 v1 catalog 只登记已知事实：
 
-- Kimi relay：`web_search` 会被视作 provider server tool；CSSwitch 不上送该 local client tool，并过滤 `server_tool_use` / `web_search_tool_result`。
+- Kimi relay：`web_search` 会被视作 provider server tool；CSP 不上送该 local client tool，并过滤 `server_tool_use` / `web_search_tool_result`。
 - Relay Anthropic-compatible：空或松散 `input_schema` 会归一化成 object schema。
 - DeepSeek：forced `tool_choice` 时禁用 thinking。
 - Kimi relay thinking：`thinking_policy=enabled` 时去掉 forced `tool_choice`，保留 tools。

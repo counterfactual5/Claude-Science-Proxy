@@ -1,4 +1,4 @@
-# 依赖分析：CSSwitch 能不能开箱即用
+# 依赖分析：CSP 能不能开箱即用
 
 > 目的：把「缺 node」这类报错的**问题本身**研究清楚，供决策与实机测试对照。不含具体改法（改法见 [`../CHANGELOG.md`](../CHANGELOG.md) / [`known-issues.md`](known-issues.md)）。
 
@@ -6,7 +6,7 @@
 
 ## 一句话结论
 
-一键越过登录的整条流程里，**「用户机器上不保证存在」的运行时依赖只有两个：`node` 和 `python3`**，而且**都是我们自己 shell out 去调解释器造成的**。其余全是 macOS 自带（zsh/bash/security/open/pkill/WebView）或 Science 本身（给定）。把这两处编译进 Rust，CSSwitch 就只依赖「macOS + 已装 Science」——对目标用户是给定的，即真正开箱即用。
+一键越过登录的整条流程里，**「用户机器上不保证存在」的运行时依赖只有两个：`node` 和 `python3`**，而且**都是我们自己 shell out 去调解释器造成的**。其余全是 macOS 自带（zsh/bash/security/open/pkill/WebView）或 Science 本身（给定）。把这两处编译进 Rust，CSP 就只依赖「macOS + 已装 Science」——对目标用户是给定的，即真正开箱即用。
 
 ## 完整依赖面（点「一键越过登录」→ Science 起来）
 
@@ -37,7 +37,7 @@
 
 ## 洞察 3：只有这两个是「自找的」
 
-其余依赖全是 OS 自带或 Science 本身，删不掉也不用删。**唯一让 CSSwitch 不能开箱即用的，就是我们自己起的 node 与 python 两个解释器**。cc-switch（同为 Tauri 2）连 live 代理都编译进单个 Rust 二进制、对用户零依赖——证明这条路走得通（打包这层可抄，OAuth 伪造的逻辑抄不了，因为 Claude Code 不需要登录、它没有伪造器）。
+其余依赖全是 OS 自带或 Science 本身，删不掉也不用删。**唯一让 CSP 不能开箱即用的，就是我们自己起的 node 与 python 两个解释器**。cc-switch（同为 Tauri 2）连 live 代理都编译进单个 Rust 二进制、对用户零依赖——证明这条路走得通（打包这层可抄，OAuth 伪造的逻辑抄不了，因为 Claude Code 不需要登录、它没有伪造器）。
 
 ## 实机测试要分清的事（在复现「缺 node」的机器上，用终端 = 你真实 shell）
 
