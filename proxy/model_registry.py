@@ -143,10 +143,17 @@ class ModelRegistry:
         reg.default_model = default_model or models[0]
         reg.fast_model = fast_model or (models[-1] if len(models) > 1 else reg.default_model)
         reg.default_profile_id = profile_id
+        # Primary shell (claude-opus-4-8) must map to default_model even if
+        # sort_model_ids reordered the list (e.g. ["a","b"] -> ["b","a"]).
+        ordered = list(models)
+        if reg.default_model in ordered:
+            ordered = [reg.default_model] + [m for m in ordered if m != reg.default_model]
+        if reg.fast_model in ordered and reg.fast_model != reg.default_model:
+            ordered = [m for m in ordered if m != reg.fast_model] + [reg.fast_model]
         used_shells = set()
         entries = []
         pool_iter = iter(SHELL_POOL)
-        for real_id in models:
+        for real_id in ordered:
             shell_id, tier = _next_shell(pool_iter, used_shells)
             used_shells.add(shell_id)
             display = f"{display_prefix}: {real_id}" if display_prefix else real_id
