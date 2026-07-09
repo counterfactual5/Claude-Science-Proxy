@@ -870,12 +870,8 @@ function applyWizNameAutofill() {
   const name = els.wizName.value.trim();
   const preset = wizPresetByName(name);
   if (!preset) {
-    if (wizLastAutoBase && els.wizBase.value.trim() === wizLastAutoBase) {
-      els.wizBase.value = "";
-      els.wizBase.readOnly = false;
-      wizLastAutoBase = "";
-    }
     if (els.wizPreset.value) els.wizPreset.value = "";
+    if (els.wizBase.readOnly) els.wizBase.readOnly = false;
     refreshWizGate();
     return;
   }
