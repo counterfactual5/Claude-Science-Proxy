@@ -54,7 +54,7 @@ PY
   out="$(CSSWITCH_PROXY_PORT="$OCC_PORT" CSSWITCH_CONFIG="$T/nope.json" "$DOCTOR" 2>&1)"; rc=$?
   kill "$LISTENER_PID" 2>/dev/null; wait "$LISTENER_PID" 2>/dev/null
   if echo "$out" | grep -q "unbound variable"; then no "doctor occupied-port diagnostic hit set -u error"; else ok "doctor occupied-port diagnostic avoids set -u error"; fi
-  if [ $rc -eq 0 ] && echo "$out" | grep -q "疑似 CSSwitch 旧进程"; then ok "doctor classifies python listener as CSSwitch-like occupied port"; else no "doctor occupied-port classification drifted (rc=$rc): $out"; fi
+  if [ $rc -eq 0 ] && echo "$out" | grep -q "疑似 CSP 旧进程"; then ok "doctor classifies python listener as CSP-like occupied port"; else no "doctor occupied-port classification drifted (rc=$rc): $out"; fi
 fi
 
 # key present 契约：app 传 CSSWITCH_KEY_PRESENT=1 + provider/adapter，doctor 报「已配置」且绝不打印任何 key 值
