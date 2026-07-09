@@ -238,8 +238,7 @@ def load_key(prov, args):
 
 
 def _provider_state(areq, runtime=None):
-    """从模块全局一次性组装 ProviderState（骨架侧），传给 compat / policy。
-    nonce_factory 捕获 areq，保留旧 id(areq) 派生（字节级等价）。"""
+    """Build ProviderState from module globals for compat/policy (nonce uses id(areq) for stability)."""
     runtime = runtime or current_runtime()
     return provider_policy.ProviderState(
         policy=provider_policy.policy_from_prov(runtime.prov),
@@ -254,34 +253,27 @@ def _provider_state(areq, runtime=None):
 
 
 def http_post(url, data, headers, attempts=4, timeout=300):
-    """POST 上游；重试覆盖【连接 + 完整读体】（含 SSL EOF、握手超时、对端断开、IncompleteRead），
-    对服务端明确响应（HTTPError，如 400）不重试。返回 (body_bytes, content_type)。"""
+    """POST upstream with retries on connection/body read; no retry on explicit HTTPError responses."""
     return http_transport.post(url, data, headers, log, attempts, timeout)
 
 
 def open_stream(url, data, headers, attempts=4, timeout=300):
-    """打开上游流式连接并预读首行（把「200 但立刻空体」这种抖动也纳入重试）。
-    返回 (resp, first_chunk, content_type)；首字节到手后不再重试。"""
+    """Open streaming upstream connection and pre-read first line (retries early empty 200)."""
     return http_transport.open_stream(url, data, headers, log, attempts, timeout)
 
 
 def _open_stream_with_keepalive(write_chunk, url, data, headers):
-    """等待上游首帧时持续给下游发 SSE 注释心跳。
-
-    下游主请求可能带大量工具定义；部分上游首帧 TTFT 较长时，如果下游在这段
-    时间完全收不到 body 字节，会先断开并重试。注释帧是合法 SSE，客户端应忽略内容，
-    但能证明连接仍活着。"""
+    """Emit SSE comment keepalives while waiting for upstream first frame (prevents client idle timeout)."""
     return http_transport.open_stream_with_keepalive(write_chunk, url, data, headers, log)
 
 
 def http_get_json(url, headers, attempts=3, timeout=30):
-    """GET 上游并解析 JSON（relay 回源拉 /v1/models 用）。连接抖动重试，服务端明确响应不重试。"""
+    """GET upstream JSON (relay /v1/models fetch). Retry connection errors only."""
     return http_transport.get_json(url, headers, log, attempts, timeout)
 
 
 def normalize_openai_base(base):
-    """OpenAI 兼容端点存 base root。用户若误填到 /chat/completions 或 /models，
-    这里收敛回 root，避免后续双拼。"""
+    """OpenAI-compatible roots only: strip accidental /chat/completions or /models suffixes."""
     b = (base or "").strip().rstrip("/")
     for suffix in ("/v1/chat/completions", "/chat/completions",
                    "/v1/responses", "/responses", "/v1/models", "/models"):
