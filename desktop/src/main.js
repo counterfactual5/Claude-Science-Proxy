@@ -31,6 +31,8 @@ const I18N = {
     newBtn: "＋ 新建",
     presetPicker: "预设…",
     presetTitle: "快速填入名称与地址",
+    wizNamePlaceholder: "DeepSeek",
+    wizBasePlaceholder: "https://open.bigmodel.cn/api/anthropic",
     provider: "Provider",
     baseUrl: "Base_URL",
     apiKey: "API Key",
@@ -142,6 +144,8 @@ const I18N = {
     newBtn: "+ New",
     presetPicker: "Preset…",
     presetTitle: "Fill name and URL",
+    wizNamePlaceholder: "ZAI",
+    wizBasePlaceholder: "https://api.z.ai/api/anthropic",
     provider: "Provider",
     baseUrl: "Base URL",
     apiKey: "API Key",
@@ -289,6 +293,9 @@ function wizPresets() {
   return EDITION === "cn" ? WIZ_PRESETS_CN : WIZ_PRESETS_INTL;
 }
 
+/** 向导里最近一次自动填入的 base URL；用户手改后清空，避免覆盖自定义地址。 */
+let wizLastAutoBase = "";
+
 function applyEditionUI() {
   const t = S();
   document.documentElement.lang = EDITION === "cn" ? "zh-CN" : "en";
@@ -315,6 +322,13 @@ function applyEditionUI() {
   if (els.skipActivateBtn) els.skipActivateBtn.textContent = t.skipActivate;
   if (els.listhdMoreBtn) els.listhdMoreBtn.title = t.menuMore;
   populateWizPresetSelect();
+  refreshWizPlaceholders();
+}
+
+function refreshWizPlaceholders() {
+  const t = S();
+  if (els.wizName) els.wizName.placeholder = t.wizNamePlaceholder || "DeepSeek";
+  if (els.wizBase) els.wizBase.placeholder = t.wizBasePlaceholder || "https://api.example.com/v1";
 }
 
 // ── 预览兜底 mock（仅浏览器预览用） ──
@@ -836,6 +850,46 @@ function wizPresetById(id) {
   return wizPresets().find((item) => item.id === id) || null;
 }
 
+function wizPresetByName(name) {
+  const q = (name || "").trim().toLowerCase();
+  if (!q) return null;
+  return wizPresets().find(
+    (item) => item.name.toLowerCase() === q || item.label.toLowerCase() === q
+  ) || null;
+}
+
+function applyWizPresetFields(preset) {
+  els.wizName.value = preset.name;
+  els.wizBase.value = preset.baseUrl;
+  els.wizBase.readOnly = !!preset.lockUrl;
+  wizLastAutoBase = preset.baseUrl || "";
+  if (!preset.baseUrl) els.wizBase.focus();
+}
+
+function applyWizNameAutofill() {
+  const name = els.wizName.value.trim();
+  const preset = wizPresetByName(name);
+  if (!preset) {
+    if (wizLastAutoBase && els.wizBase.value.trim() === wizLastAutoBase) {
+      els.wizBase.value = "";
+      els.wizBase.readOnly = false;
+      wizLastAutoBase = "";
+    }
+    if (els.wizPreset.value) els.wizPreset.value = "";
+    refreshWizGate();
+    return;
+  }
+  if (els.wizPreset.value !== preset.id) els.wizPreset.value = preset.id;
+  const currentBase = els.wizBase.value.trim();
+  const canAutoFill = !currentBase || currentBase === wizLastAutoBase;
+  if (canAutoFill && preset.baseUrl) {
+    els.wizBase.value = preset.baseUrl;
+    wizLastAutoBase = preset.baseUrl;
+    els.wizBase.readOnly = !!preset.lockUrl;
+  }
+  refreshWizGate();
+}
+
 function populateWizPresetSelect() {
   const sel = els.wizPreset;
   if (!sel) return;
@@ -856,10 +910,7 @@ function applyWizPreset() {
     refreshWizGate();
     return;
   }
-  els.wizName.value = preset.name;
-  els.wizBase.value = preset.baseUrl;
-  els.wizBase.readOnly = !!preset.lockUrl;
-  if (!preset.baseUrl) els.wizBase.focus();
+  applyWizPresetFields(preset);
   refreshWizGate();
 }
 
@@ -891,11 +942,13 @@ function inferTemplateId(baseUrl) {
 
 function openWizard() {
   hideSkip();
+  wizLastAutoBase = "";
   els.wizName.value = "";
   els.wizPreset.value = "";
   els.wizBase.value = "";
   els.wizBase.readOnly = false;
   els.wizKey.value = "";
+  refreshWizPlaceholders();
   refreshWizGate();
   showView("wizard");
 }
@@ -1262,8 +1315,12 @@ function wire() {
   });
 
   els.wizPreset.addEventListener("change", applyWizPreset);
-  els.wizName.addEventListener("input", refreshWizGate);
-  els.wizBase.addEventListener("input", refreshWizGate);
+  els.wizName.addEventListener("input", applyWizNameAutofill);
+  els.wizBase.addEventListener("input", () => {
+    const base = els.wizBase.value.trim();
+    if (wizLastAutoBase && base !== wizLastAutoBase) wizLastAutoBase = "";
+    refreshWizGate();
+  });
   els.wizKey.addEventListener("input", refreshWizGate);
   els.wizSaveBtn.addEventListener("click", wizSave);
   els.wizCancelBtn.addEventListener("click", cancelForm);
