@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# S0 离线纯单元层：无 loopback / 无网络 / 无上游。
+# S0 offline pure unit layer: no loopback / no network / no upstream.
 set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"; cd "$ROOT"
 if ! command -v python3 >/dev/null 2>&1; then

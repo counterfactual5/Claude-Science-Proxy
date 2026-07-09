@@ -75,7 +75,11 @@ mod tests {
         for h in hs {
             h.join().unwrap();
         }
-        assert_eq!(max_seen.load(Ordering::SeqCst), 1, "at most one thread inside serializer");
+        assert_eq!(
+            max_seen.load(Ordering::SeqCst),
+            1,
+            "at most one thread inside serializer"
+        );
     }
 
     #[test]

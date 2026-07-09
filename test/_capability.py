@@ -1,10 +1,10 @@
-"""共享能力探测：loopback bind+connect 是否被环境允许。
-被 sub-runner（bash 调 CLI 形态）与 unittest（import 形态）共用。"""
+"""Shared capability probe: whether loopback bind+connect is permitted by the environment.
+Shared by sub-runners (bash CLI invocation) and unittest (import)."""
 import socket
 
 
 def loopback_available():
-    """能否在 127.0.0.1 上 bind 并 connect。禁 loopback 的沙箱返 False（不抛）。"""
+    """Whether bind+connect on 127.0.0.1 works. Sandboxes that block loopback return False (no raise)."""
     import os
     if os.environ.get("CSP_FORCE_NO_LOOPBACK") == "1":
         return False

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# S0 scripts 层：bash 脚本测试 + node OAuth 对拍（无 node 则 env-blocked）+ 运维 test_ops。
+# S0 scripts layer: bash script tests + node OAuth parity (env-blocked without node) + ops test_ops.
 set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"; cd "$ROOT"
 fail=0

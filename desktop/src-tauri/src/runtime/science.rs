@@ -14,13 +14,14 @@ use super::system::{asset_root, kill_child};
 pub(crate) const SCIENCE_BIN: &str =
     "/Applications/Claude Science.app/Contents/Resources/bin/claude-science";
 
-/// 沙箱可写工作目录（独立 HOME）：`~/.csp/sandbox/home`。
+/// Writable sandbox work directory (isolated HOME): `~/.csp/sandbox/home`.
 pub(crate) fn sandbox_home() -> PathBuf {
     config::default_dir().join("sandbox").join("home")
 }
 
-/// 端口变更是否需要拆掉现有链路（纯函数，P1-c）。代理/沙箱任一端口变了，正在跑的代理就绑在
-/// 旧端口、正在跑的沙箱又把旧代理 URL 烘死了，二者与新配置不一致 → 拆掉逼下次「一键开始」按新端口重建。
+/// Whether a port change requires tearing down the live chain (pure fn). If proxy or sandbox port
+/// changes, the running proxy is bound to the old port and the sandbox cached the old proxy URL;
+/// both disagree with the new config → tear down so the next one-click start rebuilds on new ports.
 pub(crate) fn settings_change_needs_teardown(
     old_proxy: u16,
     new_proxy: u16,
@@ -30,7 +31,7 @@ pub(crate) fn settings_change_needs_teardown(
     old_proxy != new_proxy || old_sandbox != new_sandbox
 }
 
-/// 从 `claude-science url` 的 stdout 里取**第一条**合法 http(s) URL。
+/// First valid http(s) URL from `claude-science url` stdout.
 pub(crate) fn first_http_url(stdout: &str) -> Option<String> {
     for line in stdout.lines() {
         let t = line.trim();
@@ -231,24 +232,24 @@ mod tests {
         sandbox_url, science_bin_for_paths, science_status_running, settings_change_needs_teardown,
     };
 
-    // ---------- P1-c: 端口变更是否需拆链路（纯函数，4 组合） ----------
+    // Port-change teardown matrix (pure fn, four combinations)
     #[test]
     fn settings_teardown_when_any_port_changes() {
         assert!(
             !settings_change_needs_teardown(18991, 18991, 8990, 8990),
-            "端口未变 → 不拆链路"
+            "ports unchanged → no teardown"
         );
         assert!(
             settings_change_needs_teardown(18991, 19000, 8990, 8990),
-            "代理端口变 → 拆（旧代理绑旧端口、沙箱烘旧 URL）"
+            "proxy port changed → teardown (old proxy on old port; sandbox cached old URL)"
         );
         assert!(
             settings_change_needs_teardown(18991, 18991, 8990, 9000),
-            "沙箱端口变 → 拆（旧沙箱在旧端口成孤儿）"
+            "sandbox port changed → teardown (old sandbox orphaned on old port)"
         );
         assert!(
             settings_change_needs_teardown(18991, 19000, 8990, 9000),
-            "都变 → 拆"
+            "both changed → teardown"
         );
     }
 
@@ -388,8 +389,14 @@ mod tests {
     #[test]
     fn sandbox_home_is_writable_under_config_dir() {
         let h = sandbox_home();
-        assert!(h.ends_with("sandbox/home"), "应以 sandbox/home 结尾：{h:?}");
-        assert!(h.to_string_lossy().contains(".csp"), "应在 .csp 下：{h:?}");
+        assert!(
+            h.ends_with("sandbox/home"),
+            "should end with sandbox/home: {h:?}"
+        );
+        assert!(
+            h.to_string_lossy().contains(".csp"),
+            "should live under .csp: {h:?}"
+        );
     }
 
     #[test]

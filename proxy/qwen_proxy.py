@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
-"""隔离 E2E 用的翻译代理：Claude Science(Anthropic Messages) -> 阿里 DashScope(OpenAI 兼容)。
+"""Isolated E2E translation proxy: Claude Science (Anthropic Messages) -> Alibaba DashScope (OpenAI compatible).
 
-设计约束（安全）:
-  - 入站 Authorization（Science 带来的 Claude OAuth Bearer）一律剥离，绝不记录、绝不转发。
-  - 上游只用本地 .env 里的 DashScope key，key 值只驻留内存，不打印、不写日志。
-  - 只监听回环地址；除 DashScope 外不外连。
+Design constraints (security):
+  - Strip inbound Authorization (Claude OAuth Bearer from Science); never log or forward.
+  - Upstream uses only the local .env DashScope key; key stays in memory only, never printed or logged.
+  - Listen on loopback only; no outbound connections except DashScope.
 
-路由:
-  GET  /v1/models     -> 返回映射后的模型列表（Anthropic 风格），让 Science 的模型面板可用
-  POST /v1/messages   -> 翻译成 DashScope chat/completions，支持流式/非流式 + 基础 tool 往返
+Routes:
+  GET  /v1/models     -> mapped model list (Anthropic style) for Science model panel
+  POST /v1/messages   -> translate to DashScope chat/completions; streaming/non-streaming + basic tool round-trip
 
-用法:
+Usage:
   DASHSCOPE_API_KEY=... python3 qwen_proxy.py --port 18991
-  或   python3 qwen_proxy.py --port 18991 --env-file /path/to/.env --key-name DASHSCOPE_API_KEY
+  or   python3 qwen_proxy.py --port 18991 --env-file /path/to/.env --key-name DASHSCOPE_API_KEY
 """
 import argparse
 import json
@@ -26,8 +26,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 DASHSCOPE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
 
-# Science 会请求 claude-* 模型名，映射到通义千问。
-# 实测 Science 发两类：claude-haiku-4-5-20251001（生成会话标题）、claude-opus-4-8（正式推理）。
+# Science requests claude-* model names; map them to Qwen.
+# Observed Science sends two kinds: claude-haiku-4-5-20251001 (session title) and claude-opus-4-8 (inference).
 MODEL_MAP = {
     "claude-opus-4-8": "qwen-max",
     "claude-sonnet-5": "qwen-plus",
@@ -36,15 +36,15 @@ MODEL_MAP = {
     "claude-haiku-4-5": "qwen-turbo",
 }
 DEFAULT_UPSTREAM = "qwen-plus"
-# 千问各档 max_tokens 上限不一（turbo 16384，max/plus 约 8192）。Science 的 agent 会传很大的
-# max_tokens，超限会被 DashScope 以 400 拒。统一夹到各档都接受的安全值。
+# Qwen tiers have different max_tokens ceilings (turbo 16384, max/plus ~8192). Science agents send
+# large max_tokens; over-limit values get 400 from DashScope. Clamp to a safe value all tiers accept.
 UPSTREAM_MAX_TOKENS = 8192
 _DATE_SUFFIX = re.compile(r"-\d{8}$")
 
 
 def map_model(name):
-    """把 Science 传来的 claude-* 名映射到上游千问模型。
-    容忍日期后缀（claude-haiku-4-5-20251001）与前缀匹配，找不到再回退默认。"""
+    """Map Science claude-* names to upstream Qwen models.
+    Tolerates date suffixes (claude-haiku-4-5-20251001) and prefix match; falls back to default."""
     if not name:
         return DEFAULT_UPSTREAM
     if name in MODEL_MAP:
@@ -58,7 +58,7 @@ def map_model(name):
             return up
     return DEFAULT_UPSTREAM
 
-LOG = None  # 运行时设为文件路径；只记路由/状态，绝不记 key 与 Authorization
+LOG = None  # runtime log file path; route/status only, never key or Authorization
 
 
 def log(msg):
@@ -83,11 +83,11 @@ def load_key(args):
     return None
 
 
-# ---------- Anthropic -> OpenAI 请求翻译 ----------
+# ---------- Anthropic -> OpenAI request translation ----------
 def anthropic_to_openai(req):
     msgs = []
     sys_prompt = req.get("system")
-    if isinstance(sys_prompt, list):  # system 可能是 block 数组
+    if isinstance(sys_prompt, list):  # system may be a block array
         sys_prompt = "\n".join(b.get("text", "") for b in sys_prompt if isinstance(b, dict))
     if sys_prompt:
         msgs.append({"role": "system", "content": sys_prompt})
@@ -98,7 +98,7 @@ def anthropic_to_openai(req):
         if isinstance(content, str):
             msgs.append({"role": role, "content": content})
             continue
-        # content 是 block 数组
+        # content is a block array
         text_parts, tool_calls, tool_results = [], [], []
         for blk in content or []:
             t = blk.get("type")
@@ -143,7 +143,7 @@ def anthropic_to_openai(req):
     return out
 
 
-# ---------- OpenAI -> Anthropic 响应翻译（非流式） ----------
+# ---------- OpenAI -> Anthropic response translation (non-streaming) ----------
 def openai_to_anthropic(resp, model_id):
     choice = (resp.get("choices") or [{}])[0]
     msg = choice.get("message", {})
@@ -171,8 +171,8 @@ def openai_to_anthropic(resp, model_id):
 
 
 def dashscope_call(oreq, attempts=4):
-    """调 DashScope（非流式）。对连接级抖动（SSL EOF、握手超时、对端断开）重试；
-    对服务端明确响应（如 400 max_tokens）不重试，原样抛给上层。"""
+    """Call DashScope (non-streaming). Retry connection-level jitter (SSL EOF, handshake timeout,
+    peer disconnect); do not retry explicit server responses (e.g. 400 max_tokens) — re-raise."""
     data = json.dumps(oreq).encode()
     headers = {"Authorization": f"Bearer {KEY}", "Content-Type": "application/json"}
     for i in range(attempts):
@@ -181,7 +181,7 @@ def dashscope_call(oreq, attempts=4):
             with urllib.request.urlopen(req, timeout=180) as r:
                 return json.loads(r.read())
         except urllib.error.HTTPError:
-            raise  # 服务端有明确响应，交给上层处理
+            raise  # explicit server response; let caller handle
         except Exception as e:
             if i < attempts - 1:
                 log(f"  ~ 上游连接抖动，重试 {i + 1}/{attempts - 1}: {e}")
@@ -210,7 +210,7 @@ class H(BaseHTTPRequestHandler):
         self.wfile.write(hex(len(chunk))[2:].encode() + b"\r\n" + chunk + b"\r\n")
 
     def do_GET(self):
-        # 剥离并忽略入站 Authorization（不记录）
+        # Strip and ignore inbound Authorization (not logged)
         if self.path.startswith("/v1/models"):
             data = [{"type": "model", "id": cid, "display_name": f"{cid} → {up} (Qwen 代理)",
                      "created_at": "2026-01-01T00:00:00Z"} for cid, up in MODEL_MAP.items()]
@@ -236,7 +236,7 @@ class H(BaseHTTPRequestHandler):
 
         model_id = areq.get("model", "claude-sonnet-5")
         stream = bool(areq.get("stream"))
-        # 调试：把上游看到的完整 tools 数组落盘（按工具数命名，便于抓主 agent 的全量清单）
+        # Debug: dump full upstream tools array to disk (named by tool count for main-agent captures)
         dump_dir = os.environ.get("PROXY_DUMP_TOOLS")
         if dump_dir and areq.get("tools"):
             try:
@@ -245,7 +245,7 @@ class H(BaseHTTPRequestHandler):
             except Exception:
                 pass
         oreq = anthropic_to_openai(areq)
-        oreq["stream"] = False  # 上游一律非流式：完整拿到 tool_calls 再决定如何回给 Science
+        oreq["stream"] = False  # always non-stream upstream: get full tool_calls before replying to Science
         n_tools = len(oreq.get("tools", []))
         log(f"POST /v1/messages  model={model_id}->{oreq['model']} stream={stream} tools={n_tools} "
             f"msgs={len(oreq['messages'])}  (入站 Authorization 已剥离)")
@@ -271,8 +271,8 @@ class H(BaseHTTPRequestHandler):
             self._send_json(502, {"type": "error", "error": {"type": "api_error", "message": str(e)}})
 
     def _replay_as_sse(self, aresp):
-        """把已翻译好的完整 Anthropic message 以 SSE 事件回放给 Science。
-        文本块与 tool_use 块都完整还原（tool_use 用 input_json_delta 一次性给出参数）。"""
+        """Replay a fully translated Anthropic message to Science as SSE events.
+        Text and tool_use blocks restored in full (tool_use params via one input_json_delta)."""
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream")
         self.send_header("Cache-Control", "no-cache")

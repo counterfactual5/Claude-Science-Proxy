@@ -1,4 +1,4 @@
-//! 后端向前端传递可本地化文案的 JSON 载荷（`hint_key` / `i18n` 错误）。
+//! Backend JSON payloads for localizable frontend copy (`hint_key` / `i18n` errors).
 
 use serde_json::{json, Value};
 

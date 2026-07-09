@@ -435,7 +435,10 @@ mod tests {
         let mut provider = "relay".to_string();
         assert!(migrate_legacy_relay(&mut providers, &mut provider));
         assert_eq!(provider, "relay-glm");
-        assert!(!providers.contains_key("relay"), "legacy relay slot should be removed");
+        assert!(
+            !providers.contains_key("relay"),
+            "legacy relay slot should be removed"
+        );
         assert_eq!(providers.get("relay-glm").unwrap().key, "legacy_key");
     }
 

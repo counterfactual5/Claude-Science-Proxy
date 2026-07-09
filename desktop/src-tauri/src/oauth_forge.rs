@@ -624,8 +624,8 @@ fn ensure_virtual_login_guarded(
     } else {
         let dirs = scan_org_dirs(&resolved);
         match dirs.len() {
-            0 => (None, LoginAction::Created), // 真首次：无任何历史
-            1 => (Some(dirs[0].clone()), LoginAction::Repaired), // 采用唯一历史 org
+            0 => (None, LoginAction::Created), // True first run: no history
+            1 => (Some(dirs[0].clone()), LoginAction::Repaired), // Adopt sole historical org
             _ => {
                 return Err(format!(
                     "检测到 {} 个历史组织，但 active-org.json 缺失且无可解令牌，无法确定当前活动组织；\
@@ -643,10 +643,10 @@ fn ensure_virtual_login_guarded(
     Ok((fr, action))
 }
 
-/// 只读判定：沙箱里的虚拟登录当前是否「完整自洽」（可直接复用）。**绝不写任何文件**
-/// （operon 可能正在读）。供一键健康快捷路径判断：`8990` daemon 活着 ≠ 登录态可用；若登录已
-/// 失效（旧版遗留 / 凭证损坏 / 已落登录页），重开也只会再落登录页，应改走「停沙箱 → 修复保
-/// org → 重启」。这样 0.2.0 的健康快捷路径不再把「健康但登录失效」当成可用（修 0.2.1 Bug2）。
+/// Read-only check: whether sandbox virtual login is currently complete and self-consistent (directly reusable).
+/// **Never writes any file** (operon may be reading). For one-click health fast path: daemon alive on `8990` ≠ login usable;
+/// if login is broken (legacy / damaged creds / login page), reopening only lands on login page again → stop sandbox →
+/// repair keeping org → restart. Fixes 0.2.0 fast path treating "healthy but login dead" as OK (0.2.1 Bug2).
 pub fn login_intact(auth_dir: &Path, email: &str, sandbox_root: &Path) -> bool {
     match std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".claude-science")) {
         Some(real) => login_intact_guarded(auth_dir, email, sandbox_root, &real),
@@ -654,8 +654,8 @@ pub fn login_intact(auth_dir: &Path, email: &str, sandbox_root: &Path) -> bool {
     }
 }
 
-/// Inner entry with injectable real credential dir (for tests).护栏失败（异常布局 / 落入真实树）视作不自洽（false），
-/// 促使上层走修复路径；修复路径自身仍有护栏，绝不触碰真实目录。只读，绝不写。
+/// Inner entry with injectable real credential dir (for tests). Guard failure (abnormal layout / inside real tree) →
+/// not intact (false), nudging upper layer to repair; repair path still has guards, never touches real dir. Read-only.
 fn login_intact_guarded(
     auth_dir: &Path,
     email: &str,
@@ -705,7 +705,7 @@ mod tests {
             .map(|e| e.path())
             .filter(|p| p.extension().map(|x| x == "enc").unwrap_or(false))
             .collect();
-        assert_eq!(encs.len(), 1, "应恰好一个 .enc");
+        assert_eq!(encs.len(), 1, "exactly one .enc expected");
         encs.pop().unwrap()
     }
 
@@ -724,26 +724,29 @@ mod tests {
         let k1 = b64_32().unwrap();
         let k2 = b64_32().unwrap();
         let body = encrypt_token_v2(b"hello", &k1).unwrap();
-        assert!(decrypt_token_v2(&body, &k2).is_err(), "错 key 应验签失败");
+        assert!(
+            decrypt_token_v2(&body, &k2).is_err(),
+            "wrong key should fail verify"
+        );
     }
 
     #[test]
     fn forge_writes_files_and_selfchecks() {
         let dir = tmpdir("ok");
-        let fake_real = tmpdir("realcred"); // 与 auth_dir 不同，护栏放行
+        let fake_real = tmpdir("realcred"); // Different from auth_dir so guards allow
         let email = "virtual@localhost.invalid";
         let r = forge_guarded(&dir, email, &dir, &fake_real).unwrap();
         assert!(r.enc_file.is_file());
         assert!(dir.join("encryption.key").is_file());
         assert!(dir.join("active-org.json").is_file());
-        // 解密回读一致
+        // Decrypt round-trip matches
         let key = read_oauth_key(&dir);
         let body = std::fs::read_to_string(the_enc_file(&dir)).unwrap();
         let blob: serde_json::Value =
             serde_json::from_slice(&decrypt_token_v2(&body, &key).unwrap()).unwrap();
         assert_eq!(blob["email"], email);
         assert_eq!(blob["provider"], "claude_ai");
-        // active-org.json 的 org_uuid 与摘要一致
+        // active-org.json org_uuid matches summary
         let org: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(dir.join("active-org.json")).unwrap())
                 .unwrap();
@@ -754,22 +757,22 @@ mod tests {
 
     #[test]
     fn forge_rejects_real_cred_dir() {
-        // auth_dir 指向「真实凭证目录」（这里用临时目录扮演）→ 必须拒、且不写。
+        // auth_dir equals real cred dir (temp dir stand-in) → must reject and write nothing.
         let real = tmpdir("real2");
         let r = forge_guarded(&real, "virtual@localhost.invalid", &real, &real);
         assert!(r.is_err());
         assert!(r.unwrap_err().contains("真实 Science 目录"));
         assert!(
             !real.join("encryption.key").exists(),
-            "拒绝路径不应写任何文件"
+            "reject path must not write any files"
         );
     }
 
     #[test]
     fn forge_rejects_symlink_into_real_science_tree() {
-        // 铁律回归：把沙箱根的祖先预置成指向【真实 Science 目录】的符号链接——此时沙箱根
-        // 自身也解析进真实树，仅靠护栏 1「沙箱根内」会放行（resolved 与 root 同在真实树内）。
-        // 护栏 0 必须在写任何文件之前拒绝，且真实目录零改动。
+        // Iron-rule regression: pre-set sandbox-root ancestor symlink → real Science dir; sandbox root then
+        // resolves into real tree and guard 1 "inside sandbox root" alone would pass (resolved and root both in real tree).
+        // Guard 0 must reject before any write; real directory unchanged.
         let real = tmpdir("real-science");
         std::fs::create_dir_all(real.join(".oauth-tokens")).unwrap();
         std::fs::write(real.join(".oauth-tokens/victim.enc"), b"keep-me").unwrap();
@@ -777,25 +780,25 @@ mod tests {
 
         let csw = tmpdir("csw");
         std::fs::create_dir_all(&csw).unwrap();
-        // ~/.csswitch/sandbox -> 真实 Science 目录（预置的恶意/异常软链接）
+        // ~/.csswitch/sandbox -> real Science dir (pre-set malicious/abnormal symlink)
         let sandbox_link = csw.join("sandbox");
         std::os::unix::fs::symlink(&real, &sandbox_link).unwrap();
 
         let sandbox_root = sandbox_link.join("home");
         let auth_dir = sandbox_root.join(".claude-science");
         let r = forge_guarded(&auth_dir, "virtual@localhost.invalid", &sandbox_root, &real);
-        assert!(r.is_err(), "沙箱根经符号链接落入真实树必须被拒");
+        assert!(r.is_err(), "sandbox root resolving into real tree via symlink must be rejected");
         assert!(r.unwrap_err().contains("真实 Science 目录"));
-        // 真实目录零改动。
+        // Real directory unchanged.
         assert_eq!(
             std::fs::read(real.join("encryption.key")).unwrap(),
             b"KEEP=me\n"
         );
         assert!(
             real.join(".oauth-tokens/victim.enc").exists(),
-            "真实 .enc 不该被碰"
+            "real .enc must not be touched"
         );
-        assert!(!real.join("home").exists(), "不该在真实树里建任何目录");
+        assert!(!real.join("home").exists(), "must not create anything in real tree");
         for d in [real, csw] {
             let _ = std::fs::remove_dir_all(&d);
         }
@@ -803,13 +806,12 @@ mod tests {
 
     #[test]
     fn forge_rejects_symlink_escaping_sandbox_root() {
-        // P1 回归：把沙箱内的 auth_dir 预置成指向沙箱外目录的符号链接，伪造器必须
-        // 在写任何文件之前拒绝，且绝不碰链接目标。
+        // P1 regression: auth_dir inside sandbox pre-set as symlink to outside dir; forger must reject before any write and never touch link target.
         let root = tmpdir("sbroot");
         std::fs::create_dir_all(&root).unwrap();
         let outside = tmpdir("outside");
         std::fs::create_dir_all(&outside).unwrap();
-        // 预置目标里一个「不该被删」的旧 .enc 与一个「不该被覆盖」的 key 文件。
+        // Pre-seed target with a stale .enc that must not be deleted and a key file that must not be overwritten.
         std::fs::create_dir_all(outside.join(".oauth-tokens")).unwrap();
         std::fs::write(outside.join(".oauth-tokens/victim.enc"), b"keep-me").unwrap();
         std::fs::write(outside.join("encryption.key"), b"KEEP=me\n").unwrap();
@@ -819,9 +821,9 @@ mod tests {
 
         let fake_real = tmpdir("realcred5");
         let r = forge_guarded(&auth_dir, "virtual@localhost.invalid", &root, &fake_real);
-        assert!(r.is_err(), "符号链接逃出沙箱根应被拒");
+        assert!(r.is_err(), "symlink escaping sandbox root must be rejected");
         assert!(r.unwrap_err().contains("沙箱根之外"));
-        // 目标目录零改动。
+        // Target directory unchanged.
         assert_eq!(
             std::fs::read(outside.join("encryption.key")).unwrap(),
             b"KEEP=me\n"
@@ -961,7 +963,7 @@ mod tests {
         assert!(r.unwrap_err().contains("真实 Science 目录"));
         assert!(
             !real.join("encryption.key").exists(),
-            "拒绝路径不应写任何文件"
+            "reject path must not write any files"
         );
         let _ = std::fs::remove_dir_all(&real);
     }
