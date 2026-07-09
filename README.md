@@ -17,7 +17,7 @@
 
 Claude Science Proxy（CSP）是一个给 Claude Science 使用的本地模型切换器。它把 Science 的推理请求接到你自己的第三方模型 API 上，让没有 Claude 订阅的用户也能在 Science 里使用 DeepSeek、通义千问、Kimi、MiniMax、GLM、OpenRouter、中转站或自定义兼容端点。
 
-它面向的不只是开发者：你只需要准备 Claude Science、一个第三方 API Key，然后在桌面面板里新建配置、设为当前、点击「一键开始」。
+它面向的不只是开发者：你只需要准备 Claude Science、一个第三方 API Key，然后在桌面面板里新建配置、点击一条切换为当前生效，再点「启动 Claude Science」。
 
 > 当前版本主要支持 macOS Apple Silicon。首次打开未公证的 `.dmg` 应用时，macOS 可能需要你右键选择「打开」。
 
@@ -62,8 +62,8 @@ Claude Science sandbox
 
 - 用桌面面板管理多套模型配置，不需要手改环境变量。
 - 同一家 provider 可以保存多套配置，例如不同 Key、不同模型、不同中转地址。
-- 点击「设为当前」前会先验证 Key；失败不会悄悄切换到坏配置。
-- 点击「一键开始」会自动启动代理、准备隔离环境、打开 Science。
+- 点击一条配置切换为当前生效前会先验证 Key；失败不会悄悄切换到坏配置。
+- 点击「启动 Claude Science」会自动启动代理、准备隔离环境、打开 Science。
 - Science 顶部模型选择器会显示你选择的真实模型名，而不是笼统的 `claude` 或 `opus`。单条生效配置可启用多个模型（虚拟注册表分配壳 ID），Science 里可切换使用。
 
 **给进阶用户**
