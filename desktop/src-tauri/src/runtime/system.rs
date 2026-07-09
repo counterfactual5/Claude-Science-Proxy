@@ -8,7 +8,7 @@ use crate::config;
 
 const OPERATION_LOG_MAX_BYTES: u64 = 1_048_576;
 
-/// Locate the CSSwitch repository root containing `proxy/csswitch_proxy.py`.
+/// Locate the CSP repository root containing `proxy/csswitch_proxy.py`.
 /// Prefer `CSSWITCH_REPO`; otherwise walk upwards from the executable path.
 pub(crate) fn repo_root() -> Option<PathBuf> {
     let marker = Path::new("proxy/csswitch_proxy.py");

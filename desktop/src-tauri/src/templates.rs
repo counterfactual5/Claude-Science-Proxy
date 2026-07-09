@@ -1,6 +1,6 @@
 //! 模板注册表：单一来源（spec §5）。template_id 稳定持久于 Profile，据它派生
 //! 运行 adapter（模型策略/鉴权/上限）与 UI 能力（是否必选模型 / URL 可编辑 / 内置模型）。
-//! 前端 list_templates 取一次铺 UI，不在前端复制常量。
+//! 模板注册表：后端单一来源；前端经 `get_config.templates` 取用，不在前端复制常量。
 
 #[derive(Clone)]
 pub struct Template {
