@@ -12,7 +12,7 @@
 - `gitleaks detect --redact`：扫描提交历史；本地 `.env` 只报告是否存在命中，不回显值。
 - `npm run tauri build`：验证当前工作树实际可打包；检查 `.app`/DMG 的资源与签名状态。
 - 若已安装的 CSSwitch 正在运行，用 `test/tauri.real-machine.conf.json` 构建独立
-  `CSSwitch Acceptance.app`（独立 bundle ID），防止 macOS 激活旧窗口而误测旧代码。
+  `CSP Acceptance.app`（独立 bundle ID `com.csp.acceptance`），防止 macOS 激活旧窗口而误测旧代码。
 
 ## 2. 真机安全准备
 
