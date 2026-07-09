@@ -1,5 +1,114 @@
 use serde_json::json;
 
+use crate::runtime::capability_catalog::diagnostics_for_profile;
+use crate::runtime::operation;
+use crate::runtime::profile::profile_capabilities;
+use crate::runtime::provider::{
+    adapter_for_profile, current_shim_mode_for_adapter, gateway_kind_for_adapter, upstream_endpoint,
+};
+use crate::{config, lock, proc, SharedAppState};
+
+pub(crate) fn config_last_error_json(error: &dyn std::fmt::Display) -> serde_json::Value {
+    json!({
+        "type": "config_error",
+        "message": error.to_string(),
+    })
+}
+
+pub(crate) fn status_response_for_config_error(error: &dyn std::fmt::Display) -> serde_json::Value {
+    build_status_response(
+        status_lights(StatusProbeInput {
+            proxy_ok: false,
+            sandbox_ok: false,
+            upstream_ok: false,
+        }),
+        serde_json::Value::Null,
+        "",
+        "off",
+        diagnostics_for_profile(None, "off"),
+        science_diagnostics(ScienceDiagnosticsInput {
+            sandbox_port: 0,
+            sandbox_ok: false,
+        }),
+        Some(config_last_error_json(error)),
+    )
+}
+
+/// 内部运行时状态快照（供隔离 smoke 测试；未注册为 Tauri command）。
+pub(crate) fn runtime_status_snapshot(state: &SharedAppState) -> serde_json::Value {
+    let (pport, secret, sport, adapter, base_url, active_profile, catalog_profile) = {
+        let st = lock(state);
+        let cfg = match config::load_from(&config::default_dir()) {
+            Ok(cfg) => cfg,
+            Err(e) => return status_response_for_config_error(&e),
+        };
+        let pport = if st.proxy_port != 0 {
+            st.proxy_port
+        } else {
+            cfg.proxy_port
+        };
+        let sport = if st.sandbox_port != 0 {
+            st.sandbox_port
+        } else {
+            cfg.sandbox_port
+        };
+        let (adapter, base_url, active_profile, catalog_profile) = match cfg.active_profile() {
+            Some(p) => {
+                let adapter = adapter_for_profile(p).to_string();
+                (
+                    adapter,
+                    p.base_url.clone(),
+                    json!({
+                        "id": p.id,
+                        "name": p.name,
+                        "template_id": p.template_id,
+                        "api_format": p.api_format,
+                        "model": p.model,
+                        "capabilities": profile_capabilities(p),
+                    }),
+                    Some(p.clone()),
+                )
+            }
+            None => (String::new(), String::new(), serde_json::Value::Null, None),
+        };
+        (
+            pport,
+            st.secret.clone(),
+            sport,
+            adapter,
+            base_url,
+            active_profile,
+            catalog_profile,
+        )
+    };
+    let upstream = upstream_endpoint(&adapter, &base_url);
+    let proxy_ok = !secret.is_empty()
+        && proc::http_health(pport, Some(&secret), operation::STATUS_HEALTH_TIMEOUT_MS);
+    let sandbox_ok = proc::http_health(sport, None, operation::STATUS_HEALTH_TIMEOUT_MS);
+    let upstream_ok = upstream
+        .as_ref()
+        .map(|e| proc::tcp_reachable(&e.host, e.port, operation::STATUS_UPSTREAM_TIMEOUT_MS))
+        .unwrap_or(false);
+    let lights = status_lights(StatusProbeInput {
+        proxy_ok,
+        sandbox_ok,
+        upstream_ok,
+    });
+    let shim_mode = current_shim_mode_for_adapter(&adapter);
+    build_status_response(
+        lights,
+        active_profile,
+        gateway_kind_for_adapter(&adapter),
+        shim_mode,
+        diagnostics_for_profile(catalog_profile.as_ref(), shim_mode),
+        science_diagnostics(ScienceDiagnosticsInput {
+            sandbox_port: sport,
+            sandbox_ok,
+        }),
+        None,
+    )
+}
+
 pub(crate) struct StatusProbeInput {
     pub(crate) proxy_ok: bool,
     pub(crate) sandbox_ok: bool,
@@ -89,8 +198,8 @@ pub(crate) fn build_status_response(
 #[cfg(test)]
 mod tests {
     use super::{
-        build_status_response, science_diagnostics, status_lights, ScienceDiagnosticsInput,
-        StatusProbeInput,
+        build_status_response, config_last_error_json, science_diagnostics, status_lights,
+        ScienceDiagnosticsInput, StatusProbeInput,
     };
     use serde_json::json;
 
@@ -161,6 +270,31 @@ mod tests {
             "science.auth.refresh-hardcoded-0_1_15"
         );
         assert!(v["last_error"].is_null());
+    }
+
+    #[test]
+    fn config_last_error_json_preserves_typed_config_error() {
+        let err = config_last_error_json(&"bad config");
+        assert_eq!(
+            err.get("type").and_then(|v| v.as_str()),
+            Some("config_error")
+        );
+        assert_eq!(
+            err.get("message").and_then(|v| v.as_str()),
+            Some("bad config")
+        );
+    }
+
+    #[test]
+    fn status_response_for_config_error_is_fail_closed() {
+        let v = super::status_response_for_config_error(&"bad config");
+        assert_eq!(v["proxy"], "amber");
+        assert_eq!(v["sandbox"], "amber");
+        assert_eq!(v["upstream"], "amber");
+        assert_eq!(v["active_profile"], serde_json::Value::Null);
+        assert_eq!(v["science"]["sandbox"]["port"], 0);
+        assert_eq!(v["last_error"]["type"], "config_error");
+        assert_eq!(v["last_error"]["message"], "bad config");
     }
 
     #[test]
