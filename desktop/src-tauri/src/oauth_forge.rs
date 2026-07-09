@@ -444,7 +444,7 @@ fn single_enc(resolved: &Path) -> Option<PathBuf> {
     found
 }
 
-/// active-org.json 里合法 UUID 的 org_uuid。
+/// Valid UUID org_uuid from active-org.json.
 fn read_active_org(resolved: &Path) -> Option<String> {
     let v: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(resolved.join("active-org.json")).ok()?)
@@ -457,7 +457,7 @@ fn read_active_org(resolved: &Path) -> Option<String> {
     }
 }
 
-/// 尽力从旧 .enc 解出合法 UUID 的 account_uuid（供修复时复用；失败/非法无害，None 即新铸）。
+/// Best-effort read of valid UUID account_uuid from old .enc (reuse on repair; failure/invalid → None, mint new).
 fn read_prior_account(resolved: &Path) -> Option<String> {
     let key = parse_oauth_key(resolved)?;
     let body = std::fs::read_to_string(single_enc(resolved)?).ok()?;
@@ -471,7 +471,7 @@ fn read_prior_account(resolved: &Path) -> Option<String> {
     }
 }
 
-/// 从唯一可解 .enc 的 token blob 取合法 org_uuid（active-org.json 丢失时的回退来源）。
+/// Valid org_uuid from the sole decryptable .enc token blob (fallback when active-org.json is missing).
 fn read_token_org(resolved: &Path) -> Option<String> {
     let key = parse_oauth_key(resolved)?;
     let body = std::fs::read_to_string(single_enc(resolved)?).ok()?;
@@ -485,7 +485,7 @@ fn read_token_org(resolved: &Path) -> Option<String> {
     }
 }
 
-/// 扫 `<auth_dir>/orgs/` 下形如 UUID 的历史组织目录名（active-org 与 token 都没了时的最后回退）。
+/// Scan `<auth_dir>/orgs/` for historical org directory names shaped like UUIDs (last fallback when active-org and token are gone).
 fn scan_org_dirs(resolved: &Path) -> Vec<String> {
     let mut v = Vec::new();
     if let Ok(rd) = std::fs::read_dir(resolved.join("orgs")) {
@@ -502,13 +502,13 @@ fn scan_org_dirs(resolved: &Path) -> Vec<String> {
     v
 }
 
-/// 今天的 UTC 日期 `YYYY-MM-DD`（无外部 crate；Howard Hinnant civil-from-days）。
+/// Today's UTC date `YYYY-MM-DD` (no external crate; Howard Hinnant civil-from-days).
 fn today_utc_ymd() -> String {
     let secs = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0);
-    let days = (secs / 86400) as i64; // 自 1970-01-01 的天数
+    let days = (secs / 86400) as i64; // Days since 1970-01-01
     let z = days + 719468;
     let era = (if z >= 0 { z } else { z - 146096 }) / 146097;
     let doe = z - era * 146097; // [0, 146096]
@@ -522,9 +522,9 @@ fn today_utc_ymd() -> String {
     format!("{y:04}-{m:02}-{d:02}")
 }
 
-/// `token_expires_at`（ISO8601）的日期部分是否 ≥ 今天（UTC），即尚未过期（P2）。
-/// 取前 10 字符 `YYYY-MM-DD` 与今天按字典序比较（ISO8601 日期字典序即时间序）；
-/// 格式不对（长度不足 / 非 `dddd-dd-dd`）视为过期。粒度到「天」足够区分远期 vs 过去。
+/// Whether the date part of `token_expires_at` (ISO8601) is ≥ today (UTC), i.e. not expired (P2).
+/// Compare first 10 chars `YYYY-MM-DD` lexicographically with today (ISO8601 date order = time order);
+/// malformed input (too short / not `dddd-dd-dd`) counts as expired. Day granularity suffices for far-future vs past.
 fn token_not_expired(expires_at: &str) -> bool {
     if expires_at.len() < 10 {
         return false;
@@ -538,12 +538,12 @@ fn token_not_expired(expires_at: &str) -> bool {
     shaped && date >= today_utc_ymd().as_str()
 }
 
-/// 现有登录是否「完整且自洽」；是则返回其身份（用于原样复用）。任何一步不满足返回 None
-/// （→ 降级到修复，安全方向）。校验从严（P2）：读路径不得是符号链接；解密后 org 一致、
-/// email 是假账号、`account_uuid` 是合法 UUID、`provider`=claude_ai、`access_token` 非空、
-/// `token_expires_at` 未过期。
+/// Whether existing login is complete and self-consistent; if so return identity (for reuse). Any failure → None
+/// (→ downgrade to repair, safe direction). Strict checks (P2): read paths must not be symlinks; decrypted org matches,
+/// email is fake account, `account_uuid` valid UUID, `provider`=claude_ai, `access_token` non-empty,
+/// `token_expires_at` not expired.
 fn read_intact_login(resolved: &Path, email: &str) -> Option<ForgeResult> {
-    // 读路径不得是符号链接（不跟随；可疑布局 → 视作不自洽走修复，修复端有 assert_not_symlink）。
+    // Read paths must not be symlinks (no follow; suspicious layout → treat as inconsistent → repair; repair uses assert_not_symlink).
     if is_symlink(&resolved.join("encryption.key"))
         || is_symlink(&resolved.join(".oauth-tokens"))
         || is_symlink(&resolved.join("active-org.json"))
@@ -591,7 +591,7 @@ fn read_intact_login(resolved: &Path, email: &str) -> Option<ForgeResult> {
     })
 }
 
-/// 幂等虚拟登录：完整自洽→复用；部分损坏→修复但保 org；真首次→铸新。
+/// Idempotent virtual login: intact → reuse; partially damaged → repair keeping org; true first run → mint new.
 pub fn ensure_virtual_login(
     auth_dir: &Path,
     email: &str,
@@ -603,7 +603,7 @@ pub fn ensure_virtual_login(
     ensure_virtual_login_guarded(auth_dir, email, sandbox_root, &home.join(".claude-science"))
 }
 
-/// 可注入「真实凭证目录」的内层（测试用）。
+/// Inner entry with injectable real credential dir (for tests).
 fn ensure_virtual_login_guarded(
     auth_dir: &Path,
     email: &str,
@@ -611,12 +611,12 @@ fn ensure_virtual_login_guarded(
     real_cred_dir: &Path,
 ) -> Result<(ForgeResult, LoginAction), String> {
     let resolved = resolve_guarded(auth_dir, email, sandbox_root, real_cred_dir)?;
-    // 完整自洽 → 原样复用，不碰任何文件（operon 可能正在读）。
+    // Intact → reuse as-is, touch no files (operon may be reading).
     if let Some(fr) = read_intact_login(&resolved, email) {
         return Ok((fr, LoginAction::Reused));
     }
-    // 组织来源优先级（P1a，绝不静默新铸）：active-org.json → 可解 token → orgs/ 目录。
-    // 只要定位到历史 org 就复用它（保住旧对话）；多个历史组织无法定位活动者则报错中止。
+    // Org source priority (P1a, never silently mint new): active-org.json → decryptable token → orgs/ dirs.
+    // Reuse any located historical org (preserve old conversations); multiple orgs with no active → error and abort.
     let (prior_org, action) = if let Some(o) = read_active_org(&resolved) {
         (Some(o), LoginAction::Repaired)
     } else if let Some(o) = read_token_org(&resolved) {
@@ -654,7 +654,7 @@ pub fn login_intact(auth_dir: &Path, email: &str, sandbox_root: &Path) -> bool {
     }
 }
 
-/// 可注入「真实凭证目录」的内层（测试用）。护栏失败（异常布局 / 落入真实树）视作不自洽（false），
+/// Inner entry with injectable real credential dir (for tests).护栏失败（异常布局 / 落入真实树）视作不自洽（false），
 /// 促使上层走修复路径；修复路径自身仍有护栏，绝不触碰真实目录。只读，绝不写。
 fn login_intact_guarded(
     auth_dir: &Path,

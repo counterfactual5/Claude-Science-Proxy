@@ -1,7 +1,9 @@
-"""Anthropic 透传路径「兼容层」（S1a）：暴露三入口给薄骨架。内部调 provider_policy + dsml_shim。
+"""Anthropic passthrough compatibility layer (S1a): exposes three entry points to the thin skeleton.
+Calls provider_policy + dsml_shim internally.
 
-依赖方向：骨架 → 本模块 → provider_policy；本模块不反向 import csp_proxy（无循环依赖）。
-三入口无状态可序列化 + nonce 可注入 + ProviderState 显式传参 → 为 S1b 跨语言接缝铺路。
+Dependency direction: skeleton → this module → provider_policy; no reverse import of csp_proxy
+(no circular deps). Stateless serializable entry points + injectable nonce + explicit ProviderState
+→ prepares the S1b cross-language seam.
 """
 import json
 from dataclasses import dataclass
@@ -14,7 +16,8 @@ _EMPTY_OBJECT_SCHEMA = {"type": "object", "properties": {}}
 
 @dataclass
 class Ctx:
-    """transform_request 产出、传给 rewrite_nonstream / make_stream_rewriter 的请求级上下文。"""
+    """Request-level context produced by transform_request and passed to rewrite_nonstream /
+    make_stream_rewriter."""
     src_model: str
     target_model: str
     known_tools: dict
@@ -113,8 +116,8 @@ def _filter_upstream_tools(upstream, target_model, provider, rule_ids=None):
 
 
 def transform_request(body, state):
-    """(body, ProviderState) -> (upstream_body, Ctx)。纯函数：无网络、无全局读取。
-    等价于旧 _handle_anthropic 的 :695-702 + :714-718。"""
+    """(body, ProviderState) -> (upstream_body, Ctx). Pure function: no network, no global reads.
+    Equivalent to legacy _handle_anthropic :695-702 + :714-718."""
     src = body.get("model", "?")
     target = provider_policy.resolve_model(src, state)
     rule_ids = []
@@ -152,9 +155,9 @@ def _shim_on(ctx):
 
 
 def rewrite_nonstream(body_bytes, ctx):
-    """(body_bytes, Ctx) -> (body_bytes, stats)。等价于旧 :771-780。
-    off / 无工具：(原 bytes, {})；detect：(原 bytes, {"found": bool})；
-    rewrite：(改写 bytes, {"rewritten": bool})。"""
+    """(body_bytes, Ctx) -> (body_bytes, stats). Equivalent to legacy :771-780.
+    off / no tools: (original bytes, {}); detect: (original bytes, {"found": bool});
+    rewrite: (rewritten bytes, {"rewritten": bool})."""
     if not _shim_on(ctx):
         return body_bytes, {}
     if ctx.shim_mode == "rewrite":
@@ -166,7 +169,7 @@ def rewrite_nonstream(body_bytes, ctx):
 
 
 class _RewriteFilter:
-    """rewrite 模式的流式 filter：包 DsmlStreamRewriter，暴露统一 feed/finalize/stats。"""
+    """Streaming filter for rewrite mode: wraps DsmlStreamRewriter with feed/finalize/stats."""
 
     def __init__(self, known_tools, nonce):
         self._rw = dsml_shim.DsmlStreamRewriter(known_tools, nonce=nonce)
@@ -182,7 +185,7 @@ class _RewriteFilter:
 
 
 class _DetectFilter:
-    """detect 模式的流式 filter：原样透传 + 内部记 stats。"""
+    """Streaming filter for detect mode: passthrough bytes + internal stats."""
 
     def __init__(self):
         self._det = dsml_shim.DsmlDetector()
@@ -336,8 +339,8 @@ class _PipelineFilter:
 
 
 def make_stream_rewriter(ctx):
-    """(Ctx) -> stream_filter | None。off / 无工具 → None（骨架直接透传，零开销）。
-    filter 统一接口：feed(chunk)->bytes / finalize()->bytes / stats()。等价于旧 :735-737。"""
+    """(Ctx) -> stream_filter | None. off / no tools → None (skeleton passthrough, zero overhead).
+    Filter API: feed(chunk)->bytes / finalize()->bytes / stats(). Equivalent to legacy :735-737."""
     filters = []
     if ctx.provider == "relay" and "kimi" in (ctx.target_model or "").lower():
         filters.append(_KimiServerToolFilter())
