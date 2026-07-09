@@ -3,14 +3,17 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>CSSwitch</title>
+    <title>Cloud Science Proxy</title>
     <link rel="stylesheet" href="/styles.css" />
     <script type="module" src="/main.js" defer></script>
   </head>
   <body>
     <div class="panel">
       <div class="hd" data-tauri-drag-region>
-        <div class="brand" data-tauri-drag-region>CSSwitch</div>
+        <div class="brand" data-tauri-drag-region>
+          <span class="brand-mark" aria-hidden="true">CSP</span>
+          <span class="brand-name">Cloud Science Proxy</span>
+        </div>
       </div>
 
       <div class="panel-body">
@@ -39,7 +42,7 @@
           <div class="hint" id="wizBaseHint"></div>
           <label style="margin-top:10px" for="wizKey">API Key / Token</label>
           <input id="wizKey" type="password" placeholder="粘贴 key（只存本地）" autocomplete="off" spellcheck="false" />
-          <div class="hint">只存本地，不上传给 CSSwitch；使用时才作为鉴权发给你选的服务商。</div>
+          <div class="hint">只存本地，不上传给本应用；使用时才作为鉴权发给你选的服务商。</div>
           <label style="margin-top:10px" id="wizModelLabel">模型</label>
           <div id="wizModelInfo" class="modelinfo" hidden></div>
           <input id="wizModel" list="wizModelList" aria-labelledby="wizModelLabel" autocomplete="off" spellcheck="false" />

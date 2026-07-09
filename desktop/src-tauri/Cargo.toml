@@ -1,8 +1,8 @@
 [package]
 name = "desktop"
 version = "0.3.6"
-description = "CSSwitch 菜单栏 app（进程管家 + 配置面板）"
-authors = ["CSSwitch"]
+description = "Cloud Science Proxy 桌面 app（进程管家 + 配置面板）"
+authors = ["Cloud Science Proxy"]
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html

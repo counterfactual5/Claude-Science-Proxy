@@ -1,6 +1,6 @@
 :root{
   --bg:#f4f5f7; --panel:#ffffff; --ink:#1d1d1f; --sub:#8a8f98;
-  --line:#e6e8eb; --accent:#c25a34; --accent2:#a94e2c;
+  --line:#e6e8eb; --accent:#3a6ea5; --accent2:#2f5f94;
   --green:#2fbf71; --amber:#e6a23c; --red:#e5484d; --field:#f6f7f9;
 }
 @media (prefers-color-scheme: dark){
@@ -15,13 +15,17 @@ body{
 }
 .panel{display:flex;flex-direction:column;width:100%;height:100vh;min-height:0;background:var(--panel);
   overflow:hidden}
-.hd{display:flex;align-items:center;flex-shrink:0;padding:12px 14px 10px}
+.hd{display:flex;align-items:center;flex-shrink:0;padding:10px 14px 8px;border-bottom:1px solid var(--line)}
 .panel-body{flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden}
 .panel.view-form .panel-body{overflow-x:hidden;overflow-y:auto;-webkit-overflow-scrolling:touch}
 .list-sec{flex:1;min-height:0;display:flex;flex-direction:column}
 .list-sec[hidden]{display:none!important}
 .adv{flex-shrink:0}
-.brand{font-weight:650;font-size:14px}
+.brand{display:flex;align-items:baseline;gap:8px;min-width:0}
+.brand-mark{font-size:11px;font-weight:800;letter-spacing:.06em;color:var(--accent);
+  background:rgba(58,110,165,.10);border:1px solid rgba(58,110,165,.22);
+  border-radius:5px;padding:2px 6px;flex:none}
+.brand-name{font-weight:650;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .sec{padding:10px 14px;border-top:1px solid var(--line)}
 label{display:block;font-size:11px;color:var(--sub);margin:0 0 5px;letter-spacing:.02em}
 .row{display:flex;gap:8px;align-items:center}
@@ -46,7 +50,7 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10.5px;
 .ports .fld{flex:1}
 .hero{width:100%;height:42px;border:none;border-radius:11px;color:#fff;font-size:14px;font-weight:700;
   background:linear-gradient(180deg,var(--accent),var(--accent2));cursor:pointer;
-  box-shadow:0 6px 16px rgba(194,90,52,.34);display:flex;align-items:center;justify-content:center;gap:8px}
+  box-shadow:0 6px 16px rgba(58,110,165,.28);display:flex;align-items:center;justify-content:center;gap:8px}
 .hero:active{transform:translateY(1px)}
 .hero:disabled{opacity:.55;cursor:default;box-shadow:none;transform:none}
 .subbtns{display:flex;gap:8px;margin-top:8px}
@@ -69,13 +73,16 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10.5px;
 .listhd label{margin:0}
 #profileList{margin-top:8px;flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:8px;
   padding-bottom:8px}
-.empty{font-size:12px;color:var(--sub);padding:16px 10px;text-align:center;
-  border:1px dashed var(--line);border-radius:10px;line-height:1.6}
+.empty{display:flex;flex-direction:column;align-items:center;gap:6px;font-size:12px;color:var(--sub);
+  padding:20px 12px;text-align:center;border:1px dashed var(--line);border-radius:10px;line-height:1.5;
+  background:linear-gradient(180deg,rgba(58,110,165,.04),transparent)}
+.empty-icon{font-size:22px;line-height:1;opacity:.75}
+.empty-hint{font-size:11px;color:var(--sub);opacity:.9}
 .prow{border:1px solid var(--line);border-radius:11px;padding:9px 10px;background:var(--field);
   transition:border-color .15s,box-shadow .15s}
 .prow:not(.pactive):not(.pworking){cursor:pointer}
 .prow:not(.pactive):not(.pworking):hover{border-color:var(--accent)}
-.prow.pactive{border-color:var(--accent);box-shadow:0 0 0 2px rgba(194,90,52,.12)}
+.prow.pactive{border-color:var(--accent);box-shadow:0 0 0 2px rgba(58,110,165,.12)}
 .prow-top{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
 .pico{width:9px;height:9px;border-radius:50%;background:var(--sub);flex:none}
 .pname{font-size:13px;font-weight:650;color:var(--ink)}
@@ -106,7 +113,7 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10.5px;
 .abtn.prim:disabled{color:#fff;border-color:var(--accent)}
 .abtn.danger:hover{border-color:var(--red);color:var(--red)}
 .abtn.danger:disabled:hover{border-color:var(--line);color:var(--ink)}
-.prow.pworking{border-color:var(--accent);background:#fff9f4}
+.prow.pworking{border-color:var(--accent);background:rgba(58,110,165,.06)}
 /* 表单视图（向导/连接/改名）隐藏运行控制区与页脚；反馈消息区 .feedback 始终可见（P1-3）。 */
 .panel.view-form .list-only{display:none}
 .feedback{border-top:1px solid var(--line)}
@@ -116,7 +123,7 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10.5px;
   border-radius:10px;background:var(--field);color:var(--ink);cursor:pointer;font-family:inherit;
   font-size:12.5px;font-weight:600;text-align:left}
 .chip:hover{border-color:var(--accent)}
-.chip.sel{border-color:var(--accent);background:var(--panel);box-shadow:0 0 0 2px rgba(194,90,52,.14)}
+.chip.sel{border-color:var(--accent);background:var(--panel);box-shadow:0 0 0 2px rgba(58,110,165,.14)}
 .chip-dot{width:9px;height:9px;border-radius:50%;background:var(--sub);flex:none}
 .chip-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .chip-cat{font-size:10px;color:var(--sub);border:1px solid var(--line);border-radius:6px;
