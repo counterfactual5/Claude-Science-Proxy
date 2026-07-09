@@ -175,7 +175,7 @@ class ResponsesMapping(unittest.TestCase):
 
 
 class RelayProvider(unittest.TestCase):
-    """中转站 provider：透传（不重映射）+ 贴合 + 双鉴权头 + 不夹 max_tokens + /v1/models 归一化。"""
+    """Relay provider: passthrough (no remap) + clamp + dual auth headers + no max_tokens clamp + /v1/models normalization."""
 
     def setUp(self):
         cs.PROV = dict(cs.PROVIDERS["relay"])
@@ -192,20 +192,20 @@ class RelayProvider(unittest.TestCase):
         self.assertEqual(h.get("Authorization"), "Bearer cr_testkey")
 
     def test_deepseek_auth_headers_default_xapikey(self):
-        # 回归：deepseek 未设 auth_style → 仍只带 x-api-key（不误引入 Bearer）。
+        # Regression: deepseek without auth_style → still x-api-key only (no mistaken Bearer).
         cs.PROV = cs.PROVIDERS["deepseek"]
         cs.KEY = "sk-ds"
         self.assertEqual(cs._upstream_auth_headers(), {"x-api-key": "sk-ds"})
 
     def test_models_normalized_and_cache_refreshed(self):
-        # 用假 http_get_json 复刻中转站 OpenAI 风格返回，验证归一化成 Anthropic 格式
-        # + RELAY_MODELS 缓存刷新（离线，不触网）。
+        # Fake http_get_json mimics relay OpenAI-style response; verify Anthropic normalization
+        # + RELAY_MODELS cache refresh (offline, no network).
         orig = cs.http_get_json
         cs.http_get_json = lambda url, headers: {
             "data": [
                 {"id": "claude-opus-4-8", "object": "model"},
                 {"id": "claude-3-5-sonnet-20241022", "object": "model"},
-                {"no_id": True},  # 缺 id 的条目应被跳过
+                {"no_id": True},  # entries missing id should be skipped
             ]
         }
         try:
@@ -220,9 +220,9 @@ class RelayProvider(unittest.TestCase):
     def test_models_carry_supports_tools_from_supported_parameters(self):
         orig = cs.http_get_json
         cs.http_get_json = lambda url, headers: {"data": [
-            {"id": "glm-4.6", "supported_parameters": ["tools", "temperature"]},  # 含 tools → True
-            {"id": "glm-lite", "supported_parameters": ["temperature"]},          # 有字段无 tools → False
-            {"id": "glm-x"},                                                        # 无字段 → None（不臆测）
+            {"id": "glm-4.6", "supported_parameters": ["tools", "temperature"]},  # has tools → True
+            {"id": "glm-lite", "supported_parameters": ["temperature"]},          # field present, no tools → False
+            {"id": "glm-x"},                                                        # no field → None (no guess)
         ]}
         try:
             out = cs.fetch_relay_models()
@@ -251,9 +251,9 @@ class RelayProvider(unittest.TestCase):
             code, body = cs.build_models_response()
         finally:
             cs.http_get_json = orig
-        self.assertEqual(code, 401)                    # 不再吞成 200 + 静态
+        self.assertEqual(code, 401)                    # no longer swallowed as 200 + static list
         self.assertEqual(body["upstream_status"], 401)
-        self.assertNotIn("data", body)                 # 失败不回静态列表
+        self.assertNotIn("data", body)                 # failure must not return static list
 
     def test_build_models_response_network_error_502(self):
         def boom(url, headers):
@@ -268,7 +268,7 @@ class RelayProvider(unittest.TestCase):
         self.assertEqual(body["error_kind"], "network")
 
     def test_build_models_response_non_relay_returns_static(self):
-        # deepseek/qwen（无 models_url）→ 仍回静态选择器列表，行为不变。
+        # deepseek/qwen (no models_url) → still return static selector list, unchanged behavior.
         cs.PROV = cs.PROVIDERS["deepseek"]
         code, body = cs.build_models_response()
         self.assertEqual(code, 200)
@@ -369,7 +369,7 @@ class BuildModelsResponse(unittest.TestCase):
         cs.PROV, cs.PROV_NAME, cs.RELAY_FORCE_MODEL = self._saved
 
     def test_force_returns_single_shell(self):
-        # force（Science 常驻代理）：/v1/models 只返回一个壳，display_name=真实模型名。
+        # force (Science resident proxy): /v1/models returns one shell, display_name=real model name.
         cs.PROV = {"models_url": "https://r/v1/models"}
         cs.PROV_NAME = "relay"
         cs.RELAY_FORCE_MODEL = "glm-5.2"
@@ -388,7 +388,7 @@ class BuildModelsResponse(unittest.TestCase):
         self.assertFalse(body["has_more"])
 
     def test_not_forced_falls_back_to_source(self):
-        # 未 force（app 获取模型的临时代理）：仍回源拿真实 id 供用户选（两个消费者切分）。
+        # not forced (app scratch proxy for model pick): still fetch real ids for user selection (two consumers split).
         cs.PROV = {"models_url": "https://r/v1/models"}
         cs.PROV_NAME = "relay"
         cs.RELAY_FORCE_MODEL = None
