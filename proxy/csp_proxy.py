@@ -283,7 +283,7 @@ def normalize_openai_base(base):
 
 
 def normalize_relay_base(base):
-    """Anthropic relay base root。剥掉误填的 /v1/messages、/v1/models 等后缀。"""
+    """Anthropic relay base root; strip accidental /v1/messages or /v1/models suffixes."""
     b = (base or "").strip().rstrip("/")
     for suffix in ("/v1/messages", "/v1/models"):
         if b.endswith(suffix):
@@ -303,8 +303,7 @@ def openai_endpoint(base, suffix):
 
 
 def _upstream_auth_headers(runtime=None):
-    """上游鉴权头：按当前 provider 的 auth_style 装 x-api-key / bearer / both。
-    deepseek 未设 → 默认 x-api-key（保持原状）；relay = both。"""
+    """Upstream auth headers per provider auth_style (x-api-key / bearer / both)."""
     runtime = runtime or current_runtime()
     style = runtime.prov.get("auth_style", "x-api-key")
     h = {}
@@ -316,8 +315,7 @@ def _upstream_auth_headers(runtime=None):
 
 
 def fetch_relay_models(runtime=None):
-    """回源拉上游模型列表，归一化成 Science 可消费的模型列表。relay 会刷新
-    RELAY_MODELS 缓存（供 resolve_model 贴合）；openai-custom 仅用于模型发现。返回 list（可空）。"""
+    """Fetch upstream /v1/models and normalize for Science; relay refreshes RELAY_MODELS cache."""
     global RELAY_MODELS
     runtime = runtime or current_runtime()
     murl = runtime.prov.get("models_url")
@@ -334,12 +332,7 @@ def fetch_relay_models(runtime=None):
 
 
 def build_models_response(runtime=None):
-    """装配 /v1/models 响应，返回 (状态码, body dict)。协议锁定（修评审 P2-2）：
-      - relay/openai-custom 回源成功 → (200, {data:[…含 supports_tools…]})。
-      - 回源 HTTPError → (上游同状态码, {error_kind:"upstream", upstream_status, message})，
-        绝不吞成 200+静态（否则掩盖坏 key）。builtin 兜底交 Rust 命令决定。
-      - 网络异常 → (502, {error_kind:"network", upstream_status:None, message})。
-      - 非 relay（无 models_url，deepseek/qwen）→ (200, {静态选择器列表})，行为不变。"""
+    """Build /v1/models response (status, body). Relay/openai fetch live; static for deepseek/qwen."""
     runtime = runtime or current_runtime()
     if runtime.model_registry is not None:
         log(f"GET /v1/models -> {runtime.prov_name}(registry): "
@@ -347,9 +340,7 @@ def build_models_response(runtime=None):
         return runtime.model_registry.models_response()
     if runtime.prov.get("models_url"):
         if runtime.relay_force_model:
-            # force（Science 常驻代理）：只返回一个壳，Science 主列表显示真实模型名。
-            # 出站由 resolve_model 的 force 分支覆盖，无需 model_map。app 的 fetch_models
-            # 不设 RELAY_FORCE_MODEL，故仍走下面回源拿真实 id 供用户选（两个消费者切分）。
+            # Formal proxy force: return single shell; outbound resolve_model applies real id.
             log(f"GET /v1/models -> {runtime.prov_name}(force 借壳): {runtime.relay_force_model}")
             return model_discovery.force_shell_response(runtime.relay_force_model)
         try:
@@ -368,11 +359,11 @@ def build_models_response(runtime=None):
         except Exception as e:
             log(f"GET /v1/models -> {runtime.prov_name} 回源网络异常，本地回 502: {e}")
             return 502, {"error_kind": "network", "upstream_status": None, "message": str(e)}
-    # 非 relay：静态选择器列表（deepseek/qwen）。
+    # deepseek/qwen: static selector list
     return model_discovery.static_models_response(runtime.prov["models"])
 
 
-# ---------- Anthropic -> OpenAI 翻译（qwen 路径） ----------
+# ---------- Anthropic -> OpenAI translation (qwen path) ----------
 def anthropic_to_openai(req):
     return openai_chat_compat.anthropic_to_openai(req, _provider_state(req))
 
@@ -439,7 +430,7 @@ class H(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
         if self.close_connection:
-            # 主动关闭连接时显式告知客户端，避免其在已关闭的 socket 上复用连接。
+            # Tell client not to reuse connection after we close the socket.
             self.send_header("Connection", "close")
         self.end_headers()
         self.wfile.write(body)
@@ -464,10 +455,8 @@ class H(BaseHTTPRequestHandler):
         if self.path == prefix or self.path.startswith(prefix + "/"):
             self.path = self.path[len(prefix):] or "/"
             return True
-        # 鉴权失败时请求体（POST）尚未读取，若保持长连接，服务端下一轮会从残留
-        # body 中间开始解析下一个请求，产出的畸形 400 错误页会把残留字节和下一条
-        # 请求行拼在一起回显给客户端，可能带出路径里的 secret。这里主动关连接
-        # 阻断该复用路径；_send_json 会据 close_connection 追加 Connection: close。
+            # Close connection on auth failure so the client cannot reuse a socket with unread POST body
+            # (would splice secret bytes into the next response).
         self.close_connection = True
         self._send_json(403, {"type": "error", "error": {
             "type": "permission_error", "message": "forbidden"}})
@@ -488,8 +477,7 @@ class H(BaseHTTPRequestHandler):
     def do_POST(self):
         if not self._auth_ok():
             return
-        # Content-Length 解析放在保护内：畸形头（如 "oops" / 负数）应回规范 400，
-        # 不能让 int() 抛 ValueError 击穿 handler、给客户端一个空响应。
+        # Parse Content-Length inside try so malformed values return 400, not empty response.
         try:
             n = int(self.headers.get("Content-Length") or 0)
             if n < 0:
@@ -507,9 +495,7 @@ class H(BaseHTTPRequestHandler):
         except Exception as e:
             self._send_json(400, {"type": "error", "error": {"type": "invalid_request_error", "message": str(e)}})
             return
-        # 结构校验（修 P1 GPT 复审）：顶层必须是对象且 messages 是数组，否则回规范 400。
-        # 否则 []/"hello"/{"messages":null} 会在下游 .get / 迭代处抛 AttributeError/TypeError，
-        # 击穿线程 → 客户端拿到空响应而非 400。
+        # Require JSON object with messages array; avoid AttributeError on malformed body.
         if not isinstance(areq, dict) or not isinstance(areq.get("messages"), list):
             self._send_json(400, {"type": "error", "error": {
                 "type": "invalid_request_error",
@@ -530,21 +516,16 @@ class H(BaseHTTPRequestHandler):
         else:
             self._handle_openai(areq, runtime)
 
-    # ---- HTTP CONNECT 隧道：Anthropic 域名 fast-fail、其余透传（修 #3） ----
+    # ---- HTTP CONNECT: Anthropic domains fast-fail, others tunneled ----
     def do_CONNECT(self):
-        # operon 用 https_proxy 走到这里；self.path 形如 "host:port"。
-        # 【为何不走 _auth_ok】CONNECT 把目标放在请求行、没有可嵌 path-secret 的位置，
-        # operon 的 https_proxy 也带不上 secret。此处不鉴权的实际风险面很小：
-        #   - 只监听回环（127.0.0.1），本机进程本就能自行外连，隧道不给它任何新能力；
-        #   - 隧道是裸 TCP 转发，不注入上游 key、不经推理端点（那两条仍受 secret 保护）。
-        #   即 path-secret 真正守护的边界（第三方 key + 推理端点）未被削弱。
-        # 进一步收紧可让 launch 把 secret 放进 https_proxy 的 userinfo 再校验
-        # Proxy-Authorization，但需先实测 operon 是否会带该头（否则误伤透传），留待整链联调。
+        # operon uses https_proxy; self.path is host:port. No path-secret on CONNECT line.
+        # Risk is low: loopback-only listener; tunnel does not inject keys or hit /v1/messages.
+        # Tightening could use Proxy-Authorization in https_proxy userinfo (needs operon verification).
         target = self.path
         host = target.rsplit(":", 1)[0].strip("[]").lower()
         if _is_blocked_host(host):
-            # 401（未登录）而非 403（禁止）：让 operon 判 logged-out 秒过，而非当组织问题反复重试。
-            log(f"CONNECT {target} -> 401 未登录（Anthropic 域名 fast-fail）")
+            # 401 logged-out (not 403 forbidden) so operon skips org-retry loop.
+            log(f"CONNECT {target} -> 401 fast-fail (Anthropic domain)")
             self._connect_reply(401)
             return
         try:
@@ -575,7 +556,7 @@ class H(BaseHTTPRequestHandler):
         self.close_connection = True
 
     def _connect_reply(self, code):
-        """CONNECT 的短响应（拒绝/错误）：空体 + 主动关连接。"""
+        """Short CONNECT rejection/ error: empty body + Connection: close."""
         self.send_response(code)
         self.send_header("Content-Length", "0")
         self.send_header("Connection", "close")
@@ -584,7 +565,7 @@ class H(BaseHTTPRequestHandler):
 
     @staticmethod
     def _tunnel(client, upstream):
-        """在两个已连接 socket 间双向搬字节，直到任一侧 EOF / 出错。"""
+        """Bidirectional byte relay between connected sockets until EOF/error."""
         socks = [client, upstream]
         while True:
             try:
@@ -597,14 +578,14 @@ class H(BaseHTTPRequestHandler):
                     data = s.recv(65536)
                 except Exception:
                     return
-                if not data:  # 对端 EOF
+                if not data:  # peer EOF
                     return
                 try:
                     other.sendall(data)
                 except Exception:
                     return
 
-    # ---- DeepSeek：Anthropic 原生透传（改模型名+换鉴权+夹 max_tokens+重试） ----
+    # ---- DeepSeek / relay: native Anthropic passthrough ----
     def _handle_anthropic(self, areq, runtime=None):
         runtime = runtime or current_runtime()
         state = _provider_state(areq, runtime)
@@ -615,7 +596,7 @@ class H(BaseHTTPRequestHandler):
         log(f"POST /v1/messages  {ctx.src_model}->{ctx.target_model} stream={stream} "
             f"tools={n_tools} msgs={len(upstream_body.get('messages') or [])}  "
             f"rules={rules}  (入站鉴权已剥离, 直连 {runtime.prov_name})")
-        # 鉴权头按 provider 的 auth_style（deepseek x-api-key / relay both）。KEY 只驻内存、不入日志。
+        # Auth headers per auth_style; KEY stays in memory only.
         headers = {"content-type": "application/json", "anthropic-version": "2023-06-01"}
         headers.update(_upstream_auth_headers(runtime))
         data = json.dumps(upstream_body).encode()
@@ -642,9 +623,9 @@ class H(BaseHTTPRequestHandler):
 
                 r, first, _ct = _open_stream_with_keepalive(_wc, runtime.prov["url"], data, headers)
                 with r:
-                    # off / 无工具 → None（骨架直接透传，零开销）；detect / rewrite → 统一 filter。
+                    # off / no tools → passthrough; detect/rewrite → DSML filter from byte 0.
                     f = anthropic_compat.make_stream_rewriter(ctx)
-                    # 第一帧同样要过 filter（状态机 / 检测器必须从第 0 字节按序看到全部上游数据）。
+                    # First upstream bytes must go through the filter in order.
                     if f is not None:
                         _wc(f.feed(first))
                     else:
@@ -692,7 +673,7 @@ class H(BaseHTTPRequestHandler):
             detail = e.read().decode("utf-8", "replace")[:400]
             log(f"  !! 上游 HTTP {e.code}: {detail}")
             if not headers_sent:
-                # 上游鉴权 / 额度类状态码原样透传（401/403/429），其余归一化 502。
+                # Pass through upstream 401/403/429; normalize other errors to 502.
                 code = e.code if e.code in (401, 403, 429) else 502
                 self._send_json(code, {"type": "error", "error": {
                     "type": "api_error", "message": f"upstream {e.code}: {detail}"}})
@@ -712,7 +693,7 @@ class H(BaseHTTPRequestHandler):
                 self._send_json(502, {"type": "error", "error": {
                     "type": "api_error", "message": str(e)}})
 
-    # ---- Qwen：翻译到 OpenAI，非流式取全再按需 SSE 回放 ----
+    # ---- Qwen / OpenAI: translate to OpenAI; non-stream may replay as SSE ----
     def _handle_openai(self, areq, runtime=None):
         runtime = runtime or current_runtime()
         model_id = areq.get("model", "claude-sonnet-5")
@@ -745,8 +726,7 @@ class H(BaseHTTPRequestHandler):
         except urllib.error.HTTPError as e:
             detail = e.read().decode("utf-8", "replace")[:400]
             log(f"  !! 上游 HTTP {e.code}: {detail}")
-            # 修 P2（GPT 复审）：OpenAI 翻译路径（qwen 等）同样保留上游 401/403/429，
-            # 别一律归一化 502——否则 verify_key 无法准确提示「key 无效」。其余仍归 502。
+            # Keep upstream 401/403/429 on OpenAI path so verify_key can surface bad keys.
             code = e.code if e.code in (401, 403, 429) else 502
             self._send_json(code, {"type": "error", "error": {"type": "api_error",
                                    "message": f"upstream {e.code}: {detail}"}})
@@ -808,7 +788,7 @@ if __name__ == "__main__":
     LOG = args.log
     KEY = load_key(PROV, args)
     AUTH_SECRET = os.environ.get("CSP_AUTH_TOKEN") or args.auth_token
-    # relay：按中转站 base_url 装配上游端点（base + /v1/messages、base + /v1/models）。
+    # relay: assemble upstream urls from CSP_RELAY_BASE_URL in __main__.
     if PROV_NAME == "relay":
         base = normalize_relay_base(
             os.environ.get("CSP_RELAY_BASE_URL") or args.relay_base or "")
@@ -834,8 +814,7 @@ if __name__ == "__main__":
         suffix = "/responses" if PROV.get("api_format") == "openai_responses" else "/chat/completions"
         PROV["url"] = openai_endpoint(base, suffix)
         PROV["models_url"] = openai_endpoint(base, "/models")
-        # 模型发现 scratch 只需要 /models，不能要求 CSP_OPENAI_MODEL；
-        # 正式推理由 Rust 侧 relay_missing_model + Message 探针保证 model 必填。
+        # Scratch model discovery only needs /models; formal inference requires model (Rust enforces).
         if forced and MODEL_REGISTRY is None:
             PROV["default_model"] = forced
             RELAY_FORCE_MODEL = forced
@@ -846,13 +825,12 @@ if __name__ == "__main__":
     if not KEY:
         print(f"找不到 {PROV['key_env']}。用环境变量或 --env-file <路径> 提供。", file=sys.stderr)
         sys.exit(1)
-    # DSML 兜底 shim 模式（默认 off；relay 恒 off；deepseek 且 dsml_capable 才读环境变量）。
+    # DSML shim mode (default off; relay always off; deepseek reads CSP_TOOLUSE_SHIM when capable).
     SHIM_MODE = dsml_shim.shim_mode(PROV_NAME, PROV)
     log(f"CSP proxy listening 127.0.0.1:{args.port}  provider={PROV_NAME}  "
         f"key=已加载(未显示)  上游={PROV['url']}  dsml_shim={SHIM_MODE}  "
         f"registry={'on' if MODEL_REGISTRY else 'off'}")
-    # 绑定重试：上次会话遗留的孤儿代理可能还占着端口（app 侧会主动清，但退干净需一点时间）。
-    # 重试 ~3s 等端口释放，避免一次绑不上就直接失败（Errno 48）。
+    # Bind retry ~3s for orphaned proxy still holding the port (Errno 48).
     srv = None
     for attempt in range(10):
         try:

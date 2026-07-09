@@ -2,24 +2,17 @@
 //! can start without touching real `~/.claude-science`. Zero network, zero real credentials.
 //! Wire format matches `scripts/make-virtual-oauth.mjs` — see `docs/verified-facts.md`.
 //!
-//! 虚拟 OAuth 伪造器（Rust 原生，替代 `scripts/make-virtual-oauth.mjs`，去 node 依赖）。
+//! Sandbox `auth_dir` layout (byte-compatible with the Node forger; tests lock the format):
+//!   - Token file: `<auth_dir>/.oauth-tokens/<sanitized account_uuid>.enc` (exactly one `.enc`)
+//!   - v2 payload: `"v2:" + base64( IV(12) ‖ AES-256-GCM(ciphertext) ‖ authTag(16) )`
+//!     derivedKey = HKDF-SHA256(ikm=base64_decode(OAUTH_ENCRYPTION_KEY), salt=empty,
+//!     info="operon:aes-256-gcm:oauth", 32); AAD = "v2:oauth"; plaintext = JSON blob
+//!   - `encryption.key`: newline-separated KEY=base64(≥16B); far-future expiry avoids refresh
+//!   - `active-org.json`: `{ "org_uuid": <uuid> }` (Science only checks UUID shape)
 //!
-//! 在【沙箱】auth_dir 里写一套本地自造、绝不联网的登录凭证，让 Claude Science 认为已登录
-//! （virtual@localhost.invalid），推理经 `ANTHROPIC_BASE_URL` 导去本项目代理。全程零 Anthropic
-//! 接触、零真实凭证。逆向依据与 `.mjs` 一致（见该文件头注与 `docs/verified-facts.md`）：
-//!   - 令牌文件 `<auth_dir>/.oauth-tokens/<sanitized account_uuid>.enc`（目录里恰好一个 .enc）
-//!   - 内容 v2 格式：`"v2:" + base64( IV(12) ‖ AES-256-GCM(密文) ‖ authTag(16) )`
-//!     derivedKey = HKDF-SHA256(ikm=base64_decode(OAUTH_ENCRYPTION_KEY), salt=空, info="operon:aes-256-gcm:oauth", 32)
-//!     AAD = "v2:oauth"；明文 = JSON(tokenBlob)
-//!   - `encryption.key`：换行分隔 KEY=base64(≥16B)；过期设远期 → 绝不触发联网刷新
-//!   - `active-org.json`：`{ "org_uuid": <uuid> }`（Science 只校验 org_uuid 是合法 UUID）
-//!
-//! 铁律护栏：**载重护栏 = 绝不写真实凭证目录**（载荷是假凭证，唯一致命的就是误写真实
-//! `~/.claude-science`）；另加假账号（email 必须 localhost.invalid）、写前拒符号链接、
-//! O_EXCL 临时文件 + rename + 0600。`.mjs` 里那条「必须在 `.sandbox/` 下」是给人手敲
-//! `--auth-dir` 的 CLI 兜底；本函数由 app 用自己构造的沙箱路径调用，不需要该启发式。
-//!
-//! 与 `.mjs` 的 v2 GCM 格式**字节兼容**，由本文件 `tests` 的 node↔rust 双向对拍单测钉死。
+//! Iron rules: **never write the real credential tree** (`~/.claude-science`); fake email must use
+//! `localhost.invalid`; reject symlinks before write; O_EXCL temp file + rename + mode 0600.
+//! See `CLAUDE.md` for the full safety contract.
 
 use std::collections::BTreeMap;
 use std::io::{Read, Write};
@@ -43,7 +36,7 @@ const KEY_NAMES: [&str; 4] = [
 const HKDF_INFO: &[u8] = b"operon:aes-256-gcm:oauth";
 const AAD: &[u8] = b"v2:oauth";
 
-/// 伪造成功后的摘要（供上层日志/回显，不含任何密钥材料）。
+/// Summary after a successful forge (for upper-layer logging/echo; no secret material).
 #[derive(Debug)]
 pub struct ForgeResult {
     pub auth_dir: PathBuf,
@@ -52,15 +45,15 @@ pub struct ForgeResult {
     pub enc_file: PathBuf,
 }
 
-/// 一键登录本次对沙箱虚拟登录做了什么（供上层据实提示）。
+/// What one-click login did to the sandbox virtual login this run (for factual upper-layer prompts).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum LoginAction {
-    Reused,   // 现有登录完整自洽，原样复用，未写任何文件
-    Repaired, // 部分损坏，重写但沿用原 org（旧对话不丢）
-    Created,  // 真首次，铸全新 org
+    Reused,   // Existing login intact and consistent; reused as-is; no files written
+    Repaired, // Partially damaged; rewritten but same org kept (old conversations preserved)
+    Created,  // True first run; mint a brand-new org
 }
 
-// ---------- 随机与编码 ----------
+// ---------- Random & encoding ----------
 fn rand_bytes(n: usize) -> std::io::Result<Vec<u8>> {
     let mut f = std::fs::File::open("/dev/urandom")?;
     let mut b = vec![0u8; n];
@@ -78,12 +71,12 @@ fn hex(bytes: &[u8]) -> String {
     s
 }
 
-/// base64(32 随机字节)：encryption.key 各项的值（与 `.mjs` 的 randomBytes(32).toString("base64") 一致）。
+/// base64(32 random bytes): encryption.key field values (matches `.mjs` randomBytes(32).toString("base64")).
 fn b64_32() -> std::io::Result<String> {
     Ok(B64.encode(rand_bytes(32)?))
 }
 
-/// RFC 4122 v4 UUID（16 随机字节 + 版本/变体位）。
+/// RFC 4122 v4 UUID (16 random bytes + version/variant bits).
 fn uuid_v4() -> std::io::Result<String> {
     let mut b = rand_bytes(16)?;
     b[6] = (b[6] & 0x0f) | 0x40; // version 4
@@ -94,13 +87,13 @@ fn uuid_v4() -> std::io::Result<String> {
     ))
 }
 
-// ---------- v2 GCM（与二进制 ZtW/XtW、.mjs encryptTokenV2 一致） ----------
+// ---------- v2 GCM (matches binary ZtW/XtW and .mjs encryptTokenV2) ----------
 fn derive_key(oauth_key_b64: &str) -> Result<[u8; 32], String> {
     let ikm = B64
         .decode(oauth_key_b64.trim())
         .map_err(|e| format!("OAUTH_ENCRYPTION_KEY 非法 base64：{e}"))?;
-    // salt 空（= Node hkdfSync 的 Buffer.alloc(0)）。HMAC 会把空 key 补零到块长，
-    // 与全零 salt 等价，故 Some(&[]) 与 None 结果相同；这里显式用 Some(&[]) 对齐 Node。
+    // Empty salt (= Node hkdfSync Buffer.alloc(0)). HMAC pads an empty key to block size,
+    // equivalent to an all-zero salt, so Some(&[]) and None match; use Some(&[]) explicitly to align with Node.
     let hk = Hkdf::<Sha256>::new(Some(&[]), &ikm);
     let mut out = [0u8; 32];
     hk.expand(HKDF_INFO, &mut out)
@@ -108,8 +101,8 @@ fn derive_key(oauth_key_b64: &str) -> Result<[u8; 32], String> {
     Ok(out)
 }
 
-/// 加密：返回 `"v2:" + base64(IV ‖ 密文 ‖ tag)`。aes-gcm 把 16 字节 tag 追加在密文末尾，
-/// 故 `iv ‖ (密文‖tag)` 恰为该格式。
+/// Encrypt: returns `"v2:" + base64(IV ‖ ciphertext ‖ tag)`. aes-gcm appends the 16-byte tag after ciphertext,
+/// so `iv ‖ (ciphertext‖tag)` is exactly this format.
 pub fn encrypt_token_v2(plaintext: &[u8], oauth_key_b64: &str) -> Result<String, String> {
     let derived = derive_key(oauth_key_b64)?;
     let iv = rand_bytes(12).map_err(|e| e.to_string())?;
@@ -128,7 +121,7 @@ pub fn encrypt_token_v2(plaintext: &[u8], oauth_key_b64: &str) -> Result<String,
     Ok(format!("v2:{}", B64.encode(&framed)))
 }
 
-/// 解密 `"v2:..."`，校验 tag；失败（含篡改/密钥不符）返回 Err。
+/// Decrypt `"v2:..."` and verify tag; returns Err on failure (tampering / wrong key).
 pub fn decrypt_token_v2(body: &str, oauth_key_b64: &str) -> Result<Vec<u8>, String> {
     let raw = B64
         .decode(body.strip_prefix("v2:").ok_or("缺 v2: 前缀")?)
@@ -150,8 +143,8 @@ pub fn decrypt_token_v2(body: &str, oauth_key_b64: &str) -> Result<Vec<u8>, Stri
         .map_err(|_| "aes-gcm 解密/验签失败".to_string())
 }
 
-// ---------- 路径护栏与安全写 ----------
-/// 逐层向上找到最近的已存在祖先并 canonicalize（看穿符号链接），再把不存在的尾巴拼回。
+// ---------- Path guards & safe write ----------
+/// Walk up to the nearest existing ancestor and canonicalize (follow symlinks), then re-append missing tail segments.
 fn real_ancestor(p: &Path) -> PathBuf {
     let mut cur = p.to_path_buf();
     let mut tail: Vec<std::ffi::OsString> = Vec::new();
@@ -184,7 +177,7 @@ fn assert_not_symlink(p: &Path) -> Result<(), String> {
     Ok(())
 }
 
-/// 安全写：拒符号链接 + O_EXCL 临时文件 + rename + chmod，避免跟随/竞态写到非预期目标。
+/// Safe write: reject symlinks + O_EXCL temp file + rename + chmod, avoiding follow/race writes to unintended targets.
 fn safe_write(path: &Path, data: &[u8], mode: u32) -> Result<(), String> {
     assert_not_symlink(path)?;
     let parent = path.parent().ok_or("目标无父目录")?;
@@ -210,10 +203,10 @@ fn chmod_best_effort(p: &Path, mode: u32) {
     let _ = std::fs::set_permissions(p, std::fs::Permissions::from_mode(mode));
 }
 
-// ---------- 主流程 ----------
-// 注：一次性 `forge`（总是铸新 org）已被幂等的 `ensure_virtual_login` 取代（修 #3/#6），
-// 应用不再需要它。`forge_guarded`（= 护栏 + 一次性铸新）仍保留供测试用注入假 real_cred_dir
-// 直接验证护栏与写入。
+// ---------- Main flow ----------
+// Note: one-shot `forge` (always mint new org) was superseded by idempotent `ensure_virtual_login` (fixes #3/#6);
+// the app no longer needs it. `forge_guarded` (= guards + one-shot mint) remains for tests to inject a fake
+// real_cred_dir and verify guards and writes directly.
 
 /// 可注入「真实凭证目录」的内层（供测试传入临时目录，不碰真实 `~/.claude-science`）。
 /// 一次性铸新（org/account 均新）。=`resolve_guarded` 护栏 + `write_login(None,None)`。

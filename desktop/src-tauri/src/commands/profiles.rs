@@ -52,7 +52,7 @@ pub(crate) fn update_profile_metadata(
     })
 }
 
-/// 删 profile：经串行器；删的是【生效】profile → active 置空（inner 内）+ bump + 停代理。
+/// Delete profile via lifecycle. If it was active: clear active, bump generation, stop proxy.
 #[tauri::command]
 pub(crate) fn delete_profile(
     state: State<'_, SharedAppState>,
@@ -123,12 +123,12 @@ fn update_profile_connection_inner_cmd(
     lifecycle.with_serialized(|| {
         let dir = config::default_dir();
         let cfg = config::load_from(&dir).map_err(|e| e.to_string())?;
-        // 未命中 id → Err（不静默 Ok）。
+        // Missing id → Err (never silent Ok).
         let mut candidate = cfg
             .profile_by_id(&id)
             .cloned()
             .ok_or_else(|| i18n_err("errProfileNotFound", serde_json::json!({ "id": id })))?;
-        // 生效【后】的候选连接（None=不改则沿用旧值），active/非 active 共用一份。
+        // Candidate connection after merge (None = keep existing); shared by active/non-active paths.
         let edit = ConnectionEdit::with_models(
             base_url.clone(),
             api_format.clone(),
@@ -140,22 +140,19 @@ fn update_profile_connection_inner_cmd(
         edit.apply(&mut candidate);
         let adapter = adapter_for_profile(&candidate);
         reject_openai_custom_anthropic_base(adapter, &candidate.base_url)?;
-        // 保存前守卫（修 P2）：relay/自定义端点清空 base_url → 不可用连接（激活必失败）。
-        // 校验生效后的 base_url，空则拒绝落盘、绝不谎报「已保存」；native 走硬编码端点，空无妨。
+        // Guard: relay/custom endpoints require non-empty base_url before persist.
         if relay_missing_base_url(adapter, &candidate.base_url) {
             return Err(i18n_err("errRelayMissingBaseUrl", serde_json::json!({})));
         }
-        // 保存前守卫（修 #9 P1-a）：relay/自定义端点空 model → 无 force → 退回 passthrough（显示 claude）。
+        // Guard: relay/custom endpoints require at least one model.
         if relay_missing_profile_models(adapter, &candidate) {
             return Err(i18n_err("errRelayMissingModel", serde_json::json!({})));
         }
         if cfg.is_profile_active(&id) {
-            // active（有正在服务的代理）：validate-before-persist —— 新连接作【内存候选】喂进
-            // 切换事务（校验→起正式→健康），探活健康【才】连同落盘；失败则磁盘连接零改动、
-            // 仍跑旧连接（杜绝「盘新运行旧」，修 P1-4）。
+            // Active profile: validate-before-persist via switch transaction; disk unchanged on failure.
             let v =
                 set_active_profile_txn(&app, &state, lifecycle.as_ref(), &id, false, Some(&edit))?;
-            // 连接编辑：committed:false（scratch 分类失败）也如实作为错误上抛（磁盘未改、代理仍跑旧的）。
+            // Surface scratch/health failure as error; disk and proxy stay on previous connection.
             if v.get("committed").and_then(|b| b.as_bool()) == Some(false) {
                 if let Some(key) = v.get("hint_key").and_then(|k| k.as_str()) {
                     return Err(serde_json::to_string(&serde_json::json!({
@@ -166,12 +163,9 @@ fn update_profile_connection_inner_cmd(
                 }
                 return Err(i18n_err("errConnValidateFailed", serde_json::json!({})));
             }
-            // active：已连同起正式代理探活并落盘，视为已校验。
             Ok(json!({ "validated": true }))
         } else {
-            // 非 active：无正在服务的代理。先对候选做上游 scratch 校验（仅明确拒绝才拦，其余
-            // best-effort 落盘并如实标记「未校验」，修 P2-d：贴合设计「校验候选后提交」+ 如实报告），
-            // 再落盘（inner 内含格式门 + 覆盖前留底）。
+            // Non-active: scratch upstream verify; explicit reject blocks, else best-effort save + validated flag.
             let validated = scratch_validate_candidate(&app, &candidate)?;
             update_profile_connection_inner(
                 &dir,
@@ -188,7 +182,7 @@ fn update_profile_connection_inner_cmd(
     })
 }
 
-/// 一键切生效 profile：经串行器走 [`set_active_profile_txn`] 切换事务。
+/// Set active profile via [`set_active_profile_txn`] (serialized switch transaction).
 #[tauri::command]
 pub(crate) async fn set_active_profile(
     app: tauri::AppHandle,
