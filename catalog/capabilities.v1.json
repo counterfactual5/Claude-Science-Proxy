@@ -10,7 +10,7 @@
       },
       "status": "supported",
       "action": "normalize",
-      "reason": "DeepSeek uses the native Anthropic path; CSSwitch maps Science shell model ids, clamps known token caps, and normalizes thinking/tool_choice quirks.",
+      "reason": "DeepSeek uses the native Anthropic path; CSP maps Science shell model ids, clamps known token caps, and normalizes thinking/tool_choice quirks.",
       "evidence": [
         "proxy/csswitch_proxy.py:51",
         "proxy/provider_policy.py:69",
@@ -90,7 +90,7 @@
       },
       "status": "limited",
       "action": "drop",
-      "reason": "Kimi treats web_search as a provider server tool and may stream server_tool_use/web_search_tool_result blocks; CSSwitch keeps local known_tools but does not advertise web_search upstream and filters server-tool blocks.",
+      "reason": "Kimi treats web_search as a provider server tool and may stream server_tool_use/web_search_tool_result blocks; CSP keeps local known_tools but does not advertise web_search upstream and filters server-tool blocks.",
       "evidence": [
         "proxy/anthropic_compat.py:84",
         "proxy/anthropic_compat.py:178"
@@ -109,7 +109,7 @@
       },
       "status": "supported",
       "action": "normalize",
-      "reason": "Anthropic-compatible relay providers can reject empty or loose input_schema values, so CSSwitch normalizes relay tools to object schemas without mutating the caller request.",
+      "reason": "Anthropic-compatible relay providers can reject empty or loose input_schema values, so CSP normalizes relay tools to object schemas without mutating the caller request.",
       "evidence": [
         "proxy/anthropic_compat.py:26",
         "proxy/anthropic_compat.py:56"
@@ -131,7 +131,7 @@
       },
       "status": "supported",
       "action": "normalize",
-      "reason": "DeepSeek rejects forced tool use combined with thinking, so CSSwitch disables thinking for forced Anthropic tool_choice on DeepSeek.",
+      "reason": "DeepSeek rejects forced tool use combined with thinking, so CSP disables thinking for forced Anthropic tool_choice on DeepSeek.",
       "evidence": [
         "proxy/provider_policy.py:103",
         "docs/verified-facts.md:38"
@@ -150,7 +150,7 @@
       },
       "status": "limited",
       "action": "drop",
-      "reason": "DashScope Responses-compatible endpoints reject web_search in this path, so CSSwitch drops that tool while preserving other function tools.",
+      "reason": "DashScope Responses-compatible endpoints reject web_search in this path, so CSP drops that tool while preserving other function tools.",
       "evidence": [
         "proxy/responses_compat.py:58"
       ],
@@ -195,7 +195,7 @@
       },
       "status": "unsupported",
       "action": "diagnose",
-      "reason": "Anthropic-hosted MCP servers require real claude.ai authorization and user:mcp_servers scope; CSSwitch virtual OAuth cannot make official hosted services available.",
+      "reason": "Anthropic-hosted MCP servers require real claude.ai authorization and user:mcp_servers scope; CSP virtual OAuth cannot make official hosted services available.",
       "evidence": [
         "docs/verified-facts.md:13",
         "docs/known-issues.md:167"
@@ -218,7 +218,7 @@
       "action": "diagnose",
       "reason": "External Streamable HTTP MCP servers depend on outbound network routing; current CONNECT tunneling is direct unless a future upstream proxy path is added.",
       "evidence": [
-        "https://github.com/SuperJJ007/CSSwitch/issues/11",
+        "https://github.com/SuperJJ007/Claude-Science-Proxy/issues/11",
         "proxy/csswitch_proxy.py:532",
         "scripts/launch-virtual-sandbox.sh:112"
       ],
@@ -237,7 +237,7 @@
       "action": "document",
       "reason": "Local stdio bio connectors are the preferred fallback for hosted MCP boundaries, but installation, discovery, and restart persistence need explicit verification before support can be claimed.",
       "evidence": [
-        "https://github.com/SuperJJ007/CSSwitch/pull/10"
+        "https://github.com/SuperJJ007/Claude-Science-Proxy/pull/10"
       ],
       "tests": []
     },
@@ -284,7 +284,7 @@
       },
       "status": "unsupported",
       "action": "diagnose",
-      "reason": "Official remote skills may depend on claude.ai hosted services and real account state; CSSwitch can document local alternatives but cannot promise hosted remote skill availability.",
+      "reason": "Official remote skills may depend on claude.ai hosted services and real account state; CSP can document local alternatives but cannot promise hosted remote skill availability.",
       "evidence": [
         "docs/known-issues.md:167",
         "docs/verified-facts.md:13"
@@ -333,9 +333,9 @@
       },
       "status": "limited",
       "action": "diagnose",
-      "reason": "Issue #15 reports that this Science build may refresh OAuth via hardcoded api.anthropic.com/oauth/token outside ANTHROPIC_BASE_URL; virtual OAuth can then be treated as logged-out. CSSwitch surfaces this as a version/auth boundary, not as real-account success.",
+      "reason": "Issue #15 reports that this Science build may refresh OAuth via hardcoded api.anthropic.com/oauth/token outside ANTHROPIC_BASE_URL; virtual OAuth can then be treated as logged-out. CSP surfaces this as a version/auth boundary, not as real-account success.",
       "evidence": [
-        "https://github.com/SuperJJ007/CSSwitch/issues/15",
+        "https://github.com/SuperJJ007/Claude-Science-Proxy/issues/15",
         "docs/known-issues.md:37",
         "findings/switching-organization-hang.md:16"
       ],
@@ -399,7 +399,7 @@
       "reason": "Non-Anthropic CONNECT currently opens a direct TCP tunnel; external MCP access can fail on networks where direct egress is blocked.",
       "evidence": [
         "proxy/csswitch_proxy.py:554",
-        "https://github.com/SuperJJ007/CSSwitch/issues/11"
+        "https://github.com/SuperJJ007/Claude-Science-Proxy/issues/11"
       ],
       "tests": [
         "test.test_proxy_connect.ProxyConnect.test_connect_passthrough_tunnels_bytes"
@@ -414,7 +414,7 @@
       },
       "status": "limited",
       "action": "document",
-      "reason": "The virtual sandbox intentionally does not set http_proxy because the CSSwitch proxy does not implement ordinary absolute-form HTTP forwarding.",
+      "reason": "The virtual sandbox intentionally does not set http_proxy because the CSP proxy does not implement ordinary absolute-form HTTP forwarding.",
       "evidence": [
         "scripts/launch-virtual-sandbox.sh:115"
       ],
@@ -431,7 +431,7 @@
       "action": "document",
       "reason": "An upstream proxy path is the recommended future fix for external MCP egress, but it is not implemented in the current main branch.",
       "evidence": [
-        "https://github.com/SuperJJ007/CSSwitch/pull/14",
+        "https://github.com/SuperJJ007/Claude-Science-Proxy/pull/14",
         "proxy/http_transport.py"
       ],
       "tests": []

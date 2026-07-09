@@ -12,7 +12,7 @@ import urllib.error
 import urllib.request
 
 
-UPSTREAM_UA = "CSSwitch/0.2 (+https://github.com/SuperJJ007/CSSwitch)"
+UPSTREAM_UA = "Claude-Science-Proxy/0.3 (+https://github.com/SuperJJ007/Claude-Science-Proxy)"
 
 
 def _with_user_agent(headers):

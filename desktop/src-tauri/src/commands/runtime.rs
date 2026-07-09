@@ -55,9 +55,8 @@ fn set_settings_inner(
         // 保持端口不变则一切仍自洽（旧沙箱指旧代理端口、下次一键在旧端口重建代理，链路照通）。
         if teardown {
             let mut st = lock(&state);
-            stop_sandbox_state(&app, &mut st).map_err(|e| {
-                i18n_err("errPortSandboxStopFailed", json!({ "error": e }))
-            })?;
+            stop_sandbox_state(&app, &mut st)
+                .map_err(|e| i18n_err("errPortSandboxStopFailed", json!({ "error": e })))?;
             lifecycle.bump_generation(); // 停成功后作废在途启动
             st.stop_proxy();
         }
@@ -215,7 +214,7 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        env::temp_dir().join(format!("csswitch-{label}-{}-{now}", std::process::id()))
+        env::temp_dir().join(format!("csp-{label}-{}-{now}", std::process::id()))
     }
 
     fn free_port() -> u16 {
@@ -384,7 +383,7 @@ esac
             ),
         );
 
-        let fake_key = "csswitch-isolated-fake-key-never-log";
+        let fake_key = "csp-isolated-fake-key-never-log";
         let profile = Profile {
             id: "mock-relay".into(),
             name: "Mock Relay".into(),

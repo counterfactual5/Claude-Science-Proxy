@@ -201,7 +201,7 @@ class _DetectFilter:
 class _KimiServerToolFilter:
     """Drop Kimi server-tool SSE blocks that the local client cannot consume.
 
-    Kimi may emit Anthropic server-tool blocks (currently web search) even when CSSwitch
+    Kimi may emit Anthropic server-tool blocks (currently web search) even when CSP
     does not advertise that tool upstream. The client-tool path expects ordinary
     content blocks with contiguous indexes, so we remove those blocks and compact indexes.
     """
