@@ -6,6 +6,9 @@
 
 ## [Unreleased]
 
+### 变更 Changed
+- **品牌重命名**：对外产品名由 CSSwitch 改为 **Claude Science Proxy（CSP）**；桌面 app 窗口标题与 bundle 标识更新为 `com.csp.menubar`。用户数据目录迁移至 `~/.csp/`（`CSP.json`、`logs/`、`sandbox/home`）；首次启动会自动从旧路径 `~/.csswitch/config.json` 一次性迁移。
+
 ## [0.3.6] — 2026-07-06
 
 > 主题：**自定义 OpenAI Responses provider 预览支持**。这版新增 OpenAI Responses 兼容端点路径，并针对 DashScope Responses 兼容模式收紧工具调用与输出预算边界。

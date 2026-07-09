@@ -23,7 +23,7 @@
 
 - **现象**：用户让 DeepSeek 在 Science 里跑自检，`request_host_access` 返回 **❌ 被拒（路径不存在）**。
 - **背景推测（待验证，勿当定论）**：`request_host_access` 应是 Science 的一个能力/工具（申请访问宿主机某路径）。「路径不存在」说明它请求的路径在**沙箱环境**里不存在。候选方向：
-  1. 沙箱 HOME 是 `~/.csswitch/sandbox/home`（独立于真实 HOME），Science 预期的工作目录 / 项目路径在沙箱里没被创建 → 申请的路径不存在。
+  1. 沙箱 HOME 是 `~/.csp/sandbox/home`（独立于真实 HOME），Science 预期的工作目录 / 项目路径在沙箱里没被创建 → 申请的路径不存在。
   2. 该能力可能依赖真实授权 / 官方后端，虚拟登录下受限（类似远程 MCP 被 fast-fail 那种「虚拟登录用不了官方托管能力」）。
   3. DeepSeek 走**原生 Anthropic 透传**（非翻译），所以**不是翻译层的锅**，更可能是环境 / 路径 / 授权。
 - **待收集（下次复现时）**：① 完整报错文本；② 它请求的**具体路径**是什么；③ 是否只有 DeepSeek 触发、还是任何 provider 都这样；④ 该自检具体是什么（Science 自带的环境自检？哪个 agent 发起？）。
@@ -63,7 +63,7 @@
 
 ## 5. 用户反馈「request 有但 console 报错」（信息不全，沟通中）
 
-- **现象**：console 显示 4 条报错。逐条分析多为**浏览器扩展噪声**（Adobe Acrobat 扩展 `efaidnbmnnnibpcajpcglclefindmkaj` 的慢网络/字体干预、PWA 横幅、扩展消息通道 `message channel closed`），**非 CSSwitch/Science 自身错误**。唯一有意义信号是「Slow network」，印证网络因素。
+- **现象**：console 显示 4 条报错。逐条分析多为**浏览器扩展噪声**（Adobe Acrobat 扩展 `efaidnbmnnnibpcajpcglclefindmkaj` 的慢网络/字体干预、PWA 横幅、扩展消息通道 `message channel closed`），**非 CSP/Science 自身错误**。唯一有意义信号是「Slow network」，印证网络因素。
 - **要问清**：① "request 有" 具体指什么、模型有没有正常回复；② 用无痕 / 禁扩展或按 `localhost:<port>` 过滤 console 复看，看有没有真正来自 Science 页面的错误。
 - **状态**：信息不全，记录 + 沟通中，不改。
 
@@ -75,11 +75,11 @@
 
 - **现象**：用户更新 CSSwitch（v0.1.4 → v0.1.5）后重进 Science，之前的对话看不到了。
 - **查证结论**：
-  - **更新本身不删数据**。沙箱对话库在稳定用户目录 `~/.csswitch/sandbox/home/.claude-science/orgs/<org_uuid>/operon-cli.db`，路径只依赖 `$HOME`（`config.rs:86-91`、`lib.rs:108-110`），与 app 版本 / 安装路径无关；换 `.app` 不碰它。启动/停止脚本无 data-dir 级删除；虚拟 OAuth 重伪造只写 `encryption.key` / `active-org.json` / `.oauth-tokens/*.enc`，**绝不碰 `orgs/` 对话库**（`oauth_forge.rs:294-315`）。
+  - **更新本身不删数据**。沙箱对话库在稳定用户目录 `~/.csp/sandbox/home/.claude-science/orgs/<org_uuid>/operon-cli.db`，路径只依赖 `$HOME`（`config.rs`、`science.rs`），与 app 版本 / 安装路径无关；换 `.app` 不碰它。启动/停止脚本无 data-dir 级删除；虚拟 OAuth 重伪造只写 `encryption.key` / `active-org.json` / `.oauth-tokens/*.enc`，**绝不碰 `orgs/` 对话库**（`oauth_forge.rs:294-315`）。
   - **真正原因：每次点「一键开始」都无条件重伪造一个全新随机 org**（`oauth_forge.rs:270-271` 每次新 `org_uuid`，覆盖 `active-org.json` 见 `:326`；对应 #3 的「② 无条件重新伪造」）。活动组织一换，Science 打开的是新空组织，**旧对话被孤儿化**（仍在磁盘旧 `org_uuid` 目录下，界面看不到）。磁盘实证：沙箱里已累积 7 个 org 目录 / 7 个独立 DB，`active-org.json` 只指其一。
   - 与「更新」无因果：**每次一键都会发生**，只是用户更新后必然重新一键，主观体验成「更新后对话没了」。
 - **修法 = 落地 #3**：#3 幂等分派设计里「沙箱已健康就跳过重新伪造」正是此病的解——沙箱活着就不重伪造、不换 org，旧对话一直在。**故 #3 从「顺延 UX」升级为兼修本高优先项。**
-- **临时绕过（可告知用户）**：① 别点「一键开始」，若沙箱 daemon 还活着，直接浏览器开 `http://127.0.0.1:<沙箱端口>`，活动组织不变、旧对话都在；② 数据没丢，都在 `~/.csswitch/sandbox/home/.claude-science/orgs/`。
+- **临时绕过（可告知用户）**：① 别点「一键开始」，若沙箱 daemon 还活着，直接浏览器开 `http://127.0.0.1:<沙箱端口>`，活动组织不变、旧对话都在；② 数据没丢，都在 `~/.csp/sandbox/home/.claude-science/orgs/`。
 - **未验证（待实机）**：把 `active-org.json` 指回旧 org、并令牌 org_uuid 匹配，Science 是否就能重新加载旧历史（复原路径，超出只读范围，需实测）。
 
 ## 6b. 历史会话恢复（把某历史 org 指回 active-org 令旧对话重现）
@@ -87,7 +87,7 @@
 > **状态：待设计，需实机。** #6 本轮只做了「阻止复发」（不再新增孤儿）；本条负责把**现存**用户已孤儿化的旧对话找回。#6 要做完 6b 才算真正修复、才毕业到 CHANGELOG。
 
 - **背景**：#6 修复（幂等 forge）之前，每次一键都换 org，磁盘上已累积多个孤儿 org（沙箱实证 7 个）。`active-org.json` 只指其一，其余 org 里的旧对话界面看不到。
-- **数据都在**：`~/.csswitch/sandbox/home/.claude-science/orgs/<org_uuid>/operon-cli.db`，未丢。
+- **数据都在**：`~/.csp/sandbox/home/.claude-science/orgs/<org_uuid>/operon-cli.db`，未丢。
 - **恢复思路（待实机验证）**：把想要的历史 `org_uuid` 写回 `active-org.json`，并令 `.oauth-tokens/*.enc` 里的 `org_uuid` 与之一致，看 Science 是否据此重载旧历史（= #6「未验证（待实机）」那条）。可能需要一个「历史会话」选择 UI（列出 `orgs/` 各库、让用户切换活动组织）。
 - **本轮已埋雏形**：`ensure_virtual_login` 遇「多历史组织但无法定位活动者」会**报恢复错误**并提示用户手动把 `org_uuid` 写回 `active-org.json`——这就是 6b 的人工版最小形态。
 - **优先级**：低于「下个主线」，但它是 #6 毕业的前置。
@@ -99,7 +99,7 @@
 > - **Bug1 入口 URL 解析**：`claude-science url` 现输出多行（第一行真 URL + 第二行「single-use…」说明），`sandbox_url()`（`lib.rs`）把整段 stdout 当 URL 交 `open` → 换行/说明污染参数、单次性 nonce 未被正确消费 → 落 `/login`（**这条才是用户直接症状**）。修：新增纯函数 `first_http_url()` 只取第一条合法 `http(s)://` URL。
 > - **Bug2 健康快捷路径绕过登录修复**：0.2.0 只要沙箱 daemon 活着就「连 auth 文件都不读」直接重开，导致旧版遗留 / 凭证损坏 / 已落登录页的健康 daemon 永不自愈（0.2.0 引入的分支）。修：健康分支先做**只读**校验 `login_intact`（复用既有 `read_intact_login` 自洽判定）；自洽→只重开（org 不动、旧对话不丢），失效→停沙箱、走 `ensure_virtual_login` 修复保 org + 重启。
 >
-> 各补一条离线回归测试（`first_http_url_*` / `login_intact_*`），`cargo test` 49 全绿、fmt CLEAN、`run_all.sh` ALL GREEN。**更新安全**已用全仓删除路径审计证明「升级不删会话」：无任何生产代码删除 `orgs/`（唯一生产删除=原子写临时文件 + 多余登录 `.enc`；Bug2 修法走保 org 的 `ensure_virtual_login`；stop/launch 脚本零删除）。符合 cc-switch「更新只换 app、不动 `~/.csswitch` 用户数据」的原则。
+> 各补一条离线回归测试（`first_http_url_*` / `login_intact_*`），`cargo test` 49 全绿、fmt CLEAN、`run_all.sh` ALL GREEN。**更新安全**已用全仓删除路径审计证明「升级不删会话」：无任何生产代码删除 `orgs/`（唯一生产删除=原子写临时文件 + 多余登录 `.enc`；Bug2 修法走保 org 的 `ensure_virtual_login`；stop/launch 脚本零删除）。符合 cc-switch「更新只换 app、不动 `~/.csp` 用户数据」的原则。
 
 ## 8. 「API 支持」重架方向：cc-switch 式多 profile 配置 + 代理移 Rust（2026-07-03 定，主线）
 
@@ -141,14 +141,14 @@
 > **修复摘要（对齐 deepseek 借壳 + cc-switch 自填范式，spec/plan 见本地 `docs/superpowers/`，git 忽略）**：① 层二＝代理 `build_models_response` 在 `RELAY_FORCE_MODEL` 设时返回单壳（`claude-opus-4-8` + `display_name`＝真实模型名），出站由 `resolve_model` 的 force 分支覆盖、零改动；② 层一＝全 relay 统一 FIXED（GLM/OpenRouter 也 `requires_model_override=true`），模型控件从 `<select>` 换成 `<input list>+<datalist>`（下拉精选＋自填兜底，`custom` 终于能填模型名）；③ 各家 `builtin_models` 官方核定（GLM→`glm-5.2`、MiniMax→`MiniMax-M3`、硅基→`DeepSeek-V4-Pro` 等，硅基 Anthropic `/v1/messages` 真机 200）；④ 后端 `relay_missing_model` 守卫接 create/edit/activate（不变量不可绕过）；⑤ 存量空 model 的 relay 加载时回填模板默认＋一次性提示（甲迁移）；⑥ 模型名 trim 规范化。原设计如下（历史留存）：
 
 - **现象**：① 智谱 GLM 等 relay 家在 Science 顶部模型选择器里「显示的是 claude」；② 自定义（填 claude 中转 API）「显示的是 opus」；用户说「自定义的模型也有问题」。
-- **根因（`proxy/csswitch_proxy.py` PROVIDERS 注释已证实，逆向标记 s0/ZjO/XjO/hB_）**：Science 模型面板有**二进制写死的两道硬规则**——① 可选模型 id **必须 `claude-` 开头**；② 只有 `claude-{opus|sonnet|haiku}-<纯数字版本>` 进**主列表**（每 family 留一个），其余进「More models」折叠。**CSSwitch 改不了 Science 这个 UI**，只能控制代理 `/v1/models` 返回什么。
+- **根因（`proxy/csswitch_proxy.py` PROVIDERS 注释已证实，逆向标记 s0/ZjO/XjO/hB_）**：Science 模型面板有**二进制写死的两道硬规则**——① 可选模型 id **必须 `claude-` 开头**；② 只有 `claude-{opus|sonnet|haiku}-<纯数字版本>` 进**主列表**（每 family 留一个），其余进「More models」折叠。**CSP 改不了 Science 这个 UI**，只能控制代理 `/v1/models` 返回什么。
   - **deepseek（native）**：`models` **借壳** `claude-opus-4-8`/`claude-haiku-4-5` + `display_name`「DeepSeek V4 Pro/Flash」，`model_map` 出站还原真实 id → Science 显示真实名，正常。
   - **relay + `requires_model_override=false`（GLM/openrouter）**：`passthrough=True`，`fetch_relay_models` 回源拉**真实 id**（`glm-4.6` 非 claude-）→ **被 Science 硬规则过滤** → 选择器回退显示 claude 默认。= **#11 根因**。
   - **relay + `requires_model_override=true`（小米/硅基/kimi/minimax/自定义）**：面板选了模型→`RELAY_FORCE_MODEL` override 实际走选中模型，但 Science 选择器**仍显示 claude**；自定义 `default_model="claude-opus-4-8"` → **#12「显示 opus」**。
 - **修复方案（待定，倾向 A+B 结合，对齐 deepseek 成熟做法）**：让 relay 也**借壳**——`fetch_relay_models`/`build_models_response` 给回源真实模型分配 `claude-{family}-<数字>` 壳 id（进主列表）+ `display_name=真实模型名`，出站用动态 `model_map`（壳→真实 id）还原。
   - **A**：全 relay 回源模型借壳；主列表每 family 限 1（最多 3 个真实名进主列表，其余 More models）——多模型的 GLM/openrouter 需要。
   - **B**：`requires_model_override=true` 的家只借**选中的那一个**模型壳（简单，kimi/minimax/小米/硅基/自定义适用）。
-  - **C（治标）**：不改协议，只在 CSSwitch app 文案说明「Science 顶部显示 claude 是外壳，实际走你选的模型」。
+  - **C（治标）**：不改协议，只在 CSP app 文案说明「Science 顶部显示 claude 是外壳，实际走你选的模型」。
   - **坑**：壳 id 要稳定、每 family 分配、动态生成；现 `passthrough` 不映射，借壳后出站 `model_map` 还原要与 passthrough 协同。需一份 spec；代理 `/v1/models` 返回可不启 Science 单验，整链看 Science 显示须用户在场。
 
 ## 10. Kimi / MiniMax 需不需要像千问/DS 那样「翻译」？→ 不需要，已做（原生透传）
