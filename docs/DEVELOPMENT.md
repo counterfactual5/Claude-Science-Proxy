@@ -62,9 +62,9 @@ desktop/src-tauri/src/
 
 前端只调 Rust command；key 完整值永不进前端，只回显掩码。**坑：Tauri 顶层多词命令参数用 camelCase**（`templateId`/`baseUrl`/`skipVerify` 等），serde 结构体入参（如 `req`）内部字段仍 snake_case。
 
-- **配置读写**：`get_config`（→ `{profiles, templates, active_id, active_ids, proxy_port, sandbox_port, pending_notice}`，key 掩码）、`create_profile`、`update_profile_connection`（改 base_url/model/key）、`update_profile_metadata`（改名/备注）、`delete_profile`、`set_active_profile`（设为当前，经切换事务）、`open_csp_json`、`set_settings`。
+- **配置读写**：`get_config`（→ `{profiles, templates, active_id, active_ids, proxy_port, sandbox_port, pending_notice}`；`active_ids` 运行时仅 0/1 条，key 掩码）、`create_profile`、`update_profile_connection`（改 base_url/model/key）、`update_profile_metadata`（改名/备注）、`delete_profile`、`set_active_profile`（切换当前，经切换事务）、`open_csp_json`、`set_settings`。
 - **模型**：`fetch_models`（起临时代理探 `/v1/models`，回真实 id + 内置合并）。
-- **运行控制**：`stop_all`、`one_click_login`（→ `{url}`：起代理→写虚拟登录→起沙箱→返回 Science URL）。
+- **运行控制**：`stop_all`、`one_click_login`（→ `{url}`）、`status`（诊断快照，可选）。
 
 ## 命令与构建
 

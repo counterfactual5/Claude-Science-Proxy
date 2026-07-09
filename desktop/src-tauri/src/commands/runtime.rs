@@ -2,45 +2,11 @@ use serde::Deserialize;
 use serde_json::json;
 use tauri::State;
 
-use crate::runtime::capability_catalog::diagnostics_for_profile;
-use crate::runtime::diagnostics::{
-    build_status_response, science_diagnostics, status_lights, ScienceDiagnosticsInput,
-    StatusProbeInput,
-};
-use crate::runtime::operation;
-use crate::runtime::profile::profile_capabilities;
-use crate::runtime::provider::{
-    adapter_for_profile, current_shim_mode_for_adapter, gateway_kind_for_adapter, upstream_endpoint,
-};
+use crate::runtime::diagnostics::runtime_status_snapshot;
+use crate::runtime::i18n::i18n_err;
 use crate::runtime::science::{settings_change_needs_teardown, stop_sandbox};
 use crate::runtime::settings::validate_runtime_ports;
-use crate::{config, lock, proc, run_blocking, AppState, SharedAppState, SharedLifecycle};
-
-fn config_last_error_json(error: &dyn std::fmt::Display) -> serde_json::Value {
-    json!({
-        "type": "config_error",
-        "message": error.to_string(),
-    })
-}
-
-fn status_response_for_config_error(error: &dyn std::fmt::Display) -> serde_json::Value {
-    build_status_response(
-        status_lights(StatusProbeInput {
-            proxy_ok: false,
-            sandbox_ok: false,
-            upstream_ok: false,
-        }),
-        serde_json::Value::Null,
-        "",
-        "off",
-        diagnostics_for_profile(None, "off"),
-        science_diagnostics(ScienceDiagnosticsInput {
-            sandbox_port: 0,
-            sandbox_ok: false,
-        }),
-        Some(config_last_error_json(error)),
-    )
-}
+use crate::{config, lock, run_blocking, AppState, SharedAppState, SharedLifecycle};
 
 fn stop_sandbox_state(app: &tauri::AppHandle, st: &mut AppState) -> Result<(), String> {
     stop_sandbox(app, &mut st.sandbox, &mut st.sandbox_url)
@@ -90,9 +56,7 @@ fn set_settings_inner(
         if teardown {
             let mut st = lock(&state);
             stop_sandbox_state(&app, &mut st).map_err(|e| {
-                format!(
-                    "端口未更改：无法停止指向旧端口的沙箱（{e}），为避免留下失效链路，端口保持不变。请手动停止沙箱或重启 app 后重试。（真实实例 8765 未受影响）"
-                )
+                i18n_err("errPortSandboxStopFailed", json!({ "error": e }))
             })?;
             lifecycle.bump_generation(); // 停成功后作废在途启动
             st.stop_proxy();
@@ -168,7 +132,7 @@ fn stop_all_inner_cmd(
         let mut st = lock(&state);
         let sandbox_res = stop_sandbox_state(&app, &mut st);
         st.stop_proxy();
-        sandbox_res.map_err(|e| format!("代理已停；但{e}真实实例 8765 未受影响。"))
+        sandbox_res.map_err(|e| i18n_err("errStopSandboxFailed", json!({ "error": e })))
     })
 }
 
@@ -193,88 +157,15 @@ fn one_click_login_cmd(
     })
 }
 
-#[allow(dead_code)]
+/// 运行时状态灯与诊断快照（内部/脚本用；前端当前不轮询）。
+#[tauri::command]
 pub(crate) fn status(state: State<'_, SharedAppState>) -> serde_json::Value {
-    // 只在锁内取值，锁外做短超时探活。这里是高频 UI 状态灯，
-    // 不能反复调用外部 `claude-science status`，否则前端轮询会卡住主线程。
-    // 沙箱强身份确认保留在 one_click_login 的启动/复用边界。
-    let (pport, secret, sport, adapter, base_url, active_profile, catalog_profile) = {
-        let st = lock(state.inner());
-        let cfg = match config::load_from(&config::default_dir()) {
-            Ok(cfg) => cfg,
-            Err(e) => return status_response_for_config_error(&e),
-        };
-        let pport = if st.proxy_port != 0 {
-            st.proxy_port
-        } else {
-            cfg.proxy_port
-        };
-        let sport = if st.sandbox_port != 0 {
-            st.sandbox_port
-        } else {
-            cfg.sandbox_port
-        };
-        // 上游灯读生效 profile 的 adapter/base_url；无生效配置 → 空（灯显黄，不误探）。
-        let (adapter, base_url, active_profile, catalog_profile) = match cfg.active_profile() {
-            Some(p) => {
-                let adapter = adapter_for_profile(p).to_string();
-                (
-                    adapter,
-                    p.base_url.clone(),
-                    json!({
-                        "id": p.id,
-                        "name": p.name,
-                        "template_id": p.template_id,
-                        "api_format": p.api_format,
-                        "model": p.model,
-                        "capabilities": profile_capabilities(p),
-                    }),
-                    Some(p.clone()),
-                )
-            }
-            None => (String::new(), String::new(), serde_json::Value::Null, None),
-        };
-        (
-            pport,
-            st.secret.clone(),
-            sport,
-            adapter,
-            base_url,
-            active_profile,
-            catalog_profile,
-        )
-    };
-    let upstream = upstream_endpoint(&adapter, &base_url);
-    let proxy_ok = !secret.is_empty()
-        && proc::http_health(pport, Some(&secret), operation::STATUS_HEALTH_TIMEOUT_MS);
-    let sandbox_ok = proc::http_health(sport, None, operation::STATUS_HEALTH_TIMEOUT_MS);
-    let upstream_ok = upstream
-        .as_ref()
-        .map(|e| proc::tcp_reachable(&e.host, e.port, operation::STATUS_UPSTREAM_TIMEOUT_MS))
-        .unwrap_or(false);
-    let lights = status_lights(StatusProbeInput {
-        proxy_ok,
-        sandbox_ok,
-        upstream_ok,
-    });
-    let shim_mode = current_shim_mode_for_adapter(&adapter);
-    build_status_response(
-        lights,
-        active_profile,
-        gateway_kind_for_adapter(&adapter),
-        shim_mode,
-        diagnostics_for_profile(catalog_profile.as_ref(), shim_mode),
-        science_diagnostics(ScienceDiagnosticsInput {
-            sandbox_port: sport,
-            sandbox_ok,
-        }),
-        None,
-    )
+    runtime_status_snapshot(state.inner())
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{config_last_error_json, status_response_for_config_error};
+    use crate::runtime::diagnostics::runtime_status_snapshot;
     use crate::{
         config::{self, Config, Profile},
         lifecycle, lock,
@@ -292,31 +183,6 @@ mod tests {
         time::{SystemTime, UNIX_EPOCH},
     };
     use tauri::Manager;
-
-    #[test]
-    fn config_last_error_json_preserves_typed_config_error() {
-        let err = config_last_error_json(&"bad config");
-        assert_eq!(
-            err.get("type").and_then(|v| v.as_str()),
-            Some("config_error")
-        );
-        assert_eq!(
-            err.get("message").and_then(|v| v.as_str()),
-            Some("bad config")
-        );
-    }
-
-    #[test]
-    fn status_response_for_config_error_is_fail_closed() {
-        let v = status_response_for_config_error(&"bad config");
-        assert_eq!(v["proxy"], "amber");
-        assert_eq!(v["sandbox"], "amber");
-        assert_eq!(v["upstream"], "amber");
-        assert_eq!(v["active_profile"], serde_json::Value::Null);
-        assert_eq!(v["science"]["sandbox"]["port"], 0);
-        assert_eq!(v["last_error"]["type"], "config_error");
-        assert_eq!(v["last_error"]["message"], "bad config");
-    }
 
     struct EnvGuard {
         saved: Vec<(String, Option<std::ffi::OsString>)>,
@@ -581,7 +447,7 @@ esac
             "1"
         );
 
-        let status = super::status(app.state::<SharedAppState>());
+        let status = runtime_status_snapshot(&state);
         assert_eq!(status["proxy"], "green");
         assert_eq!(status["sandbox"], "green");
         assert_eq!(status["upstream"], "green");

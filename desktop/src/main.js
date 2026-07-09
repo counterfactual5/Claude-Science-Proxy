@@ -154,6 +154,8 @@ const I18N = {
     errRelayMissingBaseUrl: "中转 / 自定义端点必须填写连接地址（base_url），连接未保存。",
     errRelayMissingModel: "中转 / 自定义端点必须选择或填写一个模型，连接未保存。",
     errConnValidateFailed: "连接校验未通过，连接未保存。",
+    errPortSandboxStopFailed: "端口未更改：无法停止指向旧端口的沙箱（{error}）。为避免留下失效链路，端口保持不变。请手动停止沙箱或重启 app 后重试。（真实实例 8765 未受影响）",
+    errStopSandboxFailed: "代理已停；但{error}（真实实例 8765 未受影响）。",
     noActiveProfile: "还没有「当前生效」的配置。请先「＋ 新建」或点击一条配置切换，再点「启动 Claude Science」。",
     oneClickReady: "已就绪，正在打开面板…",
     oneClickFail: "启动失败：{err}",
@@ -291,6 +293,8 @@ const I18N = {
     errRelayMissingBaseUrl: "Relay/custom endpoint requires base_url; connection not saved.",
     errRelayMissingModel: "Relay/custom endpoint requires a model; connection not saved.",
     errConnValidateFailed: "Connection verify failed; connection not saved.",
+    errPortSandboxStopFailed: "Ports unchanged: could not stop sandbox on old port ({error}). Ports kept to avoid a broken chain. Stop sandbox manually or restart the app. (Real instance on 8765 unaffected.)",
+    errStopSandboxFailed: "Proxy stopped; but {error} (real instance on 8765 unaffected).",
     noActiveProfile: "No active profile. Create or select one, then Start Claude Science.",
     oneClickReady: "Ready, opening panel…",
     oneClickFail: "Start failed: {err}",
@@ -869,7 +873,7 @@ async function persistPorts() {
     // 出错＝端口未落盘（校验不过 / 停旧沙箱失败）：把输入框还原成实际生效值，避免显示未保存的数字。
     els.proxyPort.value = configState.proxy_port;
     els.sandboxPort.value = configState.sandbox_port;
-    setMsg(String(e), "err");
+    setMsg(resolveBackendErr(e), "err");
   } finally {
     setBusy(false);
   }
@@ -1303,7 +1307,7 @@ async function stopAll() {
     await call("stop_all");
     setMsg(T("stopped"), "ok");
   } catch (e) {
-    setMsg(T("stopFail", { err: e }), "err");
+    setMsg(T("stopFail", { err: resolveBackendErr(e) }), "err");
   } finally {
     setBusy(false);
   }
