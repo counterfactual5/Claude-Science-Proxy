@@ -201,7 +201,7 @@ pub(crate) fn set_active_profile_txn(
             }) {
                 trace.stage(OperationStage::Rollback, "reason=config_write_failed");
                 let restored =
-                    restore_proxy_for_active_set(app, state, lifecycle, &cfg, Some(&trace));
+                    restore_proxy_for_active_profile(app, state, lifecycle, &cfg, Some(&trace));
                 trace.finish(format!("error=config_write_failed restored={restored}"));
                 return Err(i18n_err(
                     "errConfigWriteFailed",
@@ -229,7 +229,7 @@ pub(crate) fn set_active_profile_txn(
         }
         SwitchOutcome::RollbackToOld => {
             trace.stage(OperationStage::Rollback, "reason=proxy_unhealthy");
-            let restored = restore_proxy_for_active_set(app, state, lifecycle, &cfg, Some(&trace));
+            let restored = restore_proxy_for_active_profile(app, state, lifecycle, &cfg, Some(&trace));
             trace.finish(format!("rollback restored={restored}"));
             Err(i18n_err(
                 &format!("switchProxyRollback{ctx}"),
@@ -246,17 +246,16 @@ pub(crate) fn set_active_profile_txn(
     }
 }
 
-fn restore_proxy_for_active_set(
+fn restore_proxy_for_active_profile(
     app: &tauri::AppHandle,
     state: &SharedAppState,
     lifecycle: &lifecycle::Lifecycle,
     cfg: &config::Config,
     trace: Option<&OperationTrace>,
 ) -> bool {
-    let profiles: Vec<config::Profile> = cfg.active_profiles().into_iter().cloned().collect();
-    if profiles.is_empty() {
+    let Some(p) = cfg.active_profile() else {
         return true;
-    }
+    };
     lifecycle.bump_generation();
-    start_proxy_for_profiles(app, state, lifecycle, &profiles, trace).is_ok()
+    start_proxy_for_profiles(app, state, lifecycle, std::slice::from_ref(p), trace).is_ok()
 }
