@@ -43,7 +43,7 @@ echo "[生效配置]"
 # 多 profile：key 存 CSP.json（不再看 shell 环境变量）。app 传来 template_id + adapter +
 # key 有无（KEY_PRESENT）。任一模板都不该在这里「未知 provider」失败。
 if [ -z "$PROVIDER" ]; then
-  warn "当前没有「生效」配置（在面板点「设为当前」选一条）"
+  warn "当前没有「生效」配置（在面板点击一条配置切换为当前生效）"
 elif [ "$KEY_PRESENT" = "1" ]; then
   pass "生效来源：${PROVIDER}（${ADAPTER:-?} 适配器）· key 已配置在 CSP.json（值不显示）"
 else

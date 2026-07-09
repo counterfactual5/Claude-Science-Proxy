@@ -62,8 +62,8 @@ Claude Science sandbox
 
 - Manage multiple model profiles from a desktop panel instead of editing environment variables.
 - Save multiple profiles for the same provider, such as different keys, models, or relay URLs.
-- Verify a key before making a profile active; failed checks do not silently switch your active setup.
-- Click "一键开始" (Start) to launch the proxy, prepare the sandbox, and open Science.
+- Verify a key before switching the active profile; failed checks do not silently switch your setup.
+- Click **Start Claude Science** to launch the proxy, prepare the sandbox, and open Science.
 - Show the actual selected model name in Science instead of a vague `claude` or `opus` label. One active profile can enable multiple models (virtual registry shell IDs); switch among them in Science.
 
 **For advanced users**
@@ -87,11 +87,11 @@ Before starting, make sure you have:
 1. Download the latest `Claude Science Proxy_*.dmg` from [GitHub Releases](../../releases/latest).
 2. Drag Claude Science Proxy into Applications.
 3. If macOS blocks the first launch, right-click the app and choose "Open".
-4. Click "+ 新建" (New), choose a provider, enter your API key, select or type models (multi-select supported), and provide the required `base_url`.
-5. Click "创建" (Create) to save the profile.
-6. Click a profile card to make it the active connection; only one profile is active at a time.
-7. After verification succeeds, click "一键开始" (Start).
-8. CSP starts the isolated Science instance and opens it in your browser; the Science model selector displays the real model names you configured.
+4. Click **+ New**, choose a provider, enter your API key, select models (multi-select), and set the required `base_url`.
+5. Click **Create** to save the profile.
+6. Click a profile card to make it active (only one at a time).
+7. After verification succeeds, click **Start Claude Science**.
+8. CSP starts the isolated Science instance and opens it in your browser; the model selector shows the real model names you configured.
 
 ## Virtual model registry (multi-model)
 

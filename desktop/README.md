@@ -1,6 +1,6 @@
 # Claude Science Proxy（CSP）桌面 app（Tauri）
 
-macOS 桌面 app（正常窗口，非菜单栏），把 CSP 的日常操作收进一个面板：选 provider、填第三方 key、一键开始、起停代理与沙箱、三盏状态灯。
+macOS 桌面 app（正常窗口，非菜单栏），把 CSP 的日常操作收进一个面板：新建/切换配置、填第三方 key、启动 Claude Science、起停代理与沙箱。
 
 架构上它只是**进程管家**：Rust 后端负责起停子进程、注入环境变量、读写配置、探活。虚拟 OAuth 伪造已在 v0.1.4 移进 Rust 原生实现（`src/oauth_forge.rs`，app 运行时不再需要 node）；翻译逻辑仍在 `proxy/csswitch_proxy.py` 作子进程调用（下一步移 axum 拔 python），沙箱启动仍走 `scripts/launch-virtual-sandbox.sh`，以保住铁律护栏与已验证行为。
 
@@ -35,7 +35,7 @@ npm install
 npm run tauri dev
 ```
 
-CSP 以正常窗口打开面板（420×700，已去托盘/菜单栏）。
+CSP 以正常窗口打开面板（约 340×700，已去托盘/菜单栏）。
 
 后端定位 `proxy/` 与 `scripts/` 的顺序（`asset_root()`）：**① 打包后**优先用 Tauri 资源目录
 （`Contents/Resources/`，见下「构建」——运行所需的 proxy 与 scripts allowlist 已被 bundle 进去）；**② 开发态**回退到
