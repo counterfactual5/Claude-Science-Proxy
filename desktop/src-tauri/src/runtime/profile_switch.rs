@@ -6,7 +6,7 @@ use crate::runtime::provider::{
     assert_format_supported, is_native_adapter, proxy_args_for,
     reject_openai_custom_anthropic_base, relay_missing_profile_models, should_scratch_candidate,
 };
-use crate::runtime::proxy_lifecycle::{start_proxy_for, start_proxy_for_profiles};
+use crate::runtime::proxy_lifecycle::start_proxy_for_profiles;
 use crate::runtime::system::asset_root;
 use crate::runtime::transaction::{
     decide_switch, rollback_status_clause, skip_scratch_verify, SwitchOutcome,
@@ -265,7 +265,7 @@ pub(crate) fn deactivate_profile_from_pool_txn(
     }
     let old_ids = cfg.active_ids.clone();
     #[allow(clippy::needless_borrows_for_generic_args)]
-    let mut next_ids: Vec<String> = cfg
+    let next_ids: Vec<String> = cfg
         .active_ids
         .iter()
         .filter(|x| *x != id)
@@ -356,7 +356,7 @@ where
     if !next_ids.iter().any(|x| x == &candidate.id) {
         next_ids.push(candidate.id.clone());
     }
-    let mut next_profiles: Vec<config::Profile> = next_ids
+    let next_profiles: Vec<config::Profile> = next_ids
         .iter()
         .filter_map(|pid| {
             if pid == &candidate.id {
