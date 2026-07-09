@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "CSSwitch",
+  "productName": "Cloud Science Proxy",
   "version": "0.3.6",
   "identifier": "com.csswitch.menubar",
   "build": {
@@ -11,7 +11,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "CSSwitch",
+        "title": "Cloud Science Proxy",
         "width": 420,
         "height": 560,
         "minWidth": 380,

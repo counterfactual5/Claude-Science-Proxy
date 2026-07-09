@@ -1,4 +1,4 @@
-// CSSwitch 桌面面板前端。只调用后端 Tauri command，绝不碰任何密钥落盘逻辑。
+// Cloud Science Proxy 桌面面板前端。只调用后端 Tauri command，绝不碰任何密钥落盘逻辑。
 // 后端只把 key 的【掩码】回显给这里；完整 key 永不进前端。
 //
 // ── Tauri 参数键约定（务必遵守）──────────────────────────────────────────────
@@ -477,7 +477,7 @@ function renderList() {
   const list = els.profileList;
   const ps = configState.profiles || [];
   if (!ps.length) {
-    list.innerHTML = '<div class="empty">还没有配置。点右上「＋ 新建」添加一条。</div>';
+    list.innerHTML = '<div class="empty"><span class="empty-icon" aria-hidden="true">☁</span>还没有模型配置<span class="empty-hint">点右上「＋ 新建」添加一条连接</span></div>';
     return;
   }
   list.innerHTML = ps.map((p) => {
