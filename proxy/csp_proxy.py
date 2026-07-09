@@ -1,25 +1,20 @@
 #!/usr/bin/env python3
-"""Claude Science Proxy (CSP) gateway: forward Claude Science inference to third-party models (switchable providers).
+"""Claude Science Proxy (CSP) gateway: forward Claude Science inference to third-party models.
 
 Providers:
-  deepseek (default): https://api.deepseek.com/anthropic — native Anthropic endpoint;
-                   代理只做「透传 + 改模型名 + 换鉴权头 + max_tokens 夹取 + 连接重试」，
-                   thinking/tool_use 全部原生保真（不翻译协议）。
-  qwen           ：DashScope compatible-mode —— Anthropic↔OpenAI 双向翻译（流式以 SSE 回放保真 tool_use）。
-  openai-custom  ：任意 OpenAI Chat Completions 兼容端点，base_url + token + model。
-                   代理拼 /chat/completions 与 /models，并复用 qwen 的 Anthropic↔OpenAI 翻译链。
-  openai-responses：任意 OpenAI Responses 兼容端点，base_url + token + model。
-                   代理拼 /responses 与 /models，并做 Anthropic↔Responses 翻译。
-  relay          ：任意「中转站」（Anthropic 兼容端点，base_url + token）。原生透传、【不重映射模型】，
-                   /v1/models 回源直拉让 Science 选择器自动铺满中转站真实模型。base_url 经
-                   CSP_RELAY_BASE_URL 提供、token 经 CSP_RELAY_KEY 提供。
+  deepseek (default): native Anthropic at api.deepseek.com — passthrough, rename model, swap auth,
+                   clamp max_tokens, retry; thinking/tool_use stay native.
+  qwen: DashScope compatible-mode — Anthropic↔OpenAI translation (streaming replays tool_use via SSE).
+  openai-custom / openai-responses: arbitrary OpenAI-compatible roots (base + key + model).
+  relay: arbitrary Anthropic-compatible relay (CSP_RELAY_BASE_URL + CSP_RELAY_KEY); passthrough model
+         names; /v1/models fetched from upstream for the Science selector.
 
-安全约束：
-  - 入站 Authorization / x-api-key（Science 带来的 OAuth Bearer）一律剥离，不记录、不转发。
-  - 上游只用本地环境变量里的 provider key，值只驻内存，不打印、不写日志。
-  - 只监听回环地址；除所选 provider 端点外不外连。
+Security:
+  - Strip inbound Science Authorization / x-api-key; never log or forward them.
+  - Upstream uses provider keys from env only (memory-resident).
+  - Listen on loopback only.
 
-用法：
+Usage:
   DEEPSEEK_API_KEY=... python3 csp_proxy.py --provider deepseek --port 18991
   DASHSCOPE_API_KEY=... python3 csp_proxy.py --provider qwen --port 18991
 """
@@ -44,38 +39,37 @@ import provider_policy
 import responses_compat
 import anthropic_compat
 
-# DSML 兜底 shim 的运行模式：off（默认，字节级透传）/ detect（透传 + 遥测）/ rewrite（改写）。
-# 由 __main__ 依 shim_mode(PROV_NAME, PROV) 覆写（读环境变量 CSP_TOOLUSE_SHIM）。
+# DSML shim mode: off (default, byte passthrough) / detect (passthrough + telemetry) / rewrite.
+# Set in __main__ via shim_mode(PROV_NAME, PROV) from CSP_TOOLUSE_SHIM.
 SHIM_MODE = "off"
 
-# ---------- provider 注册表 ----------
+# ---------- provider registry ----------
 PROVIDERS = {
     "deepseek": {
         "mode": "anthropic",
-        "dsml_capable": True,   # 只有 DeepSeek 打开 DSML 兜底 shim（relay 需显式确认）
+        "dsml_capable": True,   # only DeepSeek enables DSML shim by default (relay needs explicit opt-in)
         "url": "https://api.deepseek.com/anthropic/v1/messages",
         "key_env": "DEEPSEEK_API_KEY",
-        # 选择器里展示的可选模型。
-        # 注意：Science 模型面板对可选项有两道硬规则（二进制 s0/ZjO/XjO/hB_）：
-        #   1) id 必须以 claude- 开头（s0）；
-        #   2) 只有 id 形如 claude-{opus|sonnet|haiku}-<数字...>（family+纯数字版本）才进【主列表】，
-        #      每个 family 只留一个；其余一律塞进「More models」折叠区（overflow:true）。
-        # 因此这里【借用】Science 认可的主列表 id（opus/haiku），显示名仍写 DeepSeek，
-        # 由 model_map 映射回真实 DeepSeek id。这样两个模型都直接平铺在选择器里，无需展开 More models。
-        #   claude-opus-4-8  → 显示「DeepSeek V4 Pro」  （tier0，且是 Science 的默认模型 id）
-        #   claude-haiku-4-5 → 显示「DeepSeek V4 Flash」（tier2）
+        # Models shown in the Science selector. Science enforces two hard rules (binary s0/ZjO/XjO/hB_):
+        #   1) id must start with claude-
+        #   2) only claude-{opus|sonnet|haiku}-<digits...> land in the main list (one per family);
+        #      others go to "More models" (overflow:true).
+        # We borrow Science-approved main-list shell ids (opus/haiku), display DeepSeek names,
+        # and map back via model_map so both models appear flat without opening More models.
+        #   claude-opus-4-8  → "DeepSeek V4 Pro"  (tier0; Science default inference id)
+        #   claude-haiku-4-5 → "DeepSeek V4 Flash" (tier2)
         "models": [
             ("claude-opus-4-8", "DeepSeek V4 Pro"),
             ("claude-haiku-4-5", "DeepSeek V4 Flash"),
         ],
         "model_map": {
-            # 选择器里选中的 / Science 硬编码的 claude-*（标题用 haiku、正式推理用 opus）→ 真实 deepseek id
+            # Selector / Science hard-coded claude-* shell ids → real DeepSeek ids
             "claude-opus-4-8": "deepseek-v4-pro",
             "claude-sonnet-5": "deepseek-v4-flash",
             "claude-sonnet-4-6": "deepseek-v4-flash",
             "claude-haiku-4-5": "deepseek-v4-flash",
         },
-        # 每模型输出上限。provisional：待 §12.3 拉官方模型列表核对真实上限后校准。
+        # Per-model output caps (provisional until verified against official model list).
         "model_caps": {
             "deepseek-v4-pro": 65536,
             "deepseek-v4-flash": 32768,
@@ -98,7 +92,7 @@ PROVIDERS = {
             "claude-sonnet-4-6": "qwen-plus",
             "claude-haiku-4-5": "qwen-turbo",
         },
-        # provisional：待核对 DashScope 各模型真实上限。
+        # provisional caps until verified against DashScope docs.
         "model_caps": {
             "qwen-max": 8192,
             "qwen-plus": 8192,
@@ -139,42 +133,36 @@ PROVIDERS = {
         "default_model": "",
     },
     "relay": {
-        # 「中转站」：任意 Anthropic 兼容端点（base_url + token）。原生透传、【不重映射模型】
-        # ——中转站原生认 claude-* 名。上游 url / models_url 在 __main__ 里按 CSP_RELAY_BASE_URL
-        # 装配（base + /v1/messages、base + /v1/models）。
-        "mode": "anthropic",       # 复用原生透传 handler（流式/非流式/重试都现成）
-        "url": None,               # __main__ 装配
-        "models_url": None,        # __main__ 装配；存在即 /v1/models 回源直拉
+        # Relay: arbitrary Anthropic-compatible base (CSP_RELAY_BASE_URL + token). Passthrough model names.
+        # urls assembled in __main__: base + /v1/messages, base + /v1/models.
+        "mode": "anthropic",       # reuse native anthropic handler (stream/non-stream/retry)
+        "url": None,               # set in __main__
+        "models_url": None,        # when set, /v1/models is fetched from upstream
         "key_env": "CSP_RELAY_KEY",
-        "passthrough": True,       # resolve_model 原样透传模型名（不映射）
+        "passthrough": True,       # resolve_model forwards model id unchanged
         "force_model_override": True,
-        "auth_style": "both",      # 同时带 x-api-key + Authorization: Bearer（最大兼容各家中转站）
-        "models": [],              # 回源拉取，静态为空
+        "auth_style": "both",      # x-api-key + Authorization: Bearer for relay compatibility
+        "models": [],              # populated from upstream fetch
         "model_map": {},
         "model_caps": {},
-        "default_cap": None,       # 不夹 max_tokens：尊重中转站真实（claude 原生）上限
-        # 空名兜底：Science 硬编码的默认推理模型 id（中转站基本都提供）。
+        "default_cap": None,       # do not clamp max_tokens for relay
+        # Fallback when model name empty: Science default inference shell id.
         "default_model": "claude-opus-4-8",
     },
 }
 
-PROV = None      # 当前 provider 配置（dict），运行时设定
-KEY = None       # 当前 provider 的 key，只驻内存
+PROV = None      # active provider dict (runtime)
+KEY = None       # provider key in memory only
 LOG = None
-PROV_NAME = None  # 运行时设定；模块被 import 做测试时也要有定义，避免 handler NameError
-AUTH_SECRET = None  # 未设则不启用鉴权（保持旧行为）
-# relay 模式：最近一次 /v1/models 回源拉到的上游模型 id 列表。resolve_model 用它把
-# Science 发来的裸 id（如标题 agent 的 claude-haiku-4-5）贴合到中转站真实 id
-# （如 claude-haiku-4-5-20251001）。首拉前为空 → 纯透传。
+PROV_NAME = None  # runtime; defined at import time for unit tests
+AUTH_SECRET = None  # unset → no path-secret auth (legacy behavior)
+# Relay: last upstream model ids from /v1/models; used to align bare Science ids with dated upstream ids.
 RELAY_MODELS = []
-# 强制模型 override：面板选了模型时，代理无条件把所有请求模型改成它（relay 覆盖透传；
-# openai-custom/openai-responses 覆盖 Science 发来的 claude-* 壳）。由 CSP_RELAY_MODEL 或
-# CSP_OPENAI_MODEL 环境变量在 __main__ 里装配；留空 → None。
+# Force-model override from panel (CSP_RELAY_MODEL / CSP_OPENAI_MODEL); None when unset.
 RELAY_FORCE_MODEL = None
-# relay thinking 策略（来自模板 thinking_policy）：由 CSP_RELAY_THINKING 在 __main__ 装配。
-# None/"adaptive" → auto→adaptive（现状，如 MiniMax）；"enabled" → 强制 enabled（如 Kimi）。
+# Relay thinking policy from template (CSP_RELAY_THINKING): None/adaptive vs enabled (e.g. Kimi).
 RELAY_THINKING = None
-# 多模型虚拟注册表（CSP_MODEL_REGISTRY JSON）。设了则按 shell id 路由，不走 force。
+# Multi-model virtual registry (CSP_MODEL_REGISTRY JSON); routes by shell id instead of force override.
 MODEL_REGISTRY = None
 
 @dataclass(frozen=True)
@@ -208,19 +196,16 @@ def current_runtime():
         model_registry=MODEL_REGISTRY,
     )
 
-# ---------- #3: targeted fast-fail（沙箱「Switching organization」卡死修复） ----------
-# 沙箱 Science 启动时会对 claude.ai/api/oauth/profile 发【阻塞式】请求解析组织；
-# 在到不了 claude.ai 的网络上超时重试 → UI 卡在 "Switching organization"。
-# 起沙箱时把 http(s)_proxy 指向本代理（见 launch-virtual-sandbox.sh），do_CONNECT
-# 对下列 Anthropic 域名的 CONNECT 立即短路，其余域名正常隧道透传（保留装包 / MCP 等外联）。
-# 推理仍走 127.0.0.1（no_proxy 直连本地）。
+# ---------- CONNECT fast-fail for sandbox "Switching organization" hang ----------
+# Sandbox Science blocks on claude.ai/api/oauth/profile when the network cannot reach claude.ai.
+# launch-virtual-sandbox.sh points http(s)_proxy at this proxy; do_CONNECT short-circuits
+# Anthropic domains below; other hosts tunnel normally (package installs, MCP, etc.).
+# Inference still uses 127.0.0.1 via no_proxy.
 #
-# 【为何回 401 而非 403】operon 的 claudeAiFetch 读的是 CONNECT 的状态码：
-#   - 401 Unauthorized = 「你没登录」→ operon 打日志 `treating as logged-out` 并秒过（实测/根因确认）。
-#   - 403 Forbidden    = 「登录了但没权限」→ operon 当成组织/权限问题【反复重试】→ 一直卡
-#     "Switching organization"（v0.1.4 实机复现：server 日志固定 `/api/oauth/profile → 403`，
-#     无 `treating as logged-out`）。
-# 虚拟登录本就该表现为「未登录」，故用 401。
+# Why 401 not 403: operon's claudeAiFetch treats CONNECT status as login state —
+#   401 → logged-out, passes quickly (`treating as logged-out`);
+#   403 → permission/org problem → retries → stuck on "Switching organization".
+# Virtual login should look logged-out, so we return 401.
 _BLOCKED_SUFFIXES = ("anthropic.com", "claude.ai", "claude.com")
 
 
