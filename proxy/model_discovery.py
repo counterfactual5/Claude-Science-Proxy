@@ -19,7 +19,7 @@ def normalize_models_response(raw):
         if not mid:
             continue
         ids.append(mid)
-        # 能力位：从上游 supported_parameters 推断，绝不臆测（无该字段 → None）。
+        # Capability bit: inferred from upstream supported_parameters only; never guessed (missing → None).
         sp = m.get("supported_parameters") if isinstance(m, dict) else None
         supports_tools = ("tools" in sp) if isinstance(sp, list) else None
         out.append({

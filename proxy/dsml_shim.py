@@ -12,7 +12,8 @@ DSML_MARKER_BYTES = (
 
 
 def shim_mode(prov_name, prov):
-    """off | detect | rewrite。本轮 relay 恒 off（deepseek-only）；deepseek 且 dsml_capable 才读环境变量。"""
+    """off | detect | rewrite. Relay is always off this round (deepseek-only); reads env only when
+    deepseek and dsml_capable."""
     if prov_name == "relay":
         return "off"
     if not (prov or {}).get("dsml_capable"):
@@ -22,10 +23,11 @@ def shim_mode(prov_name, prov):
 
 
 class DsmlDetector:
-    """detect 模式：只判定「本响应是否出现 DSML 泄漏标记」，不改一个字节。
-    阶段一遥测用（统计检测发生率，不写盘不改写不宣称修复）。跨 chunk 用小尾缓冲防漏。"""
+    """detect mode: only decides whether DSML leak markers appear in this response; does not change
+    a single byte. Phase-one telemetry (detection rate stats; no disk writes, no rewrite, no fix
+    claims). Small tail buffer across chunks to avoid misses."""
 
-    _K = max(len(m) for m in DSML_MARKER_BYTES)   # 最长标记的字节数
+    _K = max(len(m) for m in DSML_MARKER_BYTES)   # byte length of the longest marker
 
     def __init__(self):
         self.found = False
@@ -39,10 +41,10 @@ class DsmlDetector:
             self.found = True
             self._tail = b""
             return
-        # 只保留末尾可能是「半个标记」的字节，供下个 chunk 拼接判断。
+        # Keep only trailing bytes that might be half a marker, for cross-chunk matching.
         self._tail = buf[-(self._K - 1):] if len(buf) >= self._K else buf
 
-# 分隔符：一到两个全角竖线 U+FF5C（vLLM 文档单、issue #8 实测双）。
+# Delimiter: one or two fullwidth vertical bars U+FF5C (vLLM docs use one; issue #8 observed two).
 _P = r"[｜]{1,2}"
 _WRAP = r"(?:tool_calls|function_calls)"
 _OPEN_RE = re.compile(r"<" + _P + r"DSML" + _P + _WRAP + r">")
@@ -57,7 +59,8 @@ _PARAM_RE = re.compile(
 
 
 def _coerce_param(pname, string_attr, raw, prop_schema):
-    """string="true" → 原始字符串；string="false"/缺 → 按 schema type 转型，失败退 json.loads 再退字符串。"""
+    """string="true" → raw string; string="false"/missing → coerce per schema type; on failure fall
+    back to json.loads, then to string."""
     if string_attr == "true":
         return raw
     typ = (prop_schema or {}).get("type")
@@ -74,8 +77,9 @@ def _coerce_param(pname, string_attr, raw, prop_schema):
                 return True
             if low in ("false", "0", "no"):
                 return False
-            # 不认识的布尔字面量（如 "maybe"）：不臆断为 False，留原字符串，
-            # 交 _type_ok 判非法 → _validate_input 返回 False → 整块作废（保守，宁可放行为文本）。
+            # Unknown boolean literal (e.g. "maybe"): do not assume False; keep raw string,
+            # let _type_ok reject → _validate_input returns False → discard whole segment
+            # (conservative: prefer treating as plain text).
             return raw
         if typ in ("object", "array"):
             return json.loads(raw)
@@ -88,7 +92,7 @@ def _coerce_param(pname, string_attr, raw, prop_schema):
 
 
 def _type_ok(val, typ):
-    """基础类型宽松校验：明显冲突才判 False（第三轮 P2）。"""
+    """Loose base-type check: only reject obvious conflicts (round 3 P2)."""
     if typ in (None, "string"):
         return isinstance(val, str) if typ == "string" else True
     if typ == "integer":
@@ -115,7 +119,8 @@ def _type_ok(val, typ):
 
 
 def _validate_input(inp, schema):
-    """required 齐 + 各值基础类型相容；不过返回 False（调用方整段按文本放行）。"""
+    """All required fields present + base types compatible; returns False on failure (caller treats
+    whole segment as text)."""
     schema = schema or {}
     for req in schema.get("required") or []:
         if req not in inp:
@@ -128,13 +133,13 @@ def _validate_input(inp, schema):
 
 
 def _parse_invoke(name, body, known_tools):
-    """解析一个 invoke → {"name","input"}；参数不合 schema 返回 None（调用方整段作废）。"""
+    """Parse one invoke → {"name","input"}; returns None if params fail schema (caller discards)."""
     schema = known_tools.get(name) or {}
     schema_props = schema.get("properties") or {}
     inp = {}
     for pn, sattr, raw in _PARAM_RE.findall(body):
         inp[pn] = _coerce_param(pn, sattr, raw, schema_props.get(pn))
-    # wrapper 解包：单个名为 arguments/input 的参数、且非工具真实字段 → 解包其对象
+    # Wrapper unwrap: single param named arguments/input that is not a real tool field → unwrap object
     if len(inp) == 1:
         only = next(iter(inp))
         if only in ("arguments", "input") and only not in schema_props:
@@ -152,7 +157,7 @@ def _parse_invoke(name, body, known_tools):
 
 
 def parse_dsml_tool_calls(wrapper_region, known_tools):
-    """解析 tool_calls 段。任一工具名未声明或参数不合 schema → 返回 []（保守整块）。"""
+    """Parse a tool_calls region. Any undeclared tool name or schema mismatch → [] (discard whole)."""
     known_tools = known_tools or {}
     out = []
     for m in _TOOLCALLS_RE.finditer(wrapper_region):
@@ -163,14 +168,15 @@ def parse_dsml_tool_calls(wrapper_region, known_tools):
             if name not in known_tools:
                 return []
             call = _parse_invoke(name, body, known_tools)
-            if call is None:      # 参数不合 schema → 整块作废
+            if call is None:      # schema mismatch → discard whole segment
                 return []
             out.append(call)
     return out
 
 
 def segment_dsml_text(text, known_tools):
-    """把文本按 DSML tool_calls 段切成有序分段，保留交错。无 DSML → 单 text 分段。"""
+    """Split text into ordered segments by DSML tool_calls regions, preserving interleaving. No DSML
+    → single text segment."""
     if not text:
         return []
     known_tools = known_tools or {}
@@ -179,7 +185,7 @@ def segment_dsml_text(text, known_tools):
     for m in _TOOLCALLS_RE.finditer(text):
         calls = parse_dsml_tool_calls(m.group(0), known_tools)
         if not calls:
-            continue           # 未知工具/坏格式：不切，整段留作文本（下面按文本收）
+            continue           # unknown tool / bad format: do not split; keep as text below
         if m.start() > pos:
             segs.append({"type": "text", "text": text[pos:m.start()]})
         for c in calls:
@@ -195,37 +201,38 @@ def segment_dsml_text(text, known_tools):
 
 
 class DsmlStreamRewriter:
-    """流式 SSE 改写状态机。Task 4：透明重映射（自管下游索引、通用 delta/stop 映射、增量 UTF-8）。
-    Task 5 在此基础上加 text_delta 的 DSML 检测与 tool_use 合成。"""
+    """Streaming SSE rewrite state machine. Task 4: transparent remapping (own downstream indexes,
+    generic delta/stop mapping, incremental UTF-8). Task 5 adds DSML detection on text_delta and
+    tool_use synthesis."""
 
     def __init__(self, known_tools, nonce=""):
         self.known_tools = known_tools or {}
         self.nonce = nonce or "x"
         self._dec = codecs.getincrementaldecoder("utf-8")()
-        self._buf = ""            # 已解码、未成帧的文本
+        self._buf = ""            # decoded text not yet framed
         self.next_out = 0
-        self.cur_out = None       # 当前打开的下游块索引
-        self.cur_type = None      # 当前上游块类型
+        self.cur_out = None       # index of the currently open downstream block
+        self.cur_type = None      # type of the current upstream block
         self.synthesized = False
         self.tool_n = 0
-        # Task 5 用：
+        # Task 5:
         self.state = "PASS"
         self.scan_buf = ""
         self.cap_buf = ""
 
-    # ---- 对外 ----
+    # ---- public ----
     def feed(self, data):
         self._buf += self._dec.decode(data)
         return self._drain_frames()
 
     def finalize(self):
-        # 冲掉解码器残留 + 未成帧尾巴 + Task 5 的扣留文本
+        # Flush decoder residue + unframed tail + Task 5 held-back text
         self._buf += self._dec.decode(b"", final=True)
         out = self._drain_frames(flush_tail=True)
-        out += self._finalize_text()      # Task 5 覆盖；Task 4 为 b""
+        out += self._finalize_text()      # Task 5 override; Task 4 returns b""
         return out
 
-    # ---- 帧循环 ----
+    # ---- frame loop ----
     def _drain_frames(self, flush_tail=False):
         out = []
         while True:
@@ -238,19 +245,19 @@ class DsmlStreamRewriter:
             frame = self._buf[:idx]
             self._buf = self._buf[idx + sep:]
             out.append(self._handle_frame(frame))
-        # finalize 时：上游最后一帧若无尾随空行（EOF 突然），也要当作完整帧处理，
-        # 否则整条 message_stop / 末尾 delta 会被静默吞掉（Codex P1）。
+        # On finalize: treat the last upstream frame without a trailing blank line (sudden EOF)
+        # as complete, or message_stop / trailing deltas are silently dropped (Codex P1).
         if flush_tail and self._buf.strip():
             frame = self._buf
             self._buf = ""
             out.append(self._handle_frame(frame))
         return b"".join(out)
 
-    # ---- 单帧处理 ----
+    # ---- per-frame handling ----
     def _handle_frame(self, frame):
         event, obj = self._parse_frame(frame)
         if obj is None or not isinstance(obj, dict):
-            return self._raw(frame)              # 注释/未知/非 JSON：原样
+            return self._raw(frame)              # comment/unknown/non-JSON: passthrough
         t = obj.get("type")
         if t == "content_block_start":
             self.cur_type = (obj.get("content_block") or {}).get("type")
@@ -269,10 +276,10 @@ class DsmlStreamRewriter:
             return self._flush_pending() + self._on_message_delta(obj)
         if t == "message_stop":
             return self._flush_pending() + self._raw(frame)
-        # message_start / ping / 其它：原样
+        # message_start / ping / other: passthrough
         return self._raw(frame)
 
-    # 最长可能的起始标记字符数（<｜｜DSML｜｜function_calls>），用于 PASS 回抜。
+    # Max possible opening-marker char count (<｜｜DSML｜｜function_calls>), for PASS holdback.
     _MAX_OPEN = len("<｜｜DSML｜｜function_calls>")
     _CAP = 256 * 1024
 
@@ -294,17 +301,17 @@ class DsmlStreamRewriter:
                 before = self.scan_buf[:m.start()]
                 if before:
                     out.append(self._text_delta(before))
-                # 关闭当前 text 块
+                # Close the current text block
                 if self.cur_out is not None:
                     out.append(self._emit("content_block_stop",
                               {"type": "content_block_stop", "index": self.cur_out}))
                     self.cur_out = None
-                self.cap_buf = self.scan_buf[m.start():]   # 含 OPEN，供闭标签匹配
+                self.cap_buf = self.scan_buf[m.start():]   # includes OPEN for close-tag matching
                 self.scan_buf = ""
                 self.state = "CAPTURE"
                 out.append(self._capture_scan())
                 return b"".join(out)
-            # 未命中：发出安全部分，保留末尾 _MAX_OPEN-1 作可能前缀
+            # No match: emit safe prefix, keep last _MAX_OPEN-1 chars as possible prefix
             keep = self._MAX_OPEN - 1
             if len(self.scan_buf) > keep:
                 emit = self.scan_buf[:-keep]
@@ -323,18 +330,18 @@ class DsmlStreamRewriter:
                     out.append(self._tool_use_events(c))
                 self.synthesized = True
             else:
-                # 未知工具 / 坏格式：把整段当字面文本
+                # Unknown tool / bad format: treat whole region as literal text
                 out.append(self._text_as_new_block(cm.group(0)))
             rest = self.cap_buf[cm.end():]
             self.cap_buf = ""
             self.state = "PASS"
             self.cur_out = None
             if rest:
-                # 余料回 PASS 继续扫（可能又有 OPEN 或普通文本）
+                # Remainder back to PASS for more OPEN or plain text
                 self.scan_buf = rest
                 out.append(self._pass_scan())
             return b"".join(out)
-        # 无闭标签：超上限则保守回退
+        # No close tag: conservative fallback when over cap
         if len(self.cap_buf) > self._CAP:
             out.append(self._text_as_new_block(self.cap_buf))
             self.cap_buf = ""
@@ -343,22 +350,23 @@ class DsmlStreamRewriter:
         return b"".join(out)
 
     def _finalize_text(self):
-        # 终审契约：兜底 flush 后必须【关闭】它新开/仍开的 text 块（发 content_block_stop），不能只 flush delta。
+        # Finalize contract: after flush, must close any text block opened/still open
+        # (emit content_block_stop), not only flush deltas.
         out = []
         if self.state == "CAPTURE" and self.cap_buf:
-            out.append(self._text_as_new_block(self.cap_buf))   # 自带开+关
+            out.append(self._text_as_new_block(self.cap_buf))   # opens + closes
             self.cap_buf = ""
             self.state = "PASS"
         if self.scan_buf:
-            out.append(self._text_delta(self.scan_buf))         # 懒开
+            out.append(self._text_delta(self.scan_buf))         # lazy open
             self.scan_buf = ""
-        if self.cur_out is not None:                            # 关掉仍开的块
+        if self.cur_out is not None:                            # close any still-open block
             out.append(self._emit("content_block_stop",
                       {"type": "content_block_stop", "index": self.cur_out}))
             self.cur_out = None
         return b"".join(out)
 
-    # ---- 边界 flush（第三轮 P0）：收 stop / message 前先吐扣留文本，杜绝丢字与 index=None ----
+    # ---- boundary flush (round 3 P0): emit held text before stop/message; no dropped chars or index=None ----
     def _on_block_stop(self):
         out = []
         if self.state == "CAPTURE":
@@ -367,7 +375,7 @@ class DsmlStreamRewriter:
             self.cap_buf = ""
             self.state = "PASS"
         elif self.scan_buf and self.cur_out is not None:
-            # PASS 回抜尾巴：块要关了，直接吐进当前开块（不懒开）
+            # PASS holdback tail: block is closing, emit into current open block (no lazy open)
             out.append(self._emit("content_block_delta", {"type": "content_block_delta",
                       "index": self.cur_out, "delta": {"type": "text_delta", "text": self.scan_buf}}))
             self.scan_buf = ""
@@ -378,22 +386,23 @@ class DsmlStreamRewriter:
         return b"".join(out)
 
     def _flush_pending(self):
-        # message_delta/message_stop 前：吐扣留文本并关块，保证无悬空文本、无跨 message 边界开块。
+        # Before message_delta/message_stop: emit held text and close block; no dangling text or
+        # blocks open across message boundaries.
         out = []
         if self.state == "CAPTURE" and self.cap_buf:
             out.append(self._text_as_new_block(self.cap_buf))
             self.cap_buf = ""
             self.state = "PASS"
         elif self.scan_buf:
-            out.append(self._text_delta(self.scan_buf))     # 懒开
+            out.append(self._text_delta(self.scan_buf))     # lazy open
             self.scan_buf = ""
-        if self.cur_out is not None:                        # 无条件关掉仍开的块，镜像 _on_block_stop
+        if self.cur_out is not None:                        # unconditionally close open block, mirror _on_block_stop
             out.append(self._emit("content_block_stop",
                       {"type": "content_block_stop", "index": self.cur_out}))
             self.cur_out = None
         return b"".join(out)
 
-    # ---- 合成辅助 ----
+    # ---- synthesis helpers ----
     def _text_delta(self, text):
         if self.cur_out is None:
             head = self._open_text_block()
@@ -438,7 +447,7 @@ class DsmlStreamRewriter:
             obj = {**obj, "delta": d}
         return self._emit("message_delta", obj)
 
-    # ---- 工具 ----
+    # ---- utilities ----
     @staticmethod
     def _parse_frame(frame):
         event, data_lines = None, []
@@ -465,7 +474,8 @@ class DsmlStreamRewriter:
 
 
 def rewrite_nonstream_body(body_bytes, known_tools, nonce=""):
-    """非流式响应体：把 text content 块里的 DSML 段按分段顺序展开成 text/tool_use 块。保守：坏 JSON 原样返回。"""
+    """Non-streaming response body: expand DSML segments in text content blocks into ordered
+    text/tool_use blocks. Conservative: return original bytes on bad JSON."""
     nonce = nonce or "x"
     try:
         obj = json.loads(body_bytes)
@@ -491,9 +501,10 @@ def rewrite_nonstream_body(body_bytes, known_tools, nonce=""):
                 continue
         new_content.append(blk)
     if not changed:
-        # 无泄漏：原样返回上游原字节。既保持【逐字】（不 json 往返、不动上游不透明字段
-        # 如 thinking.signature），也让上层「字节差 → 判定发生改写」的遥测保持准确
-        # （否则任何干净响应都会因 compact↔spaced 再序列化被误报成「已改写」）。
+        # No leak: return upstream bytes verbatim. Preserves byte-for-byte fidelity (no JSON round-trip,
+        # no touching opaque upstream fields like thinking.signature) and keeps upper-layer
+        # "byte diff → rewrite happened" telemetry accurate (otherwise clean responses would be
+        # falsely reported as rewritten due to compact↔spaced re-serialization).
         return body_bytes
     obj["content"] = new_content
     if obj.get("stop_reason") in ("end_turn", "stop", None):

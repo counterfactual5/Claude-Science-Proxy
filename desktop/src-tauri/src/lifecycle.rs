@@ -31,13 +31,13 @@ impl Lifecycle {
         }
     }
 
-    /// 在 app 级互斥下跑 f（读 config→spawn 等复合操作原子化）。poison 也照常恢复继续。
+    /// Run `f` under the app-level mutex (atomizes read-config→spawn composites). Recovers from poison.
     pub fn with_serialized<T>(&self, f: impl FnOnce() -> T) -> T {
         let _g = self.lock.lock().unwrap_or_else(|e| e.into_inner());
         f()
     }
 
-    /// 清 key / 停 / 切换时调用：使正在锁外探活的旧启动作废。返回新 generation。
+    /// Called on clear-key / stop / switch: invalidates in-flight starts that finished probing outside the lock. Returns the new generation.
     pub fn bump_generation(&self) -> u64 {
         self.generation.fetch_add(1, Ordering::SeqCst) + 1
     }
@@ -75,7 +75,7 @@ mod tests {
         for h in hs {
             h.join().unwrap();
         }
-        assert_eq!(max_seen.load(Ordering::SeqCst), 1, "串行器内同时最多一个");
+        assert_eq!(max_seen.load(Ordering::SeqCst), 1, "at most one thread inside serializer");
     }
 
     #[test]
