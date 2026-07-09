@@ -1,7 +1,7 @@
 use std::process::Command;
 
 use crate::runtime::provider::adapter_for_profile;
-use crate::runtime::system::{asset_root, open_in_browser};
+use crate::runtime::system::asset_root;
 use crate::{config, run_blocking};
 
 #[tauri::command]
@@ -45,25 +45,7 @@ fn doctor_config_from(dir: &std::path::Path) -> Result<config::Config, String> {
     config::load_from(dir).map_err(|e| format!("读取配置失败，无法运行自检：{e}"))
 }
 
-/// 当前 app 版本（供前端「检查更新」与页脚版本号用）。
-#[tauri::command]
-pub(crate) fn app_version() -> String {
-    env!("CARGO_PKG_VERSION").to_string()
-}
-
-/// 打开 GitHub Releases 页（检查更新时用系统浏览器打开，浏览器走用户自己的代理）。
-#[tauri::command]
-pub(crate) fn open_release_page() -> Result<(), String> {
-    open_in_browser("https://github.com/SuperJJ007/CSSwitch/releases/latest")
-}
-
-/// 打开「报 bug」页（预填 bug 模板）；用系统浏览器，走用户自己的代理。
-#[tauri::command]
-pub(crate) fn report_bug() -> Result<(), String> {
-    open_in_browser("https://github.com/SuperJJ007/CSSwitch/issues/new?template=bug_report.yml")
-}
-
-/// 在访达里打开日志目录 `~/.csswitch/logs`，方便用户附到 bug 反馈里（先自查有无密钥）。
+/// 在访达里打开日志目录 `~/.csswitch/logs`。
 #[tauri::command]
 pub(crate) fn open_logs() -> Result<(), String> {
     let dir = config::default_dir().join("logs");
