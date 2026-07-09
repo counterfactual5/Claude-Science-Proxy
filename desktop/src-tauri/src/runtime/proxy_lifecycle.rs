@@ -6,25 +6,17 @@ use tauri::Runtime;
 use crate::runtime::operation::{self, OperationStage, OperationTrace, POLL_INTERVAL_MS};
 use crate::runtime::provider::{
     assert_format_supported, is_native_adapter, is_openai_adapter, proxy_args_for,
-    proxy_fingerprint, ProxyLaunch,
+    proxy_args_for_active_profiles, proxy_fingerprint, ProxyLaunch,
 };
-use crate::runtime::provider_pool::{proxy_args_for_active_profiles, proxy_fingerprint_pool};
 use crate::runtime::proxy::{ere_escape, health_timeout_reason, should_write_back, ProxyAction};
 use crate::runtime::system::{asset_root, log_path, open_log, redact, tail_file};
 use crate::{config, lifecycle, lock, proc, SharedAppState};
 
 fn formal_proxy_env(launch: &ProxyLaunch) -> Vec<(&'static str, String)> {
     let native = is_native_adapter(&launch.adapter);
-    let pool = launch.adapter == "pool";
     let mut env = vec![(launch.key_env, launch.key.clone())];
     if let Some(reg) = &launch.model_registry_json {
         env.push(("CSSWITCH_MODEL_REGISTRY", reg.clone()));
-    }
-    if let Some(pool_json) = &launch.provider_pool_json {
-        env.push(("CSSWITCH_PROVIDER_POOL", pool_json.clone()));
-    }
-    if pool {
-        return env;
     }
     if !native {
         if is_openai_adapter(&launch.adapter) {
@@ -49,9 +41,7 @@ fn formal_proxy_env(launch: &ProxyLaunch) -> Vec<(&'static str, String)> {
 }
 
 fn launch_fingerprint(profiles: &[config::Profile], launch: &ProxyLaunch) -> u64 {
-    if profiles.len() > 1 {
-        proxy_fingerprint_pool(profiles, launch)
-    } else if let Some(p) = profiles.first() {
+    if let Some(p) = profiles.first() {
         proxy_fingerprint(p, launch)
     } else {
         0
@@ -94,7 +84,7 @@ pub(crate) fn ensure_proxy<R: Runtime>(
     start_proxy_for_profiles(app, state, lifecycle, &profiles, trace)
 }
 
-/// Start or reuse a proxy for one or more active profiles (pool when len > 1).
+/// Start or reuse a proxy for the active profile.
 pub(crate) fn start_proxy_for_profiles<R: Runtime>(
     app: &tauri::AppHandle<R>,
     state: &SharedAppState,
@@ -240,14 +230,11 @@ mod tests {
             key: "test-key".to_string(),
             key_env: if matches!(adapter, "openai-custom" | "openai-responses") {
                 "CSSWITCH_OPENAI_KEY"
-            } else if adapter == "pool" {
-                "CSSWITCH_POOL_MARKER"
             } else {
                 "CSSWITCH_RELAY_KEY"
             },
             thinking_policy,
             model_registry_json: None,
-            provider_pool_json: None,
         }
     }
 
@@ -264,17 +251,6 @@ mod tests {
             launch.model_registry_json.clone().unwrap()
         )));
         assert!(!env.iter().any(|(k, _)| *k == "CSSWITCH_RELAY_MODEL"));
-    }
-
-    #[test]
-    fn formal_proxy_env_pool_sets_pool_and_registry_only() {
-        let mut launch = launch("pool", "glm-5.2");
-        launch.model_registry_json = Some(r#"{"merge":true,"profiles":[]}"#.to_string());
-        launch.provider_pool_json = Some(r#"{"profiles":[]}"#.to_string());
-        let env = formal_proxy_env(&launch);
-        assert!(env.iter().any(|(k, _)| *k == "CSSWITCH_PROVIDER_POOL"));
-        assert!(env.iter().any(|(k, _)| *k == "CSSWITCH_MODEL_REGISTRY"));
-        assert!(!env.iter().any(|(k, _)| *k == "CSSWITCH_RELAY_BASE_URL"));
     }
 
     #[test]

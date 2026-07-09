@@ -7,7 +7,7 @@
 //!   - profile key 明文存盘（用户已知悉），但**绝不进日志**；回显给前端只给掩码（末 4 位）。
 //!
 //! 存储升级：schema_version 探测 + v1（旧固定槽）一次性迁移 → v2（profile 列表 + active_id），
-//! v3（多模型 active_models）→ v4（provider pool：active_ids[]），
+//! v3（多模型 active_models）→ v4（`active_ids[]` 向后兼容字段，运行时仅单条生效），
 //! 迁移前留 `CSP.json.v1.bak`（失败即中止），普通覆盖前留滚动 `CSP.json.bak`，
 //! 清 key / 删 profile 后净化滚动备份（旧明文 key 不可从 .bak 恢复）。
 //!
@@ -101,7 +101,7 @@ pub struct Config {
     /// 生效 profile 的 id（向后兼容：等于 active_ids 首项；新代码以 active_ids 为准）。
     #[serde(default)]
     pub active_id: String,
-    /// 同时生效的 profile id 列表（provider pool）。空=无生效配置。
+    /// 同时生效的 profile id 列表（schema 兼容；运行时归一化为 0 或 1 条）。
     #[serde(default)]
     pub active_ids: Vec<String>,
     #[serde(default = "default_proxy_port")]
@@ -188,7 +188,7 @@ impl Config {
             .collect()
     }
 
-    /// 是否在某条 profile 在 active pool 中。
+    /// 是否在某条 profile 为当前生效项。
     pub fn is_profile_active(&self, id: &str) -> bool {
         self.active_ids.iter().any(|x| x == id)
     }
@@ -607,12 +607,14 @@ pub fn load_from(dir: &Path) -> io::Result<Config> {
                 )
             })?;
             let mode_migrated = raw.mode != "proxy";
+            let before_active_len = raw.active_ids.len();
             let mut cfg = normalize_active(raw);
             for p in cfg.profiles.iter_mut() {
                 p.sync_model_fields();
             }
             validate_loaded_ports(&cfg)?;
-            if mode_migrated {
+            let folded_active = before_active_len > 1 && cfg.active_ids.len() <= 1;
+            if mode_migrated || folded_active {
                 save_to(dir, &cfg)?;
             }
             Ok(cfg)
@@ -633,6 +635,7 @@ fn validate_loaded_ports(cfg: &Config) -> io::Result<()> {
 /// - `template_id` 未命中注册表 → 归一化为 `custom`；
 /// - `active_ids` / `active_id` 悬空 → 剔除并同步；
 /// - 旧文件仅有 `active_id` → 回填 `active_ids`；
+/// - 多条 `active_ids`（已废弃 provider pool）→ 仅保留首项；
 /// - 遗留 `mode: "official"` → 一律归一为 `proxy`（官方模式 UI/命令已移除）。
 fn normalize_active(mut cfg: Config) -> Config {
     for p in cfg.profiles.iter_mut() {
@@ -651,6 +654,9 @@ fn normalize_active(mut cfg: Config) -> Config {
         .filter(|id| cfg.profile_by_id(id).is_some())
         .cloned()
         .collect();
+    if cfg.active_ids.len() > 1 {
+        cfg.active_ids.truncate(1);
+    }
     if !cfg.active_id.is_empty() && cfg.profile_by_id(&cfg.active_id).is_none() {
         cfg.active_id.clear();
     }
@@ -824,6 +830,28 @@ mod tests {
             ..c.clone()
         };
         assert!(c2.active_profile().is_none());
+    }
+
+    #[test]
+    fn normalize_active_folds_multiple_active_ids_to_first() {
+        let mut c = Config {
+            profiles: vec![
+                Profile {
+                    id: "a".into(),
+                    ..Default::default()
+                },
+                Profile {
+                    id: "b".into(),
+                    ..Default::default()
+                },
+            ],
+            active_ids: vec!["a".into(), "b".into()],
+            active_id: "a".into(),
+            ..Default::default()
+        };
+        c = normalize_active(c);
+        assert_eq!(c.active_ids, vec!["a"]);
+        assert_eq!(c.active_id, "a");
     }
 
     #[test]

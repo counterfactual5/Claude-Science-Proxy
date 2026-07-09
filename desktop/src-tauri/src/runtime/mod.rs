@@ -1,12 +1,12 @@
 pub(crate) mod capability_catalog;
 pub(crate) mod diagnostics;
+pub(crate) mod i18n;
 pub(crate) mod model_discovery;
 pub(crate) mod model_sort;
 pub(crate) mod operation;
 pub(crate) mod profile;
 pub(crate) mod profile_switch;
 pub(crate) mod provider;
-pub(crate) mod provider_pool;
 pub(crate) mod proxy;
 pub(crate) mod proxy_lifecycle;
 pub(crate) mod sandbox_session;

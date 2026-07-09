@@ -30,7 +30,7 @@ It is built for more than developers. You need Claude Science, a third-party API
 - [Quick start](#quick-start)
 - [Supported model sources](#supported-model-sources)
 - [Virtual model registry (multi-model)](#virtual-model-registry-multi-model)
-- [Status diagnostics, capability catalog, and provider pool](#status-diagnostics-capability-catalog-and-provider-pool)
+- [Status diagnostics and capability catalog](#status-diagnostics-and-capability-catalog)
 - [How it protects your real account](#how-it-protects-your-real-account)
 - [Current limitations](#current-limitations)
 - [Languages](#languages)
@@ -64,7 +64,7 @@ Claude Science sandbox
 - Save multiple profiles for the same provider, such as different keys, models, or relay URLs.
 - Verify a key before making a profile active; failed checks do not silently switch your active setup.
 - Click "一键开始" (Start) to launch the proxy, prepare the sandbox, and open Science.
-- Show the actual selected model name in Science instead of a vague `claude` or `opus` label. Supports virtual model registry—when multiple profiles are active, multiple models are displayed in Science, and background agents route automatically by role (primary / fast model).
+- Show the actual selected model name in Science instead of a vague `claude` or `opus` label. One active profile can enable multiple models (virtual registry shell IDs); switch among them in Science.
 
 **For advanced users**
 
@@ -72,7 +72,7 @@ Claude Science sandbox
 - Supports custom `base_url`, model names, and relay providers.
 - Native Anthropic endpoints such as DeepSeek, Kimi, and MiniMax are passed through when possible to preserve tool use, thinking, and streaming behavior.
 - Qwen and custom OpenAI endpoints are translated by the local proxy.
-- Supports multi-profile simultaneous activation (provider pool)—different providers' models can coexist in the same Science session, with requests routed by shell ID to the corresponding upstream.
+- Multiple models per active profile (virtual registry), switchable in the Science model selector.
 - Local config and logs make debugging and issue reports easier.
 
 ## Quick start
@@ -89,7 +89,7 @@ Before starting, make sure you have:
 3. If macOS blocks the first launch, right-click the app and choose "Open".
 4. Click "+ 新建" (New), choose a provider, enter your API key, select or type models (multi-select supported), and provide the required `base_url`.
 5. Click "创建" (Create) to save the profile.
-6. Click "设为当前" (Set active) on a profile to activate it; multiple profiles can be activated simultaneously (provider pool mode).
+6. Click a profile card to make it the active connection; only one profile is active at a time.
 7. After verification succeeds, click "一键开始" (Start).
 8. CSP starts the isolated Science instance and opens it in your browser; the Science model selector displays the real model names you configured.
 
@@ -97,8 +97,7 @@ Before starting, make sure you have:
 
 Science only recognizes model IDs starting with `claude-`. CSP includes a built-in virtual model registry that allocates shell IDs from a fixed pool of `claude-opus-*` / `claude-sonnet-*` / `claude-haiku-*` prefixes. Each shell ID maps to a real upstream model, with the real model name displayed in the Science UI.
 
-- **Single profile mode**: When one profile is active, its model list is allocated shell IDs and shown in the Science model selector.
-- **Multi-profile pool mode**: When multiple profiles are active simultaneously, all profiles' models are merged into the registry. Science can switch between models from different providers; background agent requests route automatically by role (primary / fast model) to the corresponding default profile.
+- **Single active profile**: Click a profile card to switch the active connection. In edit, check multiple models to enable; the virtual registry assigns shell IDs and Science shows real model names. Background agents route by role (primary / fast model).
 
 ## Supported model sources
 
@@ -118,11 +117,9 @@ Science only recognizes model IDs starting with `claude-`. CSP includes a built-
 
 > If your URL is an `/anthropic` endpoint, choose "Custom Anthropic". If you choose "Custom OpenAI", enter an OpenAI-compatible base root such as `https://example.com/v1`, not an Anthropic endpoint.
 
-## Status diagnostics, capability catalog, and provider pool
+## Status diagnostics and capability catalog
 
-CSP includes a read-only capability catalog that makes known compatibility boundaries explicit across providers, tool use, MCP/skills, Science versions, and transport behavior. Runtime `status` diagnostics return the catalog rules matched by the current profile plus fixed boundary rules, which helps explain why a configuration is handled a certain way and which capabilities are diagnostic-only or degraded.
-
-When multiple profiles are active simultaneously (provider pool mode), status diagnostics show the independent status and upstream connectivity of each active profile, and the shell ID allocation of the merged model registry is also reported.
+CSP includes a read-only capability catalog that makes known compatibility boundaries explicit across providers, tool use, MCP/skills, Science versions, and transport behavior. Diagnostics return the catalog rules matched by the current profile plus fixed boundary rules, which helps explain why a configuration is handled a certain way and which capabilities are diagnostic-only or degraded.
 
 This catalog is for diagnostics and observability. It is not proof that a live provider, real Claude account state, Science GUI E2E flow, DMG signing/notarization, or official hosted capability has been verified. A catalog rule id means CSP records that rule or boundary; it does not mean external providers, Anthropic-hosted MCP, Directory connectors, or remote skills are fully verified or fixed.
 
