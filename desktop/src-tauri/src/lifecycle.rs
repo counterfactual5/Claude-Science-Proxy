@@ -1,13 +1,13 @@
-//! 生命周期串行器（spec §8.1，与 native-entry §5.3 共用最小核心）。
-//! 把所有会改 AppState/config 的操作（建/连接编辑/清 key/删/切/一键/停/ensure_proxy）
-//! 串行化；探活刻意在锁外，用 generation token 防「被清除/取代后又拿旧 key 复活代理」。
+//! Lifecycle serializer: serializes operations that mutate `AppState` / config (create, connection
+//! edit, clear key, delete, switch, one-click, stop, ensure_proxy). Health checks run **outside**
+//! the lock; a generation token prevents stale proxy children from writing back after supersede.
 //!
-//! 三把锁分层，严格避免自死锁：
-//!   1. 本串行器锁（`Mutex<()>`）= 最外层，命令级操作整段持有，**绝不重入**；
-//!   2. `AppState` 锁 = 内层，读写运行态时短暂持有，探活期间释放；
-//!   3. `config::update` 锁 = 最内层，仅盖 load-modify-save。
+//! Lock layering (no self-deadlock):
+//!   1. This serializer (`Mutex<()>`) — outermost, held for the whole command; never re-enter.
+//!   2. `AppState` — short holds while reading/writing runtime fields.
+//!   3. `config::update` — innermost, load-modify-save only.
 //!
-//! ensure_proxy/start_proxy_for_profiles **绝不**取本串行器锁（其调用方命令才取），故不自锁。
+//! `ensure_proxy` / `start_proxy_for_profiles` never take this lock (callers hold it).
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;

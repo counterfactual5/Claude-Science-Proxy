@@ -18,7 +18,7 @@ pub(crate) fn get_config() -> Result<serde_json::Value, String> {
     build_get_config(&config::default_dir())
 }
 
-// ---------- profile CRUD 命令（薄包装 *_inner，统一经串行器） ----------
+// Profile CRUD commands (thin wrappers over `*_inner`, all serialized via lifecycle).
 #[tauri::command]
 pub(crate) fn create_profile(
     lifecycle: State<'_, SharedLifecycle>,
