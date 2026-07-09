@@ -185,27 +185,87 @@ function sourceHint(t) {
 const MODEL_HINT = {
   native: "由 Science 选择器 + 内置映射自动选择（opus 深度 / haiku 快速）。",
   follow: "留空＝跟随 Science 选择器（保留 opus/haiku 各档）；选一个＝固定用于所有请求。",
-  fixed: "该来源需选一个模型（不认 claude-*，将用于所有请求含后台任务）。",
+  fixed: "勾选要暴露给 Science 的模型（可多选）；默认模型用于后台任务兜底。",
 };
 
+function profileModels(p) {
+  const active = (p && p.active_models) || [];
+  if (active.length) return active.slice();
+  if (p && p.model) return [p.model];
+  return [];
+}
+
+function collectCheckedModels(container) {
+  if (!container || container.hidden) return [];
+  return [...container.querySelectorAll('input[type="checkbox"]:checked')]
+    .map((el) => el.getAttribute("data-model"))
+    .filter(Boolean);
+}
+
+function renderDefaultModelOptions(sel, label, models, current) {
+  if (!sel) return;
+  const list = models || [];
+  if (label) label.hidden = list.length <= 1;
+  if (!list.length) {
+    sel.hidden = true;
+    return;
+  }
+  sel.hidden = false;
+  sel.innerHTML = list.map((id) =>
+    '<option value="' + escapeHtml(id) + '">' + escapeHtml(id) + "</option>"
+  ).join("");
+  if (current && list.includes(current)) sel.value = current;
+  else sel.value = list[0];
+}
+
+function renderModelPick(container, defaultSel, defaultLabel, builtin, selected, onChange) {
+  if (!container) return;
+  const pool = [];
+  for (const id of builtin || []) if (!pool.includes(id)) pool.push(id);
+  for (const id of selected || []) if (id && !pool.includes(id)) pool.unshift(id);
+  if (!pool.length) {
+    container.hidden = true;
+    container.innerHTML = "";
+    renderDefaultModelOptions(defaultSel, defaultLabel, [], "");
+    return;
+  }
+  container.hidden = false;
+  const selSet = new Set(selected && selected.length ? selected : (pool[0] ? [pool[0]] : []));
+  container.innerHTML = pool.map((id) => {
+    const checked = selSet.has(id) ? " checked" : "";
+    return '<label class="model-pick-item"><input type="checkbox" data-model="' +
+      escapeHtml(id) + '"' + checked + "> " + escapeHtml(id) + "</label>";
+  }).join("");
+  container.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
+    cb.addEventListener("change", () => { if (onChange) onChange(); });
+  });
+  const checked = collectCheckedModels(container);
+  renderDefaultModelOptions(defaultSel, defaultLabel, checked.length ? checked : [...selSet], selected[0] || "");
+}
+
 // 据能力渲染模型字段。native：只读信息 + 隐藏下拉/获取按钮，但把既有 model 留在隐藏下拉里
-// （避免保存时被空值覆盖，守「零运行语义变化」）；relay：走下拉。
-function applyModelCapability(t, ui, currentModel) {
+// （避免保存时被空值覆盖，守「零运行语义变化」）；relay：走下拉 + 多选。
+function applyModelCapability(t, ui, profileOrModel) {
+  const p = profileOrModel && typeof profileOrModel === "object" ? profileOrModel : null;
+  const currentModel = p ? (p.default_model || p.model || "") : (profileOrModel || "");
+  const selected = p ? profileModels(p) : (currentModel ? [currentModel] : []);
   const cap = modelCapability(t);
   const listId = ui.sel.getAttribute("list");
   const dl = listId && document.getElementById(listId);
+  const onPickChange = ui.onPickChange || (() => {});
   if (cap === CAP.NATIVE) {
-    // native：控件隐藏，保留 profile 既有 model（connSave/wizSave 读回原值不清空），不写回任何默认/壳。
     ui.info.textContent = MODEL_HINT.native;
     ui.info.hidden = false;
     ui.sel.hidden = true;
     ui.sel.value = currentModel || "";
+    if (ui.pick) { ui.pick.hidden = true; ui.pick.innerHTML = ""; }
+    if (ui.defaultSel) ui.defaultSel.hidden = true;
+    if (ui.defaultLabel) ui.defaultLabel.hidden = true;
     if (dl) dl.innerHTML = "";
     if (ui.fetchBtn) ui.fetchBtn.hidden = true;
     ui.hint.textContent = "";
     return cap;
   }
-  // relay（FIXED）：input + datalist 候选（内置精选 + 可自填）；预填旗舰默认或既有值。
   ui.info.hidden = true;
   ui.sel.hidden = false;
   if (ui.fetchBtn) ui.fetchBtn.hidden = false;
@@ -214,7 +274,15 @@ function applyModelCapability(t, ui, currentModel) {
   const models = builtin.map((id) => ({ id, supports_tools: null }));
   renderModelOptions(ui.sel, models, "内置");
   ui.sel.value = currentModel || (builtin[0] || "");
-  ui.hint.textContent = MODEL_HINT.fixed;
+  ui.hint.textContent = cap === CAP.FOLLOW ? MODEL_HINT.follow : MODEL_HINT.fixed;
+  if (cap === CAP.FIXED && ui.pick) {
+    renderModelPick(ui.pick, ui.defaultSel, ui.defaultLabel, builtin, selected, onPickChange);
+  } else if (ui.pick) {
+    ui.pick.hidden = true;
+    ui.pick.innerHTML = "";
+    if (ui.defaultSel) ui.defaultSel.hidden = true;
+    if (ui.defaultLabel) ui.defaultLabel.hidden = true;
+  }
   return cap;
 }
 
@@ -421,7 +489,9 @@ async function loadConfig() {
 // 列表里模型摘要：无显式 model 时按三能力给准确措辞（native 内置映射 / relay 跟随 / 需指定），
 // 取代旧「（透传）」字样（三能力语义下不再有「透传」）。
 function modelSummary(p) {
-  if (p.model) return escapeHtml(p.model);
+  const models = profileModels(p);
+  if (models.length > 1) return escapeHtml(models[0] + " +" + (models.length - 1));
+  if (models.length === 1) return escapeHtml(models[0]);
   const cap = modelCapability(p.capabilities ? p : tplById(p.template_id));
   if (cap === CAP.NATIVE) return "内置映射";
   if (cap === CAP.FOLLOW) return "跟随 Science";
@@ -648,14 +718,30 @@ function onWizTemplate() {
   }
   applyModelCapability(t, {
     info: els.wizModelInfo, sel: els.wizModel, hint: els.wizModelHint, fetchBtn: els.wizFetchBtn,
-  }, "");
+    pick: els.wizModelPick, defaultSel: els.wizDefaultModel, defaultLabel: els.wizDefaultModelLabel,
+    onPickChange: refreshWizGate,
+  }, null);
   refreshWizGate();
+}
+
+function resolvedConnectionModels(cap, modelInput, pickContainer, defaultSel) {
+  if (cap === CAP.FIXED && pickContainer && !pickContainer.hidden) {
+    const checked = collectCheckedModels(pickContainer);
+    if (checked.length) {
+      const def = defaultSel && !defaultSel.hidden ? defaultSel.value : checked[0];
+      return { models: checked, defaultModel: def };
+    }
+  }
+  const one = (modelInput || "").trim();
+  return { models: one ? [one] : [], defaultModel: one };
 }
 
 function refreshWizGate() {
   const t = tplById(els.wizTemplate ? els.wizTemplate.value : "");
   const need = t && modelRequired(t);
-  els.wizSaveBtn.disabled = busy || !!(need && !els.wizModel.value.trim());
+  const cap = t ? modelCapability(t) : CAP.FIXED;
+  const resolved = resolvedConnectionModels(cap, els.wizModel.value, els.wizModelPick, els.wizDefaultModel);
+  els.wizSaveBtn.disabled = busy || !!(need && !resolved.models.length);
 }
 
 function openaiCustomAnthropicBaseMessage(t, base) {
@@ -752,7 +838,9 @@ function openConn(id) {
         : "模板地址（只读）。填 key 后可「获取模型」。");
   applyModelCapability(capSrc, {
     info: els.connModelInfo, sel: els.connModel, hint: els.connModelHint, fetchBtn: els.connFetchBtn,
-  }, p.model || "");
+    pick: els.connModelPick, defaultSel: els.connDefaultModel, defaultLabel: els.connDefaultModelLabel,
+    onPickChange: refreshConnGate,
+  }, p);
   els.connKey.value = "";
   els.connKey.placeholder = p.key ? "已存：" + p.key + "（留空＝不改）" : "粘贴 key（只存本地）";
   showView("conn");
@@ -765,8 +853,11 @@ function openConn(id) {
 function refreshConnGate() {
   const p = currentConn();
   const t = p ? tplById(p.template_id) : null;
+  const capSrc = p ? profileCapabilitySource(p, t) : t;
   const need = p ? modelRequired(p.capabilities ? p : t) : false;
-  els.connSaveBtn.disabled = busy || !!(need && !els.connModel.value.trim());
+  const cap = capSrc ? modelCapability(capSrc) : CAP.FIXED;
+  const resolved = resolvedConnectionModels(cap, els.connModel.value, els.connModelPick, els.connDefaultModel);
+  els.connSaveBtn.disabled = busy || !!(need && !resolved.models.length);
 }
 
 async function connFetch() {
@@ -798,9 +889,12 @@ async function connSave() {
   const p = currentConn();
   if (!p) { setMsg("配置不存在。", "err"); return; }
   const t = tplById(p.template_id);
+  const capSrc = profileCapabilitySource(p, t);
   const req = p.capabilities ? modelRequired(p) : (t ? modelRequired(t) : true);
-  const model = els.connModel.value.trim();
-  if (req && !model) { setMsg("该来源需要选一个模型才能保存。", "err"); return; }
+  const cap = capSrc ? modelCapability(capSrc) : CAP.FIXED;
+  const resolved = resolvedConnectionModels(cap, els.connModel.value, els.connModelPick, els.connDefaultModel);
+  if (req && !resolved.models.length) { setMsg("该来源需要至少选一个模型才能保存。", "err"); return; }
+  const model = resolved.defaultModel || resolved.models[0] || els.connModel.value.trim();
   const editable = t ? t.base_url_editable : true;
   const base = editable ? els.connBase.value.trim() : (t ? t.base_url : els.connBase.value.trim());
   // 可编辑地址的模板都是中转/自定义端点，必须带 base_url；清空后保存会得到不可用连接（激活必失败）。
@@ -810,7 +904,14 @@ async function connSave() {
   if (baseErr) { setMsg(baseErr, "err"); return; }
   const active = p.id === configState.active_id;
   // key 留空＝不改（后端语义）；base_url/model 照传。api_format 不在此改（保留模板值）。
-  const args = { id: p.id, baseUrl: base, model, key: els.connKey.value.trim() };
+  const args = {
+    id: p.id,
+    baseUrl: base,
+    model,
+    activeModels: resolved.models,
+    defaultModel: resolved.defaultModel || model,
+    key: els.connKey.value.trim(),
+  };
   setBusy(true, { kind: "saveConnection", id: p.id });
   startSaveConnectionFeedback(p.id, active);
   try {
@@ -1052,9 +1153,9 @@ function wire() {
     "reportBtn", "logsBtn", "quitBtn", "modeSeg", "proxyPort", "sandboxPort", "advSec",
     "listSec", "profileList", "newBtn", "skipActivateBtn",
     "wizSec", "wizTemplate", "wizTemplateChips", "wizTplLabel", "wizTplHint", "wizName", "wizBase", "wizBaseHint",
-    "wizFetchBtn", "wizModelInfo", "wizModel", "wizModelHint", "wizKey", "wizSaveBtn", "wizCancelBtn",
+    "wizFetchBtn", "wizModelInfo", "wizModel", "wizModelHint", "wizModelPick", "wizDefaultModelLabel", "wizDefaultModel", "wizKey", "wizSaveBtn", "wizCancelBtn",
     "connSec", "connTitle", "connBase", "connBaseHint", "connFetchBtn",
-    "connModelInfo", "connModel", "connModelHint", "connKey", "connSaveBtn", "connClearBtn", "connCancelBtn",
+    "connModelInfo", "connModel", "connModelHint", "connModelPick", "connDefaultModelLabel", "connDefaultModel", "connKey", "connSaveBtn", "connClearBtn", "connCancelBtn",
     "metaSec", "metaName", "metaNotes", "metaSaveBtn", "metaCancelBtn",
   ].forEach((id) => (els[id] = $(id)));
   els.panel = document.querySelector(".panel");

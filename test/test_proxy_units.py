@@ -312,6 +312,11 @@ class OpenAICustomProvider(unittest.TestCase):
             "https://api.siliconflow.cn/v1/chat/completions",
         )
 
+    def test_relay_base_root_normalization(self):
+        root = "https://open.bigmodel.cn/api/anthropic"
+        self.assertEqual(cs.normalize_relay_base(root + "/v1/messages"), root)
+        self.assertEqual(cs.normalize_relay_base(root + "/v1/models"), root)
+
     def test_force_model_enters_openai_translation(self):
         req = {
             "model": "claude-opus-4-8",

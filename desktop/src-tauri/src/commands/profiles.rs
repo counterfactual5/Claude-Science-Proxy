@@ -9,7 +9,7 @@ use crate::runtime::profile::{
 use crate::runtime::profile_switch::{scratch_validate_candidate, set_active_profile_txn};
 use crate::runtime::provider::{
     adapter_for_profile, reject_openai_custom_anthropic_base, relay_missing_base_url,
-    relay_missing_model,
+    relay_missing_profile_models,
 };
 use crate::{config, lock, run_blocking, SharedAppState, SharedLifecycle};
 
@@ -113,13 +113,16 @@ pub(crate) async fn update_profile_connection(
     base_url: Option<String>,
     api_format: Option<String>,
     model: Option<String>,
+    active_models: Option<Vec<String>>,
+    default_model: Option<String>,
     key: Option<String>,
 ) -> Result<serde_json::Value, String> {
     let state = state.inner().clone();
     let lifecycle = lifecycle.inner().clone();
     run_blocking(move || {
         update_profile_connection_inner_cmd(
-            app, state, lifecycle, id, base_url, api_format, model, key,
+            app, state, lifecycle, id, base_url, api_format, model, active_models,
+            default_model, key,
         )
     })
     .await
@@ -134,6 +137,8 @@ fn update_profile_connection_inner_cmd(
     base_url: Option<String>,
     api_format: Option<String>,
     model: Option<String>,
+    active_models: Option<Vec<String>>,
+    default_model: Option<String>,
     key: Option<String>,
 ) -> Result<serde_json::Value, String> {
     lifecycle.with_serialized(|| {
@@ -145,10 +150,12 @@ fn update_profile_connection_inner_cmd(
             .cloned()
             .ok_or_else(|| format!("找不到 profile：{id}"))?;
         // 生效【后】的候选连接（None=不改则沿用旧值），active/非 active 共用一份。
-        let edit = ConnectionEdit::new(
+        let edit = ConnectionEdit::with_models(
             base_url.clone(),
             api_format.clone(),
             model.clone(),
+            active_models.clone(),
+            default_model.clone(),
             key.clone(),
         );
         edit.apply(&mut candidate);
@@ -160,7 +167,7 @@ fn update_profile_connection_inner_cmd(
             return Err("中转 / 自定义端点必须填写连接地址（base_url），连接未保存。".to_string());
         }
         // 保存前守卫（修 #9 P1-a）：relay/自定义端点空 model → 无 force → 退回 passthrough（显示 claude）。
-        if relay_missing_model(adapter, &candidate.model) {
+        if relay_missing_profile_models(adapter, &candidate) {
             return Err("中转 / 自定义端点必须选择或填写一个模型，连接未保存。".to_string());
         }
         if cfg.active_id == id {
@@ -191,6 +198,8 @@ fn update_profile_connection_inner_cmd(
                 base_url.as_deref(),
                 api_format.as_deref(),
                 model.as_deref(),
+                active_models.as_deref(),
+                default_model.as_deref(),
                 key.as_deref(),
             )?;
             Ok(json!({ "validated": validated }))

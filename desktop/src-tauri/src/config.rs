@@ -44,7 +44,7 @@ pub(crate) fn validate_runtime_ports(proxy_port: u16, sandbox_port: u16) -> Resu
 }
 
 /// 当前配置 schema 版本。>2 的文件由更新版本 app 写入，本版本拒绝启动（不误改）。
-pub const CURRENT_SCHEMA_VERSION: u32 = 2;
+pub const CURRENT_SCHEMA_VERSION: u32 = 3;
 
 fn default_schema_version() -> u32 {
     CURRENT_SCHEMA_VERSION
@@ -64,6 +64,12 @@ pub struct Profile {
     pub api_key: String,
     #[serde(default)]
     pub model: String,
+    /// 暴露给 Science 的模型列表（可多选）。空时从 `model` 迁移。
+    #[serde(default)]
+    pub active_models: Vec<String>,
+    /// 默认/主模型（后台 agent 兜底）。空时用 active_models 首项。
+    #[serde(default)]
+    pub default_model: String,
     #[serde(default)]
     pub website_url: Option<String>,
     #[serde(default)]
@@ -120,6 +126,51 @@ impl Default for Config {
     }
 }
 
+impl Profile {
+    /// 生效的模型列表：active_models 优先，否则回退到单个 model。
+    pub fn effective_models(&self) -> Vec<String> {
+        let from_active: Vec<String> = self
+            .active_models
+            .iter()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect();
+        if !from_active.is_empty() {
+            return from_active;
+        }
+        let m = self.model.trim();
+        if m.is_empty() {
+            Vec::new()
+        } else {
+            vec![m.to_string()]
+        }
+    }
+
+    pub fn effective_default_model(&self) -> String {
+        let d = self.default_model.trim();
+        if !d.is_empty() {
+            return d.to_string();
+        }
+        self.effective_models()
+            .first()
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    /// 写盘后保持 model/default_model/active_models 一致。
+    pub fn sync_model_fields(&mut self) {
+        let models = self.effective_models();
+        if self.active_models.is_empty() && !models.is_empty() {
+            self.active_models = models.clone();
+        }
+        let default = self.effective_default_model();
+        if !default.is_empty() {
+            self.default_model = default.clone();
+            self.model = default;
+        }
+    }
+}
+
 impl Config {
     /// 当前生效 profile（active_id 空或悬空 → None）。
     pub fn active_profile(&self) -> Option<&Profile> {
@@ -165,6 +216,7 @@ pub fn now_ms() -> i64 {
 pub enum VersionKind {
     Legacy,
     V2,
+    V3,
     TooNew(u32),
 }
 
@@ -174,8 +226,7 @@ struct VersionProbe {
     schema_version: u32,
 }
 
-/// 先只解析 schema_version 判版本，避免用「必填字段缺失」误判旧文件。
-/// <2（含缺失=0）→ Legacy；==2 → V2；>2 → TooNew（拒绝启动）。
+/// <2（含缺失=0）→ Legacy；==2 → V2（迁移到 v3）；==3 → V3；>3 → TooNew。
 pub fn detect_version(data: &[u8]) -> io::Result<VersionKind> {
     let probe: VersionProbe = serde_json::from_slice(data).map_err(|e| {
         io::Error::new(
@@ -184,8 +235,9 @@ pub fn detect_version(data: &[u8]) -> io::Result<VersionKind> {
         )
     })?;
     Ok(match probe.schema_version {
-        v if v < CURRENT_SCHEMA_VERSION => VersionKind::Legacy,
-        v if v == CURRENT_SCHEMA_VERSION => VersionKind::V2,
+        v if v < 2 => VersionKind::Legacy,
+        2 => VersionKind::V2,
+        v if v == CURRENT_SCHEMA_VERSION => VersionKind::V3,
         v => VersionKind::TooNew(v),
     })
 }
@@ -225,6 +277,12 @@ pub fn migrate_v1_to_v2(mut legacy: crate::config_legacy::ConfigV1) -> Config {
             base_url,
             api_key: pc.key.clone(),
             model: pc.model.clone(),
+            active_models: if pc.model.trim().is_empty() {
+                Vec::new()
+            } else {
+                vec![pc.model.clone()]
+            },
+            default_model: pc.model.clone(),
             website_url: tpl.map(|t| t.website_url.to_string()),
             icon: tpl.map(|t| t.icon.to_string()),
             icon_color: tpl.map(|t| t.icon_color.to_string()),
@@ -385,10 +443,31 @@ pub fn load_from(dir: &Path) -> io::Result<Config> {
                     format!("config.json 解析失败：{e}"),
                 )
             })?;
-            let mut cfg = normalize_active(cfg);
+            let mut cfg = migrate_v2_to_v3(normalize_active(cfg));
             let filled = backfill_relay_models(&mut cfg);
             if !filled.is_empty() {
-                // 甲迁移：回填空 model 的 relay，落盘一次（幂等），提示留到 get_config 读后清。
+                cfg.pending_notice = Some(format!(
+                    "已为 {} 个旧配置补上默认模型（可在连接编辑修改）。",
+                    filled.len()
+                ));
+            }
+            validate_loaded_ports(&cfg)?;
+            save_to(dir, &cfg)?;
+            Ok(cfg)
+        }
+        VersionKind::V3 => {
+            let cfg: Config = serde_json::from_slice(&data).map_err(|e| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("config.json 解析失败：{e}"),
+                )
+            })?;
+            let mut cfg = normalize_active(cfg);
+            for p in cfg.profiles.iter_mut() {
+                p.sync_model_fields();
+            }
+            let filled = backfill_relay_models(&mut cfg);
+            if !filled.is_empty() {
                 cfg.pending_notice = Some(format!(
                     "已为 {} 个旧配置补上默认模型（可在连接编辑修改）。",
                     filled.len()
@@ -423,6 +502,15 @@ fn normalize_active(mut cfg: Config) -> Config {
     }
     if !cfg.active_id.is_empty() && cfg.profile_by_id(&cfg.active_id).is_none() {
         cfg.active_id.clear();
+    }
+    cfg
+}
+
+/// v2 → v3：补齐 active_models/default_model，并 bump schema_version。
+fn migrate_v2_to_v3(mut cfg: Config) -> Config {
+    cfg.schema_version = CURRENT_SCHEMA_VERSION;
+    for p in cfg.profiles.iter_mut() {
+        p.sync_model_fields();
     }
     cfg
 }
@@ -538,10 +626,10 @@ mod tests {
 
     // ---------- A1: 结构 + 访问器 + new_id/now_ms ----------
     #[test]
-    fn config_default_is_v2_empty() {
+    fn config_default_is_v3_empty() {
         let c = Config::default();
         assert_eq!(c.schema_version, CURRENT_SCHEMA_VERSION);
-        assert_eq!(c.schema_version, 2);
+        assert_eq!(c.schema_version, 3);
         assert!(c.profiles.is_empty());
         assert_eq!(c.active_id, "");
         assert_eq!(c.proxy_port, 18991);
@@ -718,9 +806,15 @@ mod tests {
         assert!(matches!(detect_version(d).unwrap(), VersionKind::V2));
     }
     #[test]
-    fn detect_version_three_is_too_new() {
+    fn detect_version_three_is_v3() {
         let d = br#"{"schema_version":3}"#;
-        assert!(matches!(detect_version(d).unwrap(), VersionKind::TooNew(3)));
+        assert!(matches!(detect_version(d).unwrap(), VersionKind::V3));
+    }
+
+    #[test]
+    fn detect_version_four_is_too_new() {
+        let d = br#"{"schema_version":4}"#;
+        assert!(matches!(detect_version(d).unwrap(), VersionKind::TooNew(4)));
     }
     #[test]
     fn detect_version_garbage_errors() {
@@ -765,7 +859,7 @@ mod tests {
             providers,
         };
         let cfg = migrate_v1_to_v2(legacy);
-        assert_eq!(cfg.schema_version, 2);
+        assert_eq!(cfg.schema_version, 3);
         assert_eq!(cfg.profiles.len(), 2, "空 qwen 槽跳过");
         let glm = cfg
             .profiles
@@ -894,14 +988,14 @@ mod tests {
         )
         .unwrap();
         let cfg = load_from(&d).unwrap();
-        assert_eq!(cfg.schema_version, 2);
+        assert_eq!(cfg.schema_version, 3);
         assert_eq!(cfg.profiles.len(), 1);
         assert_eq!(cfg.active_profile().unwrap().api_key, "sk-x");
         assert!(d.join("config.json.v1.bak").exists(), "迁移必须留 v1 备份");
         // 落盘后再读是 v2（幂等，不再迁移）。
         let again = load_from(&d).unwrap();
         assert_eq!(again, cfg);
-        assert_eq!(again.schema_version, 2);
+        assert_eq!(again.schema_version, 3);
     }
     #[test]
     fn load_too_new_errors() {
@@ -961,7 +1055,7 @@ mod tests {
         let d = tmpdir().join(".csswitch");
         let cfg = load_from(&d).unwrap();
         assert_eq!(cfg, Config::default());
-        assert_eq!(cfg.schema_version, 2);
+        assert_eq!(cfg.schema_version, 3);
         assert_eq!(cfg.proxy_port, 18991);
     }
 
