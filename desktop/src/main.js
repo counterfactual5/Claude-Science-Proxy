@@ -811,7 +811,7 @@ async function discoverModelIds({ templateId, baseUrl, key, profileId, builtin }
 }
 
 /** 新建 profile 时默认启用前 N 个模型；其余在编辑页勾选或改 CSP.json。 */
-const MAX_AUTO_ENABLE_MODELS = 10;
+const MAX_AUTO_ENABLE_MODELS = 8;
 
 function modelsToEnableOnCreate(discoveredIds, builtin) {
   const ids = (discoveredIds || []).filter(Boolean);
