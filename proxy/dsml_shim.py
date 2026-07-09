@@ -1,5 +1,5 @@
-"""CSSwitch DSML 兜底 shim：把 DeepSeek 泄漏成纯文本的 DSML 工具调用还原成 tool_use。
-纯函数分段器（本文件）+ 流式状态机 + 字节检测器（后续 Task）。不依赖第三方。"""
+"""CSP DSML fallback shim: recover tool_use when DeepSeek leaks DSML markers as plain text.
+Pure-function segmenter (this file) + stream state machine + byte detector. No third-party deps."""
 import codecs
 import json
 import os
