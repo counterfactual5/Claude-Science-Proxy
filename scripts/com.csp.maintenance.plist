@@ -1,18 +1,19 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
-  DEPRECATED: use com.csp.maintenance.plist + install-maintenance.sh (com.csp.maintenance).
-  Kept for reference only.
+  Claude Science Proxy (CSP) daily maintenance launchd agent.
+  Fires at 09:00 and 21:00 local time (Asia/Shanghai in daily-maintenance.sh).
+  __REPO__ is substituted by install-maintenance.sh on install.
 -->
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.csswitch.maintenance</string>
+    <string>com.csp.maintenance</string>
 
     <key>ProgramArguments</key>
     <array>
         <string>/bin/bash</string>
-        <string>/Users/superjj/ccproj/CSswitch/scripts/daily-maintenance.sh</string>
+        <string>__REPO__/scripts/daily-maintenance.sh</string>
     </array>
 
     <key>StartCalendarInterval</key>
@@ -34,8 +35,8 @@
     <string>Background</string>
 
     <key>StandardOutPath</key>
-    <string>/Users/superjj/ccproj/CSswitch/findings/auto-maint/logs/launchd.out.log</string>
+    <string>__REPO__/findings/auto-maint/logs/launchd.out.log</string>
     <key>StandardErrorPath</key>
-    <string>/Users/superjj/ccproj/CSswitch/findings/auto-maint/logs/launchd.err.log</string>
+    <string>__REPO__/findings/auto-maint/logs/launchd.err.log</string>
 </dict>
 </plist>
