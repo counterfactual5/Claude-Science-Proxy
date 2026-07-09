@@ -5,12 +5,12 @@ import unittest
 
 HERE = os.path.dirname(__file__)
 sys.path.insert(0, os.path.join(HERE, "..", "proxy"))
-import csp_proxy as cs          # 复用 PROVIDERS 作配置真源
+import csp_proxy as cs          # reuse PROVIDERS as config source of truth
 import provider_policy as pp
 import anthropic_compat as ac
 
-P2 = "｜｜"   # 双全角竖线 U+FF5C（issue #8 实测泄漏形态）
-# 一段「模型本想调用 web_search、却泄漏成纯文本」的 DSML。
+P2 = "｜｜"   # fullwidth double pipe U+FF5C (issue #8 observed leak shape)
+# DSML where model meant web_search but leaked as plain text.
 DSML_TEXT = (
     "<" + P2 + "DSML" + P2 + "tool_calls> "
     "<" + P2 + "DSML" + P2 + 'invoke name="web_search">'
@@ -53,21 +53,21 @@ class TransformRequest(unittest.TestCase):
                 "thinking": {"type": "auto"},
                 "messages": [{"role": "user", "content": "hi"}]}
         up, ctx = ac.transform_request(body, st)
-        self.assertEqual(up["model"], "deepseek-v4-pro")       # 映射
-        self.assertEqual(up["max_tokens"], 65536)               # clamp 到 pro cap
+        self.assertEqual(up["model"], "deepseek-v4-pro")       # mapped
+        self.assertEqual(up["max_tokens"], 65536)               # clamped to pro cap
         self.assertEqual(up["thinking"]["type"], "adaptive")    # auto → adaptive
         self.assertEqual(ctx.src_model, "claude-opus-4-8")
         self.assertEqual(ctx.target_model, "deepseek-v4-pro")
         self.assertEqual(ctx.provider, "deepseek")
-        # 不改原 body（副本语义）。
+        # original body unchanged (copy semantics).
         self.assertEqual(body["model"], "claude-opus-4-8")
 
     def test_relay_passthrough_no_clamp(self):
         st = _state(dict(cs.PROVIDERS["relay"]), "relay")
         up, ctx = ac.transform_request(
             {"model": "claude-opus-4-8", "max_tokens": 1000000, "messages": []}, st)
-        self.assertEqual(up["model"], "claude-opus-4-8")        # 透传不映射
-        self.assertEqual(up["max_tokens"], 1000000)             # relay 不夹
+        self.assertEqual(up["model"], "claude-opus-4-8")        # passthrough, no map
+        self.assertEqual(up["max_tokens"], 1000000)             # relay does not clamp
 
     def test_nonce_injected_from_factory(self):
         st = _state(cs.PROVIDERS["deepseek"], "deepseek", nonce="deadbeef")
@@ -194,7 +194,7 @@ class RewriteNonstream(unittest.TestCase):
         self.assertTrue(stats["rewritten"])
         obj = json.loads(out)
         tu = next(b for b in obj["content"] if b["type"] == "tool_use")
-        self.assertEqual(tu["id"], "toolu_dsml_fixed_1")       # 固定 nonce → 稳定 id
+        self.assertEqual(tu["id"], "toolu_dsml_fixed_1")       # fixed nonce → stable id
         self.assertEqual(tu["name"], "web_search")
         self.assertEqual(tu["input"], {"query": "GSE207177"})
         self.assertEqual(obj["stop_reason"], "tool_use")
@@ -218,7 +218,7 @@ class MakeStreamRewriter(unittest.TestCase):
     def test_detect_filter_passes_through_and_reports_found(self):
         f = ac.make_stream_rewriter(_ctx(shim_mode="detect", known_tools=WEB_SEARCH))
         chunk = DSML_TEXT.encode("utf-8")
-        self.assertEqual(f.feed(chunk), chunk)                 # detect 原样透传
+        self.assertEqual(f.feed(chunk), chunk)                 # detect passes through unchanged
         self.assertEqual(f.finalize(), b"")
         self.assertTrue(f.stats()["found"])
 
@@ -250,7 +250,7 @@ class MakeStreamRewriter(unittest.TestCase):
     def test_rewrite_filter_synthesizes_tool_use(self):
         f = ac.make_stream_rewriter(
             _ctx(shim_mode="rewrite", known_tools=WEB_SEARCH, nonce="fixed"))
-        # 逐帧喂一段含 DSML 的最小 SSE，finalize 收尾。
+        # Feed minimal SSE containing DSML frame by frame, then finalize.
         out = b""
         for frame in _min_sse_frames():
             out += f.feed(frame)
