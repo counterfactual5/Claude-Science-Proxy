@@ -20,6 +20,20 @@
 - **内部 IPC 保持不动**：`CSP_*` 环境变量、`csp_proxy.py` 文件名、`CSP_REPO`（开发态指定仓库根）。
 - **对外文案脱敏**：用户可见文案不直说「越过 / 绕过登录」，主按钮用「一键开始」类中性说法；技术内部文档描述机制时可仍用「越过门票」。
 
+## 代码注释（Code comments）
+
+**新代码默认英文注释**；已有中文注释不强制一次性改写，触到文件时再对齐即可。
+
+| 类型 | 约定 |
+|---|---|
+| 模块头（`//!` / `"""`） | 英文摘要：职责、输入输出、关键不变量 |
+| 铁律 / 安全护栏 | 英文一句 + 链到 [`../CLAUDE.md`](../CLAUDE.md) 或 [`verified-facts.md`](verified-facts.md)；细节可保留中文 |
+| 补丁痕迹 | 不写「修 P1」「修 #9」等无上下文说法；用 issue/PR 链接或删掉 |
+| 用户可见文案 | 只走 `desktop/src/main.js` 的 `I18N` 与 Rust `i18n_err`，不写进注释 |
+| 逆向 / Science 行为 | 可中英并存或 Extended 中文 + 英文 module summary；见 `proxy/csp_proxy.py` provider 表 |
+
+**有意保留中文的代码区**（触及时谨慎）：`oauth_forge.rs` 安全说明、`csp_proxy.py` Science 选择器硬规则注释。
+
 ## 分层
 
 CSP = 翻译代理（Python）+ 虚拟登录伪造器（**Rust 原生**）+ 隔离脚本（shell）+ **正常窗口 app（Tauri）**。
