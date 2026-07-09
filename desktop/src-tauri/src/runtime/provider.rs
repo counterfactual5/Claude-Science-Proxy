@@ -28,8 +28,6 @@ pub(crate) struct ProxyLaunch {
     pub(crate) key_env: &'static str,
     pub(crate) thinking_policy: &'static str,
     pub(crate) model_registry_json: Option<String>,
-    /// 多 profile pool 模式：JSON 描述各 profile 上游参数（`CSSWITCH_PROVIDER_POOL`）。
-    pub(crate) provider_pool_json: Option<String>,
 }
 
 pub(crate) fn adapter_for_profile(p: &config::Profile) -> &'static str {
@@ -57,8 +55,17 @@ pub(crate) fn proxy_args_for(p: &config::Profile) -> ProxyLaunch {
         key_env,
         thinking_policy: templates::thinking_policy_for(&p.template_id),
         model_registry_json: registry,
-        provider_pool_json: None,
     }
+}
+
+/// 当前生效 profile 的代理启动参数（仅支持单条 active）。
+pub(crate) fn proxy_args_for_active_profiles(
+    profiles: &[config::Profile],
+) -> Result<ProxyLaunch, String> {
+    profiles
+        .first()
+        .map(proxy_args_for)
+        .ok_or_else(|| "无 active profile。".into())
 }
 
 pub(crate) fn proxy_fingerprint(p: &config::Profile, launch: &ProxyLaunch) -> u64 {
@@ -77,7 +84,7 @@ pub(crate) fn proxy_fingerprint_with_runtime(
     shim_mode: &str,
 ) -> u64 {
     key_fingerprint(&format!(
-        "{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}",
+        "{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}",
         p.template_id,
         p.api_format,
         launch.adapter,
@@ -87,8 +94,7 @@ pub(crate) fn proxy_fingerprint_with_runtime(
         launch.key,
         gateway_kind,
         shim_mode,
-        launch.model_registry_json.as_deref().unwrap_or(""),
-        launch.provider_pool_json.as_deref().unwrap_or("")
+        launch.model_registry_json.as_deref().unwrap_or("")
     ))
 }
 
@@ -251,10 +257,33 @@ mod tests {
     use super::{
         adapter_for_profile, assert_format_supported, gateway_kind_for_adapter,
         key_env_for_adapter, key_fingerprint, normalize_shim_mode, parse_endpoint, proxy_args_for,
-        proxy_fingerprint, proxy_fingerprint_with_runtime, reject_openai_custom_anthropic_base,
-        relay_missing_base_url, relay_missing_profile_models, should_scratch_candidate, upstream_endpoint,
+        proxy_args_for_active_profiles, proxy_fingerprint, proxy_fingerprint_with_runtime,
+        reject_openai_custom_anthropic_base, relay_missing_base_url, relay_missing_profile_models,
+        should_scratch_candidate, upstream_endpoint,
     };
     use crate::config::Profile;
+
+    #[test]
+    fn proxy_args_for_active_profiles_uses_first_profile() {
+        let p1 = Profile {
+            template_id: "glm".into(),
+            api_format: "anthropic".into(),
+            base_url: "https://open.bigmodel.cn/api/anthropic".into(),
+            api_key: "gk".into(),
+            model: "glm-5".into(),
+            ..Default::default()
+        };
+        let p2 = Profile {
+            id: "b".into(),
+            template_id: "kimi".into(),
+            ..p1.clone()
+        };
+        let single = proxy_args_for_active_profiles(&[p1.clone()]).unwrap();
+        assert_eq!(single.adapter, "relay");
+        let first = proxy_args_for_active_profiles(&[p1, p2]).unwrap();
+        assert_eq!(first.adapter, "relay");
+        assert_eq!(first.model, "glm-5");
+    }
 
     #[test]
     fn proxy_args_derive_adapter_and_key_env() {
