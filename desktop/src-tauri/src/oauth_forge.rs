@@ -1247,10 +1247,10 @@ mod tests {
         std::fs::remove_file(the_enc_file(&dir)).unwrap();
         assert!(
             !login_intact_guarded(&dir, email, &dir, &fake_real),
-            "缺 .enc 应判不自洽"
+            "missing .enc should be judged not intact"
         );
 
-        // 过期令牌 → 不自洽 → false。
+        // Expired token → not intact → false.
         let dir2 = tmpdir("intact-exp");
         let fr2 = tmpdir("realcred-exp2");
         forge_guarded(&dir2, email, &dir2, &fr2).unwrap();
@@ -1265,7 +1265,7 @@ mod tests {
         std::fs::write(the_enc_file(&dir2), enc).unwrap();
         assert!(
             !login_intact_guarded(&dir2, email, &dir2, &fr2),
-            "过期令牌应判不自洽"
+            "expired token should be judged not intact"
         );
 
         for d in [dir, fake_real, dir2, fr2] {
@@ -1277,9 +1277,9 @@ mod tests {
     fn token_expiry_check() {
         assert!(token_not_expired("2099-01-01T00:00:00.000Z"));
         assert!(!token_not_expired("2000-01-01T00:00:00.000Z"));
-        assert!(!token_not_expired(""), "空串视为过期");
-        assert!(!token_not_expired("2099-13"), "太短视为过期");
-        assert!(!token_not_expired("20990101ZZ"), "格式不对视为过期");
+        assert!(!token_not_expired(""), "empty string counts as expired");
+        assert!(!token_not_expired("2099-13"), "too short counts as expired");
+        assert!(!token_not_expired("20990101ZZ"), "malformed date counts as expired");
         let t = today_utc_ymd();
         assert_eq!(t.len(), 10);
         assert_eq!(&t[4..5], "-");

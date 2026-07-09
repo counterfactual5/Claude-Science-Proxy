@@ -13,24 +13,24 @@ HERE = os.path.dirname(__file__)
 PROXY = os.path.join(HERE, "..", "proxy", "csp_proxy.py")
 SEC = "streamtok"
 
-# 这里覆盖两个流式代理边界：
-#   1) 上游首帧很小且不断开时，代理必须按 SSE 行及时转发，不能等 EOF/攒满缓冲；
-#   2) 上游在响应头已发之后中断时，代理必须以干净 SSE error + chunked 终止块收尾。
+# Covers two streaming proxy edge cases:
+#   1) When upstream sends a tiny first frame and stays open, proxy must forward SSE lines promptly, not wait for EOF/buffer fill;
+#   2) When upstream drops after response headers are sent, proxy must end with clean SSE error + chunked terminator.
 #
-# http.client 对「Content-Length 声明过大、提前断连」这种截断走的是 readinto 静默 EOF
-# 路径（不抛异常，见 CPython http/client.py HTTPResponse.readinto），无法用来逼出
-# 「头已发出后流中途异常」这个场景；chunked 传输编码则不同：分块框架一旦被截断，
-# http.client 的 _readinto_chunked/_safe_readinto 会确定性抛 IncompleteRead
-# （或底层 socket 层的 ConnectionResetError，取决于 close 时机，两者都是普通
-# Exception，代理侧都会被同一个 except 分支捕获）。
-# 因此中断测试改用 chunked：先发一个完整合法首块，让代理正常发出 200 响应头；
-# 再发一个声明了长度却只给一小段就断连的第二块，逼代理循环里的第二次
-# readline 在「头已发出」之后抛异常，从而命中被测的「流中断」收尾分支。
+# http.client on truncation (Content-Length too large, early disconnect) takes the readinto silent-EOF path
+# (no exception; see CPython http/client.py HTTPResponse.readinto), so it cannot force
+# "mid-stream error after headers sent". Chunked encoding differs: once the chunk framing is truncated,
+# http.client _readinto_chunked/_safe_readinto deterministically raises IncompleteRead
+# (or underlying socket ConnectionResetError depending on close timing; both are plain
+# Exception and hit the same except branch on the proxy side).
+# So interruption tests use chunked: send one complete valid first chunk so proxy emits 200 headers normally;
+# then send a second chunk that declares a length but disconnects after a short prefix, forcing the proxy loop's
+# second readline to raise after headers are out, hitting the tested mid-stream cleanup branch.
 
 
 def start_dropping_upstream():
-    """假上游：chunked 传输，首块完整合法（让代理先正常发出 200 响应头），
-    随后声明第二块但提前断连，逼代理在头已发出后的下一次 readline 抛异常。"""
+    """Fake upstream: chunked transport, first chunk complete (proxy emits 200 headers),
+    then declares second chunk but disconnects early, forcing readline after headers to raise."""
     srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     srv.bind(("127.0.0.1", 0))
@@ -46,14 +46,14 @@ def start_dropping_upstream():
             c.recv(65536)
             payload = ("event: content_block_delta\n"
                        "data: {\"type\":\"content_block_delta\"}\n\n")
-            pad = ":" + "p" * (4096 - len(payload) - 2) + "\n"  # SSE 注释行，纯 padding
+            pad = ":" + "p" * (4096 - len(payload) - 2) + "\n"  # SSE comment line, padding only
             payload += pad
             assert len(payload) == 4096, len(payload)
             head = ("HTTP/1.1 200 OK\r\n"
                     "Content-Type: text/event-stream\r\n"
                     "Transfer-Encoding: chunked\r\n\r\n")
             chunk1 = hex(len(payload))[2:] + "\r\n" + payload + "\r\n"
-            chunk2_partial = "1f4\r\n" + "0123456789"  # 声明 500 字节，只发 10 字节就断
+            chunk2_partial = "1f4\r\n" + "0123456789"  # declares 500 bytes, sends 10 then disconnects
             c.sendall((head + chunk1 + chunk2_partial).encode())
             c.close()
 
@@ -62,8 +62,8 @@ def start_dropping_upstream():
 
 
 def start_slow_first_frame_upstream():
-    """假上游：立刻发一个很小的 SSE 行，然后延迟收尾。
-    旧的 read(4096) 会等到 EOF/更多字节；line-based 读应马上把首行转给下游。"""
+    """Fake upstream: sends a tiny SSE line immediately, then delays tail.
+    Old read(4096) waits for EOF/more bytes; line-based read should forward first line at once."""
     srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     srv.bind(("127.0.0.1", 0))
@@ -92,8 +92,8 @@ def start_slow_first_frame_upstream():
 
 
 def start_delayed_response_upstream():
-    """假上游：接到请求后延迟一段时间才发响应头和首帧。
-    代理应先给 Science 打开下游 SSE 响应，避免客户端在上游 TTFT 较长时先超时断开。"""
+    """Fake upstream: delays response headers and first frame after accepting request.
+    Proxy should open downstream SSE to Science first, avoiding client timeout on long upstream TTFT."""
     srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     srv.bind(("127.0.0.1", 0))
@@ -188,7 +188,7 @@ class StreamInterruption(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.up_url, cls.up_sock = start_dropping_upstream()
-        cls.port = 18973  # S0 全局唯一端口：StreamInterruption
+        cls.port = 18973  # S0 globally unique port: StreamInterruption
         env = dict(os.environ, DEEPSEEK_API_KEY="fake",
                    CSP_UPSTREAM_URL=cls.up_url)
         cls.proc = subprocess.Popen(
@@ -208,10 +208,10 @@ class StreamInterruption(unittest.TestCase):
                b'"messages":[{"role":"user","content":"hi"}]}'
         raw = raw_post("127.0.0.1", self.port, f"/{SEC}/v1/messages", body)
         head, _, tail = raw.partition(b"\r\n\r\n")
-        self.assertIn(b"200", head.split(b"\r\n")[0])          # 头已发 200
-        self.assertIn(b"event: error", tail)                   # 干净的 SSE 错误帧
-        self.assertTrue(raw.rstrip().endswith(b"0"))           # chunked 终止块
-        self.assertNotIn(b"HTTP/1.1 502", tail)                # 未把 502 拼进流
+        self.assertIn(b"200", head.split(b"\r\n")[0])          # headers sent with 200
+        self.assertIn(b"event: error", tail)                   # clean SSE error frame
+        self.assertTrue(raw.rstrip().endswith(b"0"))           # chunked terminator
+        self.assertNotIn(b"HTTP/1.1 502", tail)                # no 502 spliced into stream
 
 
 @unittest.skipUnless(loopback_available(), "env-blocked: loopback bind/connect not permitted")
@@ -219,7 +219,7 @@ class StreamFlushesFirstLine(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.up_url, cls.up_sock = start_slow_first_frame_upstream()
-        cls.port = 18974  # S0 全局唯一端口：StreamFlushesFirstLine
+        cls.port = 18974  # S0 globally unique port: StreamFlushesFirstLine
         env = dict(os.environ, DEEPSEEK_API_KEY="fake",
                    CSP_UPSTREAM_URL=cls.up_url)
         cls.proc = subprocess.Popen(
@@ -250,7 +250,7 @@ class StreamHeadersOpenBeforeUpstreamTtft(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.up_url, cls.up_sock = start_delayed_response_upstream()
-        cls.port = 18975  # S0 全局唯一端口：StreamHeadersOpenBeforeUpstreamTtft
+        cls.port = 18975  # S0 globally unique port: StreamHeadersOpenBeforeUpstreamTtft
         env = dict(os.environ, DEEPSEEK_API_KEY="fake",
                    CSP_UPSTREAM_URL=cls.up_url)
         cls.proc = subprocess.Popen(
@@ -282,7 +282,7 @@ class StreamUpstreamStatusAfterHeaders(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.up_url, cls.up_sock = start_status_upstream(401)
-        cls.port = 18976  # S0 全局唯一端口：StreamUpstreamStatusAfterHeaders
+        cls.port = 18976  # S0 globally unique port: StreamUpstreamStatusAfterHeaders
         env = dict(os.environ, DEEPSEEK_API_KEY="fake",
                    CSP_UPSTREAM_URL=cls.up_url)
         cls.proc = subprocess.Popen(

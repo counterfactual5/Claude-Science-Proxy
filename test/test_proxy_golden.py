@@ -1,11 +1,11 @@
-"""S1a 非流式 golden：证明 anthropic 透传路径「不改 body」的非流式行为字节级不变。
-只覆盖非 rewrite body 路径：passthrough JSON + thinking-bearing passthrough + 上游错误码
-401/429/502。rewrite body 的等价由 test_anthropic_compat 的固定 nonce 接口单测覆盖。
-mock 上游（零真实上游花费，守铁律 4）。
+"""S1a non-streaming golden: proves anthropic passthrough path leaves non-stream body bytes unchanged.
+Covers only non-rewrite body paths: passthrough JSON + thinking-bearing passthrough + upstream errors
+401/429/502. Rewrite-body equivalence covered by test_anthropic_compat fixed-nonce unit tests.
+Mock upstream (zero real upstream cost, iron rule 4).
 
-录制/回放：CSP_GOLDEN_RECORD=1 时把捕获写进 fixture（基线一次性录制）；否则读 fixture 比对。
-fixture = test/golden/anthropic_nonstream.json：case -> {status, content_type, content_length, body}。
-不录 Date 等动态头。不变式：content_length == len(body)。
+Record/replay: CSP_GOLDEN_RECORD=1 writes capture into fixture (one-time baseline); otherwise read fixture and compare.
+fixture = test/golden/anthropic_nonstream.json: case -> {status, content_type, content_length, body}.
+Skips Date and other dynamic headers. Invariant: content_length == len(body).
 """
 import json
 import os
@@ -23,10 +23,10 @@ HERE = os.path.dirname(__file__)
 PROXY = os.path.join(HERE, "..", "proxy", "csp_proxy.py")
 FIXTURE = os.path.join(HERE, "golden", "anthropic_nonstream.json")
 SEC = "goldentok"
-PORT_OK = 18977   # S0 全局唯一端口：golden 成功路径
-PORT_ERR = 18978  # S0 全局唯一端口：golden 错误路径（各错误码顺序复用）
+PORT_OK = 18977   # S0 globally unique port: golden success path
+PORT_ERR = 18978  # S0 globally unique port: golden error path (error codes reuse in order)
 
-# 请求矩阵（全部 shim off、非流式、无工具 → 不触发 DSML rewrite）。
+# Request matrix (all shim off, non-streaming, no tools → no DSML rewrite).
 CASES = {
     "basic": {"model": "claude-opus-4-8", "max_tokens": 100,
               "messages": [{"role": "user", "content": "hi"}]},
@@ -34,7 +34,7 @@ CASES = {
                       "thinking": {"type": "auto"},
                       "messages": [{"role": "user", "content": "hi"}]},
 }
-# 上游错误码矩阵：mock 返回 status:NNN，代理映射（401/429 透传，500→502）。
+# Upstream error matrix: mock returns status:NNN; proxy maps (401/429 passthrough, 500→502).
 ERROR_CASES = {
     "upstream_401": ("status:401", 401),
     "upstream_429": ("status:429", 429),
@@ -71,7 +71,7 @@ def _parse(raw):
 
 def _launch(port, upstream):
     env = dict(os.environ, DEEPSEEK_API_KEY="fake", CSP_UPSTREAM_URL=upstream)
-    env.pop("CSP_TOOLUSE_SHIM", None)   # 默认 off
+    env.pop("CSP_TOOLUSE_SHIM", None)   # default off
     proc = subprocess.Popen(
         [sys.executable, PROXY, "--provider", "deepseek", "--port", str(port),
          "--auth-token", SEC],
@@ -98,7 +98,7 @@ class AnthropicNonstreamGolden(unittest.TestCase):
     def test_golden(self):
         record = os.environ.get("CSP_GOLDEN_RECORD") == "1"
         captured = {}
-        # 成功路径：共用一个 json mock + 一个代理。
+        # Success path: one json mock + one proxy shared.
         up_url, _hits, shutdown = start_mock("json")
         proc = _launch(PORT_OK, up_url)
         try:
@@ -109,7 +109,7 @@ class AnthropicNonstreamGolden(unittest.TestCase):
                 captured[name] = self._cap(name, status, hdrs, resp)
         finally:
             proc.terminate(); proc.wait(timeout=5); shutdown()
-        # 错误路径：每种状态码一个 mock + 代理（顺序复用 PORT_ERR）。
+        # Error path: one mock + proxy per status code (PORT_ERR reused in order).
         for name, (mode, want) in ERROR_CASES.items():
             up_url, _hits, shutdown = start_mock(mode)
             proc = _launch(PORT_ERR, up_url)
