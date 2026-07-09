@@ -27,6 +27,8 @@ use hkdf::Hkdf;
 use serde_json::json;
 use sha2::Sha256;
 
+use crate::runtime::i18n::i18n_err;
+
 const KEY_NAMES: [&str; 4] = [
     "ANTHROPIC_API_KEY_ENCRYPTION_KEY",
     "OAUTH_ENCRYPTION_KEY",
@@ -89,15 +91,18 @@ fn uuid_v4() -> std::io::Result<String> {
 
 // ---------- v2 GCM (matches binary ZtW/XtW and .mjs encryptTokenV2) ----------
 fn derive_key(oauth_key_b64: &str) -> Result<[u8; 32], String> {
-    let ikm = B64
-        .decode(oauth_key_b64.trim())
-        .map_err(|e| format!("OAUTH_ENCRYPTION_KEY 非法 base64：{e}"))?;
+    let ikm = B64.decode(oauth_key_b64.trim()).map_err(|e| {
+        i18n_err(
+            "errOauthKeyInvalidBase64",
+            json!({ "detail": e.to_string() }),
+        )
+    })?;
     // Empty salt (= Node hkdfSync Buffer.alloc(0)). HMAC pads an empty key to block size,
     // equivalent to an all-zero salt, so Some(&[]) and None match; use Some(&[]) explicitly to align with Node.
     let hk = Hkdf::<Sha256>::new(Some(&[]), &ikm);
     let mut out = [0u8; 32];
     hk.expand(HKDF_INFO, &mut out)
-        .map_err(|_| "hkdf expand 失败".to_string())?;
+        .map_err(|_| i18n_err("errOauthHkdfFailed", json!({})))?;
     Ok(out)
 }
 
@@ -115,7 +120,7 @@ pub fn encrypt_token_v2(plaintext: &[u8], oauth_key_b64: &str) -> Result<String,
                 aad: AAD,
             },
         )
-        .map_err(|_| "aes-gcm 加密失败".to_string())?;
+        .map_err(|_| i18n_err("errOauthEncryptFailed", json!({})))?;
     let mut framed = iv;
     framed.extend_from_slice(&ct);
     Ok(format!("v2:{}", B64.encode(&framed)))
@@ -124,10 +129,13 @@ pub fn encrypt_token_v2(plaintext: &[u8], oauth_key_b64: &str) -> Result<String,
 /// Decrypt `"v2:..."` and verify tag; returns Err on failure (tampering / wrong key).
 pub fn decrypt_token_v2(body: &str, oauth_key_b64: &str) -> Result<Vec<u8>, String> {
     let raw = B64
-        .decode(body.strip_prefix("v2:").ok_or("缺 v2: 前缀")?)
-        .map_err(|e| format!("v2 体非法 base64：{e}"))?;
+        .decode(
+            body.strip_prefix("v2:")
+                .ok_or_else(|| i18n_err("errOauthV2PrefixMissing", json!({})))?,
+        )
+        .map_err(|e| i18n_err("errOauthV2BodyInvalid", json!({ "detail": e.to_string() })))?;
     if raw.len() < 12 + 16 {
-        return Err("v2 密文过短".into());
+        return Err(i18n_err("errOauthV2CiphertextTooShort", json!({})));
     }
     let (iv, rest) = raw.split_at(12);
     let derived = derive_key(oauth_key_b64)?;
@@ -140,7 +148,7 @@ pub fn decrypt_token_v2(body: &str, oauth_key_b64: &str) -> Result<Vec<u8>, Stri
                 aad: AAD,
             },
         )
-        .map_err(|_| "aes-gcm 解密/验签失败".to_string())
+        .map_err(|_| i18n_err("errOauthDecryptFailed", json!({})))
 }
 
 // ---------- Path guards & safe write ----------
@@ -172,7 +180,10 @@ fn is_symlink(p: &Path) -> bool {
 
 fn assert_not_symlink(p: &Path) -> Result<(), String> {
     if is_symlink(p) {
-        return Err(format!("拒绝：{} 是符号链接，绝不跟随写入。", p.display()));
+        return Err(i18n_err(
+            "errOauthSymlinkRejected",
+            json!({ "path": p.display().to_string() }),
+        ));
     }
     Ok(())
 }
@@ -180,7 +191,9 @@ fn assert_not_symlink(p: &Path) -> Result<(), String> {
 /// Safe write: reject symlinks + O_EXCL temp file + rename + chmod, avoiding follow/race writes to unintended targets.
 fn safe_write(path: &Path, data: &[u8], mode: u32) -> Result<(), String> {
     assert_not_symlink(path)?;
-    let parent = path.parent().ok_or("目标无父目录")?;
+    let parent = path
+        .parent()
+        .ok_or_else(|| i18n_err("errOauthNoParentDir", json!({})))?;
     let suffix = hex(&rand_bytes(6).map_err(|e| e.to_string())?);
     let tmp = parent.join(format!(".tmp-{suffix}"));
     {
@@ -189,13 +202,18 @@ fn safe_write(path: &Path, data: &[u8], mode: u32) -> Result<(), String> {
             .create_new(true) // O_CREAT|O_EXCL
             .mode(mode)
             .open(&tmp)
-            .map_err(|e| format!("建临时文件失败：{e}"))?;
-        f.write_all(data)
-            .map_err(|e| format!("写临时文件失败：{e}"))?;
+            .map_err(|e| i18n_err("errOauthTempFileFailed", json!({ "detail": e.to_string() })))?;
+        f.write_all(data).map_err(|e| {
+            i18n_err(
+                "errOauthWriteTempFailed",
+                json!({ "detail": e.to_string() }),
+            )
+        })?;
     }
-    std::fs::rename(&tmp, path).map_err(|e| format!("rename 失败：{e}"))?;
+    std::fs::rename(&tmp, path)
+        .map_err(|e| i18n_err("errOauthRenameFailed", json!({ "detail": e.to_string() })))?;
     std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode))
-        .map_err(|e| format!("chmod 失败：{e}"))?;
+        .map_err(|e| i18n_err("errOauthChmodFailed", json!({ "detail": e.to_string() })))?;
     Ok(())
 }
 
@@ -238,9 +256,9 @@ fn resolve_guarded(
     // protection of the real directory; any abnormal layout must never touch it.
     let real_root = real_ancestor(real_cred_dir);
     if resolved.starts_with(&real_root) {
-        return Err(format!(
-            "拒绝：auth_dir 解析到真实 Science 目录（{}）之内或本身，铁律禁止触碰。",
-            real_root.display()
+        return Err(i18n_err(
+            "errOauthRealScienceDirRejected",
+            json!({ "path": real_root.display().to_string() }),
         ));
     }
     // Load-bearing guard 1 (fix P1): resolved must stay under sandbox root. A symlink from auth_dir or an ancestor
@@ -248,16 +266,16 @@ fn resolve_guarded(
     // (Node sandbox scope limit restored here as "must be under root").
     let root = real_ancestor(sandbox_root);
     if !resolved.starts_with(&root) {
-        return Err(format!(
-            "拒绝：auth_dir 解析到沙箱根之外（{} 不在 {} 下），疑似符号链接重定向。",
-            resolved.display(),
-            root.display()
+        return Err(i18n_err(
+            "errOauthOutsideSandboxRejected",
+            json!({
+                "path": resolved.display().to_string(),
+                "root": root.display().to_string(),
+            }),
         ));
     }
     if !email.ends_with("localhost.invalid") {
-        return Err(format!(
-            "拒绝：email 必须以 localhost.invalid 结尾（当前 {email}），确保是假账号。"
-        ));
+        return Err(i18n_err("errOauthEmailInvalid", json!({ "email": email })));
     }
     Ok(resolved)
 }
@@ -270,7 +288,8 @@ fn write_login(
     prefer_org: Option<String>,
     prefer_account: Option<String>,
 ) -> Result<ForgeResult, String> {
-    std::fs::create_dir_all(resolved).map_err(|e| format!("建 auth_dir 失败：{e}"))?;
+    std::fs::create_dir_all(resolved)
+        .map_err(|e| i18n_err("errOauthMkdirFailed", json!({ "detail": e.to_string() })))?;
     chmod_best_effort(resolved, 0o700);
 
     // —— encryption.key: reuse existing (keeps old .enc decryptable), else mint new ——
@@ -278,8 +297,12 @@ fn write_login(
     assert_not_symlink(&key_file)?;
     let mut keys: BTreeMap<String, String> = BTreeMap::new();
     if key_file.exists() {
-        let txt = std::fs::read_to_string(&key_file)
-            .map_err(|e| format!("读 encryption.key 失败：{e}"))?;
+        let txt = std::fs::read_to_string(&key_file).map_err(|e| {
+            i18n_err(
+                "errOauthReadEncryptionKeyFailed",
+                json!({ "detail": e.to_string() }),
+            )
+        })?;
         for line in txt.lines() {
             if let Some(eq) = line.find('=') {
                 if eq > 0 {
@@ -343,16 +366,26 @@ fn write_login(
         "billing_type": null,
         "has_extra_usage_enabled": false
     });
-    let plaintext = serde_json::to_vec(&blob).map_err(|e| format!("序列化 blob 失败：{e}"))?;
+    let plaintext = serde_json::to_vec(&blob).map_err(|e| {
+        i18n_err(
+            "errOauthSerializeBlobFailed",
+            json!({ "detail": e.to_string() }),
+        )
+    })?;
     let oauth_key = keys
         .get("OAUTH_ENCRYPTION_KEY")
-        .ok_or("缺 OAUTH_ENCRYPTION_KEY")?;
+        .ok_or_else(|| i18n_err("errOauthEncryptionKeyMissing", json!({})))?;
     let enc_body = encrypt_token_v2(&plaintext, oauth_key)?;
 
     // —— Write .oauth-tokens/<sanitized>.enc; clear other .enc first so exactly one remains ——
     let tok_dir = resolved.join(".oauth-tokens");
     assert_not_symlink(&tok_dir)?;
-    std::fs::create_dir_all(&tok_dir).map_err(|e| format!("建 .oauth-tokens 失败：{e}"))?;
+    std::fs::create_dir_all(&tok_dir).map_err(|e| {
+        i18n_err(
+            "errOauthMkdirTokensFailed",
+            json!({ "detail": e.to_string() }),
+        )
+    })?;
     chmod_best_effort(&tok_dir, 0o700);
     if let Ok(rd) = std::fs::read_dir(&tok_dir) {
         for e in rd.flatten() {
@@ -362,9 +395,12 @@ fn write_login(
                 // Delete failure must surface (fix P2): otherwise stale .enc + new .enc = multiple files,
                 // but Science expects exactly one → "starts OK but still not logged in".
                 std::fs::remove_file(&p).map_err(|err| {
-                    format!(
-                        "删除旧令牌 {} 失败：{err}（需目录内恰好一个 .enc）",
-                        p.display()
+                    i18n_err(
+                        "errOauthDeleteOldTokenFailed",
+                        json!({
+                            "path": p.display().to_string(),
+                            "detail": err.to_string(),
+                        }),
                     )
                 })?;
             }
@@ -379,10 +415,14 @@ fn write_login(
 
     // —— Self-check: decrypt round-trip with same logic; ensure Science can read it ——
     let roundtrip = decrypt_token_v2(&enc_body, oauth_key)?;
-    let rt: serde_json::Value =
-        serde_json::from_slice(&roundtrip).map_err(|e| format!("自校验解析失败：{e}"))?;
+    let rt: serde_json::Value = serde_json::from_slice(&roundtrip).map_err(|e| {
+        i18n_err(
+            "errOauthSelfVerifyParseFailed",
+            json!({ "detail": e.to_string() }),
+        )
+    })?;
     if rt.get("email").and_then(|v| v.as_str()) != Some(email) {
-        return Err("自校验失败：解密回读的 email 不符".into());
+        return Err(i18n_err("errOauthSelfVerifyEmailMismatch", json!({})));
     }
 
     // —— active-org.json (Science only requires org_uuid to be a UUID) ——
@@ -599,7 +639,7 @@ pub fn ensure_virtual_login(
 ) -> Result<(ForgeResult, LoginAction), String> {
     let home = std::env::var_os("HOME")
         .map(PathBuf::from)
-        .ok_or("无 HOME 环境变量")?;
+        .ok_or_else(|| i18n_err("errOauthNoHome", json!({})))?;
     ensure_virtual_login_guarded(auth_dir, email, sandbox_root, &home.join(".claude-science"))
 }
 
@@ -627,13 +667,13 @@ fn ensure_virtual_login_guarded(
             0 => (None, LoginAction::Created), // True first run: no history
             1 => (Some(dirs[0].clone()), LoginAction::Repaired), // Adopt sole historical org
             _ => {
-                return Err(format!(
-                    "检测到 {} 个历史组织，但 active-org.json 缺失且无可解令牌，无法确定当前活动组织；\
-                     为避免旧对话被孤儿化已中止。数据都在 {}/orgs/，请把想要的 org_uuid 写回 \
-                     {}/active-org.json 后重试。",
-                    dirs.len(),
-                    resolved.display(),
-                    resolved.display()
+                return Err(i18n_err(
+                    "errOauthOrphanOrgs",
+                    json!({
+                        "count": dirs.len(),
+                        "orgs_dir": format!("{}/orgs/", resolved.display()),
+                        "active_org_path": format!("{}/active-org.json", resolved.display()),
+                    }),
                 ));
             }
         }
@@ -761,7 +801,7 @@ mod tests {
         let real = tmpdir("real2");
         let r = forge_guarded(&real, "virtual@localhost.invalid", &real, &real);
         assert!(r.is_err());
-        assert!(r.unwrap_err().contains("真实 Science 目录"));
+        assert!(r.unwrap_err().contains("errOauthRealScienceDirRejected"));
         assert!(
             !real.join("encryption.key").exists(),
             "reject path must not write any files"
@@ -791,7 +831,7 @@ mod tests {
             r.is_err(),
             "sandbox root resolving into real tree via symlink must be rejected"
         );
-        assert!(r.unwrap_err().contains("真实 Science 目录"));
+        assert!(r.unwrap_err().contains("errOauthRealScienceDirRejected"));
         // Real directory unchanged.
         assert_eq!(
             std::fs::read(real.join("encryption.key")).unwrap(),
@@ -828,7 +868,7 @@ mod tests {
         let fake_real = tmpdir("realcred5");
         let r = forge_guarded(&auth_dir, "virtual@localhost.invalid", &root, &fake_real);
         assert!(r.is_err(), "symlink escaping sandbox root must be rejected");
-        assert!(r.unwrap_err().contains("沙箱根之外"));
+        assert!(r.unwrap_err().contains("errOauthOutsideSandboxRejected"));
         // Target directory unchanged.
         assert_eq!(
             std::fs::read(outside.join("encryption.key")).unwrap(),
@@ -853,7 +893,7 @@ mod tests {
         let fake_real = tmpdir("realcred3");
         let r = forge_guarded(&dir, "attacker@example.com", &dir, &fake_real);
         assert!(r.is_err());
-        assert!(r.unwrap_err().contains("localhost.invalid"));
+        assert!(r.unwrap_err().contains("errOauthEmailInvalid"));
     }
 
     // ---- node ↔ rust cross-compat: byte-level v2 GCM format matches .mjs (skip if no node) ----
@@ -969,7 +1009,7 @@ mod tests {
         let real = tmpdir("real-ensure");
         let r = ensure_virtual_login_guarded(&real, "virtual@localhost.invalid", &real, &real);
         assert!(r.is_err());
-        assert!(r.unwrap_err().contains("真实 Science 目录"));
+        assert!(r.unwrap_err().contains("errOauthRealScienceDirRejected"));
         assert!(
             !real.join("encryption.key").exists(),
             "reject path must not write any files"
@@ -1116,7 +1156,7 @@ mod tests {
         std::fs::remove_file(dir.join("active-org.json")).unwrap();
         let r = ensure_virtual_login_guarded(&dir, email, &dir, &fake_real);
         assert!(r.is_err(), "ambiguous multi-org history should error");
-        assert!(r.unwrap_err().contains("历史组织"));
+        assert!(r.unwrap_err().contains("errOauthOrphanOrgs"));
         assert!(
             !dir.join("active-org.json").exists(),
             "error path must not write active-org.json"

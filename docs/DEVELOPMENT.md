@@ -22,17 +22,29 @@
 
 ## 代码注释（Code comments）
 
-**新代码默认英文注释**；已有中文注释不强制一次性改写，触到文件时再对齐即可。
+**生产代码注释默认英文**（Rust / Python / JS）。2026-07 已完成批量迁移；新代码一律英文注释，触到旧文件时若仍有中文注释应顺手对齐。
 
 | 类型 | 约定 |
 |---|---|
 | 模块头（`//!` / `"""`） | 英文摘要：职责、输入输出、关键不变量 |
-| 铁律 / 安全护栏 | 英文一句 + 链到 [`../CLAUDE.md`](../CLAUDE.md) 或 [`verified-facts.md`](verified-facts.md)；细节可保留中文 |
+| 铁律 / 安全护栏 | 英文一句 + 链到 [`../CLAUDE.md`](../CLAUDE.md) 或 [`verified-facts.md`](verified-facts.md) |
 | 补丁痕迹 | 不写「修 P1」「修 #9」等无上下文说法；用 issue/PR 链接或删掉 |
 | 用户可见文案 | 只走 `desktop/src/main.js` 的 `I18N` 与 Rust `i18n_err`，不写进注释 |
-| 逆向 / Science 行为 | 可中英并存或 Extended 中文 + 英文 module summary；见 `proxy/csp_proxy.py` provider 表 |
+| 逆向 / Science 行为 | 英文注释；见 `proxy/csp_proxy.py` provider 表 |
 
-**有意保留中文的代码区**（触及时谨慎）：`oauth_forge.rs` 安全说明、`csp_proxy.py` Science 选择器硬规则注释。
+**有意保留中文的代码区**（非注释，触及时谨慎）：
+
+| 类别 | 位置 / 说明 |
+|---|---|
+| UI 文案 | `desktop/src/main.js` 的 `I18N.cn` / `intl` |
+| 用户可见错误串 | `io::Error` / `Err(...)` 等，待 i18n 迁移（`config.rs`、`oauth_forge.rs` 等） |
+| 运维输出 | `proxy/`、`scripts/` 中 `log()` / `print()` 类消息 |
+| 测试 | 断言消息、fixture 字符串 |
+| Shell 脚本 | `echo` / `grep` 等匹配用户可见输出的模式 |
+| 模板展示名 | `templates.rs` 中 provider 显示名称 |
+| 文档 | `*.md`（如 `REAL_MACHINE_TEST.md` 等） |
+
+`scripts/` 的 stdout 可为国内运维保留中文；除非后续引入 `CSP_LANG`，否则不强制英文化。
 
 ## 分层
 

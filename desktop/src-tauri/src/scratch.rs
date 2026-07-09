@@ -7,6 +7,9 @@ use std::path::Path;
 use std::process::{Child, Command, Stdio};
 use std::time::Duration;
 
+use serde_json::json;
+
+use crate::runtime::i18n::i18n_err;
 use crate::runtime::operation::{self, OperationStage, OperationTrace};
 
 /// Probe kind: `Models` checks endpoint + auth; `Message` checks a concrete model when required.
@@ -142,7 +145,7 @@ pub fn scratch_probe(
         None => {
             return ProbeResult {
                 status: None,
-                body: "无法分配临时端口".into(),
+                body: i18n_err("errScratchNoPort", json!({})),
             }
         }
     };
@@ -151,7 +154,7 @@ pub fn scratch_probe(
         Err(_) => {
             return ProbeResult {
                 status: None,
-                body: "无法生成 secret".into(),
+                body: i18n_err("errScratchNoSecret", json!({})),
             }
         }
     };
@@ -187,7 +190,7 @@ pub fn scratch_probe(
         Err(e) => {
             return ProbeResult {
                 status: None,
-                body: format!("起临时代理失败：{e}"),
+                body: i18n_err("errScratchSpawnFailed", json!({ "detail": e.to_string() })),
             }
         }
     };
@@ -210,7 +213,7 @@ pub fn scratch_probe(
     if !alive {
         return ProbeResult {
             status: None,
-            body: "临时代理未就绪（多为 key/base_url 无效或依赖缺失）".into(),
+            body: i18n_err("errScratchNotReady", json!({})),
         };
     }
     match kind {
