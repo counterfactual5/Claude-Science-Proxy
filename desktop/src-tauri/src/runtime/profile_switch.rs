@@ -4,7 +4,7 @@ use crate::runtime::operation::{OperationKind, OperationStage, OperationTrace};
 use crate::runtime::profile::{nonactive_probe_verdict, probe_kind_for, ConnectionEdit};
 use crate::runtime::provider::{
     assert_format_supported, is_native_adapter, proxy_args_for,
-    reject_openai_custom_anthropic_base, relay_missing_model, should_scratch_candidate,
+    reject_openai_custom_anthropic_base, relay_missing_profile_models, should_scratch_candidate,
 };
 use crate::runtime::proxy_lifecycle::start_proxy_for;
 use crate::runtime::system::asset_root;
@@ -88,7 +88,7 @@ pub(crate) fn set_active_profile_txn(
     if !native && launch.base_url.is_empty() {
         return Err("该配置需要填 base_url（http:// 或 https:// 开头）。".into());
     }
-    if relay_missing_model(&launch.adapter, &candidate.model) {
+    if relay_missing_profile_models(&launch.adapter, &candidate) {
         return Err(
             "该配置需要选择或填写一个模型（中转/自定义端点必填），请在连接编辑里补上。".into(),
         );

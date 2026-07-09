@@ -4,7 +4,7 @@ use serde_json::json;
 
 use crate::runtime::provider::{
     adapter_for_profile, assert_format_supported, is_native_adapter, is_openai_adapter,
-    reject_openai_custom_anthropic_base, relay_missing_model,
+    reject_openai_custom_anthropic_base, relay_missing_profile_models,
 };
 use crate::{config, scratch, templates};
 
@@ -104,6 +104,7 @@ pub(crate) fn build_get_config(dir: &Path) -> Result<serde_json::Value, String> 
             json!({
                 "id": p.id, "name": p.name, "template_id": p.template_id, "category": p.category,
                 "api_format": p.api_format, "base_url": p.base_url, "model": p.model,
+                "active_models": p.active_models, "default_model": p.default_model,
                 "key": key_masked.clone(), "has_key": !p.api_key.is_empty(), "key_masked": key_masked,
                 "capabilities": profile_capabilities(p), "icon": p.icon, "icon_color": p.icon_color,
                 "website_url": p.website_url, "sort_index": p.sort_index, "notes": p.notes,
@@ -156,6 +157,8 @@ pub(crate) fn create_profile_inner(
         base_url,
         api_key: key.unwrap_or("").to_string(),
         model: model.unwrap_or("").to_string(),
+        active_models: Vec::new(),
+        default_model: String::new(),
         website_url: Some(tpl.website_url.to_string()),
         icon: Some(tpl.icon.to_string()),
         icon_color: Some(tpl.icon_color.to_string()),
@@ -167,9 +170,11 @@ pub(crate) fn create_profile_inner(
     let adapter = adapter_for_profile(&p);
     reject_openai_custom_anthropic_base(adapter, &p.base_url)?;
     // 守卫（修 #9 P1-a）：relay/自定义端点必须带 model（force 前提）。
-    if relay_missing_model(adapter, &p.model) {
+    if relay_missing_profile_models(adapter, &p) {
         return Err("中转 / 自定义端点必须选择或填写一个模型，未创建。".to_string());
     }
+    let mut p = p;
+    p.sync_model_fields();
     config::update(dir, |c| c.profiles.push(p)).map_err(|e| e.to_string())?;
     Ok(id)
 }
@@ -227,6 +232,8 @@ pub(crate) fn update_profile_connection_inner(
     base_url: Option<&str>,
     api_format: Option<&str>,
     model: Option<&str>,
+    active_models: Option<&[String]>,
+    default_model: Option<&str>,
     key: Option<&str>,
 ) -> Result<(), String> {
     if let Some(fmt) = api_format {
@@ -256,6 +263,17 @@ pub(crate) fn update_profile_connection_inner(
             if let Some(m) = model {
                 p.model = m.to_string();
             }
+            if let Some(models) = active_models {
+                p.active_models = models
+                    .iter()
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect();
+            }
+            if let Some(d) = default_model {
+                p.default_model = d.to_string();
+            }
+            p.sync_model_fields();
             if let Some(k) = key {
                 if !k.is_empty() {
                     p.api_key = k.to_string(); // 空=不改（留占位不覆盖已存 key）
@@ -298,6 +316,8 @@ pub(crate) struct ConnectionEdit {
     base_url: Option<String>,
     api_format: Option<String>,
     model: Option<String>,
+    active_models: Option<Vec<String>>,
+    default_model: Option<String>,
     key: Option<String>,
 }
 
@@ -312,6 +332,26 @@ impl ConnectionEdit {
             base_url,
             api_format,
             model,
+            active_models: None,
+            default_model: None,
+            key,
+        }
+    }
+
+    pub(crate) fn with_models(
+        base_url: Option<String>,
+        api_format: Option<String>,
+        model: Option<String>,
+        active_models: Option<Vec<String>>,
+        default_model: Option<String>,
+        key: Option<String>,
+    ) -> Self {
+        Self {
+            base_url,
+            api_format,
+            model,
+            active_models,
+            default_model,
             key,
         }
     }
@@ -328,11 +368,18 @@ impl ConnectionEdit {
         if let Some(m) = &self.model {
             p.model = m.clone();
         }
+        if let Some(models) = &self.active_models {
+            p.active_models = models.clone();
+        }
+        if let Some(d) = &self.default_model {
+            p.default_model = d.clone();
+        }
         if let Some(k) = &self.key {
             if !k.is_empty() {
                 p.api_key = k.clone();
             }
         }
+        p.sync_model_fields();
     }
 }
 
@@ -551,6 +598,8 @@ mod tests {
             Some("gemini_native"),
             None,
             None,
+            None,
+            None,
         );
         assert!(e.is_err());
     }
@@ -576,6 +625,8 @@ mod tests {
             None,
             None,
             None,
+            None,
+            None,
         );
         assert!(e.is_err(), "未命中 id 应报错，而非静默成功");
         assert!(e.unwrap_err().contains("找不到 profile"));
@@ -595,7 +646,7 @@ mod tests {
         )
         .unwrap();
         let v = build_get_config(&d).unwrap();
-        assert_eq!(v["schema_version"], 2);
+        assert_eq!(v["schema_version"], 3);
         let arr = v["profiles"].as_array().unwrap();
         let p = arr.iter().find(|p| p["id"] == id).unwrap();
         assert!(p["key"].as_str().unwrap().ends_with("9999"));

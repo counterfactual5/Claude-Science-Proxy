@@ -26,6 +26,7 @@ pub(crate) struct ProxyLaunch {
     pub(crate) key: String,
     pub(crate) key_env: &'static str,
     pub(crate) thinking_policy: &'static str,
+    pub(crate) model_registry_json: Option<String>,
 }
 
 pub(crate) fn adapter_for_profile(p: &config::Profile) -> &'static str {
@@ -43,13 +44,16 @@ pub(crate) fn adapter_for_profile(p: &config::Profile) -> &'static str {
 pub(crate) fn proxy_args_for(p: &config::Profile) -> ProxyLaunch {
     let adapter = adapter_for_profile(p).to_string();
     let key_env = key_env_for_adapter(&adapter);
+    let registry = build_model_registry_json(p);
+    let model = p.effective_default_model();
     ProxyLaunch {
         adapter,
         base_url: p.base_url.clone(),
-        model: p.model.clone(),
+        model,
         key: p.api_key.clone(),
         key_env,
         thinking_policy: templates::thinking_policy_for(&p.template_id),
+        model_registry_json: registry,
     }
 }
 
@@ -69,7 +73,7 @@ pub(crate) fn proxy_fingerprint_with_runtime(
     shim_mode: &str,
 ) -> u64 {
     key_fingerprint(&format!(
-        "{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}",
+        "{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}",
         p.template_id,
         p.api_format,
         launch.adapter,
@@ -78,7 +82,8 @@ pub(crate) fn proxy_fingerprint_with_runtime(
         launch.thinking_policy,
         launch.key,
         gateway_kind,
-        shim_mode
+        shim_mode,
+        launch.model_registry_json.as_deref().unwrap_or("")
     ))
 }
 
@@ -209,9 +214,34 @@ pub(crate) fn relay_missing_base_url(adapter: &str, base_url: &str) -> bool {
     !is_native_adapter(adapter) && base_url.trim().is_empty()
 }
 
-/// 保存/激活前守卫：非 native 家族空（含纯空白）model 不可用。
+/// 保存/激活前守卫：非 native 家族没有可用模型列表。
 pub(crate) fn relay_missing_model(adapter: &str, model: &str) -> bool {
     !is_native_adapter(adapter) && model.trim().is_empty()
+}
+
+pub(crate) fn relay_missing_profile_models(adapter: &str, profile: &config::Profile) -> bool {
+    !is_native_adapter(adapter) && profile.effective_models().is_empty()
+}
+
+/// 为正式代理构建虚拟模型注册表 JSON（relay / openai 家族）。
+pub(crate) fn build_model_registry_json(p: &config::Profile) -> Option<String> {
+    let adapter = adapter_for_profile(p);
+    if is_native_adapter(&adapter) {
+        return None;
+    }
+    let models = p.effective_models();
+    if models.is_empty() {
+        return None;
+    }
+    let default_model = p.effective_default_model();
+    let fast_model = models.last().cloned().unwrap_or_else(|| default_model.clone());
+    let payload = serde_json::json!({
+        "models": models,
+        "default_model": default_model,
+        "fast_model": fast_model,
+        "profile_id": p.id,
+    });
+    Some(payload.to_string())
 }
 
 #[cfg(test)]

@@ -63,6 +63,7 @@ class ProviderState:
     relay_thinking: object         # str 或 None
     shim_mode: str
     nonce_factory: Callable[[], str] = _default_nonce
+    model_registry: object = None
 
 
 def _snap_relay_model(name, relay_models):
@@ -76,9 +77,14 @@ def _snap_relay_model(name, relay_models):
     return name
 
 
-def resolve_model(name, state):
+def resolve_model(name, state, registry=None):
     """把 Science 传来的模型名解析成当前 provider 的目标模型。
-    优先：强制模型 override > 选择器选中名 > 显式映射 > 去日期后缀 > 前缀匹配 > 默认。"""
+    优先：虚拟注册表 > 强制模型 override > 选择器选中名 > 显式映射 > 去日期后缀 > 前缀匹配 > 默认。"""
+    registry = registry or getattr(state, "model_registry", None)
+    if registry is not None:
+        routed = registry.resolve(name)
+        if routed:
+            return routed
     p = state.policy
     if p.force_model_override and state.relay_force_model:
         return state.relay_force_model

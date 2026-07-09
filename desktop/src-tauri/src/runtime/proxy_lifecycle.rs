@@ -15,15 +15,18 @@ use crate::{config, lifecycle, lock, proc, SharedAppState};
 fn formal_proxy_env(launch: &ProxyLaunch) -> Vec<(&'static str, String)> {
     let native = is_native_adapter(&launch.adapter);
     let mut env = vec![(launch.key_env, launch.key.clone())];
+    if let Some(reg) = &launch.model_registry_json {
+        env.push(("CSSWITCH_MODEL_REGISTRY", reg.clone()));
+    }
     if !native {
         if is_openai_adapter(&launch.adapter) {
             env.push(("CSSWITCH_OPENAI_BASE_URL", launch.base_url.clone()));
-            if !launch.model.is_empty() {
+            if launch.model_registry_json.is_none() && !launch.model.is_empty() {
                 env.push(("CSSWITCH_OPENAI_MODEL", launch.model.clone()));
             }
         } else {
             env.push(("CSSWITCH_RELAY_BASE_URL", launch.base_url.clone()));
-            if !launch.model.is_empty() {
+            if launch.model_registry_json.is_none() && !launch.model.is_empty() {
                 env.push(("CSSWITCH_RELAY_MODEL", launch.model.clone()));
             }
             if !launch.thinking_policy.is_empty() {
@@ -213,7 +216,22 @@ mod tests {
                 "CSSWITCH_RELAY_KEY"
             },
             thinking_policy,
+            model_registry_json: None,
         }
+    }
+
+    fn formal_proxy_env_uses_registry_instead_of_force_model() {
+        let mut launch = launch("relay", "glm-5.2");
+        launch.model_registry_json = Some(
+            r#"{"models":["glm-5.2","glm-4.7"],"default_model":"glm-5.2","fast_model":"glm-4.7"}"#
+                .to_string(),
+        );
+        let env = formal_proxy_env(&launch);
+        assert!(env.contains(&(
+            "CSSWITCH_MODEL_REGISTRY",
+            launch.model_registry_json.clone().unwrap()
+        )));
+        assert!(!env.iter().any(|(k, _)| *k == "CSSWITCH_RELAY_MODEL"));
     }
 
     #[test]

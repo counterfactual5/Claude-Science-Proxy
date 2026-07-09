@@ -38,6 +38,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import dsml_shim
 import http_transport
 import model_discovery
+import model_registry
 import openai_chat_compat
 import provider_policy
 import responses_compat
@@ -173,6 +174,8 @@ RELAY_FORCE_MODEL = None
 # relay thinking 策略（来自模板 thinking_policy）：由 CSSWITCH_RELAY_THINKING 在 __main__ 装配。
 # None/"adaptive" → auto→adaptive（现状，如 MiniMax）；"enabled" → 强制 enabled（如 Kimi）。
 RELAY_THINKING = None
+# 多模型虚拟注册表（CSSWITCH_MODEL_REGISTRY JSON）。设了则按 shell id 路由，不走 force。
+MODEL_REGISTRY = None
 
 @dataclass(frozen=True)
 class RuntimeState:
@@ -184,6 +187,7 @@ class RuntimeState:
     relay_force_model: str
     relay_thinking: str
     shim_mode: str
+    model_registry: object
 
 
 def current_runtime():
@@ -201,6 +205,7 @@ def current_runtime():
         relay_force_model=RELAY_FORCE_MODEL,
         relay_thinking=RELAY_THINKING,
         shim_mode=SHIM_MODE,
+        model_registry=MODEL_REGISTRY,
     )
 
 # ---------- #3: targeted fast-fail（沙箱「Switching organization」卡死修复） ----------
@@ -259,6 +264,7 @@ def _provider_state(areq, runtime=None):
         relay_thinking=runtime.relay_thinking,
         shim_mode=runtime.shim_mode,
         nonce_factory=lambda: f"{id(areq) & 0xffffff:x}",
+        model_registry=runtime.model_registry,
     )
 
 
@@ -294,6 +300,15 @@ def normalize_openai_base(base):
     b = (base or "").strip().rstrip("/")
     for suffix in ("/v1/chat/completions", "/chat/completions",
                    "/v1/responses", "/responses", "/v1/models", "/models"):
+        if b.endswith(suffix):
+            b = b[: -len(suffix)].rstrip("/")
+    return b
+
+
+def normalize_relay_base(base):
+    """Anthropic relay base root。剥掉误填的 /v1/messages、/v1/models 等后缀。"""
+    b = (base or "").strip().rstrip("/")
+    for suffix in ("/v1/messages", "/v1/models"):
         if b.endswith(suffix):
             b = b[: -len(suffix)].rstrip("/")
     return b
@@ -349,6 +364,10 @@ def build_models_response(runtime=None):
       - 网络异常 → (502, {error_kind:"network", upstream_status:None, message})。
       - 非 relay（无 models_url，deepseek/qwen）→ (200, {静态选择器列表})，行为不变。"""
     runtime = runtime or current_runtime()
+    if runtime.model_registry is not None:
+        log(f"GET /v1/models -> {runtime.prov_name}(registry): "
+            f"{len(runtime.model_registry.entries)} 个模型")
+        return runtime.model_registry.models_response()
     if runtime.prov.get("models_url"):
         if runtime.relay_force_model:
             # force（Science 常驻代理）：只返回一个壳，Science 主列表显示真实模型名。
@@ -804,6 +823,9 @@ if __name__ == "__main__":
     ap.add_argument("--openai-base", default=None,
                     help="openai-custom provider 的 OpenAI base root（也可用环境变量 CSSWITCH_OPENAI_BASE_URL）")
     args = ap.parse_args()
+    reg_raw = (os.environ.get("CSSWITCH_MODEL_REGISTRY") or "").strip()
+    if reg_raw:
+        MODEL_REGISTRY = model_registry.ModelRegistry.from_json(reg_raw)
     PROV_NAME = args.provider
     PROV = PROVIDERS[PROV_NAME]
     LOG = args.log
@@ -811,7 +833,8 @@ if __name__ == "__main__":
     AUTH_SECRET = os.environ.get("CSSWITCH_AUTH_TOKEN") or args.auth_token
     # relay：按中转站 base_url 装配上游端点（base + /v1/messages、base + /v1/models）。
     if PROV_NAME == "relay":
-        base = (os.environ.get("CSSWITCH_RELAY_BASE_URL") or args.relay_base or "").strip().rstrip("/")
+        base = normalize_relay_base(
+            os.environ.get("CSSWITCH_RELAY_BASE_URL") or args.relay_base or "")
         if not base or not re.match(r"^https?://", base):
             print("relay 需要中转站 base_url（http(s)://…）。用 --relay-base 或环境变量 "
                   "CSSWITCH_RELAY_BASE_URL 提供。", file=sys.stderr)
@@ -820,7 +843,7 @@ if __name__ == "__main__":
         PROV["url"] = base + "/v1/messages"
         PROV["models_url"] = base + "/v1/models"
         forced = (os.environ.get("CSSWITCH_RELAY_MODEL") or "").strip()
-        if forced:
+        if forced and MODEL_REGISTRY is None:
             RELAY_FORCE_MODEL = forced
         RELAY_THINKING = (os.environ.get("CSSWITCH_RELAY_THINKING") or "").strip() or None
     elif PROV_NAME in ("openai-custom", "openai-responses"):
@@ -836,7 +859,7 @@ if __name__ == "__main__":
         PROV["models_url"] = openai_endpoint(base, "/models")
         # 模型发现 scratch 只需要 /models，不能要求 CSSWITCH_OPENAI_MODEL；
         # 正式推理由 Rust 侧 relay_missing_model + Message 探针保证 model 必填。
-        if forced:
+        if forced and MODEL_REGISTRY is None:
             PROV["default_model"] = forced
             RELAY_FORCE_MODEL = forced
     _up = os.environ.get("CSSWITCH_UPSTREAM_URL")
@@ -849,7 +872,8 @@ if __name__ == "__main__":
     # DSML 兜底 shim 模式（默认 off；relay 恒 off；deepseek 且 dsml_capable 才读环境变量）。
     SHIM_MODE = dsml_shim.shim_mode(PROV_NAME, PROV)
     log(f"CSSwitch 代理启动 127.0.0.1:{args.port}  provider={PROV_NAME}  "
-        f"key=已加载(未显示)  上游={PROV['url']}  dsml_shim={SHIM_MODE}")
+        f"key=已加载(未显示)  上游={PROV['url']}  dsml_shim={SHIM_MODE}  "
+        f"registry={'on' if MODEL_REGISTRY else 'off'}")
     # 绑定重试：上次会话遗留的孤儿代理可能还占着端口（app 侧会主动清，但退干净需一点时间）。
     # 重试 ~3s 等端口释放，避免一次绑不上就直接失败（Errno 48）。
     srv = None
