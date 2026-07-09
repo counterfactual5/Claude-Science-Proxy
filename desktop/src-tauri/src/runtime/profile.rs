@@ -10,8 +10,8 @@ use crate::runtime::provider::{
 };
 use crate::{config, scratch, templates};
 
-/// 判断模型 id 是否会平铺进 Science 选择器主列表（claude-{opus|sonnet|haiku}-<数字…>）。
-/// 仅用于「获取模型」结果排序（主列表项排前），非鉴权路径。
+/// Whether a model id belongs in the Science selector main list (claude-{opus|sonnet|haiku}-<digits…>).
+/// Used only for fetch-models sort order, not auth.
 pub(crate) fn is_main_list_model(id: &str) -> bool {
     for fam in ["claude-opus-", "claude-sonnet-", "claude-haiku-"] {
         if let Some(rest) = id.strip_prefix(fam) {
@@ -90,10 +90,10 @@ pub(crate) fn profile_capabilities(p: &config::Profile) -> serde_json::Value {
     }
 }
 
-/// 组装 get_config 返回体：profiles 的 key 只回掩码，全 key 绝不出后端。
+/// Build get_config payload: profile keys are masked only; full keys never leave the backend.
 pub(crate) fn build_get_config(dir: &Path) -> Result<serde_json::Value, String> {
     let cfg = config::load_from(dir).map_err(|e| e.to_string())?;
-    // 一次性迁移提示（#9 甲）：读出后立即清盘，避免每次 get_config 重复提示。
+    // One-shot migration notice: clear after read so get_config does not repeat it.
     let notice = cfg.pending_notice.clone();
     if notice.is_some() {
         config::update(dir, |c| c.pending_notice = None).map_err(|e| e.to_string())?;
@@ -123,7 +123,7 @@ pub(crate) fn build_get_config(dir: &Path) -> Result<serde_json::Value, String> 
     }))
 }
 
-/// 模板注册表交前端铺 UI（单一来源，前端不复制常量）。
+/// Template registry for the frontend UI (single source; frontend does not duplicate constants).
 pub(crate) fn build_list_templates() -> Vec<serde_json::Value> {
     templates::all()
         .iter()
@@ -172,10 +172,10 @@ pub(crate) fn create_profile_inner(
         created_at: Some(config::now_ms()),
         notes: None,
     };
-    assert_format_supported(&p)?; // custom 选了不支持格式则拒
+    assert_format_supported(&p)?; // reject unsupported format on custom template
     let adapter = adapter_for_profile(&p);
     reject_openai_custom_anthropic_base(adapter, &p.base_url)?;
-    // 创建时可先不配模型；激活前在 profile_switch 层仍会校验。
+    // Model optional at create time; profile_switch validates before activation.
     let mut p = p;
     p.sync_model_fields();
     config::update(dir, |c| c.profiles.push(p)).map_err(|e| e.to_string())?;
@@ -188,7 +188,7 @@ pub(crate) fn update_profile_metadata_inner(
     name: &str,
     notes: Option<&str>,
 ) -> Result<(), String> {
-    // 未命中 id → Err（不静默 Ok，修 MP-1 Minor [4]）。
+    // Missing id → Err (never silent Ok).
     if config::load_from(dir)
         .map_err(|e| e.to_string())?
         .profile_by_id(id)
@@ -234,7 +234,7 @@ pub(crate) fn update_profile_connection_inner(
         };
         assert_format_supported(&probe)?;
     }
-    // 未命中 id → Err（不静默 Ok，修 MP-1 Minor [4]）。
+    // Missing id → Err (never silent Ok).
     if config::load_from(dir)
         .map_err(|e| e.to_string())?
         .profile_by_id(id)
@@ -242,7 +242,7 @@ pub(crate) fn update_profile_connection_inner(
     {
         return Err(i18n_err("errProfileNotFound", json!({ "id": id })));
     }
-    config::write_rolling_backup(dir).ok(); // 覆盖前留底
+    config::write_rolling_backup(dir).ok(); // rolling backup before overwrite
     config::update(dir, |c| {
         if let Some(p) = c.profile_by_id_mut(id) {
             if let Some(u) = base_url {
@@ -269,7 +269,7 @@ pub(crate) fn update_profile_connection_inner(
             p.sync_model_fields();
             if let Some(k) = key {
                 if !k.is_empty() {
-                    p.api_key = k.to_string(); // 空=不改（留占位不覆盖已存 key）
+                    p.api_key = k.to_string(); // empty key = leave existing
                 }
             }
         }
@@ -278,12 +278,12 @@ pub(crate) fn update_profile_connection_inner(
     Ok(())
 }
 
-/// 非 active 连接编辑的上游校验裁决（纯函数，P2-d）：
-/// - `Ok(true)`  上游明确接受(200)，已校验；
-/// - `Ok(false)` 无法确认(429/5xx/无响应)，best-effort 落盘、标记「未校验」（激活时会再验）；
-/// - `Err(hint)` 上游明确拒绝(401/403/400/404/422)，拦下不落盘。
+/// Non-active connection edit upstream probe verdict (pure fn):
+/// - `Ok(true)` upstream accepted (200), validated;
+/// - `Ok(false)` inconclusive (429/5xx/no response), save best-effort as unvalidated;
+/// - `Err(hint)` upstream rejected (401/403/400/404/422), do not persist.
 ///
-/// 选「如实标记后保存」：不因网络抖动/上游繁忙挡住保存，但也绝不假称已校验。
+/// "Save with honest label": network blips do not block save, but we never claim validated falsely.
 pub(crate) fn nonactive_probe_verdict(outcome: &scratch::ProbeOutcome) -> Result<bool, String> {
     match outcome {
         scratch::ProbeOutcome::Ok => Ok(true),
@@ -295,17 +295,17 @@ pub(crate) fn nonactive_probe_verdict(outcome: &scratch::ProbeOutcome) -> Result
             "errUpstreamModelRejected",
             json!({ "code": code }),
         )),
-        // 无法确认（405/429/5xx/无响应）：落盘但标记未校验，激活时再验。
-        // Unsupported(405) 并入此类：save 走 Message 探测，405 罕见（端点/base_url 异常），保守标未校验（与旧行为一致）。
+        // Inconclusive (405/429/5xx/no response): persist as unvalidated; re-probe on activation.
+        // Unsupported(405) grouped here: save uses Message probe; 405 is rare (bad endpoint/url).
         scratch::ProbeOutcome::Ambiguous(_)
         | scratch::ProbeOutcome::NoResponse
         | scratch::ProbeOutcome::Unsupported(_) => Ok(false),
     }
 }
 
-/// active 连接编辑的内存候选值（validate-before-persist 用）：不改的字段为 None。
-/// 校验时把它套到旧 profile 的克隆上做 scratch/起正式；提交成功时用**同一套** [`ConnectionEdit::apply`]
-/// 逻辑连同 active_id 一起落盘，杜绝「先落盘后校验」导致的「盘新运行旧」（P1-4）。
+/// In-memory candidate for active connection edit (validate-before-persist). Unchanged fields are None.
+/// Probe applies this onto a cloned profile; on success the same [`ConnectionEdit::apply`] persists
+/// with active_id to avoid "disk new, runtime old" from persist-before-validate.
 #[derive(Default)]
 pub(crate) struct ConnectionEdit {
     base_url: Option<String>,
@@ -335,8 +335,8 @@ impl ConnectionEdit {
         }
     }
 
-    /// 把非空编辑值套到目标 profile（内存候选与落盘共用同一逻辑）。
-    /// 语义与 `update_profile_connection_inner` 一致：None=不改；key 为空串=不改（留占位不覆盖已存 key）。
+    /// Apply non-empty edit values to target profile (shared by memory candidate and persist).
+    /// Same semantics as `update_profile_connection_inner`: None = unchanged; empty key = keep stored key.
     pub(crate) fn apply(&self, p: &mut config::Profile) {
         if let Some(u) = &self.base_url {
             p.base_url = u.clone();
@@ -362,7 +362,7 @@ impl ConnectionEdit {
     }
 }
 
-/// live 探测结果（id + 能力）∪ builtin，去重（按 id）+ 排序（tools 优先 → 版本新→旧 → 主列表 id 靠前）。
+/// Merge live probe results (id + capabilities) with builtin, dedupe by id, sort (tools → version → main-list ids).
 pub(crate) fn merge_and_sort_models(
     live: Vec<(String, Option<bool>)>,
     builtin: &[&str],
@@ -402,18 +402,16 @@ pub(crate) fn merge_and_sort_models(
         .collect()
 }
 
-/// 探测类型选择（纯函数，修真机 P1）：
-/// - 原生 adapter（deepseek/qwen）的 `/v1/models` 是【静态列表、不回源】，探不出坏 key，故一律用
-///   Message 探测（打 `/v1/messages` 会真发上游，坏 key → 401）。
-/// - relay：留空用 Models（`/v1/models` 回源即可验端点+鉴权）；选了具体模型用 Message 验该模型。
+/// Choose probe kind: native adapters use Message (static /v1/models cannot catch bad keys);
+/// relay with empty model uses Models; relay with model uses Message for that model.
 pub(crate) fn probe_kind_for(adapter: &str, model: &str) -> scratch::ProbeKind {
     if is_native_adapter(adapter) {
-        return scratch::ProbeKind::Message; // native /v1/models 静态，只有 Message 打上游能验 key。
+        return scratch::ProbeKind::Message; // native /v1/models is static; Message hits upstream for key auth.
     }
     probe_kind_for_model(model)
 }
 
-/// 选了模型 → 验具体模型（POST /v1/messages）；留空 → 验端点+鉴权（GET /v1/models）。
+/// With model → validate that model (POST /v1/messages); empty → validate endpoint+auth (GET /v1/models).
 pub(crate) fn probe_kind_for_model(model: &str) -> scratch::ProbeKind {
     if model.trim().is_empty() {
         scratch::ProbeKind::Models

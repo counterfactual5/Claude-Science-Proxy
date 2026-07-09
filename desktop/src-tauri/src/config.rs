@@ -44,7 +44,7 @@ pub(crate) fn validate_runtime_ports(proxy_port: u16, sandbox_port: u16) -> Resu
     Ok(())
 }
 
-/// 当前配置 schema 版本。>4 的文件由更新版本 app 写入，本版本拒绝启动（不误改）。
+/// Current config schema. Files with version >4 were written by a newer app — refuse to load.
 pub const CURRENT_SCHEMA_VERSION: u32 = 4;
 
 pub(crate) const CONFIG_BASENAME: &str = "CSP.json";
@@ -57,8 +57,8 @@ fn default_schema_version() -> u32 {
     CURRENT_SCHEMA_VERSION
 }
 
-/// 一条命名配置。cc-switch 叫 provider，我们叫 profile。key 明文存盘、只回掩码。
-/// 运行行为与 UI 能力都由 `template_id` 经 templates 注册表派生（不靠 name/icon/base_url 猜身份）。
+/// Named connection profile (cc-switch calls these providers). Keys on disk in plaintext; API masks them.
+/// Runtime behavior comes from `template_id` via the templates registry (not from name/icon/base_url).
 #[derive(Serialize, Deserialize, Clone, Default, Debug, PartialEq)]
 pub struct Profile {
     pub id: String,
@@ -71,10 +71,10 @@ pub struct Profile {
     pub api_key: String,
     #[serde(default)]
     pub model: String,
-    /// 暴露给 Science 的模型列表（可多选）。空时从 `model` 迁移。
+    /// Models exposed to Science (multi-select). Migrated from lone `model` when empty.
     #[serde(default)]
     pub active_models: Vec<String>,
-    /// 默认/主模型（后台 agent 兜底）。空时用 active_models 首项。
+    /// Default / primary model for background agents. Falls back to first active_models entry.
     #[serde(default)]
     pub default_model: String,
     #[serde(default)]
@@ -91,32 +91,30 @@ pub struct Profile {
     pub notes: Option<String>,
 }
 
-/// 顶层配置。字段都有默认值，缺字段的旧文件也能读。
+/// Top-level config. All fields have defaults so partial legacy files still deserialize.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct Config {
     #[serde(default = "default_schema_version")]
     pub schema_version: u32,
     #[serde(default)]
     pub profiles: Vec<Profile>,
-    /// 生效 profile 的 id（向后兼容：等于 active_ids 首项；新代码以 active_ids 为准）。
+    /// Active profile id (legacy mirror of first `active_ids` entry).
     #[serde(default)]
     pub active_id: String,
-    /// 同时生效的 profile id 列表（schema 兼容；运行时归一化为 0 或 1 条）。
+    /// Active profile ids (schema compat; runtime normalizes to 0 or 1 entry).
     #[serde(default)]
     pub active_ids: Vec<String>,
     #[serde(default = "default_proxy_port")]
     pub proxy_port: u16,
     #[serde(default = "default_sandbox_port")]
     pub sandbox_port: u16,
-    /// 代理的 path-secret。**持久化**并跨代理重启/切 profile/重开 app 复用，
-    /// 这样已在跑的沙箱（其 ANTHROPIC_BASE_URL 里嵌了该 secret）不会因代理换 secret 而 403。
-    /// 首次为空，由后端生成一次后写回。
+    /// Persistent proxy path-secret (reused across restarts so sandbox URL stays valid).
     #[serde(default)]
     pub secret: String,
-    /// 遗留字段：旧版「官方 Claude」模式已移除，加载时一律归一为 `proxy`。
+    /// Legacy official-mode field; always normalized to `proxy` on load.
     #[serde(default = "default_mode")]
     pub mode: String,
-    /// 一次性迁移提示（#9 甲：回填默认模型后告知用户）。get_config 读后清空。
+    /// One-shot migration notice for the UI; cleared after `get_config`.
     #[serde(default)]
     pub pending_notice: Option<String>,
 }
@@ -138,7 +136,7 @@ impl Default for Config {
 }
 
 impl Profile {
-    /// 生效的模型列表：active_models 优先，否则回退到单个 model。
+    /// Effective model list: `active_models` first, else single `model`.
     pub fn effective_models(&self) -> Vec<String> {
         let from_active: Vec<String> = self
             .active_models
@@ -165,7 +163,7 @@ impl Profile {
         self.effective_models().first().cloned().unwrap_or_default()
     }
 
-    /// 写盘后保持 model/default_model/active_models 一致。
+    /// Keep model / default_model / active_models consistent before save.
     pub fn sync_model_fields(&mut self) {
         let models = self.effective_models();
         if self.active_models.is_empty() && !models.is_empty() {
@@ -180,18 +178,18 @@ impl Profile {
 }
 
 impl Config {
-    /// 是否在某条 profile 为当前生效项。
+    /// Whether `id` is the currently active profile.
     pub fn is_profile_active(&self, id: &str) -> bool {
         self.active_ids.iter().any(|x| x == id)
     }
 
-    /// 从 active 列表移除 profile（删 profile 时用）。
+    /// Remove `id` from active list (used when deleting a profile).
     pub fn deactivate_profile(&mut self, id: &str) {
         self.active_ids.retain(|x| x != id);
         self.sync_active_id();
     }
 
-    /// 仅保留一条 active（legacy 独占切换）。
+    /// Set exactly one active profile (single-active semantics).
     pub fn set_exclusive_active(&mut self, id: &str) {
         if self.profile_by_id(id).is_some() {
             self.active_ids = vec![id.to_string()];
@@ -199,12 +197,12 @@ impl Config {
         }
     }
 
-    /// 保持 active_id 与 active_ids 首项一致（API 向后兼容）。
+    /// Keep `active_id` in sync with first `active_ids` entry (API backward compat).
     pub fn sync_active_id(&mut self) {
         self.active_id = self.active_ids.first().cloned().unwrap_or_default();
     }
 
-    /// 当前生效 profile（`active_ids` 经归一化后 0 或 1 条）。
+    /// Currently active profile (0 or 1 after normalization).
     pub fn active_profile(&self) -> Option<&Profile> {
         self.active_ids
             .first()
@@ -218,7 +216,7 @@ impl Config {
     }
 }
 
-/// 16 字节随机 → 32 hex 字符。/dev/urandom（unix）；不可用时退回时间纳秒。
+/// 16 random bytes as 32 hex chars (`/dev/urandom`, else time-based fallback).
 pub fn new_id() -> String {
     use std::io::Read;
     let mut buf = [0u8; 16];
@@ -234,7 +232,7 @@ pub fn new_id() -> String {
     format!("{n:032x}")
 }
 
-/// epoch 毫秒（用作 created_at / sort_index 初值）。
+/// Unix epoch milliseconds (created_at / sort_index).
 pub fn now_ms() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -242,7 +240,7 @@ pub fn now_ms() -> i64 {
         .unwrap_or(0)
 }
 
-// ---------- 版本探测 ----------
+// ---------- version detection ----------
 #[derive(Debug, Clone, PartialEq)]
 pub enum VersionKind {
     Legacy,
@@ -258,7 +256,7 @@ struct VersionProbe {
     schema_version: u32,
 }
 
-/// <2（含缺失=0）→ Legacy；==2 → V2；==3 → V3（迁移到 v4）；==4 → V4；>4 → TooNew。
+/// Map raw file bytes to version kind: <2 Legacy, 2 V2, 3 V3, 4 V4, >4 TooNew.
 pub fn detect_version(data: &[u8]) -> io::Result<VersionKind> {
     let probe: VersionProbe = serde_json::from_slice(data).map_err(|e| {
         io::Error::new(
@@ -275,10 +273,9 @@ pub fn detect_version(data: &[u8]) -> io::Result<VersionKind> {
     })
 }
 
-/// 旧固定槽 → 新 profile 列表。空槽（key/base_url/model 全空）跳过；
-/// 旧 provider 指针命中已迁 profile → active_id 指它，否则 ""（不静默选第一条）。
+/// Migrate legacy fixed slots to profile list. Skip empty slots; active_id from legacy provider pointer only.
 pub fn migrate_v1_to_v2(mut legacy: crate::config_legacy::ConfigV1) -> Config {
-    // 先把遗留裸 relay 槽归位到 relay-<preset>。
+    // Re-home bare relay slots to relay-<preset> templates first.
     crate::templates::migrate_legacy_relay(&mut legacy.providers, &mut legacy.provider);
     let ts = now_ms();
     let mut profiles = Vec::new();
@@ -344,7 +341,7 @@ pub fn migrate_v1_to_v2(mut legacy: crate::config_legacy::ConfigV1) -> Config {
     }
 }
 
-/// 生产环境配置目录：`$HOME/.csp`。
+/// Production config directory: `$HOME/.csp`.
 pub fn default_dir() -> PathBuf {
     let home = std::env::var_os("HOME")
         .map(PathBuf::from)
@@ -356,9 +353,8 @@ fn config_path(dir: &Path) -> PathBuf {
     dir.join(CONFIG_BASENAME)
 }
 
-/// 一次性路径迁移：`.csswitch/config.json` → `~/.csp/CSP.json`，
-/// 以及 `~/.csp/config.json` → `CSP.json`；同步备份文件名。
-/// 仅在生产默认目录上运行（单元测试用临时 dir 时跳过）。
+/// One-time path migration: `~/.csswitch/config.json` → `~/.csp/CSP.json`, rename backups.
+/// Runs only on the production default dir (skipped for unit-test temp dirs).
 fn migrate_legacy_paths(dir: &Path) -> io::Result<()> {
     if default_dir().as_path() != dir {
         return Ok(());
@@ -426,7 +422,7 @@ fn rename_legacy_backups(dir: &Path) {
     }
 }
 
-/// 递归拷贝目录内容（跳过符号链接；文件用 atomic_copy 保证 0600）。
+/// Recursively copy directory contents (skip symlinks; files via atomic_copy at mode 0600).
 fn copy_dir_contents(from: &Path, to: &Path) -> io::Result<()> {
     for entry in fs::read_dir(from)? {
         let entry = entry?;
@@ -450,7 +446,7 @@ fn copy_dir_contents(from: &Path, to: &Path) -> io::Result<()> {
     Ok(())
 }
 
-/// 若 path 存在且是符号链接则报错（不跟随）。path 不存在返回 Ok。
+/// Error if `path` exists and is a symlink (never follow). Missing path is Ok.
 pub(crate) fn assert_not_symlink(path: &Path) -> io::Result<()> {
     match fs::symlink_metadata(path) {
         Ok(md) if md.file_type().is_symlink() => Err(io::Error::new(
@@ -463,7 +459,7 @@ pub(crate) fn assert_not_symlink(path: &Path) -> io::Result<()> {
     }
 }
 
-/// 确保配置目录存在且是普通目录、权限 0700。目录是符号链接则拒绝。
+/// Ensure config dir exists as a real directory with mode 0700 (reject symlinks).
 pub fn ensure_dir(dir: &Path) -> io::Result<()> {
     assert_not_symlink(dir)?;
     if !dir.exists() {
@@ -480,11 +476,11 @@ pub fn ensure_dir(dir: &Path) -> io::Result<()> {
     Ok(())
 }
 
-// ---------- 备份 ----------
-/// 原子拷贝 src → dst（拒符号链接、0600、O_EXCL 临时文件 + rename）。src 不存在 → Err。
+// ---------- backups ----------
+/// Atomic copy src → dst (reject symlinks, mode 0600, O_EXCL temp + rename). Missing src → Err.
 fn atomic_copy(src: &Path, dst: &Path) -> io::Result<()> {
     assert_not_symlink(dst)?;
-    let data = fs::read(src)?; // src 不存在 → Err（迁移备份据此中止）
+    let data = fs::read(src)?; // missing src aborts migration backup
     let tmp = dst.with_extension(format!(
         "baktmp-{}-{:?}",
         std::process::id(),
@@ -512,27 +508,26 @@ fn atomic_copy(src: &Path, dst: &Path) -> io::Result<()> {
     Ok(())
 }
 
-/// 迁移前备份旧 CSP.json → CSP.json.v1.bak。源不存在 / 备份失败 → Err（中止迁移）。
+/// Pre-migration backup of CSP.json → CSP.json.v1.bak. Missing source or backup failure → Err.
 pub fn write_migration_backup(dir: &Path) -> io::Result<()> {
     atomic_copy(&config_path(dir), &dir.join(MIGRATION_BACKUP_NAME))
 }
 
-/// 普通保存前的单份滚动备份 → CSP.json.bak。best-effort（调用方可忽略 Err），但写法仍原子/0600。
+/// Rolling backup before ordinary save → CSP.json.bak. Best-effort for callers; still atomic/0600.
 pub fn write_rolling_backup(dir: &Path) -> io::Result<()> {
     atomic_copy(&config_path(dir), &dir.join(ROLLING_BACKUP_NAME))
 }
 
-/// 清 key / 删 profile 后净化滚动备份：直接删，避免旧明文 key 残留可恢复。
+/// Drop rolling backup after key clear / profile delete so old plaintext keys are not recoverable.
 pub fn drop_rolling_backup(dir: &Path) {
     let _ = fs::remove_file(dir.join(ROLLING_BACKUP_NAME));
 }
 
-/// 从 `dir/CSP.json` 读配置。文件不存在返回 [`Config::default`]。
-/// 旧文件（schema<2）→ 备份 v1.bak + 迁移 + 落盘 v2；schema>2 → Err（拒绝启动）。
-/// v2 悬空 active_id 归一化为空。文件/目录是符号链接则报错（不跟随读）。
+/// Load config from `dir/CSP.json`. Missing file → [`Config::default`].
+/// Legacy schema migrates with v1.bak backup; schema too new → Err. Rejects symlink paths.
 pub fn load_from(dir: &Path) -> io::Result<Config> {
     migrate_legacy_paths(dir)?;
-    // 目录本身也不许是符号链接：否则攻击者把 ~/.csp 换成软链就能让读取跟随到别处。
+    // Reject symlinked config dir (e.g. attacker swapping ~/.csp).
     assert_not_symlink(dir)?;
     let path = config_path(dir);
     assert_not_symlink(&path)?;
@@ -541,7 +536,7 @@ pub fn load_from(dir: &Path) -> io::Result<Config> {
         Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(Config::default()),
         Err(e) => return Err(e),
     };
-    // 存在即复位权限，抵御外部把它改宽。
+    // Reset permissions on read (defense against external chmod widening).
     let _ = fs::set_permissions(&path, fs::Permissions::from_mode(0o600));
     match detect_version(&data)? {
         VersionKind::TooNew(v) => Err(io::Error::new(
@@ -551,7 +546,7 @@ pub fn load_from(dir: &Path) -> io::Result<Config> {
             ),
         )),
         VersionKind::Legacy => {
-            write_migration_backup(dir)?; // 备份失败即中止迁移，不动原文件
+            write_migration_backup(dir)?; // backup failure aborts migration
             let legacy: crate::config_legacy::ConfigV1 =
                 serde_json::from_slice(&data).map_err(|e| {
                     io::Error::new(
@@ -561,7 +556,7 @@ pub fn load_from(dir: &Path) -> io::Result<Config> {
                 })?;
             let cfg = normalize_active(migrate_v1_to_v2(legacy));
             validate_loaded_ports(&cfg)?;
-            save_to(dir, &cfg)?; // 落盘为 v2（幂等，下次读走 V2 分支）
+            save_to(dir, &cfg)?; // persist migrated schema (idempotent on next read)
             Ok(cfg)
         }
         VersionKind::V2 => {
@@ -623,12 +618,9 @@ fn validate_loaded_ports(cfg: &Config) -> io::Result<()> {
     })
 }
 
-/// 加载后归一化不变式（spec §4）：
-/// - `template_id` 未命中注册表 → 归一化为 `custom`；
-/// - `active_ids` / `active_id` 悬空 → 剔除并同步；
-/// - 旧文件仅有 `active_id` → 回填 `active_ids`；
-/// - 多条 `active_ids`（已废弃 provider pool）→ 仅保留首项；
-/// - 遗留 `mode: "official"` → 一律归一为 `proxy`（官方模式 UI/命令已移除）。
+/// Post-load invariants (spec §4): unknown template_id → `custom`; dangling active_* cleared;
+/// legacy single active_id backfills active_ids; deprecated multi active_ids → first only;
+/// legacy `mode: "official"` → `proxy`.
 fn normalize_active(mut cfg: Config) -> Config {
     for p in cfg.profiles.iter_mut() {
         if crate::templates::by_id(&p.template_id).is_none() {
@@ -660,7 +652,7 @@ fn normalize_active(mut cfg: Config) -> Config {
     cfg
 }
 
-/// v2 → v3：补齐 active_models/default_model，并 bump schema_version。
+/// v2 → v3: fill active_models/default_model and bump schema_version.
 fn migrate_v2_to_v3(mut cfg: Config) -> Config {
     cfg.schema_version = 3;
     for p in cfg.profiles.iter_mut() {
@@ -669,7 +661,7 @@ fn migrate_v2_to_v3(mut cfg: Config) -> Config {
     cfg
 }
 
-/// v3 → v4：active_id → active_ids，并 bump schema_version。
+/// v3 → v4: active_id → active_ids and bump schema_version.
 fn migrate_v3_to_v4(mut cfg: Config) -> Config {
     cfg.schema_version = CURRENT_SCHEMA_VERSION;
     if cfg.active_ids.is_empty()
@@ -682,7 +674,7 @@ fn migrate_v3_to_v4(mut cfg: Config) -> Config {
     cfg
 }
 
-/// 原子写 `dir/CSP.json`（0600）。目录/目标文件是符号链接则拒绝。
+/// Atomically write `dir/CSP.json` (mode 0600). Rejects symlinked dir or target file.
 pub fn save_to(dir: &Path, cfg: &Config) -> io::Result<()> {
     ensure_dir(dir)?;
     let path = config_path(dir);
@@ -694,14 +686,14 @@ pub fn save_to(dir: &Path, cfg: &Config) -> io::Result<()> {
         )
     })?;
 
-    // 临时文件与目标同目录（保证 rename 在同一文件系统上原子）。
-    // 名字带 pid + 线程 id，避免同进程并发写者撞同一个 O_EXCL 临时名。
+    // Temp file in same dir as target (atomic rename on one filesystem).
+    // Name includes pid + thread id to avoid O_EXCL collisions under concurrent writers.
     let tmp = dir.join(format!(
         ".CSP.json.tmp-{}-{:?}",
         std::process::id(),
         std::thread::current().id()
     ));
-    // O_CREAT|O_EXCL + 0600：拒绝复用已有临时文件，创建即定权限。
+    // O_CREAT|O_EXCL + 0600: never reuse an existing temp file; mode set at creation.
     let write_res = (|| -> io::Result<()> {
         let mut f = fs::OpenOptions::new()
             .write(true)
@@ -716,7 +708,7 @@ pub fn save_to(dir: &Path, cfg: &Config) -> io::Result<()> {
         let _ = fs::remove_file(&tmp);
         return Err(e);
     }
-    // rename 覆盖目标名本身（替换符号链接名而非跟随），但上面已 assert 目标非链接。
+    // rename replaces the target name (not symlink follow); target already asserted non-link above.
     if let Err(e) = fs::rename(&tmp, &path) {
         let _ = fs::remove_file(&tmp);
         return Err(e);
@@ -725,8 +717,8 @@ pub fn save_to(dir: &Path, cfg: &Config) -> io::Result<()> {
     Ok(())
 }
 
-/// 序列化的「读-改-写」：进程内全局写锁下 load → apply → save，避免并发命令
-/// 各读一份旧 config、各改一个字段、互相覆盖。
+/// Serialized read-modify-write under a process-wide write lock so concurrent commands
+/// cannot each load stale config and overwrite each other's field updates.
 pub fn update<F: FnOnce(&mut Config)>(dir: &Path, f: F) -> io::Result<Config> {
     static WRITE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
     let _g = WRITE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
@@ -736,9 +728,8 @@ pub fn update<F: FnOnce(&mut Config)>(dir: &Path, f: F) -> io::Result<Config> {
     Ok(cfg)
 }
 
-/// 掩码：固定 4 个圆点 + 末 4 位（`••••tail`）。空 key 返回空串；≤4 位全遮。
-/// 定长而非随 key 长度增长：长 key 的掩码不会在列表里撑出横向溢出（WKWebView 不给连续
-/// 圆点断行，`word-break` 拦不住），且不泄漏 key 长度。绝不返回完整 key，是回显前端的唯一形式。
+/// Mask API keys as four dots plus last four chars (`••••tail`). Empty → ""; ≤4 chars fully masked.
+/// Fixed width avoids horizontal overflow in WKWebView lists and does not leak key length.
 pub fn mask(key: &str) -> String {
     let n = key.chars().count();
     if n == 0 {
