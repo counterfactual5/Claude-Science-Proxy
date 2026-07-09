@@ -21,7 +21,7 @@ It is built for more than developers. You need Claude Science, a third-party API
 
 > The current app mainly targets macOS Apple Silicon. Because the app is not notarized yet, macOS may ask you to right-click and choose "Open" the first time.
 
-[Download latest release](../../releases/latest) · [Changelog](./CHANGELOG.md) · [Report a bug](https://github.com/SuperJJ007/CSSwitch/issues/new?template=bug_report.yml) · [Request a feature](https://github.com/SuperJJ007/CSSwitch/issues/new?template=feature_request.yml)
+[Download latest release](../../releases/latest) · [Changelog](./CHANGELOG.md)
 
 ## Contents
 
@@ -46,7 +46,6 @@ CSSwitch acts as a local runtime control plane:
 - It prepares a locally generated launch ticket for Science without copying your real Claude login.
 - It forwards Science model requests to the provider you choose.
 - It translates between Anthropic Messages API and OpenAI-compatible APIs when needed.
-- It keeps an "Official Claude" mode so subscribers can switch back to the real Science app.
 
 In short: CSSwitch is to Claude Science what CC Switch is to Claude Code, but Science also needs a launch-ticket and sandbox layer.
 
@@ -65,7 +64,6 @@ Claude Science sandbox
 - Verify a key before making a profile active; failed checks do not silently switch your active setup.
 - Click "一键开始" (Start) to launch the proxy, prepare the sandbox, and open Science.
 - Show the actual selected model name in Science instead of a vague `claude` or `opus` label.
-- Switch back to "Official Claude" without interfering with your real Claude login.
 
 **For advanced users**
 
@@ -87,13 +85,10 @@ Before starting, make sure you have:
 1. Download the latest `CSSwitch_*.dmg` from [GitHub Releases](../../releases/latest).
 2. Drag CSSwitch into Applications.
 3. If macOS blocks the first launch, right-click the app and choose "Open".
-4. Keep the top mode set to "第三方模型" (third-party model).
-5. Click "+ 新建" (New), choose a provider, and enter your API key, model, and `base_url` when required.
-6. Click "创建" (Create), then choose "设为当前" (Set active) on the profile.
-7. After verification succeeds, click "一键开始" (Start).
-8. CSSwitch starts the isolated Science instance and opens it in your browser.
-
-If you have a Claude subscription and want the normal official Science experience, switch to "官方 Claude" (Official Claude). CSSwitch will tear down the third-party proxy path and open the real Science app.
+4. Click "+ 新建" (New), choose a provider, and enter your API key, model, and `base_url` when required.
+5. Click "创建" (Create), then choose "设为当前" (Set active) on the profile.
+6. After verification succeeds, click "一键开始" (Start).
+7. CSSwitch starts the isolated Science instance and opens it in your browser.
 
 ## Supported model sources
 
@@ -132,7 +127,6 @@ CSSwitch's core boundary is simple: third-party model mode keeps credentials, da
 - Keys are passed to the local proxy through environment variables, not command-line arguments or logs.
 - The proxy only listens on `127.0.0.1` and validates requests with a path secret.
 - Incoming Science `Authorization` / `x-api-key` headers are stripped before CSSwitch injects your configured third-party key.
-- Official Claude mode tears down the third-party proxy path before handing you back to the real Science app.
 
 ## Current limitations
 
@@ -169,8 +163,6 @@ When reporting a problem, please include:
 
 Please remove API keys, tokens, email addresses, private URLs, and any sensitive data before submitting logs.
 
-- [Report a bug](https://github.com/SuperJJ007/CSSwitch/issues/new?template=bug_report.yml)
-- [Request a feature](https://github.com/SuperJJ007/CSSwitch/issues/new?template=feature_request.yml)
 - [Read the changelog](./CHANGELOG.md)
 
 ## Development
