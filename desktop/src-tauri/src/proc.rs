@@ -1,5 +1,5 @@
-//! 进程管家用到的纯 std 辅助：探活、依赖定位、一次性 secret 生成、上游可达性。
-//! 无第三方依赖，便于单测；有状态的子进程编排放在 lib.rs（持 Child 句柄）。
+//! Pure std helpers for the process manager: liveness probes, dependency resolution, one-shot secret generation, upstream reachability.
+//! No third-party deps for easy unit tests; stateful child orchestration lives in lib.rs (holds Child handles).
 
 use std::io::{Read, Write};
 use std::net::{TcpStream, ToSocketAddrs};
@@ -7,8 +7,8 @@ use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::time::Duration;
 
-/// 对本地回环代理做 HTTP 探活：`GET /<secret>/health`，响应状态行含 200 即视为健康。
-/// 代理带 path-secret 鉴权时必须带上 secret，否则会拿到 403。
+/// HTTP liveness probe against local loopback proxy: `GET /<secret>/health`; status line containing 200 counts as healthy.
+/// When the proxy uses path-secret auth, secret must be included or the probe gets 403.
 pub fn http_health(port: u16, secret: Option<&str>, timeout_ms: u64) -> bool {
     let addr = match ("127.0.0.1", port)
         .to_socket_addrs()
@@ -34,7 +34,7 @@ pub fn http_health(port: u16, secret: Option<&str>, timeout_ms: u64) -> bool {
         return false;
     }
     let mut buf = Vec::new();
-    // 只需读到状态行；读上限防呆。
+    // Only need the status line; read cap as a safety bound.
     let mut chunk = [0u8; 1024];
     while buf.len() < 8192 {
         match stream.read(&mut chunk) {
@@ -48,14 +48,14 @@ pub fn http_health(port: u16, secret: Option<&str>, timeout_ms: u64) -> bool {
     }
     let head = String::from_utf8_lossy(&buf);
     let status_line = head.lines().next().unwrap_or("");
-    // 形如 "HTTP/1.1 200 OK"：严格取第二段等于 200，避免 contains 误配 reason phrase。
+    // e.g. "HTTP/1.1 200 OK": strictly compare second token to 200, avoid contains() matching reason phrase.
     status_line.split_whitespace().nth(1) == Some("200")
 }
 
-/// 向本地回环代理 POST 一段 JSON（`POST /<secret><path>`），返回 HTTP 响应状态码；
-/// 连不上 / 无响应返回 None。用于「存 key 后用最小请求真正验一次 key」——
-/// 请求经代理打到上游，200=可用，401/403=key 被拒。回环明文，无需 TLS。
-/// timeout_ms 要给足（代理要转发上游），建议调用方传 ~15000。
+/// POST JSON to local loopback proxy (`POST /<secret><path>`); returns HTTP status code;
+/// None on connect failure / no response. Used to validate a stored key with a minimal request—
+/// traffic goes through the proxy to upstream: 200=ok, 401/403=key rejected. Loopback is plaintext, no TLS.
+/// timeout_ms should be generous (proxy forwards upstream); callers should pass ~15000.
 pub fn http_post_status(
     port: u16,
     secret: Option<&str>,
@@ -79,7 +79,7 @@ pub fn http_post_status(
     );
     stream.write_all(req.as_bytes()).ok()?;
     stream.write_all(body).ok()?;
-    // 只需读到状态行（非流式响应，状态行随首个头块到达）；读上限防呆。
+    // Only need status line (non-streaming; arrives with first header block); read cap as safety bound.
     let mut buf = Vec::new();
     let mut chunk = [0u8; 1024];
     while buf.len() < 8192 {
@@ -100,9 +100,9 @@ pub fn http_post_status(
         .and_then(|s| s.parse::<u16>().ok())
 }
 
-/// 向本地回环代理 GET 一段路径（`GET /<secret><path>`），返回 (状态码, 响应体)。
-/// 连不上 / 无响应返回 None。用于经代理回源拉中转站 `/v1/models`——代理有 TLS（urllib），
-/// 这里只打回环明文，无需在 Rust 侧引 TLS。timeout_ms 要给足（代理要转发上游），建议 ~15000。
+/// GET path on local loopback proxy (`GET /<secret><path>`); returns (status code, response body).
+/// None on connect failure / no response. Used to pull relay `/v1/models` through the proxy—the proxy has TLS (urllib);
+/// this side only hits loopback plaintext, no Rust TLS. timeout_ms should be generous (~15000).
 pub fn http_get_body(
     port: u16,
     secret: Option<&str>,
@@ -120,7 +120,7 @@ pub fn http_get_body(
     };
     let req = format!("GET {path} HTTP/1.0\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n");
     stream.write_all(req.as_bytes()).ok()?;
-    // 读完整响应（状态行 + 头 + 体）。上限防呆：模型列表通常 < 数十 KB，给 1 MiB。
+    // Read full response (status + headers + body). Cap at 1 MiB; model lists are usually tens of KB.
     let mut buf = Vec::new();
     let mut chunk = [0u8; 4096];
     loop {
@@ -139,7 +139,7 @@ pub fn http_get_body(
         .next()
         .and_then(|l| l.split_whitespace().nth(1))
         .and_then(|s| s.parse::<u16>().ok())?;
-    // 分割头与体：首个空行之后即响应体。
+    // Split headers and body at first blank line.
     let body = match text.split_once("\r\n\r\n") {
         Some((_, b)) => b.to_string(),
         None => String::new(),
@@ -147,7 +147,7 @@ pub fn http_get_body(
     Some((status, body))
 }
 
-/// 上游主机可达性（仅 TCP 连通，不校验 key）。绿灯=可达，黄灯=不可达。
+/// Upstream host reachability (TCP connect only, no key check). Green=reachable, yellow=unreachable.
 pub fn tcp_reachable(host: &str, port: u16, timeout_ms: u64) -> bool {
     let dur = Duration::from_millis(timeout_ms);
     match (host, port).to_socket_addrs() {
@@ -163,30 +163,29 @@ pub fn tcp_reachable(host: &str, port: u16, timeout_ms: u64) -> bool {
     }
 }
 
-/// 在 PATH 里找可执行文件（简易 which），并对 macOS GUI 最小 PATH 做兜底。
+/// Find executable on PATH (simple which) with macOS GUI minimal-PATH fallback.
 ///
-/// 从访达 / .app 启动的 GUI 进程拿到的是最小 PATH（`/usr/bin:/bin:/usr/sbin:/sbin`），
-/// **不含** Homebrew(`/usr/local/bin`、`/opt/homebrew/bin`)、nvm / volta / asdf 等
-/// node 常见安装位置 → `which("node")` 在正常 PATH 里查不到（`python3` 因
-/// `/usr/bin/python3` 在系统 PATH 里才没事）。故 PATH 未命中时，再扫一遍
-/// [`common_bin_dirs`] 里的常见安装目录（修 #2）。找不到返回 None。
+/// GUI processes launched from Finder / .app get minimal PATH (`/usr/bin:/bin:/usr/sbin:/sbin`),
+/// **excluding** Homebrew (`/usr/local/bin`, `/opt/homebrew/bin`), nvm / volta / asdf, etc.—
+/// so `which("node")` misses common installs (`python3` works because `/usr/bin/python3` is in system PATH).
+/// When PATH misses, scan [`common_bin_dirs`] (fix #2). Returns None if not found.
 pub fn which(name: &str) -> Option<PathBuf> {
-    // 绝对/相对路径直接判定。
+    // Absolute/relative path: check directly.
     let p = PathBuf::from(name);
     if p.is_absolute() {
         return if is_exec(&p) { Some(p) } else { None };
     }
-    // 1) 正常 PATH（从终端启动时够用）。PATH 缺失也不早退，继续走兜底。
+    // 1) Normal PATH (enough when launched from terminal). Missing PATH does not early-return; fall through.
     if let Some(path) = std::env::var_os("PATH") {
         if let Some(hit) = find_in_dirs(name, std::env::split_paths(&path)) {
             return Some(hit);
         }
     }
-    // 2) GUI/.app 最小 PATH 兜底：扫常见安装目录。
+    // 2) GUI/.app minimal PATH fallback: scan common install dirs.
     find_in_dirs(name, common_bin_dirs())
 }
 
-/// 在给定目录序列里找可执行文件（第一个命中即返回）。
+/// Find executable in given directory sequence (first hit wins).
 fn find_in_dirs(name: &str, dirs: impl IntoIterator<Item = PathBuf>) -> Option<PathBuf> {
     for dir in dirs {
         let cand = dir.join(name);
@@ -197,13 +196,13 @@ fn find_in_dirs(name: &str, dirs: impl IntoIterator<Item = PathBuf>) -> Option<P
     None
 }
 
-/// macOS 上 node/python 等的常见安装目录（不含系统最小 PATH 已覆盖的 `/usr/bin` 等）：
-/// Homebrew(Apple Silicon / Intel)、MacPorts、volta、asdf、`~/.local/bin`，
-/// 以及 nvm 各版本 `~/.nvm/versions/node/<ver>/bin`（目录枚举）。
+/// Common macOS install dirs for node/python (excluding `/usr/bin` etc. already in minimal PATH):
+/// Homebrew (Apple Silicon / Intel), MacPorts, volta, asdf, `~/.local/bin`,
+/// and nvm `~/.nvm/versions/node/<ver>/bin` (directory enumeration).
 fn common_bin_dirs() -> Vec<PathBuf> {
     let mut dirs = vec![
-        PathBuf::from("/opt/homebrew/bin"), // Homebrew（Apple Silicon）
-        PathBuf::from("/usr/local/bin"),    // Homebrew（Intel）/ 手动安装
+        PathBuf::from("/opt/homebrew/bin"), // Homebrew (Apple Silicon)
+        PathBuf::from("/usr/local/bin"),    // Homebrew (Intel) / manual install
         PathBuf::from("/opt/local/bin"),    // MacPorts
     ];
     if let Some(home) = std::env::var_os("HOME") {
@@ -211,7 +210,7 @@ fn common_bin_dirs() -> Vec<PathBuf> {
         dirs.push(home.join(".volta/bin"));
         dirs.push(home.join(".asdf/shims"));
         dirs.push(home.join(".local/bin"));
-        // nvm：版本目录动态，枚举 ~/.nvm/versions/node/*/bin。
+        // nvm: version dirs are dynamic; enumerate ~/.nvm/versions/node/*/bin.
         if let Ok(entries) = std::fs::read_dir(home.join(".nvm/versions/node")) {
             for e in entries.flatten() {
                 dirs.push(e.path().join("bin"));
@@ -221,14 +220,13 @@ fn common_bin_dirs() -> Vec<PathBuf> {
     dirs
 }
 
-/// [`which`] 找不到时的最后兜底：用登录 shell 解析用户的**真实 PATH**。
+/// Last resort when [`which`] fails: resolve the user's **real PATH** via login shell.
 ///
-/// GUI/.app 从访达启动只有最小 PATH，且用户可能用 fnm / nvm / asdf 等在 `.zshrc`
-/// 里配置的版本管理器（[`common_bin_dirs`] 的静态枚举覆盖不到）。这里跑
-/// `zsh -lic 'command -v <name>'`（登录 + 交互 shell，会 source 用户 rc）拿其真实
-/// 解析路径。用独立线程 + `recv_timeout` 兜底，病态 rc 不会卡死调用方。
+/// GUI/.app from Finder has minimal PATH; version managers (fnm / nvm / asdf in `.zshrc`) are not covered by
+/// [`common_bin_dirs`] static list. Runs `zsh -lic 'command -v <name>'` (login + interactive, sources user rc).
+/// Separate thread + `recv_timeout` so a broken rc cannot hang the caller.
 pub fn which_via_login_shell(name: &str) -> Option<PathBuf> {
-    // name 出自本代码（"node"/"python3"），仍做白名单，杜绝拼进 shell 的注入面。
+    // name comes from this codebase ("node"/"python3"); still whitelist to block shell injection.
     if name.is_empty()
         || !name
             .chars()
@@ -237,7 +235,7 @@ pub fn which_via_login_shell(name: &str) -> Option<PathBuf> {
         return None;
     }
     let arg = format!("command -v {name} 2>/dev/null");
-    // spawn + 轮询 + 超时 kill：病态 rc 卡死时**终止** zsh，绝不泄漏线程/进程（修 P3）。
+    // spawn + poll + timeout kill: broken rc cannot leak thread/process (fix P3).
     let mut child = Command::new("zsh")
         .args(["-lic", &arg])
         .stdin(Stdio::null())
@@ -245,7 +243,7 @@ pub fn which_via_login_shell(name: &str) -> Option<PathBuf> {
         .stderr(Stdio::null())
         .spawn()
         .ok()?;
-    // 3s 足够 command -v。到点未退则 kill 后放弃。
+    // 3s is enough for command -v; kill and bail if still running.
     let deadline = std::time::Instant::now() + Duration::from_secs(3);
     loop {
         match child.try_wait() {
@@ -266,7 +264,7 @@ pub fn which_via_login_shell(name: &str) -> Option<PathBuf> {
         }
     }
     let out = child.wait_with_output().ok()?;
-    // rc 可能往 stdout 打噪声：从后往前取第一条「绝对路径且可执行」的行。
+    // rc may print noise to stdout: take last line that is an absolute executable path.
     let text = String::from_utf8_lossy(&out.stdout);
     for line in text.lines().rev() {
         let p = PathBuf::from(line.trim());
@@ -277,9 +275,9 @@ pub fn which_via_login_shell(name: &str) -> Option<PathBuf> {
     None
 }
 
-/// 定位可执行文件（含登录 shell 兜底）：[`which`]（PATH + 常见安装目录）未命中时，
-/// 再用 [`which_via_login_shell`] 解析用户真实 PATH。node / python3 都走这个，覆盖
-/// 「GUI 最小 PATH + 版本管理器」这类多位客户反馈的「已装 node 却报缺依赖」（修 #2）。
+/// Locate executable (with login-shell fallback): [`which`] (PATH + common dirs) then
+/// [`which_via_login_shell`] for real user PATH. Used for node / python3 to cover
+/// "GUI minimal PATH + version manager" installs reported as missing (fix #2).
 pub fn find_exe(name: &str) -> Option<PathBuf> {
     which(name).or_else(|| which_via_login_shell(name))
 }
@@ -292,8 +290,8 @@ fn is_exec(p: &std::path::Path) -> bool {
     }
 }
 
-/// 生成一次性 path-secret：从 /dev/urandom 取 16 字节，hex 编码为 32 字符。
-/// 失败关闭：urandom 不可用时返回 Err，绝不退回可猜的弱 secret（宁可起代理失败）。
+/// Generate one-shot path-secret: 16 bytes from /dev/urandom, hex-encoded to 32 chars.
+/// Fail-closed: Err if urandom unavailable; never fall back to guessable weak secret (prefer proxy start failure).
 pub fn gen_secret() -> std::io::Result<String> {
     use std::fs::File;
     let mut b = [0u8; 16];
@@ -318,20 +316,20 @@ mod tests {
 
     #[test]
     fn health_false_when_nothing_listening() {
-        // 一个几乎肯定没人监听的高端口。
+        // High port almost certainly not listening.
         assert!(!http_health(59999, None, 300));
     }
 
     #[test]
     fn get_body_none_when_nothing_listening() {
-        // 没人监听 → 连不上 → None（与 http_health 一致的失败关闭语义）。
+        // Nothing listening → cannot connect → None (same fail-closed semantics as http_health).
         assert!(http_get_body(59998, Some("secret"), "/v1/models", 300).is_none());
     }
 
     #[test]
     fn which_finds_sh() {
         let sh = which("sh");
-        assert!(sh.is_some(), "PATH 里应能找到 sh");
+        assert!(sh.is_some(), "sh should be found on PATH");
         assert!(sh.unwrap().is_absolute());
     }
 
@@ -342,9 +340,9 @@ mod tests {
 
     #[test]
     fn find_in_dirs_locates_exec() {
-        // /bin/sh 几乎肯定存在且可执行。
+        // /bin/sh almost certainly exists and is executable.
         let hit = find_in_dirs("sh", vec![PathBuf::from("/usr/bin"), PathBuf::from("/bin")]);
-        assert!(hit.is_some(), "应在 /usr/bin 或 /bin 里找到 sh");
+        assert!(hit.is_some(), "should find sh under /usr/bin or /bin");
         assert!(is_exec(&hit.unwrap()));
     }
 
@@ -355,19 +353,19 @@ mod tests {
 
     #[test]
     fn login_shell_resolves_sh_when_zsh_present() {
-        // 环境无 zsh 则跳过（CI 容器可能没有）。
+        // Skip when zsh missing (some CI images lack it).
         if which("zsh").is_none() {
             return;
         }
         let p = which_via_login_shell("sh");
-        assert!(p.is_some(), "登录 shell 应能解析 sh");
+        assert!(p.is_some(), "login shell should resolve sh");
         let p = p.unwrap();
         assert!(p.is_absolute() && is_exec(&p));
     }
 
     #[test]
     fn login_shell_rejects_bad_names_without_spawning() {
-        // 白名单：带 shell 元字符的名字直接拒（防注入），空名亦拒。
+        // Whitelist: names with shell metacharacters rejected (injection guard); empty name too.
         assert!(which_via_login_shell("node; rm -rf /").is_none());
         assert!(which_via_login_shell("$(whoami)").is_none());
         assert!(which_via_login_shell("").is_none());
@@ -381,18 +379,18 @@ mod tests {
     #[test]
     fn common_bin_dirs_covers_homebrew_and_home_managers() {
         let dirs = common_bin_dirs();
-        // Homebrew 两个前缀 + MacPorts 必在。
+        // Both Homebrew prefixes + MacPorts must be present.
         assert!(dirs
             .iter()
             .any(|d| d == &PathBuf::from("/opt/homebrew/bin")));
         assert!(dirs.iter().any(|d| d == &PathBuf::from("/usr/local/bin")));
         assert!(dirs.iter().any(|d| d == &PathBuf::from("/opt/local/bin")));
-        // HOME 存在时应含版本管理器目录（volta）。
+        // When HOME is set, should include version-manager dirs (volta).
         if std::env::var_os("HOME").is_some() {
             assert!(
                 dirs.iter()
                     .any(|d| d.to_string_lossy().contains(".volta/bin")),
-                "HOME 下应含 .volta/bin 兜底目录"
+                "HOME should include .volta/bin fallback dir"
             );
         }
     }
@@ -401,9 +399,9 @@ mod tests {
     fn gen_secret_is_32_hex_and_varies() {
         let a = gen_secret().unwrap();
         let b = gen_secret().unwrap();
-        assert_eq!(a.len(), 32, "urandom 路径应是 32 hex 字符");
+        assert_eq!(a.len(), 32, "urandom path should yield 32 hex chars");
         assert!(a.chars().all(|c| c.is_ascii_hexdigit()));
-        assert_ne!(a, b, "两次生成应不同");
+        assert_ne!(a, b, "two generations should differ");
     }
 
     #[test]

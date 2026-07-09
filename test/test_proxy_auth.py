@@ -77,7 +77,7 @@ class ProxyAuth(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.up_url, cls.hits, cls.stop_up = start_mock("json")
-        port = 18970  # S0 全局唯一端口：ProxyAuth
+        port = 18970  # S0 globally unique port: ProxyAuth
         cls.base = f"http://127.0.0.1:{port}"
         cls.logf = os.path.join(tempfile.gettempdir(), f"csswitch-auth-{port}.log")
         open(cls.logf, "w").close()
@@ -128,8 +128,8 @@ class ProxyAuth(unittest.TestCase):
         self.assertEqual(json.loads(b)["content"][0]["text"], "ok")
 
     def test_secret_not_in_log(self):
-        # /health 分支不调用 log()，只测它无法覆盖「secret 不落日志」这条不变量。
-        # 改用 POST /v1/messages（会走 log()）之后再断言，才是对该不变量的真实覆盖。
+        # /health path does not call log(), so it cannot cover the secret-not-in-log invariant alone.
+        # Use POST /v1/messages (hits log()) then assert for real coverage of that invariant.
         s, _b = _req(f"{self.base}/{SEC}/v1/messages", "POST",
                      {"model": "claude-opus-4-8", "max_tokens": 10,
                       "messages": [{"role": "user", "content": "hi"}]})
@@ -138,30 +138,28 @@ class ProxyAuth(unittest.TestCase):
             self.assertNotIn(SEC, f.read())
 
     def test_unauth_post_closes_connection_no_leak_on_reuse(self):
-        # 回归：鉴权失败的 POST 在读走请求体之前就返回 403。若连接保持 keep-alive，
-        # 服务端下一轮会从残留 body 中间开始解析下一个请求，产出的畸形 400 错误页
-        # 会把残留字节和下一条请求行拼在一起回显给客户端，可能带出路径里的 secret。
-        # 用同一条 http.client.HTTPConnection 连发两个请求来复现/验证修复。
+        # Regression: unauthenticated POST returns 403 before request body is read. With keep-alive,
+        # server would resume parsing from leftover body bytes, producing malformed 400 that splices
+        # leftover bytes with the next request line back to client, possibly leaking path secret.
+        # Reuse one http.client.HTTPConnection for two requests to reproduce/verify fix.
         body = json.dumps({"model": "claude-opus-4-8", "max_tokens": 10,
                            "messages": [{"role": "user", "content": "hi"}]}).encode()
-        conn = http.client.HTTPConnection("127.0.0.1", 18970, timeout=5)  # S0 全局唯一端口：同 ProxyAuth
+        conn = http.client.HTTPConnection("127.0.0.1", 18970, timeout=5)  # S0 globally unique port: same as ProxyAuth
         received = b""
         try:
-            # 第一次请求：不带 secret 前缀，触发 403，其请求体故意不被服务端读走。
+            # First request: no secret prefix → 403; body intentionally not read by server.
             conn.request("POST", "/v1/messages", body=body,
                          headers={"Content-Type": "application/json"})
             resp = conn.getresponse()
             received += resp.read()
             self.assertEqual(resp.status, 403)
-            # 核心断言：修复后 403 响应显式声明 Connection: close。
+            # Core assertion: fixed 403 response explicitly declares Connection: close.
             self.assertEqual(resp.getheader("Connection"), "close")
 
-            # 第二次请求：带 secret。若服务端未关连接（未修复），会在残留 body 上
-            # 错位解析，产出的畸形 400 会把这条请求行（含 secret）回显给客户端，
-            # received 里就会出现 secret 明文，下面的 assertNotIn 会抓到。
-            # 已修复时，http.client 见到上一响应带 Connection: close 会自动断开
-            # 重连（不会复用被污染的旧 socket），第二次请求要么在一条新连接上
-            # 干净地成功，要么因服务端已关闭而抛异常；两者都不泄露 secret。
+            # Second request: with secret. If server kept connection (unfixed), parses from leftover body,
+            # malformed 400 echoes this request line (with secret) to client; assertNotIn catches it in received.
+            # When fixed, http.client sees Connection: close on prior response, reconnects cleanly;
+            # second request succeeds on new connection or fails closed—neither leaks secret.
             try:
                 conn.request("POST", f"/{SEC}/v1/messages", body=body,
                              headers={"Content-Type": "application/json"})
@@ -171,13 +169,12 @@ class ProxyAuth(unittest.TestCase):
                 pass
         finally:
             conn.close()
-        # 核心不变量：不论第二次请求成功、以新连接重试成功还是失败，全程客户端
-        # 收到的字节都不能含 secret 明文。
+        # Core invariant: regardless of second request outcome, client-received bytes must not contain secret plaintext.
         self.assertNotIn(SEC.encode(), received)
 
     def test_malformed_content_length_returns_400(self):
-        # 回归：畸形 Content-Length（非整数）以前会在 int() 抛 ValueError 击穿 handler，
-        # 客户端只收到空响应/连接重置。修复后应回规范 400（invalid_request_error）。
+        # Regression: malformed Content-Length (non-integer) used to raise ValueError in int() and kill handler;
+        # client got empty response/reset. Fixed → proper 400 (invalid_request_error).
         import socket
         payload = (
             f"POST /{SEC}/v1/messages HTTP/1.1\r\n"
@@ -187,7 +184,7 @@ class ProxyAuth(unittest.TestCase):
             "Connection: close\r\n"
             "\r\n"
         ).encode()
-        s = socket.create_connection(("127.0.0.1", 18970), timeout=5)  # S0 全局唯一端口：同 ProxyAuth
+        s = socket.create_connection(("127.0.0.1", 18970), timeout=5)  # S0 globally unique port: same as ProxyAuth
         try:
             s.sendall(payload)
             resp = b""
@@ -203,9 +200,9 @@ class ProxyAuth(unittest.TestCase):
         self.assertIn(b"invalid_request_error", resp)
 
     def test_malformed_request_structure_returns_400(self):
-        # 回归（修 P1 GPT 复审）：JSON 能解析但结构不对（顶层非对象 / messages 非数组）
-        # 以前会在下游 .get / 迭代处抛 AttributeError/TypeError 击穿线程，客户端拿空响应。
-        # 修复后一律回规范 400，且上游一次都不被打到。
+        # Regression (GPT P1 review): JSON parses but structure wrong (non-object top / messages not array)
+        # used to raise AttributeError/TypeError downstream and kill thread with empty client response.
+        # Fixed → proper 400 always, upstream never hit.
         before = len(self.hits)
         for bad in ([], "hello", 42, {"messages": None}, {"model": "x"}):
             s, b = _req(f"{self.base}/{SEC}/v1/messages", "POST", bad)
@@ -219,7 +216,7 @@ class ProxyUpstreamErrorPassthrough(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.up_url, cls.hits, cls.stop_up = start_mock("status:401")
-        port = 18971  # S0 全局唯一端口：ProxyUpstreamErrorPassthrough
+        port = 18971  # S0 globally unique port: ProxyUpstreamErrorPassthrough
         cls.base = f"http://127.0.0.1:{port}"
         cls.logf = os.path.join(tempfile.gettempdir(), f"csswitch-401-{port}.log")
         open(cls.logf, "w").close()
@@ -245,7 +242,7 @@ class ProxyUpstreamErrorPassthrough(unittest.TestCase):
         cls.stop_up()
 
     def test_upstream_401_preserved_not_502(self):
-        # 修 P3（GPT 复审）：上游 401 原样透传（不再归一化 502），verify_key 才能据此判 key 无效。
+        # Fix P3 (GPT review): upstream 401 passthrough (no longer normalized to 502) so verify_key can detect invalid key.
         s, b = _req(f"{self.base}/{SEC}/v1/messages", "POST",
                     {"model": "claude-opus-4-8", "max_tokens": 1,
                      "messages": [{"role": "user", "content": "ping"}]})
