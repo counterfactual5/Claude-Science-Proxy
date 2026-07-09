@@ -193,15 +193,7 @@ impl Config {
         self.active_ids.iter().any(|x| x == id)
     }
 
-    /// 向 pool 追加 active（已存在则不变）。
-    pub fn activate_profile(&mut self, id: &str) {
-        if self.profile_by_id(id).is_some() && !self.is_profile_active(id) {
-            self.active_ids.push(id.to_string());
-            self.sync_active_id();
-        }
-    }
-
-    /// 从 pool 移除 active。
+    /// 从 active 列表移除 profile（删 profile 时用）。
     pub fn deactivate_profile(&mut self, id: &str) {
         self.active_ids.retain(|x| x != id);
         self.sync_active_id();
@@ -835,7 +827,7 @@ mod tests {
     }
 
     #[test]
-    fn activate_and_deactivate_profile_pool() {
+    fn deactivate_and_exclusive_active() {
         let mut c = Config {
             profiles: vec![
                 Profile {
@@ -847,12 +839,10 @@ mod tests {
                     ..Default::default()
                 },
             ],
+            active_ids: vec!["a".into(), "b".into()],
+            active_id: "a".into(),
             ..Default::default()
         };
-        c.activate_profile("a");
-        c.activate_profile("b");
-        assert_eq!(c.active_ids, vec!["a", "b"]);
-        assert_eq!(c.active_id, "a");
         c.deactivate_profile("a");
         assert_eq!(c.active_ids, vec!["b"]);
         c.set_exclusive_active("a");
