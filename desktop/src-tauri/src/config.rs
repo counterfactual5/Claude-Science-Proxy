@@ -412,6 +412,9 @@ fn migrate_legacy_paths(dir: &Path) -> io::Result<()> {
         if copied_config.is_file() && !target.exists() {
             fs::rename(&copied_config, &target)?;
         }
+        crate::runtime::science::ensure_sandbox_runtime_permissions(
+            &dir.join("sandbox").join("home").join(".claude-science"),
+        );
     } else {
         ensure_dir(dir)?;
         atomic_copy(&legacy_config, &target)?;
