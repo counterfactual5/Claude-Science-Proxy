@@ -10,8 +10,7 @@
   <body>
     <div class="panel">
       <div class="hd" data-tauri-drag-region>
-        <div class="brand" data-tauri-drag-region><span id="brandDot" class="dot amber"></span>CSSwitch</div>
-        <div class="gear" id="quitBtn" title="退出 CSSwitch">退出</div>
+        <div class="brand" data-tauri-drag-region>CSSwitch</div>
       </div>
 
       <div class="sec" id="listSec">
@@ -106,22 +105,12 @@
         <div class="msg" id="msg" role="status" aria-live="polite"></div>
       </div>
 
-      <!-- 运行控制区 + 状态灯：仅列表视图显示（表单视图由 .view-form 隐藏）。 -->
-      <div class="sec list-only">
+      <!-- 运行控制区：仅列表视图显示（表单视图由 .view-form 隐藏）。 -->
+      <div class="sec list-only run-sec">
         <button class="hero" id="oneClickBtn">启动 Claude Science</button>
         <div class="subbtns">
           <button class="btn" id="stopBtn">全部停止</button>
         </div>
-        <div class="status" style="margin-top:10px">
-          <div class="st"><span id="ltProxy" class="lt a"></span>代理</div>
-          <div class="st"><span id="ltSandbox" class="lt a"></span>沙箱</div>
-          <div class="st"><span id="ltUpstream" class="lt a"></span>上游</div>
-        </div>
-      </div>
-
-      <div class="foot foot-min list-only">
-        <button type="button" class="link linkbtn" id="logsBtn">日志</button>
-        <button type="button" class="link linkbtn" id="doctorBtn">自检</button>
       </div>
     </div>
   </body>

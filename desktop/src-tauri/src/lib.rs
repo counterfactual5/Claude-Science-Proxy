@@ -101,9 +101,6 @@ pub fn run() {
             commands::runtime::one_click_login,
             commands::runtime::status,
             commands::runtime::open_url,
-            commands::diagnostics::run_doctor,
-            commands::diagnostics::open_logs,
-            commands::runtime::quit_app
         ])
         .setup(|app| {
             // 正常桌面应用：进 Dock、走常规应用生命周期。窗口在 tauri.conf.json 里配了
@@ -113,7 +110,7 @@ pub fn run() {
             // 悬空 active 归一化为空。迁移逻辑并入 config::load_from（不再单独跑 relay_presets）。
             let _ = config::load_from(&config::default_dir());
 
-            // 关窗即退出：与「退出」按钮一致 —— 停代理、清 secret，保留沙箱运行（spec §5.1）。
+            // 关窗即退出：停代理、清 secret，保留沙箱运行（spec §5.1）。
             if let Some(win) = app.get_webview_window("main") {
                 let handle = app.handle().clone();
                 win.on_window_event(move |ev| {
@@ -121,6 +118,7 @@ pub fn run() {
                         let state = handle.state::<SharedAppState>();
                         let mut st = lock(state.inner());
                         st.stop_proxy();
+                        handle.exit(0);
                     }
                 });
             }

@@ -13,14 +13,9 @@ body{
   font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue","NotoSerifCJK SC",sans-serif;
   color:var(--ink);-webkit-user-select:none;user-select:none;
 }
-.panel{width:100%;min-height:100vh;background:var(--panel);overflow:hidden}
-.hd{display:flex;align-items:center;justify-content:space-between;padding:12px 14px 10px}
-.brand{display:flex;align-items:center;gap:8px;font-weight:650;font-size:14px}
-.dot{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 0 3px rgba(47,191,113,.16)}
-.dot.amber{background:var(--amber);box-shadow:0 0 0 3px rgba(230,162,60,.16)}
-.dot.red{background:var(--red);box-shadow:0 0 0 3px rgba(229,72,77,.16)}
-.gear{color:var(--sub);font-size:12px;cursor:default}
-.gear:hover{color:var(--ink)}
+.panel{width:100%;min-height:0;background:var(--panel);overflow:hidden}
+.hd{display:flex;align-items:center;padding:12px 14px 10px}
+.brand{font-weight:650;font-size:14px}
 .sec{padding:10px 14px;border-top:1px solid var(--line)}
 label{display:block;font-size:11px;color:var(--sub);margin:0 0 5px;letter-spacing:.02em}
 .row{display:flex;gap:8px;align-items:center}
@@ -50,19 +45,11 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10.5px;
 .hero:disabled{opacity:.55;cursor:default;box-shadow:none;transform:none}
 .subbtns{display:flex;gap:8px;margin-top:8px}
 .subbtns .btn{flex:1}
-.status{display:flex;gap:14px;align-items:center;font-size:12px;color:var(--sub)}
-.st{display:flex;align-items:center;gap:6px}
-.lt{width:9px;height:9px;border-radius:50%;background:var(--sub);transition:background .2s}
-.lt.g{background:var(--green)} .lt.a{background:var(--amber)} .lt.r{background:var(--red)}
+.run-sec{padding-bottom:12px}
 .msg{margin-top:9px;font-size:11px;color:var(--sub);line-height:1.5;max-height:64px;overflow:auto;
   white-space:pre-wrap;-webkit-user-select:text;user-select:text}
 .msg.err{color:var(--red)}
 .msg.ok{color:var(--green)}
-.foot{display:flex;justify-content:space-between;align-items:center;padding:9px 14px;
-  border-top:1px solid var(--line);font-size:11.5px;color:var(--sub)}
-.foot-min{justify-content:center;gap:18px;padding:10px 14px 12px}
-.link{color:var(--accent);cursor:pointer}
-.link:hover{text-decoration:underline}
 .hint{font-size:10.5px;color:var(--sub);margin-top:6px;line-height:1.5}
 .adv summary{font-size:11px;color:var(--sub);cursor:pointer;list-style:none;letter-spacing:.02em}
 .adv summary::-webkit-details-marker{display:none}
@@ -87,10 +74,11 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10.5px;
 .badge.on{color:#fff;background:var(--accent);border-color:var(--accent)}
 .pmeta{font-size:10.5px;color:var(--sub);margin-top:4px;word-break:break-all;overflow-wrap:anywhere;line-height:1.5}
 .prow-acts{display:flex;align-items:center;gap:6px;margin-top:8px}
-.pmenu-wrap{position:relative;margin-left:auto}
-.pmenu{position:absolute;right:0;top:calc(100% + 4px);z-index:20;min-width:108px;
+.pmenu-wrap{position:relative;margin-left:auto;z-index:1}
+.pmenu{position:absolute;right:0;top:calc(100% + 4px);z-index:30;min-width:108px;
   background:var(--panel);border:1px solid var(--line);border-radius:9px;
   box-shadow:0 6px 18px rgba(0,0,0,.10);padding:4px;display:flex;flex-direction:column;gap:2px}
+.pmenu[hidden]{display:none!important}
 .pmenu-item{display:block;width:100%;text-align:left;border:none;background:transparent;
   color:var(--ink);font-size:11.5px;font-weight:600;padding:7px 10px;border-radius:6px;
   cursor:pointer;font-family:inherit}
@@ -125,11 +113,9 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10.5px;
 /* 模型只读信息（native 映射说明，替代下拉）。 */
 .modelinfo{font-size:11.5px;color:var(--ink);background:var(--field);border:1px solid var(--line);
   border-radius:9px;padding:8px 10px;line-height:1.5}
-/* 页脚链接按钮：外观仍似链接，但天然键盘可达。 */
-.linkbtn{border:none;background:none;padding:0;font:inherit;cursor:pointer}
 /* 键盘可见焦点（a11y）。 */
 .btn:focus-visible,.hero:focus-visible,.chip:focus-visible,.abtn:focus-visible,.pmenu-item:focus-visible,
-input:focus-visible,select:focus-visible,.link:focus-visible{
+input:focus-visible,select:focus-visible{
   outline:2px solid var(--accent);outline-offset:2px}
 .model-pick{display:flex;flex-direction:column;gap:6px;margin-top:8px}
 .model-pick-item{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--ink)}

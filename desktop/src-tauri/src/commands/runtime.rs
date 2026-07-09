@@ -364,20 +364,6 @@ pub(crate) fn open_url(state: State<'_, SharedAppState>) -> Result<(), String> {
     open_in_browser(&url)
 }
 
-#[tauri::command]
-pub(crate) fn quit_app(
-    app: tauri::AppHandle,
-    state: State<'_, SharedAppState>,
-) -> Result<(), String> {
-    // 默认：退 app 停代理、保留沙箱运行（spec §5.1）。
-    {
-        let mut st = lock(state.inner());
-        st.stop_proxy();
-    }
-    app.exit(0);
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::{config_last_error_json, status_response_for_config_error};
