@@ -309,22 +309,6 @@ pub(crate) struct ConnectionEdit {
 }
 
 impl ConnectionEdit {
-    pub(crate) fn new(
-        base_url: Option<String>,
-        api_format: Option<String>,
-        model: Option<String>,
-        key: Option<String>,
-    ) -> Self {
-        Self {
-            base_url,
-            api_format,
-            model,
-            active_models: None,
-            default_model: None,
-            key,
-        }
-    }
-
     pub(crate) fn with_models(
         base_url: Option<String>,
         api_format: Option<String>,
@@ -490,11 +474,13 @@ mod tests {
             api_key: "old-key".into(),
             ..Default::default()
         };
-        let edit = ConnectionEdit::new(
+        let edit = ConnectionEdit::with_models(
             Some("new-url".into()),
-            None, // None = 不改
+            None,
             Some("new-model".into()),
-            Some(String::new()), // 空 key = 不改（留占位不覆盖已存 key）
+            None,
+            None,
+            Some(String::new()),
         );
         edit.apply(&mut p);
         assert_eq!(p.base_url, "new-url");
@@ -503,7 +489,7 @@ mod tests {
         assert_eq!(p.api_key, "old-key", "空 key 不覆盖已存 key");
 
         // 非空 key 覆盖；其余 None 不动。
-        let edit2 = ConnectionEdit::new(None, None, None, Some("new-key".into()));
+        let edit2 = ConnectionEdit::with_models(None, None, None, None, None, Some("new-key".into()));
         edit2.apply(&mut p);
         assert_eq!(p.api_key, "new-key", "非空 key 覆盖");
         assert_eq!(p.base_url, "new-url", "None 字段不改");
