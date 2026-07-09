@@ -17,7 +17,7 @@ pub(crate) struct ModelDiscoveryRequest {
     pub(crate) profile_id: Option<String>,
 }
 
-/// 解析探测用 key：新填的优先，否则沿用 profile_id 已存的（后端内部用，绝不回传前端）。
+/// Resolve probe key: new input wins; otherwise reuse stored key for `profile_id` (backend-only; never returned to frontend).
 fn resolve_probe_key(profile_id: Option<&str>, candidate: &str) -> Result<String, String> {
     resolve_probe_key_from_dir(&config::default_dir(), profile_id, candidate)
 }
@@ -76,8 +76,8 @@ fn discovery_adapter(
     }
 }
 
-/// 「获取可用模型」——纯 scratch 探测：只用临时代理探候选 base_url/key 的 /v1/models，
-/// 绝不写 config、不改 AppState、不碰正在服务 Science 的正式代理。
+/// Fetch available models via scratch-only probe: temporary proxy hits candidate base_url/key `/v1/models`;
+/// never writes config, mutates AppState, or touches the formal proxy serving Science.
 pub(crate) fn fetch_models(
     app: tauri::AppHandle,
     req: ModelDiscoveryRequest,
@@ -166,8 +166,9 @@ pub(crate) fn fetch_models(
             trace.finish(format!("rejected status={code}"));
             Err(i18n_err("errUpstreamAuthRejected", json!({ "code": code })))
         }
-        // 非 200 且非 Auth：一律 builtin 兜底，但按语义分「发现不支持」(4xx) 与「网络/上游临时」(5xx/429/无响应)，
-        // 供前端区分提示（spec v3 §3.4.3）。绝不把 Auth 混进来掩盖坏 key。
+        // Non-200, non-Auth: always fall back to builtin, but distinguish discovery-unsupported (4xx)
+        // vs transient upstream/network (5xx/429/no response) for frontend hints (spec v3 §3.4.3).
+        // Never mix Auth in here to mask a bad key.
         other => {
             let source = scratch::discovery_fallback_source(&other);
             trace.finish(format!("fallback source={source} outcome={other:?}"));

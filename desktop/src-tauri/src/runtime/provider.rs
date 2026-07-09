@@ -3,7 +3,7 @@ use crate::runtime::model_sort;
 use crate::{config, templates};
 use serde_json::json;
 
-/// key 的非加密指纹（SipHash），只用于判断「配置是否变了」。绝不打印、绝不落盘。
+/// Non-cryptographic key fingerprint (SipHash) for detecting config changes. Never logged or persisted.
 pub(crate) fn key_fingerprint(s: &str) -> u64 {
     use std::hash::{Hash, Hasher};
     let mut h = std::collections::hash_map::DefaultHasher::new();
@@ -11,17 +11,17 @@ pub(crate) fn key_fingerprint(s: &str) -> u64 {
     h.finish()
 }
 
-/// adapter -> 该 adapter 期望的 key 环境变量名（python 代理侧 PROVIDERS[...]["key_env"]）。
+/// Adapter → expected key env var name (python proxy `PROVIDERS[...]["key_env"]`).
 pub(crate) fn key_env_for_adapter(adapter: &str) -> &'static str {
     match adapter {
         "deepseek" => "DEEPSEEK_API_KEY",
         "qwen" => "DASHSCOPE_API_KEY",
         "openai-custom" | "openai-responses" => "CSP_OPENAI_KEY",
-        _ => "CSP_RELAY_KEY", // relay / 兜底
+        _ => "CSP_RELAY_KEY", // relay / fallback
     }
 }
 
-/// 从一条 profile 派生出起代理需要的全部参数（纯函数，便于测试）。
+/// Derive all proxy launch parameters from one profile (pure fn, testable).
 pub(crate) struct ProxyLaunch {
     pub(crate) adapter: String,
     pub(crate) base_url: String,
@@ -60,7 +60,7 @@ pub(crate) fn proxy_args_for(p: &config::Profile) -> ProxyLaunch {
     }
 }
 
-/// 当前生效 profile 的代理启动参数（仅支持单条 active）。
+/// Proxy launch args for the currently active profile (single active only).
 pub(crate) fn proxy_args_for_active_profiles(
     profiles: &[config::Profile],
 ) -> Result<ProxyLaunch, String> {
@@ -100,7 +100,7 @@ pub(crate) fn proxy_fingerprint_with_runtime(
     ))
 }
 
-/// 本轨支持 anthropic / openai_chat / openai_responses；其余进 schema 但激活拒绝（待轨道 2：Rust 代理）。
+/// Supported formats: anthropic / openai_chat / openai_responses; others may exist in schema but activation rejects them (track 2: Rust proxy).
 pub(crate) fn assert_format_supported(p: &config::Profile) -> Result<(), String> {
     match p.api_format.as_str() {
         "anthropic" | "openai_chat" | "openai_responses" => Ok(()),
@@ -127,7 +127,7 @@ pub(crate) fn reject_openai_custom_anthropic_base(
     }
 }
 
-/// deepseek/qwen 走各自固定官方端点（python 侧硬编码）；其余 = relay 家族，需带 base_url。
+/// deepseek/qwen use fixed official endpoints (hardcoded in python); all others are relay and need base_url.
 pub(crate) fn is_native_adapter(adapter: &str) -> bool {
     adapter == "deepseek" || adapter == "qwen"
 }
@@ -161,7 +161,7 @@ pub(crate) struct UpstreamEndpoint {
     pub(crate) port: u16,
 }
 
-/// 上游 authority（host + port），供 status 灯按真实 scheme/端口探测。
+/// Upstream authority (host + port) for status lights to probe the real scheme/port.
 pub(crate) fn upstream_endpoint(adapter: &str, base_url: &str) -> Option<UpstreamEndpoint> {
     match adapter {
         "deepseek" => Some(UpstreamEndpoint {
@@ -176,7 +176,7 @@ pub(crate) fn upstream_endpoint(adapter: &str, base_url: &str) -> Option<Upstrea
     }
 }
 
-/// 从 `http(s)://host[:port]/path` 里抽出 host + port。解析不出返回 None（不引 url crate）。
+/// Extract host + port from `http(s)://host[:port]/path`. Returns None if unparseable (no url crate).
 pub(crate) fn parse_endpoint(url: &str) -> Option<UpstreamEndpoint> {
     let (rest, default_port) = url
         .strip_prefix("https://")
@@ -209,28 +209,28 @@ pub(crate) fn parse_endpoint(url: &str) -> Option<UpstreamEndpoint> {
     }
 }
 
-/// 是否对候选连接跑上游 scratch 校验。
+/// Whether to run upstream scratch validation for a candidate connection.
 pub(crate) fn should_scratch_candidate(adapter: &str, key: &str, base_url: &str) -> bool {
     if key.is_empty() {
-        return false; // 无 key -> 无从验，如实标记未校验。
+        return false; // no key → nothing to validate; mark unvalidated honestly
     }
     if !is_native_adapter(adapter) && base_url.is_empty() {
-        return false; // relay 家族缺 base_url -> 无从验。
+        return false; // relay family without base_url → nothing to validate
     }
     true
 }
 
-/// 保存前守卫：非 native 家族空 base_url 的候选连接不可用。
+/// Pre-save guard: non-native family with empty base_url is invalid.
 pub(crate) fn relay_missing_base_url(adapter: &str, base_url: &str) -> bool {
     !is_native_adapter(adapter) && base_url.trim().is_empty()
 }
 
-/// 保存/激活前守卫：非 native 家族没有可用模型列表。
+/// Pre-save/activation guard: non-native family with no usable model list.
 pub(crate) fn relay_missing_profile_models(adapter: &str, profile: &config::Profile) -> bool {
     !is_native_adapter(adapter) && profile.effective_models().is_empty()
 }
 
-/// 为正式代理构建虚拟模型注册表 JSON（relay / openai 家族）。
+/// Build virtual model registry JSON for the formal proxy (relay / openai family).
 pub(crate) fn build_model_registry_json(p: &config::Profile) -> Option<String> {
     let adapter = adapter_for_profile(p);
     if is_native_adapter(adapter) {
@@ -457,7 +457,7 @@ mod tests {
         let custom_fp = proxy_fingerprint(&p, &custom_launch);
         assert_ne!(
             kimi_fp, custom_fp,
-            "同 adapter/base/model/key 但模板语义不同，必须重启代理"
+            "same adapter/base/model/key but different template semantics must force proxy restart"
         );
     }
 
@@ -475,8 +475,14 @@ mod tests {
         let python_off = proxy_fingerprint_with_runtime(&p, &launch, "python", "off");
         let rust_off = proxy_fingerprint_with_runtime(&p, &launch, "rust", "off");
         let python_detect = proxy_fingerprint_with_runtime(&p, &launch, "python", "detect");
-        assert_ne!(python_off, rust_off, "gateway 切换必须阻止误复用");
-        assert_ne!(python_off, python_detect, "shim 切换必须阻止误复用");
+        assert_ne!(
+            python_off, rust_off,
+            "gateway change must prevent mistaken reuse"
+        );
+        assert_ne!(
+            python_off, python_detect,
+            "shim change must prevent mistaken reuse"
+        );
     }
 
     #[test]
@@ -537,10 +543,10 @@ mod tests {
 
     #[test]
     fn native_candidate_is_upstream_validated_even_without_base_url() {
-        // 非 active 编辑：native 即便 base_url 空也要验（走硬编码官方端点）。
+        // Non-active edit: native adapters validate even with empty base_url (hardcoded official endpoint).
         assert!(should_scratch_candidate("deepseek", "sk-x", ""));
         assert!(should_scratch_candidate("qwen", "sk-x", ""));
-        // relay 仍需 base_url；空 key 一律免验。
+        // Relay still needs base_url; empty key skips validation.
         assert!(!should_scratch_candidate("relay", "sk-x", ""));
         assert!(should_scratch_candidate("relay", "sk-x", "https://r"));
         assert!(!should_scratch_candidate("deepseek", "", ""));
@@ -548,13 +554,13 @@ mod tests {
 
     #[test]
     fn relay_empty_base_url_is_rejected_before_save() {
-        // 修 P2：relay/自定义端点空（或纯空白）base_url -> 拦下，不落盘。
+        // Relay/custom endpoint with empty (or whitespace-only) base_url → reject before persist.
         assert!(relay_missing_base_url("relay", ""));
         assert!(relay_missing_base_url("glm", "   "));
         assert!(relay_missing_base_url("custom", ""));
-        // 带地址的 relay 放行。
+        // Relay with a URL is allowed.
         assert!(!relay_missing_base_url("relay", "https://r"));
-        // native 走硬编码端点，空 base_url 无妨 -> 不拦。
+        // Native uses hardcoded endpoints; empty base_url is fine → do not reject.
         assert!(!relay_missing_base_url("deepseek", ""));
         assert!(!relay_missing_base_url("qwen", ""));
     }

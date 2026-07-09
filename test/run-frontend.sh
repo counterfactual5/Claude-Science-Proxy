@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# S0 frontend 层：node --check 语法检查（无框架、无构建）。无 node → env-blocked。
+# S0 frontend layer: node --check syntax only (no framework, no build). No node → env-blocked.
 set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"; cd "$ROOT"
 if ! command -v node >/dev/null 2>&1; then

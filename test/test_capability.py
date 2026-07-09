@@ -9,7 +9,7 @@ class TestCapability(unittest.TestCase):
     def test_matches_actual_bind(self):
         import os
         if os.environ.get("CSP_FORCE_NO_LOOPBACK") == "1":
-            # FORCE 模拟下探针本就应该强制返回 False，与真实 bind 是否可行无关。
+            # FORCE simulation: probe must return False regardless of real bind feasibility.
             self.assertFalse(loopback_available())
             return
         import socket

@@ -1327,8 +1327,8 @@ async function doDelete(id) {
   }
 }
 
-// 点击卡片切换当前配置：走后端切换事务（校验→起正式→健康才提交）。
-// 返回体 committed:true=已生效；committed:false=未生效（可能可 skip）；抛错=回滚/中止。
+// Click card to switch active profile: backend switch transaction (verify → start production → health check before commit).
+// Response committed:true = applied; committed:false = not applied (may allow skip); throw = rollback/abort.
 async function activate(id, skipVerify) {
   hideSkip();
   setBusy(true, { kind: "activate", id });
@@ -1351,7 +1351,7 @@ async function activate(id, skipVerify) {
   }
 }
 
-// ── 启动 Claude Science：读 active profile。无生效则引导先建/选一条。──
+// ── Launch Claude Science: read active profile. If none active, prompt user to create/select first. ──
 async function oneClick() {
   if (!configState.active_id) {
     setMsg(T("noActiveProfile"), "err");
@@ -1400,7 +1400,7 @@ function wire() {
   els.proxyPort.addEventListener("change", persistPorts);
   els.sandboxPort.addEventListener("change", persistPorts);
 
-  // 列表：点击卡片切换当前配置；⋯ 菜单收纳编辑/清除/删除。
+  // List: click card to switch active profile; ⋯ menu holds edit/clear/delete.
   els.profileList.addEventListener("click", (e) => {
     if (busy) return;
     const btn = e.target.closest("[data-act]");

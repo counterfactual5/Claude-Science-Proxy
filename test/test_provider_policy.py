@@ -4,7 +4,7 @@ import unittest
 
 HERE = os.path.dirname(__file__)
 sys.path.insert(0, os.path.join(HERE, "..", "proxy"))
-import csp_proxy as cs          # 复用 PROVIDERS 作为配置真源
+import csp_proxy as cs          # reuse PROVIDERS as config source of truth
 import provider_policy as pp
 
 
@@ -178,7 +178,7 @@ class PolicyFromProv(unittest.TestCase):
         self.assertTrue(hasattr(pol, "passthrough"))
         self.assertEqual(pol.default_model, "deepseek-v4-flash")
         self.assertEqual(pol.model_caps["deepseek-v4-pro"], 65536)
-        # 骨架 / 启动字段不泄进 Policy。
+        # Scaffold / startup fields must not leak into Policy.
         self.assertFalse(hasattr(pol, "url"))
         self.assertFalse(hasattr(pol, "auth_style"))
         self.assertFalse(hasattr(pol, "key_env"))

@@ -34,7 +34,7 @@ pub(crate) fn status_response_for_config_error(error: &dyn std::fmt::Display) ->
     )
 }
 
-/// 内部运行时状态快照（供隔离 smoke 测试；未注册为 Tauri command）。
+/// Internal runtime status snapshot (isolated smoke tests; not registered as a Tauri command).
 pub(crate) fn runtime_status_snapshot(state: &SharedAppState) -> serde_json::Value {
     let (pport, secret, sport, adapter, base_url, active_profile, catalog_profile) = {
         let st = lock(state);

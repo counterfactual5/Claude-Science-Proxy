@@ -1,6 +1,6 @@
-//! 模型 id 排序：新版/旗舰优先（可解析版本号降序），供发现、注册表与 profile 写盘共用。
+//! Model id sorting: newest/flagship first (descending parsed version segments); shared by discovery, registry, and profile persistence.
 
-/// 从模型 id 提取数字版本段（如 `glm-5.2` → `[5, 2]`，`kimi-k2.7-code` → `[2, 7]`）。
+/// Extract numeric version segments from a model id (e.g. `glm-5.2` → `[5, 2]`, `kimi-k2.7-code` → `[2, 7]`).
 fn version_tokens(id: &str) -> Vec<u64> {
     let mut tokens = Vec::new();
     let mut cur = String::new();
@@ -22,7 +22,7 @@ fn version_tokens(id: &str) -> Vec<u64> {
     tokens
 }
 
-/// 新版优先：`glm-5.2` > `glm-5.1` > `glm-4.7` > `glm-4.5`。
+/// Newer first: `glm-5.2` > `glm-5.1` > `glm-4.7` > `glm-4.5`.
 pub(crate) fn compare_models_desc(a: &str, b: &str) -> std::cmp::Ordering {
     let ta = version_tokens(a);
     let tb = version_tokens(b);

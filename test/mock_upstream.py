@@ -1,7 +1,7 @@
-"""测试用假上游：记账命中次数，按 mode 返回不同响应。
-mode="json"：返回一份最小 Anthropic 非流式消息体。
-mode="status:NNN"：返回 HTTP NNN + 一小段错误 JSON（测代理对上游错误码的处理，如 P3 401/403 透传）。
-mode="openai_responses"：返回一份最小 OpenAI Responses 响应体。"""
+"""Test fake upstream: records hit counts and returns different responses per mode.
+mode="json": minimal Anthropic non-streaming message body.
+mode="status:NNN": HTTP NNN + short error JSON (tests proxy upstream status handling, e.g. P3 401/403 passthrough).
+mode="openai_responses": minimal OpenAI Responses body."""
 import json
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
