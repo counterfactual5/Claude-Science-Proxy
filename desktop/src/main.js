@@ -130,6 +130,30 @@ const I18N = {
     switched: "已切换为当前配置。",
     switchRejected: "校验未通过，未切换。",
     switchFail: "切换失败：{err}",
+    switchCommitted: "已切到「{name}」。",
+    switchConnSavedApplied: "已保存并应用「{name}」的新连接。",
+    switchUpstreamAuthEdit: "上游拒绝（{code}），key/权限有误，未保存（仍在用原配置运行）。",
+    switchUpstreamAuthSwitch: "上游拒绝（{code}），key/权限有误，未切换（当前配置不变）。",
+    switchUpstreamModelEdit: "上游拒绝该模型（{code}），未保存。请换一个模型或核对 base_url。",
+    switchUpstreamModelSwitch: "上游拒绝该模型（{code}），未切换。请换一个模型或核对 base_url。",
+    switchUpstreamAmbiguousEdit: "无法确认（网络/上游繁忙），未保存。可重试，或用「跳过验证」。",
+    switchUpstreamAmbiguousSwitch: "无法确认（网络/上游繁忙），未切换。可重试，或用「跳过验证」。",
+    switchProxyRollbackEdit: "连接已校验通过，但正式代理启动/探活失败，连接未保存，{rollback}。",
+    switchProxyRollbackSwitch: "候选配置校验通过，但正式代理启动/探活失败，{rollback}。",
+    switchAbortBeforeStartEdit: "连接上游校验失败（key/base_url/网络？），连接未保存。",
+    switchAbortBeforeStartSwitch: "候选上游校验失败（key/base_url/网络？），未切换。",
+    rollbackRestored: "已回滚到原配置（沙箱未受影响）",
+    rollbackProxyStopped: "回滚未成功：代理当前已停，请重试或手动「一键开始」（沙箱未受影响）",
+    errProfileNotFound: "找不到 profile：{id}",
+    errMissingApiKey: "「{name}」还没填 API key，请先填写。",
+    errMissingBaseUrl: "该配置需要填 base_url（http:// 或 https:// 开头）。",
+    errMissingModel: "该配置需要选择或填写一个模型（中转/自定义端点必填），请在连接编辑里补上。",
+    errProxyScriptMissing: "找不到代理脚本 proxy/csswitch_proxy.py。",
+    errPythonMissing: "缺少依赖 python3（起临时代理需要）。",
+    errConfigWriteFailed: "校验通过、代理已起，但写盘失败（{error}），{rollback}。请检查磁盘空间/权限后重试。",
+    errRelayMissingBaseUrl: "中转 / 自定义端点必须填写连接地址（base_url），连接未保存。",
+    errRelayMissingModel: "中转 / 自定义端点必须选择或填写一个模型，连接未保存。",
+    errConnValidateFailed: "连接校验未通过，连接未保存。",
     noActiveProfile: "还没有「当前生效」的配置。请先「＋ 新建」或点击一条配置切换，再点「启动 Claude Science」。",
     oneClickReady: "已就绪，正在打开面板…",
     oneClickFail: "启动失败：{err}",
@@ -243,6 +267,30 @@ const I18N = {
     switched: "Switched to this profile.",
     switchRejected: "Verify failed; not switched.",
     switchFail: "Switch failed: {err}",
+    switchCommitted: "Switched to \"{name}\".",
+    switchConnSavedApplied: "Saved and applied new connection for \"{name}\".",
+    switchUpstreamAuthEdit: "Upstream rejected ({code}). Check API key; connection not saved (still using previous connection).",
+    switchUpstreamAuthSwitch: "Upstream rejected ({code}). Check API key; not switched (current profile unchanged).",
+    switchUpstreamModelEdit: "Upstream rejected model ({code}); connection not saved. Try another model or check base_url.",
+    switchUpstreamModelSwitch: "Upstream rejected model ({code}); not switched. Try another model or check base_url.",
+    switchUpstreamAmbiguousEdit: "Could not verify (network/upstream busy); connection not saved. Retry or use Skip verify.",
+    switchUpstreamAmbiguousSwitch: "Could not verify (network/upstream busy); not switched. Retry or use Skip verify.",
+    switchProxyRollbackEdit: "Connection verified but formal proxy failed; connection not saved. {rollback}",
+    switchProxyRollbackSwitch: "Candidate verified but formal proxy failed. {rollback}",
+    switchAbortBeforeStartEdit: "Upstream verify failed (key/base_url/network?); connection not saved.",
+    switchAbortBeforeStartSwitch: "Candidate upstream verify failed (key/base_url/network?); not switched.",
+    rollbackRestored: "Rolled back to previous connection (sandbox unaffected).",
+    rollbackProxyStopped: "Rollback incomplete: proxy is stopped. Retry or use Start Claude Science (sandbox unaffected).",
+    errProfileNotFound: "Profile not found: {id}",
+    errMissingApiKey: "\"{name}\" has no API key. Add one first.",
+    errMissingBaseUrl: "This profile needs a base_url (http:// or https://).",
+    errMissingModel: "Select or enter a model for this relay/custom endpoint in connection edit.",
+    errProxyScriptMissing: "Proxy script proxy/csswitch_proxy.py not found.",
+    errPythonMissing: "python3 is required to start the scratch proxy.",
+    errConfigWriteFailed: "Verified and proxy started, but save failed ({error}). {rollback} Check disk space/permissions.",
+    errRelayMissingBaseUrl: "Relay/custom endpoint requires base_url; connection not saved.",
+    errRelayMissingModel: "Relay/custom endpoint requires a model; connection not saved.",
+    errConnValidateFailed: "Connection verify failed; connection not saved.",
     noActiveProfile: "No active profile. Create or select one, then Start Claude Science.",
     oneClickReady: "Ready, opening panel…",
     oneClickFail: "Start failed: {err}",
@@ -262,6 +310,31 @@ function T(key, vars) {
     raw
   );
 }
+
+function resolveBackendVars(vars) {
+  const out = { ...(vars || {}) };
+  if (out.rollback_key) {
+    out.rollback = T(out.rollback_key);
+    delete out.rollback_key;
+  }
+  return out;
+}
+
+function resolveBackendErr(e) {
+  const s = String(e);
+  try {
+    const o = JSON.parse(s);
+    if (o && typeof o.i18n === "string") return T(o.i18n, resolveBackendVars(o.vars));
+  } catch (_) { /* plain string */ }
+  return s;
+}
+
+function resolveHint(r, fallbackKey) {
+  if (r && r.hint_key) return T(r.hint_key, resolveBackendVars(r.hint_vars));
+  if (r && r.hint) return r.hint;
+  return T(fallbackKey);
+}
+
 function modelHints() {
   const t = S();
   return { native: t.modelHintNative, fixed: t.modelHintFixed };
@@ -463,17 +536,17 @@ function collectCheckedModels(container) {
 
 function renderModelPick(container, builtin, selected, onChange) {
   if (!container) return;
-  const pool = [];
-  for (const id of builtin || []) if (!pool.includes(id)) pool.push(id);
-  for (const id of selected || []) if (id && !pool.includes(id)) pool.unshift(id);
-  if (!pool.length) {
+  const candidates = [];
+  for (const id of builtin || []) if (!candidates.includes(id)) candidates.push(id);
+  for (const id of selected || []) if (id && !candidates.includes(id)) candidates.unshift(id);
+  if (!candidates.length) {
     container.hidden = true;
     container.innerHTML = "";
     return;
   }
   container.hidden = false;
-  const selSet = new Set(selected && selected.length ? selected : pool);
-  container.innerHTML = pool.map((id) => {
+  const selSet = new Set(selected && selected.length ? selected : candidates);
+  container.innerHTML = candidates.map((id) => {
     const checked = selSet.has(id) ? " checked" : "";
     return '<label class="model-pick-item"><input type="checkbox" data-model="' +
       escapeHtml(id) + '"' + checked + '><span class="model-pick-label">' + escapeHtml(id) + "</span></label>";
@@ -830,17 +903,17 @@ const MAX_AUTO_ENABLE_MODELS = 8;
 function modelsToEnableOnCreate(discoveredIds, builtin) {
   const ids = (discoveredIds || []).filter(Boolean);
   const builtins = (builtin || []).filter(Boolean);
-  const pool = ids.length ? ids : builtins;
-  return pool.slice(0, MAX_AUTO_ENABLE_MODELS);
+  const candidates = ids.length ? ids : builtins;
+  return candidates.slice(0, MAX_AUTO_ENABLE_MODELS);
 }
 
 // fetch_models 返回体 → 刷新 checkbox 池（编辑页自动拉取用）。
 function applyFetchToPick(r, pickUi, selected) {
   const models = (r && r.models) || [];
   const ids = models.map((m) => m.id).filter(Boolean);
-  const pool = ids.length ? ids : (pickUi.builtin || []);
-  const sel = (selected && selected.length) ? selected : pool;
-  if (pickUi.pick) renderModelPick(pickUi.pick, pool, sel, pickUi.onPickChange);
+  const candidates = ids.length ? ids : (pickUi.builtin || []);
+  const sel = (selected && selected.length) ? selected : candidates;
+  if (pickUi.pick) renderModelPick(pickUi.pick, candidates, sel, pickUi.onPickChange);
   return ids.length;
 }
 
@@ -1155,7 +1228,7 @@ async function connSave() {
       setMsg(T("savedUnvalidated"), "ok");
     }
   } catch (e) {
-    setMsg(T("saveConnFail", { err: e }), "err");
+    setMsg(T("saveConnFail", { err: resolveBackendErr(e) }), "err");
   } finally {
     setBusy(false);
   }
@@ -1191,15 +1264,15 @@ async function activate(id, skipVerify) {
     const r = await call("set_active_profile", { id, skipVerify: !!skipVerify });
     if (r && r.committed) {
       await loadConfig();
-      setMsg(r.hint || T("switched"), "ok");
+      setMsg(resolveHint(r, "switched"), "ok");
     } else {
       await loadConfig();
-      setMsg((r && r.hint) || T("switchRejected"), "err");
+      setMsg(resolveHint(r, "switchRejected"), "err");
       if (r && r.can_skip) { pendingSkipActivateId = id; showSkip(); }
     }
   } catch (e) {
     await loadConfig();
-    setMsg(T("switchFail", { err: e }), "err");
+    setMsg(T("switchFail", { err: resolveBackendErr(e) }), "err");
   } finally {
     setBusy(false);
   }
