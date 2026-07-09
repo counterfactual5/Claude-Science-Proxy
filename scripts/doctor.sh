@@ -6,7 +6,7 @@
 # 覆盖变量（便于测试与自定义）：
 #   CSP_PROVIDER (生效 template_id，如 deepseek/qwen/glm/xiaomi/…)
 #   CSP_ADAPTER  (deepseek|qwen|relay)   CSP_KEY_PRESENT (0|1)
-#   CSP_PROXY_PORT  CSP_SANDBOX_PORT  CSP_CONFIG / CSP_CONFIG (CSP.json 路径)  SCIENCE_BIN
+#   CSP_PROXY_PORT  CSP_SANDBOX_PORT  CSP_CONFIG (CSP.json 路径)  SCIENCE_BIN
 #   CSP_DOCTOR_CHECK_REAL_HOME=1  显式 opt-in 后才检查 $HOME/.claude-science 是否存在
 set -u
 
