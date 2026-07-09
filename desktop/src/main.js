@@ -294,12 +294,13 @@ function closeAllMenus() {
 function positionProfileMenu(menu, btn) {
   menu.classList.remove("pmenu-up");
   menu.hidden = false;
-  const listRect = els.profileList.getBoundingClientRect();
+  const scrollEl = els.panelBody || els.profileList;
+  const containerRect = scrollEl.getBoundingClientRect();
   const btnRect = btn.getBoundingClientRect();
   const menuHeight = menu.offsetHeight;
   const gap = 4;
-  const spaceBelow = listRect.bottom - btnRect.bottom - gap;
-  const spaceAbove = btnRect.top - listRect.top - gap;
+  const spaceBelow = containerRect.bottom - btnRect.bottom - gap;
+  const spaceAbove = btnRect.top - containerRect.top - gap;
   if (menuHeight > spaceBelow && spaceAbove >= menuHeight) {
     menu.classList.add("pmenu-up");
   } else if (menuHeight > spaceBelow && spaceAbove > spaceBelow) {
@@ -997,6 +998,7 @@ function wire() {
     "connModelInfo", "connModel", "connModelHint", "connModelPick", "connKey", "connSaveBtn", "connCancelBtn",
   ].forEach((id) => (els[id] = $(id)));
   els.panel = document.querySelector(".panel");
+  els.panelBody = document.querySelector(".panel-body");
 
   els.proxyPort.addEventListener("change", persistPorts);
   els.sandboxPort.addEventListener("change", persistPorts);
