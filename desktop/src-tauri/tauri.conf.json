@@ -44,6 +44,7 @@
       "../../proxy/dsml_shim.py": "proxy/dsml_shim.py",
       "../../proxy/http_transport.py": "proxy/http_transport.py",
       "../../proxy/model_discovery.py": "proxy/model_discovery.py",
+      "../../proxy/model_registry.py": "proxy/model_registry.py",
       "../../proxy/openai_chat_compat.py": "proxy/openai_chat_compat.py",
       "../../proxy/provider_policy.py": "proxy/provider_policy.py",
       "../../proxy/qwen_proxy.py": "proxy/qwen_proxy.py",
