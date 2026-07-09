@@ -153,7 +153,11 @@ const I18N = {
     errConfigWriteFailed: "校验通过、代理已起，但写盘失败（{error}），{rollback}。请检查磁盘空间/权限后重试。",
     errRelayMissingBaseUrl: "中转 / 自定义端点必须填写连接地址（base_url），连接未保存。",
     errRelayMissingModel: "中转 / 自定义端点必须选择或填写一个模型，连接未保存。",
+    errMissingApiKeyPanel: "「{name}」还没填 API key，请先在面板填写并保存。",
+    errMissingBaseUrlPanel: "「{name}」需要填 base_url（如 https://your-relay/claude），请先在面板填写并保存。",
+    errProxyStartFailed: "启动代理失败：{error}",
     errConnValidateFailed: "连接校验未通过，连接未保存。",
+    previewSwitched: "（预览：已切换为当前）",
     errPortSandboxStopFailed: "端口未更改：无法停止指向旧端口的沙箱（{error}）。为避免留下失效链路，端口保持不变。请手动停止沙箱或重启 app 后重试。（真实实例 8765 未受影响）",
     errStopSandboxFailed: "代理已停；但{error}（真实实例 8765 未受影响）。",
     noActiveProfile: "还没有「当前生效」的配置。请先「＋ 新建」或点击一条配置切换，再点「启动 Claude Science」。",
@@ -292,7 +296,11 @@ const I18N = {
     errConfigWriteFailed: "Verified and proxy started, but save failed ({error}). {rollback} Check disk space/permissions.",
     errRelayMissingBaseUrl: "Relay/custom endpoint requires base_url; connection not saved.",
     errRelayMissingModel: "Relay/custom endpoint requires a model; connection not saved.",
+    errMissingApiKeyPanel: "\"{name}\" has no API key. Add one in the panel and save.",
+    errMissingBaseUrlPanel: "\"{name}\" needs a base_url (e.g. https://your-relay/claude). Add one in the panel and save.",
+    errProxyStartFailed: "Failed to start proxy: {error}",
     errConnValidateFailed: "Connection verify failed; connection not saved.",
+    previewSwitched: "(Preview: switched to active)",
     errPortSandboxStopFailed: "Ports unchanged: could not stop sandbox on old port ({error}). Ports kept to avoid a broken chain. Stop sandbox manually or restart the app. (Real instance on 8765 unaffected.)",
     errStopSandboxFailed: "Proxy stopped; but {error} (real instance on 8765 unaffected).",
     noActiveProfile: "No active profile. Create or select one, then Start Claude Science.",
@@ -470,7 +478,7 @@ function mockInvoke(cmd, args) {
       const p = mockStore.profiles.find((x) => x.id === args.id);
       if (!p) return Promise.reject("找不到 profile：" + args.id);
       mockStore.active_id = args.id;
-      return Promise.resolve({ committed: true, active_id: args.id, hint: "（预览：已设为当前）" });
+      return Promise.resolve({ committed: true, active_id: args.id, hint_key: "previewSwitched", hint_vars: {} });
     }
     case "fetch_models":
       return Promise.resolve({ models: [{ id: "glm-4.6", supports_tools: true }, { id: "glm-5", supports_tools: null }], source: "live", error_kind: null, upstream_status: 200 });
@@ -793,7 +801,7 @@ async function loadConfig() {
     // 一次性迁移提示（#9 甲）：后端 get_config 读后已清盘，只会出现一次。
     if (cfg.pending_notice) setMsg(cfg.pending_notice, "ok");
   } catch (e) {
-    setMsg(T("loadConfigFail", { err: e }), "err");
+    setMsg(T("loadConfigFail", { err: resolveBackendErr(e) }), "err");
   }
 }
 
@@ -1080,7 +1088,7 @@ async function wizSave() {
       setMsg(T("createdNoModels", { name }), "ok");
     }
   } catch (e) {
-    setMsg(T("createFail", { err: e }), "err");
+    setMsg(T("createFail", { err: resolveBackendErr(e) }), "err");
   } finally {
     setBusy(false);
   }
@@ -1168,7 +1176,7 @@ async function autoFetchConnModels() {
     if (n) setMsg(T("modelsRefreshed", { n }), "ok");
     else setMsg(T("modelsFetchFallback"), "ok");
   } catch (e) {
-    setMsg(T("modelsFetchFail", { err: e }), "err");
+    setMsg(T("modelsFetchFail", { err: resolveBackendErr(e) }), "err");
   } finally {
     setBusy(false);
     refreshConnGate();
@@ -1252,7 +1260,7 @@ async function doDelete(id) {
     await loadConfig();
     setMsg(wasActive ? T("deletedWasActive") : T("deleted"), "ok");
   } catch (e) {
-    setMsg(T("deleteFail", { err: e }), "err");
+    setMsg(T("deleteFail", { err: resolveBackendErr(e) }), "err");
   } finally {
     setBusy(false);
   }
@@ -1294,7 +1302,7 @@ async function oneClick() {
     const r = await call("one_click_login");
     setMsg((r.msg || T("oneClickReady")) + "\n" + (r.url || ""), "ok");
   } catch (e) {
-    setMsg(T("oneClickFail", { err: e }), "err");
+    setMsg(T("oneClickFail", { err: resolveBackendErr(e) }), "err");
   } finally {
     setBusy(false);
   }
@@ -1379,7 +1387,7 @@ function wire() {
     try {
       await call("open_csp_json");
     } catch (e) {
-      setMsg(T("openCspFail", { err: e }), "err");
+      setMsg(T("openCspFail", { err: resolveBackendErr(e) }), "err");
     }
   });
   els.skipActivateBtn.addEventListener("click", () => {

@@ -2,6 +2,7 @@ use std::path::Path;
 
 use serde_json::{json, Value};
 
+use crate::runtime::i18n::i18n_err;
 use crate::runtime::operation::{OperationKind, OperationStage, OperationTrace};
 use crate::runtime::profile::merge_and_sort_models;
 use crate::runtime::provider::{key_env_for_adapter, reject_openai_custom_anthropic_base};
@@ -99,8 +100,8 @@ pub(crate) fn fetch_models(
         req.api_format.as_deref(),
     )?;
     let key = resolve_probe_key(req.profile_id.as_deref(), &req.key)?;
-    let root = asset_root(&app).ok_or("找不到代理脚本 proxy/csswitch_proxy.py。")?;
-    let py = proc::find_exe("python3").ok_or("缺少依赖 python3（起临时代理需要）。")?;
+    let root = asset_root(&app).ok_or_else(|| i18n_err("errProxyScriptMissing", json!({})))?;
+    let py = proc::find_exe("python3").ok_or_else(|| i18n_err("errPythonMissing", json!({})))?;
     let script = root.join("proxy/csswitch_proxy.py");
     let adapter = discovery_adapter(tid, tpl.adapter, &api_format);
     reject_openai_custom_anthropic_base(adapter, &base_url)?;

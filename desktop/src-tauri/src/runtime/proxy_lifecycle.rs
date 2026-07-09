@@ -3,6 +3,7 @@ use std::time::Duration;
 
 use tauri::Runtime;
 
+use crate::runtime::i18n::i18n_err;
 use crate::runtime::operation::{self, OperationStage, OperationTrace, POLL_INTERVAL_MS};
 use crate::runtime::provider::{
     assert_format_supported, is_native_adapter, is_openai_adapter, proxy_args_for,
@@ -11,6 +12,7 @@ use crate::runtime::provider::{
 use crate::runtime::proxy::{ere_escape, health_timeout_reason, should_write_back, ProxyAction};
 use crate::runtime::system::{asset_root, log_path, open_log, redact, tail_file};
 use crate::{config, lifecycle, lock, proc, SharedAppState};
+use serde_json::json;
 
 fn formal_proxy_env(launch: &ProxyLaunch) -> Vec<(&'static str, String)> {
     let native = is_native_adapter(&launch.adapter);
@@ -50,22 +52,22 @@ fn launch_fingerprint(profiles: &[config::Profile], launch: &ProxyLaunch) -> u64
 
 fn validate_profiles_for_proxy(profiles: &[config::Profile]) -> Result<(), String> {
     if profiles.is_empty() {
-        return Err("未配置生效 profile，请先在面板选择或新建一条配置。".into());
+        return Err(i18n_err("noActiveProfile", json!({})));
     }
     for p in profiles {
         assert_format_supported(p)?;
         let launch = proxy_args_for(p);
         if launch.key.is_empty() {
-            return Err(format!(
-                "「{}」还没填 API key，请先在面板填写并保存。",
-                p.name
+            return Err(i18n_err(
+                "errMissingApiKeyPanel",
+                json!({ "name": p.name }),
             ));
         }
         let native = is_native_adapter(&launch.adapter);
         if !native && launch.base_url.is_empty() {
-            return Err(format!(
-                "「{}」需要填 base_url（如 https://your-relay/claude），请先在面板填写并保存。",
-                p.name
+            return Err(i18n_err(
+                "errMissingBaseUrlPanel",
+                json!({ "name": p.name }),
             ));
         }
     }
@@ -81,7 +83,7 @@ pub(crate) fn ensure_proxy<R: Runtime>(
 ) -> Result<(u16, String, ProxyAction), String> {
     let cfg = config::load_from(&config::default_dir()).map_err(|e| e.to_string())?;
     let Some(p) = cfg.active_profile() else {
-        return Err("未配置生效 profile，请先在面板选择或新建一条配置。".into());
+        return Err(i18n_err("noActiveProfile", json!({})));
     };
     start_proxy_for_profiles(app, state, lifecycle, std::slice::from_ref(p), trace)
 }
@@ -101,9 +103,9 @@ pub(crate) fn start_proxy_for_profiles<R: Runtime>(
     let cfg = config::load_from(&dir).map_err(|e| e.to_string())?;
     let port = cfg.proxy_port;
     let root = asset_root(app)
-        .ok_or("找不到代理脚本 proxy/csswitch_proxy.py（打包资源或仓库根均未命中）。开发态可设 CSSWITCH_REPO。")?;
+        .ok_or_else(|| i18n_err("errProxyScriptMissing", json!({})))?;
     let py = proc::find_exe("python3")
-        .ok_or("缺少依赖 python3（起翻译代理需要）。已查 PATH、常见目录与登录 shell 仍未找到；macOS 一般自带 /usr/bin/python3（装 Xcode 命令行工具：xcode-select --install）。")?;
+        .ok_or_else(|| i18n_err("errPythonMissing", json!({})))?;
 
     let secret = if !cfg.secret.is_empty() {
         cfg.secret.clone()
@@ -169,7 +171,7 @@ pub(crate) fn start_proxy_for_profiles<R: Runtime>(
         cmd.stdout(Stdio::from(logf))
             .stderr(Stdio::from(logf2))
             .spawn()
-            .map_err(|e| format!("启动代理失败：{e}"))?
+            .map_err(|e| i18n_err("errProxyStartFailed", json!({ "error": e.to_string() })))?
     };
 
     let mut ok = false;
