@@ -462,7 +462,7 @@ pub fn load_from(dir: &Path) -> io::Result<Config> {
     match detect_version(&data)? {
         VersionKind::TooNew(v) => Err(io::Error::new(
             io::ErrorKind::InvalidData,
-            format!("config.json 由更新版本（schema {v}）写入，请升级 Cloud Science Proxy 后再打开。"),
+            format!("config.json 由更新版本（schema {v}）写入，请升级 Claude Science Proxy 后再打开。"),
         )),
         VersionKind::Legacy => {
             write_migration_backup(dir)?; // 备份失败即中止迁移，不动原文件

@@ -1,4 +1,4 @@
-// Cloud Science Proxy 桌面面板前端。只调用后端 Tauri command，绝不碰任何密钥落盘逻辑。
+// Claude Science Proxy 桌面面板前端。只调用后端 Tauri command，绝不碰任何密钥落盘逻辑。
 // 后端只把 key 的【掩码】回显给这里；完整 key 永不进前端。
 //
 // ── Tauri 参数键约定（务必遵守）──────────────────────────────────────────────

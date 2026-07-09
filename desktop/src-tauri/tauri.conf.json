@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Cloud Science Proxy",
+  "productName": "Claude Science Proxy",
   "version": "0.3.6",
   "identifier": "com.csswitch.menubar",
   "build": {
@@ -11,7 +11,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Cloud Science Proxy",
+        "title": "Claude Science Proxy",
         "width": 420,
         "height": 560,
         "minWidth": 380,
