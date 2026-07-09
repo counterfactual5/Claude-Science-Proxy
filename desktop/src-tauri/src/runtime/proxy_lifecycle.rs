@@ -80,8 +80,10 @@ pub(crate) fn ensure_proxy<R: Runtime>(
     trace: Option<&OperationTrace>,
 ) -> Result<(u16, String, ProxyAction), String> {
     let cfg = config::load_from(&config::default_dir()).map_err(|e| e.to_string())?;
-    let profiles: Vec<config::Profile> = cfg.active_profiles().into_iter().cloned().collect();
-    start_proxy_for_profiles(app, state, lifecycle, &profiles, trace)
+    let Some(p) = cfg.active_profile() else {
+        return Err("未配置生效 profile，请先在面板选择或新建一条配置。".into());
+    };
+    start_proxy_for_profiles(app, state, lifecycle, std::slice::from_ref(p), trace)
 }
 
 /// Start or reuse a proxy for the active profile.

@@ -180,14 +180,6 @@ impl Profile {
 }
 
 impl Config {
-    /// 当前生效 profile 列表（active_ids 中仍存在的项，保持顺序）。
-    pub fn active_profiles(&self) -> Vec<&Profile> {
-        self.active_ids
-            .iter()
-            .filter_map(|id| self.profile_by_id(id))
-            .collect()
-    }
-
     /// 是否在某条 profile 为当前生效项。
     pub fn is_profile_active(&self, id: &str) -> bool {
         self.active_ids.iter().any(|x| x == id)
@@ -212,9 +204,11 @@ impl Config {
         self.active_id = self.active_ids.first().cloned().unwrap_or_default();
     }
 
-    /// 当前生效 profile（active_ids 空 → None；兼容旧 active_id 只读路径）。
+    /// 当前生效 profile（`active_ids` 经归一化后 0 或 1 条）。
     pub fn active_profile(&self) -> Option<&Profile> {
-        self.active_profiles().first().copied()
+        self.active_ids
+            .first()
+            .and_then(|id| self.profile_by_id(id))
     }
     pub fn profile_by_id(&self, id: &str) -> Option<&Profile> {
         self.profiles.iter().find(|p| p.id == id)
