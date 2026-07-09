@@ -2,9 +2,8 @@ use serde_json::json;
 use tauri::State;
 
 use crate::runtime::profile::{
-    build_get_config, build_list_templates, clear_profile_key_inner, create_profile_inner,
-    delete_profile_inner, update_profile_connection_inner, update_profile_metadata_inner,
-    ConnectionEdit,
+    build_get_config, create_profile_inner, delete_profile_inner,
+    update_profile_connection_inner, update_profile_metadata_inner, ConnectionEdit,
 };
 use crate::runtime::profile_switch::{
     activate_profile_in_pool_txn, deactivate_profile_from_pool_txn, scratch_validate_candidate,
@@ -19,12 +18,6 @@ use crate::{config, lock, run_blocking, SharedAppState, SharedLifecycle};
 #[tauri::command]
 pub(crate) fn get_config() -> Result<serde_json::Value, String> {
     build_get_config(&config::default_dir())
-}
-
-/// 模板注册表交前端铺 UI（新建向导用）。
-#[tauri::command]
-pub(crate) fn list_templates() -> Vec<serde_json::Value> {
-    build_list_templates()
 }
 
 // ---------- profile CRUD 命令（薄包装 *_inner，统一经串行器） ----------
@@ -58,29 +51,6 @@ pub(crate) fn update_profile_metadata(
 ) -> Result<(), String> {
     lifecycle.with_serialized(|| {
         update_profile_metadata_inner(&config::default_dir(), &id, &name, notes.as_deref())
-    })
-}
-
-/// 清 key：经串行器；若清的是【生效】profile → bump_generation 作废在途启动 + 停运行中代理
-/// （不再拿旧 key 服务，比照 spec §8.2 运行态撤销）。
-#[tauri::command]
-pub(crate) fn clear_profile_key(
-    state: State<'_, SharedAppState>,
-    lifecycle: State<'_, SharedLifecycle>,
-    id: String,
-) -> Result<(), String> {
-    lifecycle.with_serialized(|| {
-        let dir = config::default_dir();
-        let was_active = config::load_from(&dir)
-            .map(|c| c.is_profile_active(&id))
-            .unwrap_or(false);
-        clear_profile_key_inner(&dir, &id)?;
-        if was_active {
-            lifecycle.bump_generation();
-            let mut st = lock(state.inner());
-            st.stop_proxy();
-        }
-        Ok(())
     })
 }
 
@@ -303,19 +273,4 @@ pub(crate) fn open_csp_json() -> Result<String, String> {
     }
     crate::runtime::system::open_path_in_default_app(&path)?;
     Ok(path.display().to_string())
-}
-
-#[tauri::command]
-pub(crate) fn export_csp_edit_json() -> Result<String, String> {
-    crate::runtime::config_edit::export_csp_edit_json(&config::default_dir())
-}
-
-#[tauri::command]
-pub(crate) fn import_csp_edit_json(
-    lifecycle: State<'_, SharedLifecycle>,
-    json: String,
-) -> Result<(), String> {
-    lifecycle.with_serialized(|| {
-        crate::runtime::config_edit::import_csp_edit_json(&config::default_dir(), &json)
-    })
 }
