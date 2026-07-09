@@ -123,7 +123,7 @@ CSP includes a read-only capability catalog that makes known compatibility bound
 
 This catalog is for diagnostics and observability. It is not proof that a live provider, real Claude account state, Science GUI E2E flow, DMG signing/notarization, or official hosted capability has been verified. A catalog rule id means CSP records that rule or boundary; it does not mean external providers, Anthropic-hosted MCP, Directory connectors, or remote skills are fully verified or fixed.
 
-Status lights are local observations only. For example, the sandbox light is local HTTP health, not proof that the port has been identity-verified as the CSP sandbox Science instance. `Doctor` skips the real `~/.claude-science` path by default; checking whether the real HOME path exists requires explicitly setting `CSSWITCH_DOCTOR_CHECK_REAL_HOME=1`.
+Status diagnostics are local observations only. For example, sandbox health is a local HTTP probe, not proof that the port has been identity-verified as the CSP sandbox Science instance. `Doctor` skips the real `~/.claude-science` path by default; checking whether the real HOME path exists requires explicitly setting `CSP_DOCTOR_CHECK_REAL_HOME=1`.
 
 ## How it protects your real account
 

@@ -5,7 +5,9 @@ use std::process::{Child, Command, Output, Stdio};
 
 use tauri::Runtime;
 
+use crate::runtime::i18n::i18n_err;
 use crate::{config, proc};
+use serde_json::json;
 
 use super::system::{asset_root, kill_child};
 
@@ -185,21 +187,24 @@ pub(crate) fn stop_sandbox<R: Runtime>(
                     .status()
                 {
                     Ok(s) if s.success() => {}
-                    Ok(s) => err = Some(format!("停止沙箱脚本非零退出（{:?}）。", s.code())),
-                    Err(e) => err = Some(format!("调用停止沙箱脚本失败：{e}")),
+                    Ok(s) => err = Some(i18n_err(
+                        "errStopSandboxScriptExit",
+                        json!({ "code": format!("{:?}", s.code()) }),
+                    )),
+                    Err(e) => err = Some(i18n_err(
+                        "errStopSandboxScriptInvokeFailed",
+                        json!({ "error": e.to_string() }),
+                    )),
                 }
             } else {
-                err = Some(format!(
-                    "找不到停止脚本 {}，无法确认沙箱已停止（沙箱可能仍在运行）。",
-                    stop.display()
+                err = Some(i18n_err(
+                    "errStopSandboxScriptMissing",
+                    json!({ "path": stop.display().to_string() }),
                 ));
             }
         }
         None => {
-            err = Some(
-                "定位不到资源根，取不到停止脚本，无法确认沙箱已停止（沙箱可能仍在运行）。"
-                    .to_string(),
-            );
+            err = Some(i18n_err("errStopSandboxAssetRootMissing", json!({})));
         }
     }
     kill_child(sandbox);

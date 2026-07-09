@@ -4,7 +4,7 @@ import json
 import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "proxy"))
-import csswitch_proxy as cs
+import csp_proxy as cs
 
 
 class ToolChoiceMapping(unittest.TestCase):

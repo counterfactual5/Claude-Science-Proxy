@@ -1,6 +1,6 @@
-"""代理级端到端：证明 DSML 兜底 shim 已真正接进 csswitch_proxy（Codex P0）。
+"""代理级端到端：证明 DSML 兜底 shim 已真正接进 csp_proxy（Codex P0）。
 
-启动【真实代理】子进程，用 CSSWITCH_UPSTREAM_URL 把上游指到一个会吐 DSML 纯文本
+启动【真实代理】子进程，用 CSP_UPSTREAM_URL 把上游指到一个会吐 DSML 纯文本
 工具调用的假上游，再对代理发真实 HTTP。断言：
   - rewrite 模式：流式/非流式里泄漏成文本的 DSML 被还原成真正的 tool_use 块，
     stop_reason 被覆写成 tool_use；
@@ -21,7 +21,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 from _capability import loopback_available
 
 HERE = os.path.dirname(__file__)
-PROXY = os.path.join(HERE, "..", "proxy", "csswitch_proxy.py")
+PROXY = os.path.join(HERE, "..", "proxy", "csp_proxy.py")
 SEC = "dsmltok"
 P2 = "｜｜"   # 双全角竖线（issue #8 实测泄漏形态）
 
@@ -191,11 +191,11 @@ def _req_body(stream):
 
 
 def launch_proxy(port, shim_mode, upstream):
-    env = dict(os.environ, DEEPSEEK_API_KEY="fake", CSSWITCH_UPSTREAM_URL=upstream)
+    env = dict(os.environ, DEEPSEEK_API_KEY="fake", CSP_UPSTREAM_URL=upstream)
     if shim_mode is None:
-        env.pop("CSSWITCH_TOOLUSE_SHIM", None)
+        env.pop("CSP_TOOLUSE_SHIM", None)
     else:
-        env["CSSWITCH_TOOLUSE_SHIM"] = shim_mode
+        env["CSP_TOOLUSE_SHIM"] = shim_mode
     proc = subprocess.Popen(
         [sys.executable, PROXY, "--provider", "deepseek", "--port", str(port), "--auth-token", SEC],
         env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

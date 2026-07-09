@@ -7,12 +7,12 @@
 set -euo pipefail
 
 PROJ="$(cd "$(dirname "$0")/.." && pwd)"
-TEST_ROOT="${CSSWITCH_REAL_TEST_ROOT:-${TMPDIR:-/tmp}/csswitch-real-machine-${UID}}"
+TEST_ROOT="${CSP_REAL_TEST_ROOT:-${TMPDIR:-/tmp}/csswitch-real-machine-${UID}}"
 TEST_HOME="$TEST_ROOT/home"
 STATE_DIR="$TEST_ROOT/state"
 BASELINE="$STATE_DIR/port-8765.pids"
-PROXY_PORT="${CSSWITCH_TEST_PROXY_PORT:-18991}"
-SANDBOX_PORT="${CSSWITCH_TEST_SANDBOX_PORT:-8990}"
+PROXY_PORT="${CSP_TEST_PROXY_PORT:-18991}"
+SANDBOX_PORT="${CSP_TEST_SANDBOX_PORT:-8990}"
 SCIENCE_BIN="${SCIENCE_BIN:-/Applications/Claude Science.app/Contents/Resources/bin/claude-science}"
 
 die() { echo "FAIL: $*" >&2; exit 1; }
@@ -38,7 +38,7 @@ assert_isolated_from_real_home() {
   canon="$(cd "$dir" 2>/dev/null && pwd -P)" || die "无法解析隔离目录：$dir"
   case "$canon/" in
     "$real_home/" | "$real_home"/*)
-      die "隔离目录解析后落在真实 HOME 内，拒绝：${canon}（真实 HOME=${real_home}）。请把 CSSWITCH_REAL_TEST_ROOT 指向 HOME 之外（默认 TMPDIR 即可）。"
+      die "隔离目录解析后落在真实 HOME 内，拒绝：${canon}（真实 HOME=${real_home}）。请把 CSP_REAL_TEST_ROOT 指向 HOME 之外（默认 TMPDIR 即可）。"
       ;;
   esac
 }
@@ -155,11 +155,11 @@ assert_stopped() {
 
 show_env() {
   cat <<EOF
-CSSWITCH_REAL_TEST_ROOT=$TEST_ROOT
+CSP_REAL_TEST_ROOT=$TEST_ROOT
 HOME=$TEST_HOME
-CSSWITCH_REPO=$PROJ
-CSSWITCH_TEST_PROXY_PORT=$PROXY_PORT
-CSSWITCH_TEST_SANDBOX_PORT=$SANDBOX_PORT
+CSP_REPO=$PROJ
+CSP_TEST_PROXY_PORT=$PROXY_PORT
+CSP_TEST_SANDBOX_PORT=$SANDBOX_PORT
 EOF
 }
 

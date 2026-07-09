@@ -13,7 +13,7 @@
 #   - encryption.key 的 keychain 镜像账号按【路径哈希】派生，沙箱与真实天然隔离
 #
 # 用法:
-#   先起代理: DEEPSEEK_API_KEY=... python3 proxy/csswitch_proxy.py --provider deepseek --port 18991
+#   先起代理: DEEPSEEK_API_KEY=... python3 proxy/csp_proxy.py --provider deepseek --port 18991
 #   再起沙箱: scripts/launch-virtual-sandbox.sh [--port 8990] [--proxy-url http://127.0.0.1:18991]
 set -euo pipefail
 

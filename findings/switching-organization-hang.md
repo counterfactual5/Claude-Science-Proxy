@@ -44,7 +44,7 @@
 
 > 起沙箱时把 `http(s)_proxy` 指到一个**本地小代理**：对上述 Anthropic 域名的 `CONNECT` **立即拒绝/关闭**（→ operon 秒判 logged-out 秒过）；对其它域名**透传**到用户原本的上游（保留其它外联，如装包）。
 
-- 倾向实现：作为 `proxy/csswitch_proxy.py` 的新模式（加 `do_CONNECT` 处理），少一个进程、逻辑集中。
+- 倾向实现：作为 `proxy/csp_proxy.py` 的新模式（加 `do_CONNECT` 处理），少一个进程、逻辑集中。
 - 备选（不推荐）：把所有外联都 fast-fail —— 对被墙用户反正外网都连不上，但会误伤有梯子用户的 MCP / 装包。
 - 验证：本机可用上面的黑洞法造出「卡住」并证明修复后秒过；但**反馈用户的真实网络需其本人回验**（顺带确认其 Science 版本与是否有梯子）。
 
@@ -64,7 +64,7 @@ claudeAiFetch: /api/oauth/profile → 403        （反复出现，无 treating 
 
 原始根因文里「响应快（哪怕 401）就秒过」说的就是 401；当初实现却选了 403（以为只要「快速失败」即可），是**语义选错**。虚拟登录本就该表现为「未登录」，故应回 **401**。
 
-**改动：** `csswitch_proxy.py` 的 `do_CONNECT` 对 blocked 域名 `self._connect_reply(401)`（原 403）。`test_proxy_connect.py` 断言同步改 401。
+**改动：** `csp_proxy.py` 的 `do_CONNECT` 对 blocked 域名 `self._connect_reply(401)`（原 403）。`test_proxy_connect.py` 断言同步改 401。
 
 **实机验证（独立沙箱，未碰 8765）：** 换 401 后重启代理 + operon，operon 日志变为 `claudeAiFetch: 401 and refresh failed — treating as logged-out`，`/health` 返回 `{"status":"healthy",...,"agents_registered":4}`，不再卡 Switching organization。对照实验干净：唯一变量是 403→401（同一沙箱 data-dir、同一伪造登录、同一代理，仅状态码不同 → 前者卡、后者过）。
 

@@ -18,22 +18,22 @@ fn formal_proxy_env(launch: &ProxyLaunch) -> Vec<(&'static str, String)> {
     let native = is_native_adapter(&launch.adapter);
     let mut env = vec![(launch.key_env, launch.key.clone())];
     if let Some(reg) = &launch.model_registry_json {
-        env.push(("CSSWITCH_MODEL_REGISTRY", reg.clone()));
+        env.push(("CSP_MODEL_REGISTRY", reg.clone()));
     }
     if !native {
         if is_openai_adapter(&launch.adapter) {
-            env.push(("CSSWITCH_OPENAI_BASE_URL", launch.base_url.clone()));
+            env.push(("CSP_OPENAI_BASE_URL", launch.base_url.clone()));
             if launch.model_registry_json.is_none() && !launch.model.is_empty() {
-                env.push(("CSSWITCH_OPENAI_MODEL", launch.model.clone()));
+                env.push(("CSP_OPENAI_MODEL", launch.model.clone()));
             }
         } else {
-            env.push(("CSSWITCH_RELAY_BASE_URL", launch.base_url.clone()));
+            env.push(("CSP_RELAY_BASE_URL", launch.base_url.clone()));
             if launch.model_registry_json.is_none() && !launch.model.is_empty() {
-                env.push(("CSSWITCH_RELAY_MODEL", launch.model.clone()));
+                env.push(("CSP_RELAY_MODEL", launch.model.clone()));
             }
             if !launch.thinking_policy.is_empty() {
                 env.push((
-                    "CSSWITCH_RELAY_THINKING",
+                    "CSP_RELAY_THINKING",
                     launch.thinking_policy.to_string(),
                 ));
             }
@@ -110,7 +110,7 @@ pub(crate) fn start_proxy_for_profiles<R: Runtime>(
     let secret = if !cfg.secret.is_empty() {
         cfg.secret.clone()
     } else {
-        let s = proc::gen_secret().map_err(|e| format!("无法生成安全 secret：{e}"))?;
+        let s = proc::gen_secret().map_err(|e| i18n_err("errGenSecretFailed", json!({ "error": e.to_string() })))?;
         let s2 = s.clone();
         config::update(&dir, move |c| c.secret = s2).map_err(|e| e.to_string())?;
         s
@@ -141,11 +141,11 @@ pub(crate) fn start_proxy_for_profiles<R: Runtime>(
 
         st.stop_proxy();
         st.secret = secret.clone();
-        let script = root.join("proxy/csswitch_proxy.py");
+        let script = root.join("proxy/csp_proxy.py");
         let pat = format!("{}.*--port {port}", ere_escape(&script.to_string_lossy()));
         let _ = Command::new("pkill").arg("-f").arg(&pat).status();
 
-        let logf = open_log("proxy.log").map_err(|e| format!("建日志失败：{e}"))?;
+        let logf = open_log("proxy.log").map_err(|e| i18n_err("errLogOpenFailed", json!({ "error": e.to_string() })))?;
         let logf2 = logf.try_clone().map_err(|e| e.to_string())?;
         let mut cmd = Command::new(&py);
         if let Some(t) = trace {
@@ -202,7 +202,7 @@ pub(crate) fn start_proxy_for_profiles<R: Runtime>(
             let mut c = child;
             let _ = c.kill();
             let _ = c.wait();
-            return Err("代理启动期间配置已变更（被更晚的操作取代），本次启动未生效。".into());
+            return Err(i18n_err("errProxyStartSuperseded", json!({})));
         }
         st.proxy = Some(child);
         st.proxy_port = port;
@@ -233,9 +233,9 @@ mod tests {
             model: model.to_string(),
             key: "test-key".to_string(),
             key_env: if matches!(adapter, "openai-custom" | "openai-responses") {
-                "CSSWITCH_OPENAI_KEY"
+                "CSP_OPENAI_KEY"
             } else {
-                "CSSWITCH_RELAY_KEY"
+                "CSP_RELAY_KEY"
             },
             thinking_policy,
             model_registry_json: None,
@@ -251,30 +251,30 @@ mod tests {
         );
         let env = formal_proxy_env(&launch);
         assert!(env.contains(&(
-            "CSSWITCH_MODEL_REGISTRY",
+            "CSP_MODEL_REGISTRY",
             launch.model_registry_json.clone().unwrap()
         )));
-        assert!(!env.iter().any(|(k, _)| *k == "CSSWITCH_RELAY_MODEL"));
+        assert!(!env.iter().any(|(k, _)| *k == "CSP_RELAY_MODEL"));
     }
 
     #[test]
     fn formal_proxy_env_pins_relay_model_only_on_formal_launch() {
         let env = formal_proxy_env(&launch("relay", "glm-5.2"));
         assert!(env.contains(&(
-            "CSSWITCH_RELAY_BASE_URL",
+            "CSP_RELAY_BASE_URL",
             "https://upstream.example/api".to_string()
         )));
-        assert!(env.contains(&("CSSWITCH_RELAY_MODEL", "glm-5.2".to_string())));
+        assert!(env.contains(&("CSP_RELAY_MODEL", "glm-5.2".to_string())));
     }
 
     #[test]
     fn formal_proxy_env_pins_openai_model_only_on_formal_launch() {
         let env = formal_proxy_env(&launch("openai-custom", "gpt-5.2"));
         assert!(env.contains(&(
-            "CSSWITCH_OPENAI_BASE_URL",
+            "CSP_OPENAI_BASE_URL",
             "https://upstream.example/api".to_string()
         )));
-        assert!(env.contains(&("CSSWITCH_OPENAI_MODEL", "gpt-5.2".to_string())));
+        assert!(env.contains(&("CSP_OPENAI_MODEL", "gpt-5.2".to_string())));
     }
 
     #[test]
@@ -288,14 +288,14 @@ mod tests {
     #[test]
     fn formal_proxy_env_empty_model_does_not_pin_model() {
         let env = formal_proxy_env(&launch("relay", ""));
-        assert!(env.iter().any(|(k, _)| *k == "CSSWITCH_RELAY_BASE_URL"));
-        assert!(!env.iter().any(|(k, _)| *k == "CSSWITCH_RELAY_MODEL"));
-        assert!(!env.iter().any(|(k, _)| *k == "CSSWITCH_OPENAI_MODEL"));
+        assert!(env.iter().any(|(k, _)| *k == "CSP_RELAY_BASE_URL"));
+        assert!(!env.iter().any(|(k, _)| *k == "CSP_RELAY_MODEL"));
+        assert!(!env.iter().any(|(k, _)| *k == "CSP_OPENAI_MODEL"));
     }
 
     #[test]
     fn formal_proxy_env_preserves_relay_thinking_policy() {
         let env = formal_proxy_env(&launch_with_thinking("relay", "glm-5.2", "enabled"));
-        assert!(env.contains(&("CSSWITCH_RELAY_THINKING", "enabled".to_string())));
+        assert!(env.contains(&("CSP_RELAY_THINKING", "enabled".to_string())));
     }
 }

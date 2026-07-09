@@ -40,7 +40,7 @@
     ],
     "resources": {
       "../../proxy/anthropic_compat.py": "proxy/anthropic_compat.py",
-      "../../proxy/csswitch_proxy.py": "proxy/csswitch_proxy.py",
+      "../../proxy/csp_proxy.py": "proxy/csp_proxy.py",
       "../../proxy/dsml_shim.py": "proxy/dsml_shim.py",
       "../../proxy/http_transport.py": "proxy/http_transport.py",
       "../../proxy/model_discovery.py": "proxy/model_discovery.py",

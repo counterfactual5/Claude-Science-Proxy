@@ -2,17 +2,19 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command};
 
+use serde_json::json;
 use tauri::{Manager, Runtime};
 
 use crate::config;
+use crate::runtime::i18n::i18n_err;
 
 const OPERATION_LOG_MAX_BYTES: u64 = 1_048_576;
 
-/// Locate the CSP repository root containing `proxy/csswitch_proxy.py`.
-/// Prefer `CSSWITCH_REPO`; otherwise walk upwards from the executable path.
+/// Locate the CSP repository root containing `proxy/csp_proxy.py`.
+/// Prefer `CSP_REPO`; otherwise walk upwards from the executable path.
 pub(crate) fn repo_root() -> Option<PathBuf> {
-    let marker = Path::new("proxy/csswitch_proxy.py");
-    if let Some(r) = std::env::var_os("CSSWITCH_REPO") {
+    let marker = Path::new("proxy/csp_proxy.py");
+    if let Some(r) = std::env::var_os("CSP_REPO") {
         if let Ok(p) = std::fs::canonicalize(PathBuf::from(r)) {
             if p.join(marker).is_file() {
                 return Some(p);
@@ -37,7 +39,7 @@ pub(crate) fn repo_root() -> Option<PathBuf> {
 /// Locate the asset root containing `proxy/` and `scripts/`.
 /// Packaged apps use `Contents/Resources`; dev builds fall back to repo root.
 pub(crate) fn asset_root<R: Runtime>(app: &tauri::AppHandle<R>) -> Option<PathBuf> {
-    let marker = Path::new("proxy/csswitch_proxy.py");
+    let marker = Path::new("proxy/csp_proxy.py");
     if let Ok(res) = app.path().resource_dir() {
         if res.join(marker).is_file() {
             return Some(res);
@@ -168,9 +170,12 @@ pub(crate) fn open_path_in_default_app(path: &Path) -> Result<(), String> {
     let st = Command::new("open")
         .arg(path)
         .status()
-        .map_err(|e| format!("打开编辑器失败：{e}"))?;
+        .map_err(|e| i18n_err("errOpenEditorFailed", json!({ "error": e.to_string() })))?;
     if !st.success() {
-        return Err(format!("open 非零退出（{:?}）", st.code()));
+        return Err(i18n_err(
+            "errOpenCommandFailed",
+            json!({ "code": format!("{:?}", st.code()) }),
+        ));
     }
     Ok(())
 }
@@ -180,9 +185,12 @@ pub(crate) fn open_in_browser(url: &str) -> Result<(), String> {
     let st = Command::new("open")
         .arg(url)
         .status()
-        .map_err(|e| format!("打开浏览器失败：{e}"))?;
+        .map_err(|e| i18n_err("errOpenBrowserFailed", json!({ "error": e.to_string() })))?;
     if !st.success() {
-        return Err(format!("open 非零退出（{:?}）", st.code()));
+        return Err(i18n_err(
+            "errOpenCommandFailed",
+            json!({ "code": format!("{:?}", st.code()) }),
+        ));
     }
     Ok(())
 }

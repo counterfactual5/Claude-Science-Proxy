@@ -99,25 +99,25 @@ pub fn scratch_env(
     let mut v = vec![(key_env.to_string(), key.to_string())];
     if !base_url.is_empty() {
         let env = if matches!(provider, "openai-custom" | "openai-responses") {
-            "CSSWITCH_OPENAI_BASE_URL"
+            "CSP_OPENAI_BASE_URL"
         } else {
-            "CSSWITCH_RELAY_BASE_URL"
+            "CSP_RELAY_BASE_URL"
         };
         v.push((env.to_string(), base_url.to_string()));
     }
     if let Some(m) = model {
         if !m.is_empty() {
             let env = if matches!(provider, "openai-custom" | "openai-responses") {
-                "CSSWITCH_OPENAI_MODEL"
+                "CSP_OPENAI_MODEL"
             } else {
-                "CSSWITCH_RELAY_MODEL"
+                "CSP_RELAY_MODEL"
             };
             v.push((env.to_string(), m.to_string()));
         }
     }
     if !matches!(provider, "openai-custom" | "openai-responses") && !relay_thinking.is_empty() {
         v.push((
-            "CSSWITCH_RELAY_THINKING".to_string(),
+            "CSP_RELAY_THINKING".to_string(),
             relay_thinking.to_string(),
         ));
     }
@@ -125,16 +125,16 @@ pub fn scratch_env(
 }
 
 /// 临时代理探测目标：`provider` 直接作 `--provider`（native=deepseek/qwen；中转站=relay）；
-/// `key_env` 决定候选 key 注入哪个环境变量（native 用各自 `*_API_KEY`，relay 用 `CSSWITCH_RELAY_KEY`）；
-/// `base_url` 非空才注入 `CSSWITCH_RELAY_BASE_URL`（native 传空 → 走硬编码官方端点）；
-/// `model` 非空注入 `CSSWITCH_RELAY_MODEL`（仅 relay 生效）。
+/// `key_env` 决定候选 key 注入哪个环境变量（native 用各自 `*_API_KEY`，relay 用 `CSP_RELAY_KEY`）；
+/// `base_url` 非空才注入 `CSP_RELAY_BASE_URL`（native 传空 → 走硬编码官方端点）；
+/// `model` 非空注入 `CSP_RELAY_MODEL`（仅 relay 生效）。
 pub struct ScratchTarget<'a> {
     pub provider: &'a str,
     pub key_env: &'a str,
     pub base_url: &'a str,
     pub key: &'a str,
     pub model: Option<&'a str>,
-    pub relay_thinking: &'a str, // relay thinking 策略（模板 thinking_policy），非空注入 CSSWITCH_RELAY_THINKING
+    pub relay_thinking: &'a str, // relay thinking 策略（模板 thinking_policy），非空注入 CSP_RELAY_THINKING
 }
 
 /// 起一个临时代理并探测，探完杀净。**不碰 config / AppState / 正式代理**（修 P1-1/P1-2）。
@@ -245,7 +245,7 @@ pub fn scratch_probe(
             }
         }
         ProbeKind::Message => {
-            // model 由 CSSWITCH_RELAY_MODEL 强制，请求体模型名占位即可（会被 override）。
+            // model 由 CSP_RELAY_MODEL 强制，请求体模型名占位即可（会被 override）。
             let payload = br#"{"model":"claude-opus-4-8","max_tokens":1,"messages":[{"role":"user","content":"ping"}]}"#;
             if let Some(t) = trace {
                 t.stage(OperationStage::ScratchUpstreamProbe, "POST /v1/messages");
@@ -314,7 +314,7 @@ mod tests {
 
     #[test]
     fn scratch_env_native_uses_native_key_env_and_no_relay_base() {
-        // native：key 进 DEEPSEEK_API_KEY，绝不设 CSSWITCH_RELAY_BASE_URL（否则会被当中转站）。
+        // native：key 进 DEEPSEEK_API_KEY，绝不设 CSP_RELAY_BASE_URL（否则会被当中转站）。
         let env = scratch_env("deepseek", "DEEPSEEK_API_KEY", "sk-x", "", None, "");
         assert_eq!(
             env,
@@ -326,7 +326,7 @@ mod tests {
     fn scratch_env_relay_sets_base_url_and_model() {
         let env = scratch_env(
             "relay",
-            "CSSWITCH_RELAY_KEY",
+            "CSP_RELAY_KEY",
             "sk-y",
             "https://r/claude",
             Some("m1"),
@@ -335,12 +335,12 @@ mod tests {
         assert_eq!(
             env,
             vec![
-                ("CSSWITCH_RELAY_KEY".to_string(), "sk-y".to_string()),
+                ("CSP_RELAY_KEY".to_string(), "sk-y".to_string()),
                 (
-                    "CSSWITCH_RELAY_BASE_URL".to_string(),
+                    "CSP_RELAY_BASE_URL".to_string(),
                     "https://r/claude".to_string()
                 ),
-                ("CSSWITCH_RELAY_MODEL".to_string(), "m1".to_string()),
+                ("CSP_RELAY_MODEL".to_string(), "m1".to_string()),
             ]
         );
     }
@@ -349,37 +349,37 @@ mod tests {
     fn scratch_env_models_discovery_does_not_pin_relay_model() {
         let env = scratch_env(
             "relay",
-            "CSSWITCH_RELAY_KEY",
+            "CSP_RELAY_KEY",
             "sk-y",
             "https://r/claude",
             None,
             "",
         );
-        assert!(env.iter().any(|(k, _)| k == "CSSWITCH_RELAY_BASE_URL"));
-        assert!(!env.iter().any(|(k, _)| k == "CSSWITCH_RELAY_MODEL"));
-        assert!(!env.iter().any(|(k, _)| k == "CSSWITCH_OPENAI_MODEL"));
+        assert!(env.iter().any(|(k, _)| k == "CSP_RELAY_BASE_URL"));
+        assert!(!env.iter().any(|(k, _)| k == "CSP_RELAY_MODEL"));
+        assert!(!env.iter().any(|(k, _)| k == "CSP_OPENAI_MODEL"));
     }
 
     #[test]
     fn scratch_env_models_discovery_does_not_pin_openai_model() {
         let env = scratch_env(
             "openai-custom",
-            "CSSWITCH_OPENAI_KEY",
+            "CSP_OPENAI_KEY",
             "sk-z",
             "https://open.bigmodel.cn/api/paas/v4",
             None,
             "",
         );
-        assert!(env.iter().any(|(k, _)| k == "CSSWITCH_OPENAI_BASE_URL"));
-        assert!(!env.iter().any(|(k, _)| k == "CSSWITCH_OPENAI_MODEL"));
-        assert!(!env.iter().any(|(k, _)| k == "CSSWITCH_RELAY_MODEL"));
+        assert!(env.iter().any(|(k, _)| k == "CSP_OPENAI_BASE_URL"));
+        assert!(!env.iter().any(|(k, _)| k == "CSP_OPENAI_MODEL"));
+        assert!(!env.iter().any(|(k, _)| k == "CSP_RELAY_MODEL"));
     }
 
     #[test]
     fn scratch_env_openai_custom_sets_openai_base_and_model() {
         let env = scratch_env(
             "openai-custom",
-            "CSSWITCH_OPENAI_KEY",
+            "CSP_OPENAI_KEY",
             "sk-z",
             "https://open.bigmodel.cn/api/paas/v4",
             Some("glm-4.5"),
@@ -388,12 +388,12 @@ mod tests {
         assert_eq!(
             env,
             vec![
-                ("CSSWITCH_OPENAI_KEY".to_string(), "sk-z".to_string()),
+                ("CSP_OPENAI_KEY".to_string(), "sk-z".to_string()),
                 (
-                    "CSSWITCH_OPENAI_BASE_URL".to_string(),
+                    "CSP_OPENAI_BASE_URL".to_string(),
                     "https://open.bigmodel.cn/api/paas/v4".to_string()
                 ),
-                ("CSSWITCH_OPENAI_MODEL".to_string(), "glm-4.5".to_string()),
+                ("CSP_OPENAI_MODEL".to_string(), "glm-4.5".to_string()),
             ]
         );
     }
@@ -402,7 +402,7 @@ mod tests {
     fn scratch_env_openai_responses_sets_openai_base_and_model() {
         let env = scratch_env(
             "openai-responses",
-            "CSSWITCH_OPENAI_KEY",
+            "CSP_OPENAI_KEY",
             "sk-z",
             "https://api.openai.com/v1",
             Some("gpt-5.2"),
@@ -411,12 +411,12 @@ mod tests {
         assert_eq!(
             env,
             vec![
-                ("CSSWITCH_OPENAI_KEY".to_string(), "sk-z".to_string()),
+                ("CSP_OPENAI_KEY".to_string(), "sk-z".to_string()),
                 (
-                    "CSSWITCH_OPENAI_BASE_URL".to_string(),
+                    "CSP_OPENAI_BASE_URL".to_string(),
                     "https://api.openai.com/v1".to_string()
                 ),
-                ("CSSWITCH_OPENAI_MODEL".to_string(), "gpt-5.2".to_string()),
+                ("CSP_OPENAI_MODEL".to_string(), "gpt-5.2".to_string()),
             ]
         );
     }
@@ -425,26 +425,26 @@ mod tests {
     fn scratch_env_relay_injects_thinking_policy() {
         let env = scratch_env(
             "relay",
-            "CSSWITCH_RELAY_KEY",
+            "CSP_RELAY_KEY",
             "sk-y",
             "https://r/claude",
             Some("m1"),
             "enabled",
         );
-        assert!(env.contains(&("CSSWITCH_RELAY_THINKING".to_string(), "enabled".to_string())));
+        assert!(env.contains(&("CSP_RELAY_THINKING".to_string(), "enabled".to_string())));
     }
 
     #[test]
     fn scratch_env_empty_thinking_not_injected() {
         let env = scratch_env(
             "relay",
-            "CSSWITCH_RELAY_KEY",
+            "CSP_RELAY_KEY",
             "sk-y",
             "https://r/claude",
             None,
             "",
         );
-        assert!(!env.iter().any(|(k, _)| k == "CSSWITCH_RELAY_THINKING"));
+        assert!(!env.iter().any(|(k, _)| k == "CSP_RELAY_THINKING"));
     }
 
     #[test]

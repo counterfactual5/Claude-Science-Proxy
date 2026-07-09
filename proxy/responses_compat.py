@@ -1,7 +1,7 @@
 """OpenAI Responses compatibility helpers.
 
 The functions here are pure protocol transforms. Provider runtime state is
-passed in by csswitch_proxy instead of read from process globals.
+passed in by csp_proxy instead of read from process globals.
 """
 
 import json

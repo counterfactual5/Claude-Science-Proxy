@@ -164,20 +164,20 @@ class ParamTyping(unittest.TestCase):
 
 class ShimMode(unittest.TestCase):
     def setUp(self):
-        os.environ.pop("CSSWITCH_TOOLUSE_SHIM", None)
+        os.environ.pop("CSP_TOOLUSE_SHIM", None)
 
     def tearDown(self):
         self.setUp()
 
     def test_off_when_not_capable(self):
-        os.environ["CSSWITCH_TOOLUSE_SHIM"] = "rewrite"
+        os.environ["CSP_TOOLUSE_SHIM"] = "rewrite"
         self.assertEqual(ds.shim_mode("qwen", {"dsml_capable": False}), "off")
 
     def test_deepseek_reads_env(self):
         prov = {"dsml_capable": True}
-        os.environ["CSSWITCH_TOOLUSE_SHIM"] = "detect"
+        os.environ["CSP_TOOLUSE_SHIM"] = "detect"
         self.assertEqual(ds.shim_mode("deepseek", prov), "detect")
-        os.environ["CSSWITCH_TOOLUSE_SHIM"] = "rewrite"
+        os.environ["CSP_TOOLUSE_SHIM"] = "rewrite"
         self.assertEqual(ds.shim_mode("deepseek", prov), "rewrite")
 
     def test_default_off_when_env_unset(self):
@@ -185,7 +185,7 @@ class ShimMode(unittest.TestCase):
 
     def test_relay_always_off_this_round(self):
         # 本轮 relay 永远关闭（deepseek-only）：即便 capable 或设了 env 也 off
-        os.environ["CSSWITCH_TOOLUSE_SHIM"] = "rewrite"
+        os.environ["CSP_TOOLUSE_SHIM"] = "rewrite"
         self.assertEqual(ds.shim_mode("relay", {"dsml_capable": False}), "off")
         self.assertEqual(ds.shim_mode("relay", {"dsml_capable": True}), "off")
 

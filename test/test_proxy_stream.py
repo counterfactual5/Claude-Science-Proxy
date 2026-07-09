@@ -10,7 +10,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 from _capability import loopback_available
 
 HERE = os.path.dirname(__file__)
-PROXY = os.path.join(HERE, "..", "proxy", "csswitch_proxy.py")
+PROXY = os.path.join(HERE, "..", "proxy", "csp_proxy.py")
 SEC = "streamtok"
 
 # 这里覆盖两个流式代理边界：
@@ -190,7 +190,7 @@ class StreamInterruption(unittest.TestCase):
         cls.up_url, cls.up_sock = start_dropping_upstream()
         cls.port = 18973  # S0 全局唯一端口：StreamInterruption
         env = dict(os.environ, DEEPSEEK_API_KEY="fake",
-                   CSSWITCH_UPSTREAM_URL=cls.up_url)
+                   CSP_UPSTREAM_URL=cls.up_url)
         cls.proc = subprocess.Popen(
             [sys.executable, PROXY, "--provider", "deepseek",
              "--port", str(cls.port), "--auth-token", SEC],
@@ -221,7 +221,7 @@ class StreamFlushesFirstLine(unittest.TestCase):
         cls.up_url, cls.up_sock = start_slow_first_frame_upstream()
         cls.port = 18974  # S0 全局唯一端口：StreamFlushesFirstLine
         env = dict(os.environ, DEEPSEEK_API_KEY="fake",
-                   CSSWITCH_UPSTREAM_URL=cls.up_url)
+                   CSP_UPSTREAM_URL=cls.up_url)
         cls.proc = subprocess.Popen(
             [sys.executable, PROXY, "--provider", "deepseek",
              "--port", str(cls.port), "--auth-token", SEC],
@@ -252,7 +252,7 @@ class StreamHeadersOpenBeforeUpstreamTtft(unittest.TestCase):
         cls.up_url, cls.up_sock = start_delayed_response_upstream()
         cls.port = 18975  # S0 全局唯一端口：StreamHeadersOpenBeforeUpstreamTtft
         env = dict(os.environ, DEEPSEEK_API_KEY="fake",
-                   CSSWITCH_UPSTREAM_URL=cls.up_url)
+                   CSP_UPSTREAM_URL=cls.up_url)
         cls.proc = subprocess.Popen(
             [sys.executable, PROXY, "--provider", "deepseek",
              "--port", str(cls.port), "--auth-token", SEC],
@@ -284,7 +284,7 @@ class StreamUpstreamStatusAfterHeaders(unittest.TestCase):
         cls.up_url, cls.up_sock = start_status_upstream(401)
         cls.port = 18976  # S0 全局唯一端口：StreamUpstreamStatusAfterHeaders
         env = dict(os.environ, DEEPSEEK_API_KEY="fake",
-                   CSSWITCH_UPSTREAM_URL=cls.up_url)
+                   CSP_UPSTREAM_URL=cls.up_url)
         cls.proc = subprocess.Popen(
             [sys.executable, PROXY, "--provider", "deepseek",
              "--port", str(cls.port), "--auth-token", SEC],

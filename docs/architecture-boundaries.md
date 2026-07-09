@@ -8,7 +8,7 @@ This document is the public-safe boundary map for current `main`. It records how
 |---|---|---|---|
 | Frontend panel | `desktop/src/main.js` | User intent, form state, command calls, visible status rendering | Final truth for active profile, proxy process, sandbox identity, upstream route, or key validity |
 | Rust command/runtime layer | `desktop/src-tauri/src/commands/`, `desktop/src-tauri/src/runtime/` | Profile transactions, config reads/writes, proxy and sandbox lifecycle, diagnostics shape | User inference payload transformation or hosted Claude capability repair |
-| Python proxy gateway | `proxy/csswitch_proxy.py` and imported proxy modules | Data-plane request auth stripping, provider auth injection, model shell/force routing, Anthropic/OpenAI/Responses compatibility, CONNECT behavior | Profile persistence, UI state, real Claude account state, official hosted MCP/Directory/remote skill availability |
+| Python proxy gateway | `proxy/csp_proxy.py` and imported proxy modules | Data-plane request auth stripping, provider auth injection, model shell/force routing, Anthropic/OpenAI/Responses compatibility, CONNECT behavior | Profile persistence, UI state, real Claude account state, official hosted MCP/Directory/remote skill availability |
 | Scripts | `scripts/*.sh` | Sandbox launch/stop support, local doctor checks, bundle cleanup | Long-lived runtime state ownership or real `~/.claude-science` mutation |
 | Tests and findings | `test/`, `findings/`, `docs/known-issues.md` | Evidence, regression gates, known boundaries | Replacing current source/runtime verification |
 
@@ -53,7 +53,7 @@ These are related but not interchangeable. In particular, `fetch_models` is disc
 
 `set_active_profile` means: validate the candidate profile unless the user explicitly chooses skip verification after an ambiguous probe, start a formal proxy for that candidate, verify local proxy health, then commit the profile id and any active connection edit.
 
-Pinning the upstream model is a formal proxy launch property. Relay and custom OpenAI paths pass the selected model through environment variables such as `CSSWITCH_RELAY_MODEL` or `CSSWITCH_OPENAI_MODEL`. The formal proxy then returns a Science-visible shell model from `/v1/models` and force-routes outbound inference requests to the configured real upstream model.
+Pinning the upstream model is a formal proxy launch property. Relay and custom OpenAI paths pass the selected model through environment variables such as `CSP_RELAY_MODEL` or `CSP_OPENAI_MODEL`. The formal proxy then returns a Science-visible shell model from `/v1/models` and force-routes outbound inference requests to the configured real upstream model.
 
 `fetch_models` is different: it uses a temporary probe without the formal force-model environment so the app can discover real model ids from the upstream. It must not alter config, `AppState`, the active proxy, or the running sandbox.
 

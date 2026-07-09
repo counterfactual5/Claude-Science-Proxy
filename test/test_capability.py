@@ -8,7 +8,7 @@ class TestCapability(unittest.TestCase):
 
     def test_matches_actual_bind(self):
         import os
-        if os.environ.get("CSSWITCH_FORCE_NO_LOOPBACK") == "1":
+        if os.environ.get("CSP_FORCE_NO_LOOPBACK") == "1":
             # FORCE 模拟下探针本就应该强制返回 False，与真实 bind 是否可行无关。
             self.assertFalse(loopback_available())
             return
@@ -22,7 +22,7 @@ class TestCapability(unittest.TestCase):
 
     def test_force_no_loopback_env(self):
         import os
-        name = "CSSWITCH_FORCE_NO_LOOPBACK"
+        name = "CSP_FORCE_NO_LOOPBACK"
         prev = os.environ.get(name)
         os.environ[name] = "1"
         try:

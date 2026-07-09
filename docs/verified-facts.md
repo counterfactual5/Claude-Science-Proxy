@@ -31,7 +31,7 @@
    - **翻译契合度极高**：`forwarder.rs` 对入站 `authorization/x-api-key/x-goog-api-key` 一律丢弃、换成 adapter 提供的上游鉴权头（`AuthStrategy`：Anthropic→x-api-key / Bearer / Google→x-goog-api-key / OAuth），正是我们「丢弃 Science 虚拟 OAuth、注入第三方 key」所需；`providers/transform*.rs` 双向 Anthropic↔OpenAI/Responses/Gemini，含 SSE + tool_use/tool_result。
    - **两个缺口**：① 入站**无鉴权**（无 path-secret，仅靠 bind localhost）→ 复用要自己加门；② 配置**存 SQLite、非配置文件**（provider 行 + `apiFormat` 字段 `anthropic|openai_chat|openai_responses|gemini_native`，由 GUI/IPC 灌），不是我们能直接写的文件。
    - **结论**：复用 = 把它的 MIT `transform*.rs` 等翻译模块**移植/vendor 进我们自己的（Rust）代理**当参考实现，不是插它的二进制。license MIT（署名即可），但仓库周更（v3.16.5、~2050 commits），fork 有持续跟进成本。证据：本会话 general-purpose 研究 agent（引用 `src-tauri/src/proxy/*`）。
-7. **DeepSeek 接入（默认上游，2026-07-02）**：主代理 `proxy/csswitch_proxy.py`，provider 可切（`--provider deepseek|qwen`）。
+7. **DeepSeek 接入（默认上游，2026-07-02）**：主代理 `proxy/csp_proxy.py`，provider 可切（`--provider deepseek|qwen`）。
    - DeepSeek 走**原生 Anthropic 端点** `https://api.deepseek.com/anthropic/v1/messages`，鉴权头 `x-api-key`，代理只「改模型名 + 换鉴权 + 归一化 thinking + 夹 max_tokens + 重试」，**不翻译协议** → thinking/tool_use 原生保真。
    - 模型：`claude-opus-4-8→deepseek-v4-pro`、`claude-haiku/sonnet→deepseek-v4-flash`。
    - **模型选择器主列表机制（逆向 `s0`/`ZjO`/`XjO`/`hB_`）**：① `s0`：id 必须以 `claude-` 开头否则不显示。② 只有 `ZjO(id)<3`（opus=0/sonnet=1/haiku=2/其它=3）且 `XjO(id)` 命中 `^claude-(opus|sonnet|haiku)-<纯数字版本>$` 的 id 才进【主列表】，每 family 一个；其余折叠进「More models」。所以要让第三方模型平铺，就挂在 `claude-opus-4-8`/`claude-haiku-4-5` 这类主列表 id 上、显示名照写第三方。
@@ -51,6 +51,6 @@
 
 ## 四、其它
 
-- Qwen(DashScope) 为 OpenAI-兼容备选（`--provider qwen`，翻译路径）；`proxy/qwen_proxy.py` 是其早期单 provider 版，已被 `csswitch_proxy.py` 取代。
+- Qwen(DashScope) 为 OpenAI-兼容备选（`--provider qwen`，翻译路径）；`proxy/qwen_proxy.py` 是其早期单 provider 版，已被 `csp_proxy.py` 取代。
 - **已决（2026-07-03）**：CC Switch 代理不能当 sidecar 直接复用（见事实 6）。方向 = 自研代理移 Rust（axum）+ vendor CC Switch 的 MIT 翻译模块拿广覆盖（治本 python-ectomy）。这条独立于「配置层多 profile 化」，各走节奏。见 `known-issues.md` #8。
 - DashScope 兼容端点：`https://dashscope.aliyuncs.com/compatible-mode/v1`。DashScope 偶发连接抖动（SSL EOF `_ssl.c:1129`/握手超时），代理已加连接级重试（4 次退避，仅重试连接错误）。

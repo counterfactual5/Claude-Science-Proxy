@@ -15,7 +15,7 @@ sys.path.insert(0, HERE)
 from mock_upstream import start_mock
 from _capability import loopback_available
 
-PROXY = os.path.join(HERE, "..", "proxy", "csswitch_proxy.py")
+PROXY = os.path.join(HERE, "..", "proxy", "csp_proxy.py")
 SEC = "s3cr3t-test-token"
 
 
@@ -82,7 +82,7 @@ class ProxyAuth(unittest.TestCase):
         cls.logf = os.path.join(tempfile.gettempdir(), f"csswitch-auth-{port}.log")
         open(cls.logf, "w").close()
         env = dict(os.environ, DEEPSEEK_API_KEY="fake-key",
-                   CSSWITCH_UPSTREAM_URL=cls.up_url)
+                   CSP_UPSTREAM_URL=cls.up_url)
         cls.proc = subprocess.Popen(
             [sys.executable, PROXY, "--provider", "deepseek",
              "--port", str(port), "--auth-token", SEC, "--log", cls.logf],
@@ -224,7 +224,7 @@ class ProxyUpstreamErrorPassthrough(unittest.TestCase):
         cls.logf = os.path.join(tempfile.gettempdir(), f"csswitch-401-{port}.log")
         open(cls.logf, "w").close()
         env = dict(os.environ, DEEPSEEK_API_KEY="fake-key",
-                   CSSWITCH_UPSTREAM_URL=cls.up_url)
+                   CSP_UPSTREAM_URL=cls.up_url)
         cls.proc = subprocess.Popen(
             [sys.executable, PROXY, "--provider", "deepseek",
              "--port", str(port), "--auth-token", SEC, "--log", cls.logf],
@@ -262,7 +262,7 @@ class ProxyQwenUpstreamErrorPassthrough(unittest.TestCase):
         cls.logf = os.path.join(tempfile.gettempdir(), f"csswitch-qwen401-{port}.log")
         open(cls.logf, "w").close()
         env = dict(os.environ, DASHSCOPE_API_KEY="fake-key",
-                   CSSWITCH_UPSTREAM_URL=cls.up_url)
+                   CSP_UPSTREAM_URL=cls.up_url)
         cls.proc = subprocess.Popen(
             [sys.executable, PROXY, "--provider", "qwen",
              "--port", str(port), "--auth-token", SEC, "--log", cls.logf],
@@ -299,9 +299,9 @@ class ProxyRelayToolSchemaNormalization(unittest.TestCase):
         cls.base = f"http://127.0.0.1:{port}"
         cls.logf = os.path.join(tempfile.gettempdir(), f"csswitch-relay-tools-{port}.log")
         open(cls.logf, "w").close()
-        env = dict(os.environ, CSSWITCH_RELAY_KEY="fake-relay-key",
-                   CSSWITCH_RELAY_BASE_URL=cls.up_base,
-                   CSSWITCH_RELAY_MODEL="MiniMax-M2")
+        env = dict(os.environ, CSP_RELAY_KEY="fake-relay-key",
+                   CSP_RELAY_BASE_URL=cls.up_base,
+                   CSP_RELAY_MODEL="MiniMax-M2")
         cls.proc = subprocess.Popen(
             [sys.executable, PROXY, "--provider", "relay",
              "--port", str(port), "--auth-token", SEC, "--log", cls.logf],
@@ -352,9 +352,9 @@ class ProxyOpenAICustomModelsDiscovery(unittest.TestCase):
         cls.base = f"http://127.0.0.1:{port}"
         cls.logf = os.path.join(tempfile.gettempdir(), f"csswitch-openai-models-{port}.log")
         open(cls.logf, "w").close()
-        env = dict(os.environ, CSSWITCH_OPENAI_KEY="fake-openai-key",
-                   CSSWITCH_OPENAI_BASE_URL=cls.up_url)
-        env.pop("CSSWITCH_OPENAI_MODEL", None)
+        env = dict(os.environ, CSP_OPENAI_KEY="fake-openai-key",
+                   CSP_OPENAI_BASE_URL=cls.up_url)
+        env.pop("CSP_OPENAI_MODEL", None)
         cls.proc = subprocess.Popen(
             [sys.executable, PROXY, "--provider", "openai-custom",
              "--port", str(port), "--auth-token", SEC, "--log", cls.logf],
@@ -375,7 +375,7 @@ class ProxyOpenAICustomModelsDiscovery(unittest.TestCase):
         cls.stop_up()
 
     def test_models_fetch_starts_without_model_env(self):
-        # 回归 v0.3.3 F1：获取模型 scratch 不带 CSSWITCH_OPENAI_MODEL。
+        # 回归 v0.3.3 F1：获取模型 scratch 不带 CSP_OPENAI_MODEL。
         # 代理应能启动并只为 /models 回源；正式推理由 Rust 侧仍要求 model 必填。
         s, b = _req(f"{self.base}/{SEC}/v1/models")
         self.assertEqual(s, 200, b[:160])
@@ -393,9 +393,9 @@ class ProxyOpenAICustomForcedModelList(unittest.TestCase):
         cls.base = f"http://127.0.0.1:{port}"
         cls.logf = os.path.join(tempfile.gettempdir(), f"csswitch-openai-forced-models-{port}.log")
         open(cls.logf, "w").close()
-        env = dict(os.environ, CSSWITCH_OPENAI_KEY="fake-openai-key",
-                   CSSWITCH_OPENAI_BASE_URL=cls.up_url,
-                   CSSWITCH_OPENAI_MODEL="glm-4.5")
+        env = dict(os.environ, CSP_OPENAI_KEY="fake-openai-key",
+                   CSP_OPENAI_BASE_URL=cls.up_url,
+                   CSP_OPENAI_MODEL="glm-4.5")
         cls.proc = subprocess.Popen(
             [sys.executable, PROXY, "--provider", "openai-custom",
              "--port", str(port), "--auth-token", SEC, "--log", cls.logf],
@@ -445,9 +445,9 @@ class ProxyOpenAIResponses(unittest.TestCase):
         cls.base = f"http://127.0.0.1:{port}"
         cls.logf = os.path.join(tempfile.gettempdir(), f"csswitch-openai-responses-{port}.log")
         open(cls.logf, "w").close()
-        env = dict(os.environ, CSSWITCH_OPENAI_KEY="fake-openai-key",
-                   CSSWITCH_OPENAI_BASE_URL=cls.up_url,
-                   CSSWITCH_OPENAI_MODEL="gpt-5.2")
+        env = dict(os.environ, CSP_OPENAI_KEY="fake-openai-key",
+                   CSP_OPENAI_BASE_URL=cls.up_url,
+                   CSP_OPENAI_MODEL="gpt-5.2")
         cls.proc = subprocess.Popen(
             [sys.executable, PROXY, "--provider", "openai-responses",
              "--port", str(port), "--auth-token", SEC, "--log", cls.logf],

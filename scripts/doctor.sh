@@ -4,23 +4,23 @@
 #   - 绝不打印任何 provider key 的值（只报 present/absent）。
 #   - 端口命中真实实例保留端口 8765 直接失败（铁律）。
 # 覆盖变量（便于测试与自定义）：
-#   CSSWITCH_PROVIDER (生效 template_id，如 deepseek/qwen/glm/xiaomi/…)
-#   CSSWITCH_ADAPTER  (deepseek|qwen|relay)   CSSWITCH_KEY_PRESENT (0|1)
-#   CSSWITCH_PROXY_PORT  CSSWITCH_SANDBOX_PORT  CSP_CONFIG / CSSWITCH_CONFIG (CSP.json 路径)  SCIENCE_BIN
-#   CSSWITCH_DOCTOR_CHECK_REAL_HOME=1  显式 opt-in 后才检查 $HOME/.claude-science 是否存在
+#   CSP_PROVIDER (生效 template_id，如 deepseek/qwen/glm/xiaomi/…)
+#   CSP_ADAPTER  (deepseek|qwen|relay)   CSP_KEY_PRESENT (0|1)
+#   CSP_PROXY_PORT  CSP_SANDBOX_PORT  CSP_CONFIG / CSP_CONFIG (CSP.json 路径)  SCIENCE_BIN
+#   CSP_DOCTOR_CHECK_REAL_HOME=1  显式 opt-in 后才检查 $HOME/.claude-science 是否存在
 set -u
 
-PROVIDER="${CSSWITCH_PROVIDER:-}"
-ADAPTER="${CSSWITCH_ADAPTER:-}"
-KEY_PRESENT="${CSSWITCH_KEY_PRESENT:-0}"
-PROXY_PORT="${CSSWITCH_PROXY_PORT:-18991}"
-SANDBOX_PORT="${CSSWITCH_SANDBOX_PORT:-8990}"
-CONFIG="${CSP_CONFIG:-${CSSWITCH_CONFIG:-$HOME/.csp/CSP.json}}"
+PROVIDER="${CSP_PROVIDER:-}"
+ADAPTER="${CSP_ADAPTER:-}"
+KEY_PRESENT="${CSP_KEY_PRESENT:-0}"
+PROXY_PORT="${CSP_PROXY_PORT:-18991}"
+SANDBOX_PORT="${CSP_SANDBOX_PORT:-8990}"
+CONFIG="${CSP_CONFIG:-${CSP_CONFIG:-$HOME/.csp/CSP.json}}"
 if [ ! -f "$CONFIG" ] && [ -f "$HOME/.csswitch/config.json" ]; then
   CONFIG="$HOME/.csswitch/config.json"
 fi
 SCIENCE_BIN="${SCIENCE_BIN:-/Applications/Claude Science.app/Contents/Resources/bin/claude-science}"
-CHECK_REAL_HOME="${CSSWITCH_DOCTOR_CHECK_REAL_HOME:-0}"
+CHECK_REAL_HOME="${CSP_DOCTOR_CHECK_REAL_HOME:-0}"
 
 WARN=0; FAIL=0
 pass() { echo "  ✓ $1"; }
@@ -85,7 +85,7 @@ if [ "$CHECK_REAL_HOME" = "1" ]; then
   REAL_DIR="$HOME/.claude-science"
   if [ -d "$REAL_DIR" ]; then pass "真实目录存在（显式 opt-in 只读检查，绝不写/删）：$REAL_DIR"; else warn "未见真实 Science 目录（显式 opt-in 只读检查）：$REAL_DIR"; fi
 else
-  pass "真实 HOME 检查默认跳过（未设置 CSSWITCH_DOCTOR_CHECK_REAL_HOME=1，不读取 ~/.claude-science）"
+  pass "真实 HOME 检查默认跳过（未设置 CSP_DOCTOR_CHECK_REAL_HOME=1，不读取 ~/.claude-science）"
 fi
 
 echo "----"

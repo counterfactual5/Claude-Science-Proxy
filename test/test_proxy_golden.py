@@ -3,7 +3,7 @@
 401/429/502。rewrite body 的等价由 test_anthropic_compat 的固定 nonce 接口单测覆盖。
 mock 上游（零真实上游花费，守铁律 4）。
 
-录制/回放：CSSWITCH_GOLDEN_RECORD=1 时把捕获写进 fixture（基线一次性录制）；否则读 fixture 比对。
+录制/回放：CSP_GOLDEN_RECORD=1 时把捕获写进 fixture（基线一次性录制）；否则读 fixture 比对。
 fixture = test/golden/anthropic_nonstream.json：case -> {status, content_type, content_length, body}。
 不录 Date 等动态头。不变式：content_length == len(body)。
 """
@@ -20,7 +20,7 @@ from _capability import loopback_available
 from mock_upstream import start_mock
 
 HERE = os.path.dirname(__file__)
-PROXY = os.path.join(HERE, "..", "proxy", "csswitch_proxy.py")
+PROXY = os.path.join(HERE, "..", "proxy", "csp_proxy.py")
 FIXTURE = os.path.join(HERE, "golden", "anthropic_nonstream.json")
 SEC = "goldentok"
 PORT_OK = 18977   # S0 全局唯一端口：golden 成功路径
@@ -70,8 +70,8 @@ def _parse(raw):
 
 
 def _launch(port, upstream):
-    env = dict(os.environ, DEEPSEEK_API_KEY="fake", CSSWITCH_UPSTREAM_URL=upstream)
-    env.pop("CSSWITCH_TOOLUSE_SHIM", None)   # 默认 off
+    env = dict(os.environ, DEEPSEEK_API_KEY="fake", CSP_UPSTREAM_URL=upstream)
+    env.pop("CSP_TOOLUSE_SHIM", None)   # 默认 off
     proc = subprocess.Popen(
         [sys.executable, PROXY, "--provider", "deepseek", "--port", str(port),
          "--auth-token", SEC],
@@ -96,7 +96,7 @@ class AnthropicNonstreamGolden(unittest.TestCase):
                 "body": resp.decode("utf-8", "replace")}
 
     def test_golden(self):
-        record = os.environ.get("CSSWITCH_GOLDEN_RECORD") == "1"
+        record = os.environ.get("CSP_GOLDEN_RECORD") == "1"
         captured = {}
         # 成功路径：共用一个 json mock + 一个代理。
         up_url, _hits, shutdown = start_mock("json")
@@ -126,7 +126,7 @@ class AnthropicNonstreamGolden(unittest.TestCase):
             os.makedirs(os.path.dirname(FIXTURE), exist_ok=True)
             with open(FIXTURE, "w") as f:
                 json.dump(captured, f, ensure_ascii=False, indent=2, sort_keys=True)
-            self.skipTest("golden 已录制（CSSWITCH_GOLDEN_RECORD=1），跳过比对")
+            self.skipTest("golden 已录制（CSP_GOLDEN_RECORD=1），跳过比对")
         with open(FIXTURE) as f:
             expected = json.load(f)
         self.assertEqual(captured, expected)

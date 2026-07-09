@@ -5,7 +5,7 @@ import unittest
 
 HERE = os.path.dirname(__file__)
 sys.path.insert(0, os.path.join(HERE, "..", "proxy"))
-import csswitch_proxy as cs          # 复用 PROVIDERS 作配置真源
+import csp_proxy as cs          # 复用 PROVIDERS 作配置真源
 import provider_policy as pp
 import anthropic_compat as ac
 

@@ -1,7 +1,7 @@
 """HTTP transport helpers for the CSSwitch Python proxy.
 
 This module owns outbound urllib retry/stream mechanics. The main proxy keeps
-thin wrappers so older tests can still monkeypatch ``csswitch_proxy.http_post``
+thin wrappers so older tests can still monkeypatch ``csp_proxy.http_post``
 and friends.
 """
 import json
