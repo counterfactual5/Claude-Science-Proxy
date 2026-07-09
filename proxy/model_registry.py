@@ -8,6 +8,8 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 
+import model_sort
+
 
 SHELL_POOL = [
     ("claude-opus-4-8", "main"),
@@ -64,6 +66,7 @@ class ModelRegistry:
                 continue
             seen.add(mid)
             cleaned.append(mid)
+        cleaned = model_sort.sort_model_ids(cleaned)
         default_model = str(payload.get("default_model") or "").strip()
         if not default_model and cleaned:
             default_model = cleaned[0]
