@@ -1,6 +1,7 @@
 //! Provider pool：多 profile 同时生效时的注册表合并与 pool 启动参数。
 
 use crate::config;
+use crate::runtime::model_sort;
 use crate::runtime::provider::{
     adapter_for_profile, is_native_adapter, proxy_args_for,
     ProxyLaunch,
@@ -40,20 +41,26 @@ pub(crate) fn registry_slice_for(p: &config::Profile) -> Option<RegistrySlice> {
 }
 
 fn registry_models_for(p: &config::Profile, adapter: &str) -> Option<Vec<String>> {
-    if is_native_adapter(adapter) {
+    let mut models = if is_native_adapter(adapter) {
         if let Some(t) = templates::by_id(&p.template_id) {
             let builtin: Vec<String> = t.builtin_models.iter().map(|s| (*s).to_string()).collect();
             if !builtin.is_empty() {
-                return Some(builtin);
+                builtin
+            } else {
+                return None;
             }
+        } else {
+            return None;
         }
-    }
-    let models = p.effective_models();
-    if models.is_empty() {
-        None
     } else {
-        Some(models)
-    }
+        let m = p.effective_models();
+        if m.is_empty() {
+            return None;
+        }
+        m
+    };
+    model_sort::sort_model_ids(&mut models);
+    Some(models)
 }
 
 /// 合并所有 active profile 的注册表切片为 Python 可消费的 JSON。

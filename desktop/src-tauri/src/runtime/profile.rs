@@ -6,6 +6,7 @@ use crate::runtime::provider::{
     adapter_for_profile, assert_format_supported, is_native_adapter, is_openai_adapter,
     reject_openai_custom_anthropic_base,
 };
+use crate::runtime::model_sort;
 use crate::{config, scratch, templates};
 
 /// 判断模型 id 是否会平铺进 Science 选择器主列表（claude-{opus|sonnet|haiku}-<数字…>）。
@@ -251,11 +252,13 @@ pub(crate) fn update_profile_connection_inner(
                 p.model = m.to_string();
             }
             if let Some(models) = active_models {
-                p.active_models = models
+                let mut sorted: Vec<String> = models
                     .iter()
                     .map(|s| s.trim().to_string())
                     .filter(|s| !s.is_empty())
                     .collect();
+                model_sort::sort_model_ids(&mut sorted);
+                p.active_models = sorted;
             }
             if let Some(d) = default_model {
                 p.default_model = d.to_string();
@@ -354,7 +357,7 @@ impl ConnectionEdit {
     }
 }
 
-/// live 探测结果（id + 能力）∪ builtin，去重（按 id）+ 排序（true>null>false，主列表 id 微调靠前）。
+/// live 探测结果（id + 能力）∪ builtin，去重（按 id）+ 排序（tools 优先 → 版本新→旧 → 主列表 id 靠前）。
 pub(crate) fn merge_and_sort_models(
     live: Vec<(String, Option<bool>)>,
     builtin: &[&str],
@@ -371,14 +374,22 @@ pub(crate) fn merge_and_sort_models(
             merged.push((b.to_string(), None));
         }
     }
-    merged.sort_by_key(|(id, st)| {
-        let cap = match st {
-            Some(true) => 0u8,
+    fn cap_rank(st: &Option<bool>) -> u8 {
+        match st {
+            Some(true) => 0,
             None => 1,
             Some(false) => 2,
-        };
-        let main = if is_main_list_model(id) { 0u8 } else { 1 };
-        (cap, main)
+        }
+    }
+    merged.sort_by(|(id_a, st_a), (id_b, st_b)| {
+        cap_rank(st_a)
+            .cmp(&cap_rank(st_b))
+            .then_with(|| model_sort::compare_models_desc(id_a, id_b))
+            .then_with(|| {
+                let main_a = if is_main_list_model(id_a) { 0u8 } else { 1 };
+                let main_b = if is_main_list_model(id_b) { 0u8 } else { 1 };
+                main_a.cmp(&main_b)
+            })
     });
     merged
         .into_iter()
@@ -706,6 +717,21 @@ mod tests {
         assert!(!is_main_list_model("claude-3-5-sonnet-20241022"));
         assert!(!is_main_list_model("claude-fable-5"));
         assert!(!is_main_list_model("gpt-4o"));
+    }
+
+    #[test]
+    fn merge_and_sort_prefers_tools_then_version_desc() {
+        let live = vec![
+            ("glm-4.5".to_string(), None),
+            ("glm-5.2".to_string(), None),
+            ("glm-4.7".to_string(), None),
+        ];
+        let out = merge_and_sort_models(live, &[]);
+        let ids: Vec<String> = out
+            .iter()
+            .map(|v| v.get("id").unwrap().as_str().unwrap().to_string())
+            .collect();
+        assert_eq!(ids, vec!["glm-5.2", "glm-4.7", "glm-4.5"]);
     }
 
     #[test]
