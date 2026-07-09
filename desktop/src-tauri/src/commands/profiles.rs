@@ -1,6 +1,7 @@
 use serde_json::json;
 use tauri::State;
 
+use crate::runtime::i18n::i18n_err;
 use crate::runtime::profile::{
     build_get_config, create_profile_inner, delete_profile_inner,
     update_profile_connection_inner, update_profile_metadata_inner, ConnectionEdit,
@@ -118,7 +119,7 @@ fn update_profile_connection_inner_cmd(
         let mut candidate = cfg
             .profile_by_id(&id)
             .cloned()
-            .ok_or_else(|| format!("找不到 profile：{id}"))?;
+            .ok_or_else(|| i18n_err("errProfileNotFound", serde_json::json!({ "id": id })))?;
         // 生效【后】的候选连接（None=不改则沿用旧值），active/非 active 共用一份。
         let edit = ConnectionEdit::with_models(
             base_url.clone(),
@@ -134,11 +135,11 @@ fn update_profile_connection_inner_cmd(
         // 保存前守卫（修 P2）：relay/自定义端点清空 base_url → 不可用连接（激活必失败）。
         // 校验生效后的 base_url，空则拒绝落盘、绝不谎报「已保存」；native 走硬编码端点，空无妨。
         if relay_missing_base_url(adapter, &candidate.base_url) {
-            return Err("中转 / 自定义端点必须填写连接地址（base_url），连接未保存。".to_string());
+            return Err(i18n_err("errRelayMissingBaseUrl", serde_json::json!({})));
         }
         // 保存前守卫（修 #9 P1-a）：relay/自定义端点空 model → 无 force → 退回 passthrough（显示 claude）。
         if relay_missing_profile_models(adapter, &candidate) {
-            return Err("中转 / 自定义端点必须选择或填写一个模型，连接未保存。".to_string());
+            return Err(i18n_err("errRelayMissingModel", serde_json::json!({})));
         }
         if cfg.is_profile_active(&id) {
             // active（有正在服务的代理）：validate-before-persist —— 新连接作【内存候选】喂进
@@ -148,12 +149,14 @@ fn update_profile_connection_inner_cmd(
                 set_active_profile_txn(&app, &state, lifecycle.as_ref(), &id, false, Some(&edit))?;
             // 连接编辑：committed:false（scratch 分类失败）也如实作为错误上抛（磁盘未改、代理仍跑旧的）。
             if v.get("committed").and_then(|b| b.as_bool()) == Some(false) {
-                let hint = v
-                    .get("hint")
-                    .and_then(|h| h.as_str())
-                    .unwrap_or("连接校验未通过，连接未保存。")
-                    .to_string();
-                return Err(hint);
+                if let Some(key) = v.get("hint_key").and_then(|k| k.as_str()) {
+                    return Err(serde_json::to_string(&serde_json::json!({
+                        "i18n": key,
+                        "vars": v.get("hint_vars").cloned().unwrap_or(serde_json::json!({})),
+                    }))
+                    .unwrap_or_else(|_| "errConnValidateFailed".to_string()));
+                }
+                return Err(i18n_err("errConnValidateFailed", serde_json::json!({})));
             }
             // active：已连同起正式代理探活并落盘，视为已校验。
             Ok(json!({ "validated": true }))

@@ -26,6 +26,15 @@ pub(crate) fn skip_scratch_verify(native: bool, skip_verify: bool) -> bool {
     skip_verify
 }
 
+/// 回滚结果 i18n 键（前端 `T()` 解析）。
+pub(crate) fn rollback_status_key(restored: bool) -> &'static str {
+    if restored {
+        "rollbackRestored"
+    } else {
+        "rollbackProxyStopped"
+    }
+}
+
 /// 回滚结果措辞（纯函数，P2-e）：restored=true 才说「已回滚到原配置」；恢复失败必须如实说明代理已停，
 /// 绝不谎称回滚成功（比照本项目「如实报告」铁律，掩盖代理已停会误导用户）。
 pub(crate) fn rollback_status_clause(restored: bool) -> &'static str {
