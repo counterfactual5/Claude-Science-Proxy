@@ -18,10 +18,10 @@ pub(crate) struct UiSettings {
     sandbox_port: u16,
 }
 
-/// 端口设置（provider/连接改走 profile CRUD + set_active_profile）。
-/// 经串行器（修 P1-c）：端口一旦变化，正在跑的代理绑在旧端口、正在跑的沙箱又烘死了旧代理 URL，
-/// 与新端口不一致；此处把这条陈旧链路拆掉（只停我们的沙箱、绝不碰 8765），逼下次「一键开始」按新端口重建，
-/// 杜绝「复用旧沙箱指向死端口、UI 却报沿用不变」。
+/// Port settings (provider/connection changes go through profile CRUD + set_active_profile).
+/// Serialized (fix P1-c): when ports change, the running proxy binds the old port and the running sandbox bakes in the old proxy URL,
+/// which no longer matches the new port; this tears down that stale chain (stop our sandbox only, never touch 8765), forcing the next
+/// one-click start to rebuild on the new port—avoiding "reuse old sandbox pointing at dead port while UI says unchanged".
 #[tauri::command]
 pub(crate) async fn set_settings(
     app: tauri::AppHandle,
@@ -50,17 +50,17 @@ fn set_settings_inner(
             old.sandbox_port,
             cfg.sandbox_port,
         );
-        // 拆链路【先】于落盘，且停沙箱结果必须据实处理（修增量 P1）：停不掉就【不改端口】——
-        // 否则会留下「config 已是新端口、旧沙箱仍在旧端口指向旧代理」的不一致态，下次一键还会复用这条死链路。
-        // 保持端口不变则一切仍自洽（旧沙箱指旧代理端口、下次一键在旧端口重建代理，链路照通）。
+        // Tear down chain **before** persist; sandbox stop result must be handled (incremental P1 fix): if stop fails, **do not change ports**—
+        // otherwise config has new ports while old sandbox still points at old proxy → inconsistent; next one-click would reuse dead chain.
+        // Keeping ports unchanged keeps everything consistent (old sandbox → old proxy port; next one-click rebuilds proxy on old port).
         if teardown {
             let mut st = lock(&state);
             stop_sandbox_state(&app, &mut st)
                 .map_err(|e| i18n_err("errPortSandboxStopFailed", json!({ "error": e })))?;
-            lifecycle.bump_generation(); // 停成功后作废在途启动
+            lifecycle.bump_generation(); // After successful stop, invalidate in-flight starts
             st.stop_proxy();
         }
-        // 拆链路成功（或无需拆）→ 才落盘新端口，保证 config 与运行态一致。
+        // Chain torn down (or not needed) → persist new ports so config matches runtime.
         config::update(&dir, move |c| {
             c.proxy_port = cfg.proxy_port;
             c.sandbox_port = cfg.sandbox_port;
@@ -72,24 +72,24 @@ fn set_settings_inner(
 
 #[derive(Deserialize)]
 pub(crate) struct FetchModelsReq {
-    /// 模板 id（决定 builtin / base_url 可编辑性 / 默认 base_url）。
+    /// Template id (controls builtin / base_url editability / default base_url).
     template_id: String,
-    /// 编辑已存 profile 时的实际 api_format；为空则按模板默认值。
+    /// Actual api_format when editing a stored profile; empty uses template default.
     #[serde(default)]
     api_format: Option<String>,
-    /// 自定义模板时用户填的 base_url（不可编辑模板忽略）。
+    /// User-supplied base_url for custom templates (ignored for non-editable templates).
     #[serde(default)]
     base_url: String,
-    /// 用户新填的 key；为空表示沿用 profile_id 已存的 key（后端不回传完整 key）。
+    /// New key from user; empty means keep stored key for profile_id (backend never returns full key).
     #[serde(default)]
     key: String,
-    /// 编辑已存 profile 时传其 id（用于沿用已存 key）。
+    /// Stored profile id when editing (used to keep existing key).
     #[serde(default)]
     profile_id: Option<String>,
 }
 
-/// 「获取可用模型」——纯 scratch 探测：只用临时代理探候选 base_url/key 的 /v1/models，
-/// 绝不写 config、不改 AppState、不碰正在服务 Science 的正式代理。
+/// Fetch available models — pure scratch probe: temp proxy only, candidate base_url/key `/v1/models`,
+/// never writes config, never mutates AppState, never touches the production proxy serving Science.
 #[tauri::command]
 pub(crate) async fn fetch_models(
     app: tauri::AppHandle,
@@ -127,7 +127,7 @@ fn stop_all_inner_cmd(
     lifecycle: SharedLifecycle,
 ) -> Result<(), String> {
     lifecycle.with_serialized(|| {
-        lifecycle.bump_generation(); // 作废任何在途启动（防被停后又拿旧 key 复活）
+        lifecycle.bump_generation(); // Invalidate any in-flight start (prevent revive with old key after stop)
         let mut st = lock(&state);
         let sandbox_res = stop_sandbox_state(&app, &mut st);
         st.stop_proxy();
@@ -156,7 +156,7 @@ fn one_click_login_cmd(
     })
 }
 
-/// 运行时状态灯与诊断快照（内部/脚本用；前端当前不轮询）。
+/// Runtime status lights and diagnostic snapshot (internal/scripts; frontend does not poll today).
 #[tauri::command]
 pub(crate) fn status(state: State<'_, SharedAppState>) -> serde_json::Value {
     runtime_status_snapshot(state.inner())

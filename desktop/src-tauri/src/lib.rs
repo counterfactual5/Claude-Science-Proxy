@@ -1,15 +1,15 @@
-//! CSP 桌面 app 后端（进程管家）。
+//! CSP desktop app backend (process manager).
 //!
-//! 职责：管理「翻译代理」与「沙箱 Science」两个子进程的生命周期；读写
-//! `~/.csp/CSP.json`（多 profile 形态）；把第三方 key 以【环境变量】注入代理子进程
-//! （绝不进 argv）；探活；把沙箱 URL 交系统浏览器打开。已验证的越权/翻译逻辑仍留在
-//! Python/Node/shell 里被当作子进程调用，以保住铁律护栏与已验证行为。
+//! Responsibilities: manage lifecycle of the translation proxy and sandbox Science child processes; read/write
+//! `~/.csp/CSP.json` (multi-profile shape); inject third-party keys into the proxy child via **environment variables**
+//! (never argv); liveness probes; open sandbox URL in the system browser. Verified privilege/translation logic stays in
+//! Python/Node/shell subprocesses to preserve iron-rule guards and verified behavior.
 //!
-//! 运行行为由生效 profile 的 `template_id` 经 [`templates`] 注册表派生出 adapter
-//! （deepseek | qwen | relay | openai-custom | openai-responses），再传给 python 代理 `--provider`。
+//! Runtime behavior derives adapter (deepseek | qwen | relay | openai-custom | openai-responses) from the active
+//! profile's `template_id` via the [`templates`] registry, then passes it to the python proxy as `--provider`.
 //!
-//! 铁律相关：key 只在内存与 0600 的 CSP.json；回显前端只给掩码；沙箱端口/目录护栏
-//! 由被调脚本负责（对 8765 与真实目录失败关闭）；退 app 默认停代理、保留沙箱。
+//! Iron rules: keys only in memory and 0600 CSP.json; frontend gets masked keys only; sandbox port/dir guards
+//! enforced by invoked scripts (fail-closed on 8765 and real dirs); quitting app stops proxy by default, keeps sandbox.
 
 mod commands;
 mod config;
@@ -33,10 +33,10 @@ pub(crate) struct AppState {
     pub(crate) proxy: Option<Child>,
     pub(crate) proxy_port: u16,
     pub(crate) secret: String,
-    /// 当前代理进程所用 adapter 名（deepseek | qwen | relay | openai-custom | openai-responses）；用于健康复用判定。
+    /// Current proxy adapter name (deepseek | qwen | relay | openai-custom | openai-responses); used for healthy reuse checks.
     pub(crate) provider: String,
-    /// 当前代理进程所用 key 的非加密指纹（仅内存、绝不落盘/打印）。
-    /// 换 key/换上游后指纹变化 → 触发重启，避免复用带旧配置的代理。
+    /// Non-cryptographic fingerprint of the proxy's current key (memory only, never persisted/logged).
+    /// Key/upstream change → fingerprint changes → triggers restart to avoid reusing a proxy with stale config.
     pub(crate) key_fp: u64,
     pub(crate) sandbox: Option<Child>,
     pub(crate) sandbox_port: u16,
@@ -59,7 +59,7 @@ impl AppState {
 pub(crate) type SharedAppState = Arc<Mutex<AppState>>;
 pub(crate) type SharedLifecycle = Arc<lifecycle::Lifecycle>;
 
-/// 取锁并从 poison 中恢复：某线程持锁时 panic 不应把整个 app 卡死。
+/// Lock and recover from poison: a panicking thread holding the lock must not deadlock the whole app.
 pub(crate) fn lock(m: &Mutex<AppState>) -> std::sync::MutexGuard<'_, AppState> {
     m.lock().unwrap_or_else(|e| e.into_inner())
 }
@@ -75,7 +75,7 @@ where
         .map_err(|e| format!("后台任务失败：{e}"))?
 }
 
-// ---------- 入口 ----------
+// ---------- Entry ----------
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -96,14 +96,14 @@ pub fn run() {
             commands::runtime::status,
         ])
         .setup(|app| {
-            // 正常桌面应用：进 Dock、走常规应用生命周期。窗口在 tauri.conf.json 里配了
-            // decorations + visible + center，启动即居中弹出、可拖动。托盘图标已移除。
+            // Normal desktop app: Dock icon, standard lifecycle. Window in tauri.conf.json has
+            // decorations + visible + center for centered popup on launch. Tray icon removed.
 
-            // 启动即触发一次 load：若是旧 v1 固定槽文件，这里完成 v1→v2 迁移 + 落盘 + 留 .v1.bak；
-            // 悬空 active 归一化为空。迁移逻辑并入 config::load_from（不再单独跑 relay_presets）。
+            // Eager load on startup: if legacy v1 fixed-slot file, v1→v2 migration + persist + .v1.bak here;
+            // dangling active normalized to empty. Migration merged into config::load_from (no separate relay_presets).
             let _ = config::load_from(&config::default_dir());
 
-            // 关窗即退出：停代理、清 secret，保留沙箱运行（spec §5.1）。
+            // Close window → quit: stop proxy, clear secret, keep sandbox running (spec §5.1).
             if let Some(win) = app.get_webview_window("main") {
                 let handle = app.handle().clone();
                 win.on_window_event(move |ev| {
