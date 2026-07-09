@@ -94,17 +94,6 @@ pub(crate) fn ensure_proxy<R: Runtime>(
     start_proxy_for_profiles(app, state, lifecycle, &profiles, trace)
 }
 
-/// Start or reuse a proxy for one profile (legacy single-profile path).
-pub(crate) fn start_proxy_for<R: Runtime>(
-    app: &tauri::AppHandle<R>,
-    state: &SharedAppState,
-    lifecycle: &lifecycle::Lifecycle,
-    profile: &config::Profile,
-    trace: Option<&OperationTrace>,
-) -> Result<(u16, String, ProxyAction), String> {
-    start_proxy_for_profiles(app, state, lifecycle, std::slice::from_ref(profile), trace)
-}
-
 /// Start or reuse a proxy for one or more active profiles (pool when len > 1).
 pub(crate) fn start_proxy_for_profiles<R: Runtime>(
     app: &tauri::AppHandle<R>,

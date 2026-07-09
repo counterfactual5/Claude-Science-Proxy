@@ -7,7 +7,7 @@
 //!   2. `AppState` 锁 = 内层，读写运行态时短暂持有，探活期间释放；
 //!   3. `config::update` 锁 = 最内层，仅盖 load-modify-save。
 //!
-//! ensure_proxy/start_proxy_for **绝不**取本串行器锁（其调用方命令才取），故不自锁。
+//! ensure_proxy/start_proxy_for_profiles **绝不**取本串行器锁（其调用方命令才取），故不自锁。
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;

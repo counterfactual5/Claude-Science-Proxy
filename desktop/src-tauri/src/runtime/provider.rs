@@ -219,10 +219,6 @@ pub(crate) fn relay_missing_base_url(adapter: &str, base_url: &str) -> bool {
 }
 
 /// 保存/激活前守卫：非 native 家族没有可用模型列表。
-pub(crate) fn relay_missing_model(adapter: &str, model: &str) -> bool {
-    !is_native_adapter(adapter) && model.trim().is_empty()
-}
-
 pub(crate) fn relay_missing_profile_models(adapter: &str, profile: &config::Profile) -> bool {
     !is_native_adapter(adapter) && profile.effective_models().is_empty()
 }
@@ -254,7 +250,7 @@ mod tests {
         adapter_for_profile, assert_format_supported, gateway_kind_for_adapter,
         key_env_for_adapter, key_fingerprint, normalize_shim_mode, parse_endpoint, proxy_args_for,
         proxy_fingerprint, proxy_fingerprint_with_runtime, reject_openai_custom_anthropic_base,
-        relay_missing_base_url, relay_missing_model, should_scratch_candidate, upstream_endpoint,
+        relay_missing_base_url, relay_missing_profile_models, should_scratch_candidate, upstream_endpoint,
     };
     use crate::config::Profile;
 
@@ -534,13 +530,16 @@ mod tests {
 
     #[test]
     fn relay_empty_model_is_rejected() {
-        // 修 #9 P1-a：relay/自定义端点空（或纯空白）model -> 拦下。
-        assert!(relay_missing_model("relay", ""));
-        assert!(relay_missing_model("glm", "   "));
-        assert!(relay_missing_model("custom", ""));
-        assert!(!relay_missing_model("relay", "glm-5.2"));
-        // native 走内置映射/硬编码端点，model 可空 -> 不拦。
-        assert!(!relay_missing_model("deepseek", ""));
-        assert!(!relay_missing_model("qwen", ""));
+        let empty = Profile::default();
+        assert!(relay_missing_profile_models("relay", &empty));
+        assert!(relay_missing_profile_models("glm", &empty));
+        assert!(relay_missing_profile_models("custom", &empty));
+        let with_model = Profile {
+            model: "glm-5.2".into(),
+            ..Default::default()
+        };
+        assert!(!relay_missing_profile_models("relay", &with_model));
+        assert!(!relay_missing_profile_models("deepseek", &empty));
+        assert!(!relay_missing_profile_models("qwen", &empty));
     }
 }
