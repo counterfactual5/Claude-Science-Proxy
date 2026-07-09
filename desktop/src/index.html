@@ -13,13 +13,23 @@
         <div class="brand" data-tauri-drag-region>CSSwitch</div>
       </div>
 
-      <div class="sec" id="listSec">
-        <div class="listhd">
-          <label>我的配置</label>
-          <button class="btn small" id="newBtn">＋ 新建</button>
+      <div class="panel-body list-only">
+        <div class="sec" id="listSec">
+          <div class="listhd">
+            <label>我的配置</label>
+            <button class="btn small" id="newBtn">＋ 新建</button>
+          </div>
+          <div id="profileList"></div>
+          <button class="btn small" id="skipActivateBtn" hidden style="margin-top:8px;width:100%">校验没过，仍要启用这条</button>
         </div>
-        <div id="profileList"></div>
-        <button class="btn small" id="skipActivateBtn" hidden style="margin-top:8px;width:100%">校验没过，仍要启用这条</button>
+
+        <details class="sec adv" id="advSec">
+          <summary>高级设置</summary>
+          <div class="ports">
+            <div class="fld"><label for="proxyPort">代理端口</label><input id="proxyPort" inputmode="numeric" value="18991" /></div>
+            <div class="fld"><label for="sandboxPort">沙箱端口</label><input id="sandboxPort" inputmode="numeric" value="8990" /></div>
+          </div>
+        </details>
       </div>
 
       <!-- 新建向导：选模板 → 预填 → 填 key → 创建（不自动生效） -->
@@ -49,10 +59,10 @@
           <button class="btn small" id="wizSaveBtn">创建</button>
           <button class="btn small" id="wizCancelBtn">取消</button>
         </div>
-      </div>
+        </div>
 
-      <!-- 连接编辑（名称/base_url/model/key） -->
-      <div class="sec" id="connSec" hidden>
+        <!-- 连接编辑（名称/base_url/model/key） -->
+        <div class="sec" id="connSec" hidden>
         <label id="connTitle">编辑</label>
         <label style="margin-top:6px" for="connName">名称</label>
         <input id="connName" type="text" autocomplete="off" spellcheck="false" />
@@ -77,17 +87,10 @@
         </div>
       </div>
 
-      <details class="sec adv" id="advSec">
-        <summary>高级设置</summary>
-        <div class="ports">
-          <div class="fld"><label for="proxyPort">代理端口</label><input id="proxyPort" inputmode="numeric" value="18991" /></div>
-          <div class="fld"><label for="sandboxPort">沙箱端口</label><input id="sandboxPort" inputmode="numeric" value="8990" /></div>
-        </div>
-      </details>
-
       <!-- 反馈消息：有真实反馈（表单错误 / 回滚 / 保存结果 / 自检）才显示，空闲不占位。 -->
       <div class="sec feedback" hidden>
         <div class="msg" id="msg" role="status" aria-live="polite"></div>
+      </div>
       </div>
 
       <!-- 运行控制区：仅列表视图显示（表单视图由 .view-form 隐藏）。 -->
