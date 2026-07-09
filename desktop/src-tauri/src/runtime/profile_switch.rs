@@ -173,13 +173,8 @@ pub(crate) fn set_active_profile_txn(
                 }
             }) {
                 trace.stage(OperationStage::Rollback, "reason=config_write_failed");
-                let restored = restore_proxy_for_active_set(
-                    app,
-                    state,
-                    lifecycle,
-                    &cfg,
-                    Some(&trace),
-                );
+                let restored =
+                    restore_proxy_for_active_set(app, state, lifecycle, &cfg, Some(&trace));
                 trace.finish(format!("error=config_write_failed restored={restored}"));
                 return Err(format!(
                     "校验通过、代理已起，但写盘失败（{e}），{}。请检查磁盘空间/权限后重试。",
@@ -202,8 +197,7 @@ pub(crate) fn set_active_profile_txn(
         }
         SwitchOutcome::RollbackToOld => {
             trace.stage(OperationStage::Rollback, "reason=proxy_unhealthy");
-            let restored =
-                restore_proxy_for_active_set(app, state, lifecycle, &cfg, Some(&trace));
+            let restored = restore_proxy_for_active_set(app, state, lifecycle, &cfg, Some(&trace));
             let clause = rollback_status_clause(restored);
             trace.finish(format!("rollback restored={restored}"));
             if is_edit {
@@ -270,7 +264,7 @@ pub(crate) fn deactivate_profile_from_pool_txn(
         }));
     }
     let old_ids = cfg.active_ids.clone();
-#[allow(clippy::needless_borrows_for_generic_args)]
+    #[allow(clippy::needless_borrows_for_generic_args)]
     let mut next_ids: Vec<String> = cfg
         .active_ids
         .iter()
@@ -292,8 +286,7 @@ pub(crate) fn deactivate_profile_from_pool_txn(
         .iter()
         .filter_map(|pid| cfg.profile_by_id(pid).cloned())
         .collect();
-    let healthy =
-        start_proxy_for_profiles(app, state, lifecycle, &profiles, None).is_ok();
+    let healthy = start_proxy_for_profiles(app, state, lifecycle, &profiles, None).is_ok();
     if !healthy {
         lifecycle.bump_generation();
         let rollback_profiles: Vec<config::Profile> = old_ids
@@ -485,25 +478,4 @@ fn restore_proxy_for_active_set(
     }
     lifecycle.bump_generation();
     start_proxy_for_profiles(app, state, lifecycle, &profiles, trace).is_ok()
-}
-
-#[allow(dead_code)]
-fn restore_proxy_for_active(
-    app: &tauri::AppHandle,
-    state: &SharedAppState,
-    lifecycle: &lifecycle::Lifecycle,
-    cfg: &config::Config,
-    old_active: &str,
-    trace: Option<&OperationTrace>,
-) -> bool {
-    if old_active.is_empty() {
-        return true;
-    }
-    match cfg.profile_by_id(old_active) {
-        Some(old) => {
-            lifecycle.bump_generation();
-            start_proxy_for(app, state, lifecycle, old, trace).is_ok()
-        }
-        None => false,
-    }
 }

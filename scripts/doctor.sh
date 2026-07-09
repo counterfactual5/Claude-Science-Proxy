@@ -6,7 +6,7 @@
 # 覆盖变量（便于测试与自定义）：
 #   CSSWITCH_PROVIDER (生效 template_id，如 deepseek/qwen/glm/xiaomi/…)
 #   CSSWITCH_ADAPTER  (deepseek|qwen|relay)   CSSWITCH_KEY_PRESENT (0|1)
-#   CSSWITCH_PROXY_PORT  CSSWITCH_SANDBOX_PORT  CSSWITCH_CONFIG (config.json 路径)  SCIENCE_BIN
+#   CSSWITCH_PROXY_PORT  CSSWITCH_SANDBOX_PORT  CSP_CONFIG / CSSWITCH_CONFIG (CSP.json 路径)  SCIENCE_BIN
 #   CSSWITCH_DOCTOR_CHECK_REAL_HOME=1  显式 opt-in 后才检查 $HOME/.claude-science 是否存在
 set -u
 
@@ -15,7 +15,10 @@ ADAPTER="${CSSWITCH_ADAPTER:-}"
 KEY_PRESENT="${CSSWITCH_KEY_PRESENT:-0}"
 PROXY_PORT="${CSSWITCH_PROXY_PORT:-18991}"
 SANDBOX_PORT="${CSSWITCH_SANDBOX_PORT:-8990}"
-CONFIG="${CSSWITCH_CONFIG:-$HOME/.csswitch/config.json}"
+CONFIG="${CSP_CONFIG:-${CSSWITCH_CONFIG:-$HOME/.csp/CSP.json}}"
+if [ ! -f "$CONFIG" ] && [ -f "$HOME/.csswitch/config.json" ]; then
+  CONFIG="$HOME/.csswitch/config.json"
+fi
 SCIENCE_BIN="${SCIENCE_BIN:-/Applications/Claude Science.app/Contents/Resources/bin/claude-science}"
 CHECK_REAL_HOME="${CSSWITCH_DOCTOR_CHECK_REAL_HOME:-0}"
 
@@ -37,12 +40,12 @@ echo "[Science 二进制]"
 if [ -x "$SCIENCE_BIN" ]; then pass "找到 $SCIENCE_BIN"; else warn "未找到 Science 二进制（一键越登录需要）：$SCIENCE_BIN"; fi
 
 echo "[生效配置]"
-# 多 profile：key 存 config.json（不再看 shell 环境变量）。app 传来 template_id + adapter +
+# 多 profile：key 存 CSP.json（不再看 shell 环境变量）。app 传来 template_id + adapter +
 # key 有无（KEY_PRESENT）。任一模板都不该在这里「未知 provider」失败。
 if [ -z "$PROVIDER" ]; then
   warn "当前没有「生效」配置（在面板点「设为当前」选一条）"
 elif [ "$KEY_PRESENT" = "1" ]; then
-  pass "生效来源：${PROVIDER}（${ADAPTER:-?} 适配器）· key 已配置在 config.json（值不显示）"
+  pass "生效来源：${PROVIDER}（${ADAPTER:-?} 适配器）· key 已配置在 CSP.json（值不显示）"
 else
   warn "生效来源：${PROVIDER}（${ADAPTER:-?} 适配器）· 尚未填 key（在面板该配置里粘贴）"
 fi

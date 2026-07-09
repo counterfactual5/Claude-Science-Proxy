@@ -922,7 +922,7 @@ function wire() {
   [
     "oneClickBtn", "stopBtn",
     "msg", "proxyPort", "sandboxPort", "advSec",
-    "listSec", "profileList", "newBtn", "skipActivateBtn",
+    "listSec", "profileList", "newBtn", "editCspJsonBtn", "skipActivateBtn",
     "wizSec", "wizName", "wizBase", "wizBaseHint", "wizKey", "wizSaveBtn", "wizCancelBtn",
     "connSec", "connTitle", "connName", "connBase", "connBaseHint",
     "connModelInfo", "connModel", "connModelHint", "connModelPick", "connKey", "connSaveBtn", "connCancelBtn",
@@ -969,6 +969,15 @@ function wire() {
   });
 
   els.newBtn.addEventListener("click", openWizard);
+  els.editCspJsonBtn.addEventListener("click", async () => {
+    if (busy) return;
+    try {
+      const path = await call("open_csp_json");
+      setMsg("已在系统编辑器中打开 " + path, "ok");
+    } catch (e) {
+      setMsg("打开 CSP.json 失败：" + e, "err");
+    }
+  });
   els.skipActivateBtn.addEventListener("click", () => {
     const id = pendingSkipActivateId;
     if (id) activate(id, true);
@@ -991,6 +1000,9 @@ function wire() {
 window.addEventListener("DOMContentLoaded", async () => {
   wire();
   await loadConfig();
+  window.addEventListener("focus", () => {
+    if (!busy) loadConfig().catch(() => {});
+  });
   if (PREVIEW) {
     setMsg("预览模式：仅看界面，按钮不连后端（真实 app 里会连进程管家）。");
   }

@@ -569,7 +569,7 @@ mod tests {
         clear_profile_key_inner(&d, &id).unwrap();
         let cfg = config::load_from(&d).unwrap();
         assert_eq!(cfg.profile_by_id(&id).unwrap().api_key, "");
-        assert!(!d.join("config.json.bak").exists(), "清 key 后净化滚动备份");
+        assert!(!d.join("CSP.json.bak").exists(), "清 key 后净化滚动备份");
     }
 
     #[test]

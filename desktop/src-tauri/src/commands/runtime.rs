@@ -648,7 +648,7 @@ esac
         assert_eq!(first["url"], format!("http://127.0.0.1:{sandbox_port}"));
         wait_http_health(sandbox_port);
         let fake_state_dir = home
-            .join(".csswitch")
+            .join(".csp")
             .join("sandbox")
             .join("home")
             .join(".claude-science")
@@ -683,10 +683,12 @@ esac
         assert_eq!(status["science"]["auth"]["real_home_verified"], false);
         assert!(status["last_error"].is_null());
 
+        let csp_config = config_dir.join("CSP.json");
         let doctor = std::process::Command::new(root.join("scripts/doctor.sh"))
             .env("HOME", &home)
             .env("SCIENCE_BIN", &fake_science)
-            .env("CSSWITCH_CONFIG", config_dir.join("config.json"))
+            .env("CSP_CONFIG", &csp_config)
+            .env("CSSWITCH_CONFIG", &csp_config)
             .env("CSSWITCH_PROXY_PORT", proxy_port.to_string())
             .env("CSSWITCH_SANDBOX_PORT", sandbox_port.to_string())
             .output()

@@ -293,6 +293,19 @@ pub(crate) async fn toggle_profile_active(
 }
 
 #[tauri::command]
+pub(crate) fn open_csp_json() -> Result<String, String> {
+    let dir = config::default_dir();
+    config::ensure_dir(&dir).map_err(|e| e.to_string())?;
+    let path = dir.join(config::CONFIG_BASENAME);
+    if !path.exists() {
+        let cfg = config::load_from(&dir).map_err(|e| e.to_string())?;
+        config::save_to(&dir, &cfg).map_err(|e| e.to_string())?;
+    }
+    crate::runtime::system::open_path_in_default_app(&path)?;
+    Ok(path.display().to_string())
+}
+
+#[tauri::command]
 pub(crate) fn export_csp_edit_json() -> Result<String, String> {
     crate::runtime::config_edit::export_csp_edit_json(&config::default_dir())
 }

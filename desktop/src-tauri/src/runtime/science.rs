@@ -11,7 +11,7 @@ use super::system::{asset_root, kill_child};
 pub(crate) const SCIENCE_BIN: &str =
     "/Applications/Claude Science.app/Contents/Resources/bin/claude-science";
 
-/// 沙箱可写工作目录（独立 HOME）：`~/.csswitch/sandbox/home`。
+/// 沙箱可写工作目录（独立 HOME）：`~/.csp/sandbox/home`。
 pub(crate) fn sandbox_home() -> PathBuf {
     config::default_dir().join("sandbox").join("home")
 }
@@ -319,8 +319,8 @@ mod tests {
         let h = sandbox_home();
         assert!(h.ends_with("sandbox/home"), "应以 sandbox/home 结尾：{h:?}");
         assert!(
-            h.to_string_lossy().contains(".csswitch"),
-            "应在 .csswitch 下：{h:?}"
+            h.to_string_lossy().contains(".csp"),
+            "应在 .csp 下：{h:?}"
         );
     }
 
