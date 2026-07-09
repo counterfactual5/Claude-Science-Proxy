@@ -472,14 +472,7 @@ pub fn load_from(dir: &Path) -> io::Result<Config> {
                         format!("旧 config 解析失败：{e}"),
                     )
                 })?;
-            let mut cfg = normalize_active(migrate_v1_to_v2(legacy));
-            let filled = backfill_relay_models(&mut cfg);
-            if !filled.is_empty() {
-                cfg.pending_notice = Some(format!(
-                    "已为 {} 个旧配置补上默认模型（可在连接编辑修改）。",
-                    filled.len()
-                ));
-            }
+            let cfg = normalize_active(migrate_v1_to_v2(legacy));
             validate_loaded_ports(&cfg)?;
             save_to(dir, &cfg)?; // 落盘为 v2（幂等，下次读走 V2 分支）
             Ok(cfg)
@@ -491,14 +484,7 @@ pub fn load_from(dir: &Path) -> io::Result<Config> {
                     format!("config.json 解析失败：{e}"),
                 )
             })?;
-            let mut cfg = migrate_v3_to_v4(migrate_v2_to_v3(normalize_active(cfg)));
-            let filled = backfill_relay_models(&mut cfg);
-            if !filled.is_empty() {
-                cfg.pending_notice = Some(format!(
-                    "已为 {} 个旧配置补上默认模型（可在连接编辑修改）。",
-                    filled.len()
-                ));
-            }
+            let cfg = migrate_v3_to_v4(migrate_v2_to_v3(normalize_active(cfg)));
             validate_loaded_ports(&cfg)?;
             save_to(dir, &cfg)?;
             Ok(cfg)
@@ -513,13 +499,6 @@ pub fn load_from(dir: &Path) -> io::Result<Config> {
             let mut cfg = migrate_v3_to_v4(normalize_active(cfg));
             for p in cfg.profiles.iter_mut() {
                 p.sync_model_fields();
-            }
-            let filled = backfill_relay_models(&mut cfg);
-            if !filled.is_empty() {
-                cfg.pending_notice = Some(format!(
-                    "已为 {} 个旧配置补上默认模型（可在连接编辑修改）。",
-                    filled.len()
-                ));
             }
             validate_loaded_ports(&cfg)?;
             save_to(dir, &cfg)?;
