@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# S0 loopback 层：需 127.0.0.1 bind/connect。禁则整层 env-blocked（非 fail）。
-# 已知低频 mock-timing race（跨测试类 /health 就绪等待不一致）：以有界重试在本层吸收，
-# 绝不吞掉真失败：重试用尽仍失败则明确 fail，重试过程本身也全程可见（非静默）。
+# S0 loopback layer: requires 127.0.0.1 bind/connect. If blocked, whole layer env-blocked (not fail).
+# Known low-frequency mock-timing race (cross-class /health readiness wait mismatch): absorb with bounded retry,
+# never swallow real failures: exhausted retries → explicit fail; retry progress stays visible (not silent).
 set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"; cd "$ROOT"
 if ! command -v python3 >/dev/null 2>&1; then
@@ -12,7 +12,7 @@ if [ "$(python3 test/_capability.py)" != "1" ]; then
   echo "S0_LAYER loopback env-blocked (loopback not permitted)"; exit 0
 fi
 
-# CSP_LOOPBACK_TEST_CMD 仅测试用：注入确定性 pass/fail 桩以验证重试逻辑，不用于正常运行。
+# CSP_LOOPBACK_TEST_CMD is test-only: inject deterministic pass/fail stubs to verify retry logic, not for normal runs.
 run_loopback_once() {
   if [ -n "${CSP_LOOPBACK_TEST_CMD:-}" ]; then
     eval "$CSP_LOOPBACK_TEST_CMD"

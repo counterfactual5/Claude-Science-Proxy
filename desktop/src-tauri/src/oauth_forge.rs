@@ -830,9 +830,9 @@ mod tests {
         );
         assert!(
             outside.join(".oauth-tokens/victim.enc").exists(),
-            "旧 .enc 不该被删"
+            "stale .enc must not be deleted"
         );
-        assert!(!outside.join("active-org.json").exists(), "不该写入目标");
+        assert!(!outside.join("active-org.json").exists(), "must not write to symlink target");
         for d in [root, outside, fake_real] {
             let _ = std::fs::remove_dir_all(&d);
         }
@@ -847,7 +847,7 @@ mod tests {
         assert!(r.unwrap_err().contains("localhost.invalid"));
     }
 
-    // ---- node ↔ rust 双向对拍：证明与 .mjs 的 v2 GCM 格式字节兼容（无 node 则跳过）----
+    // ---- node ↔ rust cross-compat: byte-level v2 GCM format matches .mjs (skip if no node) ----
     fn repo_root() -> PathBuf {
         // CARGO_MANIFEST_DIR = <repo>/desktop/src-tauri
         Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("..")
@@ -865,7 +865,7 @@ mod tests {
     #[test]
     fn crosscompat_rust_reads_node_and_node_reads_rust() {
         if !have_node() {
-            eprintln!("跳过：环境无 node");
+            eprintln!("skip: node not available in environment");
             return;
         }
         let root = repo_root();
@@ -873,7 +873,7 @@ mod tests {
         let decrypt_mjs = root.join("test/decrypt-oauth.mjs");
         let email = "virtual@localhost.invalid";
 
-        // 方向 1：node 伪造 → rust 解密读回。
+        // Direction 1: node forge → rust decrypt readback.
         let dir_n = tmpdir("node2rust");
         let st = std::process::Command::new("node")
             .arg(&mjs)
@@ -883,15 +883,15 @@ mod tests {
             .stdout(std::process::Stdio::null())
             .status()
             .unwrap();
-        assert!(st.success(), "node 伪造应成功");
+        assert!(st.success(), "node forge should succeed");
         let key = read_oauth_key(&dir_n);
         let body = std::fs::read_to_string(the_enc_file(&dir_n)).unwrap();
         let blob: serde_json::Value =
             serde_json::from_slice(&decrypt_token_v2(&body, &key).unwrap()).unwrap();
-        assert_eq!(blob["email"], email, "rust 应能解开 node 的 .enc");
+        assert_eq!(blob["email"], email, "rust should decrypt node's .enc");
         assert_eq!(blob["provider"], "claude_ai");
 
-        // 方向 2：rust 伪造 → node 解密读回。
+        // Direction 2: rust forge → node decrypt readback.
         let dir_r = tmpdir("rust2node");
         let fake_real = tmpdir("realcred4");
         forge_guarded(&dir_r, email, &dir_r, &fake_real).unwrap();
@@ -903,13 +903,13 @@ mod tests {
             .unwrap();
         assert!(
             out.status.success(),
-            "node 解密应成功：{}",
+            "node decrypt should succeed: {}",
             String::from_utf8_lossy(&out.stderr)
         );
         let printed = String::from_utf8_lossy(&out.stdout);
         assert!(
             printed.contains(email),
-            "node 应能解开 rust 的 .enc，输出：{printed}"
+            "node should decrypt rust .enc, output: {printed}"
         );
         assert!(printed.contains("claude_ai"));
 
@@ -918,7 +918,7 @@ mod tests {
         }
     }
 
-    // ---------- 幂等 ensure_virtual_login ----------
+    // ---------- Idempotent ensure_virtual_login ----------
     fn read_active_org_uuid(auth_dir: &Path) -> String {
         let v: serde_json::Value = serde_json::from_str(
             &std::fs::read_to_string(auth_dir.join("active-org.json")).unwrap(),
@@ -938,17 +938,17 @@ mod tests {
         let key0 = std::fs::read(dir.join("encryption.key")).unwrap();
         let (r, action) = ensure_virtual_login_guarded(&dir, email, &dir, &fake_real).unwrap();
         assert_eq!(action, LoginAction::Reused);
-        assert_eq!(r.org_uuid, first.org_uuid, "org 不变");
+        assert_eq!(r.org_uuid, first.org_uuid, "org unchanged");
         assert_eq!(r.org_uuid, org0);
         assert_eq!(
             std::fs::read(the_enc_file(&dir)).unwrap(),
             enc0,
-            ".enc 字节不变"
+            ".enc bytes unchanged"
         );
         assert_eq!(
             std::fs::read(dir.join("encryption.key")).unwrap(),
             key0,
-            "key 字节不变"
+            "key bytes unchanged"
         );
         for d in [dir, fake_real] {
             let _ = std::fs::remove_dir_all(&d);
@@ -978,7 +978,7 @@ mod tests {
         std::fs::remove_file(the_enc_file(&dir)).unwrap();
         let (r, action) = ensure_virtual_login_guarded(&dir, email, &dir, &fake_real).unwrap();
         assert_eq!(action, LoginAction::Repaired);
-        assert_eq!(r.org_uuid, org0, "修复必须沿用原 org");
+        assert_eq!(r.org_uuid, org0, "repair must keep original org");
         assert_eq!(read_active_org_uuid(&dir), org0);
         let key = read_oauth_key(&dir);
         let body = std::fs::read_to_string(the_enc_file(&dir)).unwrap();
@@ -999,7 +999,7 @@ mod tests {
         let (r, action) = ensure_virtual_login_guarded(&dir, email, &dir, &fake_real).unwrap();
         assert_eq!(action, LoginAction::Repaired);
         assert_eq!(r.org_uuid, org0);
-        let _ = the_enc_file(&dir); // 内部断言恰好一个 .enc
+        let _ = the_enc_file(&dir); // internal assert: exactly one .enc
         for d in [dir, fake_real] {
             let _ = std::fs::remove_dir_all(&d);
         }
@@ -1021,12 +1021,12 @@ mod tests {
         assert_eq!(
             action,
             LoginAction::Repaired,
-            "active-org.json 仍在 → 修复而非铸新"
+            "active-org.json still present → repair not mint"
         );
-        assert_eq!(r.org_uuid, org0, "换 key 也不换 org");
+        assert_eq!(r.org_uuid, org0, "org unchanged when key rotated");
         let key = read_oauth_key(&dir);
         let body = std::fs::read_to_string(the_enc_file(&dir)).unwrap();
-        assert!(decrypt_token_v2(&body, &key).is_ok(), "重铸令牌应可解");
+        assert!(decrypt_token_v2(&body, &key).is_ok(), "reminted token should decrypt");
         for d in [dir, fake_real] {
             let _ = std::fs::remove_dir_all(&d);
         }
@@ -1049,7 +1049,7 @@ mod tests {
 
     #[test]
     fn ensure_recovers_org_from_token_when_active_org_missing() {
-        // P1a：active-org.json 丢了，但 .enc 可解 → 从 token 取回原 org，绝不铸新。
+        // P1a: active-org.json missing but .enc decryptable → recover org from token, never mint new.
         let dir = tmpdir("tok-org");
         let fake_real = tmpdir("realcred-to");
         let email = "virtual@localhost.invalid";
@@ -1058,11 +1058,11 @@ mod tests {
         std::fs::remove_file(dir.join("active-org.json")).unwrap();
         let (r, action) = ensure_virtual_login_guarded(&dir, email, &dir, &fake_real).unwrap();
         assert_eq!(action, LoginAction::Repaired);
-        assert_eq!(r.org_uuid, org0, "应从 token 取回原 org");
+        assert_eq!(r.org_uuid, org0, "should recover org from token");
         assert_eq!(
             read_active_org_uuid(&dir),
             org0,
-            "active-org.json 应写回同 org"
+            "active-org.json should be rewritten with same org"
         );
         for d in [dir, fake_real] {
             let _ = std::fs::remove_dir_all(&d);
@@ -1071,7 +1071,7 @@ mod tests {
 
     #[test]
     fn ensure_adopts_single_org_dir_when_active_and_token_gone() {
-        // P1a：active-org.json 和 .enc 都没了，但 orgs/ 下恰好一个历史 org → 采用它。
+        // P1a: active-org.json and .enc gone, but exactly one historical org under orgs/ → adopt it.
         let dir = tmpdir("one-orgdir");
         let fake_real = tmpdir("realcred-1o");
         let email = "virtual@localhost.invalid";
@@ -1082,7 +1082,7 @@ mod tests {
         std::fs::remove_file(dir.join("active-org.json")).unwrap();
         let (r, action) = ensure_virtual_login_guarded(&dir, email, &dir, &fake_real).unwrap();
         assert_eq!(action, LoginAction::Repaired);
-        assert_eq!(r.org_uuid, org0, "应采用唯一历史 org 目录");
+        assert_eq!(r.org_uuid, org0, "should adopt sole historical org dir");
         assert_eq!(read_active_org_uuid(&dir), org0);
         for d in [dir, fake_real] {
             let _ = std::fs::remove_dir_all(&d);
@@ -1091,7 +1091,7 @@ mod tests {
 
     #[test]
     fn ensure_errors_on_ambiguous_multi_org() {
-        // P1a：无 active-org、无可解 token、orgs/ 下多个历史组织 → 报错中止，绝不静默新铸。
+        // P1a: no active-org, no decryptable token, multiple orgs under orgs/ → error, never silently mint.
         let dir = tmpdir("multi-org");
         let fake_real = tmpdir("realcred-mo");
         let email = "virtual@localhost.invalid";
@@ -1103,13 +1103,13 @@ mod tests {
         std::fs::remove_file(the_enc_file(&dir)).unwrap();
         std::fs::remove_file(dir.join("active-org.json")).unwrap();
         let r = ensure_virtual_login_guarded(&dir, email, &dir, &fake_real);
-        assert!(r.is_err(), "多历史组织无法定位活动者应报错");
+        assert!(r.is_err(), "ambiguous multi-org history should error");
         assert!(r.unwrap_err().contains("历史组织"));
         assert!(
             !dir.join("active-org.json").exists(),
-            "报错不应写 active-org.json"
+            "error path must not write active-org.json"
         );
-        assert_eq!(scan_org_dirs(&dir).len(), 2, "不应静默新铸 org");
+        assert_eq!(scan_org_dirs(&dir).len(), 2, "must not silently mint new org");
         for d in [dir, fake_real] {
             let _ = std::fs::remove_dir_all(&d);
         }
@@ -1117,7 +1117,7 @@ mod tests {
 
     #[test]
     fn ensure_recreates_key_on_invalid_base64() {
-        // P2a：OAUTH_ENCRYPTION_KEY 是非法 base64 → 不报错，重造合法 key，org 复用，新 .enc 可解。
+        // P2a: invalid base64 OAUTH_ENCRYPTION_KEY → no error; remint valid key, reuse org, new .enc decrypts.
         let dir = tmpdir("badkey");
         let fake_real = tmpdir("realcred-bk");
         let email = "virtual@localhost.invalid";
@@ -1133,13 +1133,13 @@ mod tests {
         }
         std::fs::write(dir.join("encryption.key"), blob).unwrap();
         let (r, action) = ensure_virtual_login_guarded(&dir, email, &dir, &fake_real).unwrap();
-        assert_eq!(action, LoginAction::Repaired, "active-org.json 仍在 → 修复");
-        assert_eq!(r.org_uuid, org0, "换 key 也不换 org");
+        assert_eq!(action, LoginAction::Repaired, "active-org.json still present → repair");
+        assert_eq!(r.org_uuid, org0, "org unchanged when key rotated");
         let key = read_oauth_key(&dir);
         let body = std::fs::read_to_string(the_enc_file(&dir)).unwrap();
         assert!(
             decrypt_token_v2(&body, &key).is_ok(),
-            "重造 key 后新 .enc 应可解"
+            "new .enc should decrypt after key remint"
         );
         for d in [dir, fake_real] {
             let _ = std::fs::remove_dir_all(&d);
@@ -1148,14 +1148,14 @@ mod tests {
 
     #[test]
     fn ensure_repairs_when_token_structurally_damaged() {
-        // P2：.enc 能解密但结构损坏（provider 篡改 / account 非 UUID）→ 不误判 Reused，走修复保 org。
+        // P2: decryptable .enc but structurally damaged (tampered provider / non-UUID account) → not Reused, repair keeping org.
         let dir = tmpdir("bad-struct");
         let fake_real = tmpdir("realcred-bs");
         let email = "virtual@localhost.invalid";
         forge_guarded(&dir, email, &dir, &fake_real).unwrap();
         let org0 = read_active_org_uuid(&dir);
         let key = read_oauth_key(&dir);
-        // 用现有 key 重写一个「可解但结构坏」的 .enc：provider 被改、account 非 UUID。
+        // Rewrite a decryptable but structurally bad .enc with existing key: tampered provider, non-UUID account.
         let bad = serde_json::json!({
             "email": email,
             "org_uuid": org0,
@@ -1166,12 +1166,12 @@ mod tests {
         let enc = encrypt_token_v2(&serde_json::to_vec(&bad).unwrap(), &key).unwrap();
         std::fs::write(the_enc_file(&dir), enc).unwrap();
         let (r, action) = ensure_virtual_login_guarded(&dir, email, &dir, &fake_real).unwrap();
-        assert_eq!(action, LoginAction::Repaired, "结构损坏应修复而非复用");
-        assert_eq!(r.org_uuid, org0, "修复仍保 org");
-        // 修复后应重新自洽（provider=claude_ai、account 合法 UUID）
+        assert_eq!(action, LoginAction::Repaired, "structural damage should repair not reuse");
+        assert_eq!(r.org_uuid, org0, "repair still keeps org");
+        // After repair should be self-consistent again (provider=claude_ai, valid UUID account)
         assert!(
             looks_like_uuid(&r.account_uuid),
-            "修复后 account 应为合法 UUID"
+            "account should be valid UUID after repair"
         );
         for d in [dir, fake_real] {
             let _ = std::fs::remove_dir_all(&d);
@@ -1180,7 +1180,7 @@ mod tests {
 
     #[test]
     fn ensure_repairs_when_token_expired() {
-        // P2：.enc 可解但 token 已过期 → 不误判 Reused，走修复；修复后（远期）应可复用。
+        // P2: decryptable but expired token → not Reused, repair; after repair (far-future) should reuse.
         let dir = tmpdir("expired");
         let fake_real = tmpdir("realcred-exp");
         let email = "virtual@localhost.invalid";
@@ -1198,11 +1198,11 @@ mod tests {
         let enc = encrypt_token_v2(&serde_json::to_vec(&expired).unwrap(), &key).unwrap();
         std::fs::write(the_enc_file(&dir), enc).unwrap();
         let (r, action) = ensure_virtual_login_guarded(&dir, email, &dir, &fake_real).unwrap();
-        assert_eq!(action, LoginAction::Repaired, "过期令牌不应误判 Reused");
+        assert_eq!(action, LoginAction::Repaired, "expired token must not be misclassified as Reused");
         assert_eq!(r.org_uuid, org0);
-        // 修复后新令牌远期未过期 → 再次 ensure 应可复用。
+        // After repair new token is far-future → second ensure should reuse.
         let (_r2, a2) = ensure_virtual_login_guarded(&dir, email, &dir, &fake_real).unwrap();
-        assert_eq!(a2, LoginAction::Reused, "修复后应可复用");
+        assert_eq!(a2, LoginAction::Reused, "should reuse after repair");
         for d in [dir, fake_real] {
             let _ = std::fs::remove_dir_all(&d);
         }
@@ -1210,19 +1210,19 @@ mod tests {
 
     #[test]
     fn login_intact_true_for_fresh_false_when_damaged_and_readonly() {
-        // Bug2（0.2.1）：健康快捷路径要靠只读校验区分「自洽」与「健康但登录失效」。
+        // Bug2 (0.2.1): health fast path needs read-only check to separate "intact" vs "healthy but login dead".
         let dir = tmpdir("intact");
         let fake_real = tmpdir("realcred-intact");
         let email = "virtual@localhost.invalid";
         forge_guarded(&dir, email, &dir, &fake_real).unwrap();
 
-        // 新鲜伪造 → 自洽 → true。
+        // Fresh forge → intact → true.
         assert!(
             login_intact_guarded(&dir, email, &dir, &fake_real),
-            "新鲜伪造应判自洽"
+            "fresh forge should be judged intact"
         );
 
-        // 只读不写：连调两次，三个文件字节都不变。
+        // Read-only: call twice; three file byte blobs unchanged.
         let enc0 = std::fs::read(the_enc_file(&dir)).unwrap();
         let key0 = std::fs::read(dir.join("encryption.key")).unwrap();
         let org0 = std::fs::read(dir.join("active-org.json")).unwrap();
@@ -1230,20 +1230,20 @@ mod tests {
         assert_eq!(
             std::fs::read(the_enc_file(&dir)).unwrap(),
             enc0,
-            "不改 .enc"
+            "must not modify .enc"
         );
         assert_eq!(
             std::fs::read(dir.join("encryption.key")).unwrap(),
             key0,
-            "不改 encryption.key"
+            "must not modify encryption.key"
         );
         assert_eq!(
             std::fs::read(dir.join("active-org.json")).unwrap(),
             org0,
-            "不改 active-org.json"
+            "must not modify active-org.json"
         );
 
-        // 删 .enc → 不自洽 → false（这一步旧 stub 恒真会失败）。
+        // Delete .enc → not intact → false (old stub always-true would fail here).
         std::fs::remove_file(the_enc_file(&dir)).unwrap();
         assert!(
             !login_intact_guarded(&dir, email, &dir, &fake_real),
