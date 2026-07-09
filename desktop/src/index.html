@@ -18,43 +18,48 @@
       <div class="panel-body">
         <div class="sec list-sec list-only" id="listSec">
           <div class="listhd">
-            <label>我的配置</label>
+            <label class="sec-title" id="i18nMyConfigs">我的配置</label>
             <div class="listhd-acts">
-              <button type="button" class="btn small subtle" id="editCspJsonBtn">Edit CSP.json</button>
-              <button class="btn small" id="newBtn">＋ 新建</button>
+              <div class="listhd-acts-cluster">
+                <button class="btn small" id="newBtn">＋ 新建</button>
+                <div class="listhd-more">
+                  <button type="button" class="btn small listhd-more-btn" id="listhdMoreBtn" aria-haspopup="true" aria-expanded="false" title="更多">⋯</button>
+                  <div class="pmenu listhd-menu" id="listhdMenu" hidden role="menu">
+                    <button type="button" class="pmenu-item" id="editCspJsonBtn" role="menuitem">Edit CSP.json</button>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
           <div id="profileList"></div>
           <button class="btn small" id="skipActivateBtn" hidden style="margin-top:8px;width:100%">校验没过，仍要启用这条</button>
         </div>
 
-        <!-- 新建：名称 + base_url + key（创建时自动拉取模型） -->
         <div class="sec" id="wizSec" hidden>
-          <label for="wizName">名称</label>
-          <input id="wizName" type="text" placeholder="给这套配置起个名字" autocomplete="off" spellcheck="false" />
-          <label style="margin-top:10px" for="wizBase">地址 base_url</label>
+          <label for="wizName" id="i18nLabelProvider">Provider</label>
+          <div class="provider-row">
+            <input id="wizName" type="text" placeholder="DeepSeek" autocomplete="off" spellcheck="false" />
+            <select id="wizPreset" class="provider-preset" title="快速填入名称与地址"></select>
+          </div>
+          <label style="margin-top:10px" for="wizBase" id="i18nLabelBase">Base_URL</label>
           <input id="wizBase" type="text" placeholder="https://api.example.com/v1" autocomplete="off" spellcheck="false" />
-          <div class="hint" id="wizBaseHint">创建后会自动从上游拉取可用模型并全部启用；可在编辑里勾选。</div>
-          <label style="margin-top:10px" for="wizKey">API Key / Token</label>
-          <input id="wizKey" type="password" placeholder="粘贴 key（只存本地）" autocomplete="off" spellcheck="false" />
-          <div class="hint">只存本地，不上传给本应用；使用时才作为鉴权发给你选的服务商。</div>
+          <label style="margin-top:10px" for="wizKey" id="i18nLabelKey">API Key</label>
+          <input id="wizKey" type="password" placeholder="sk-..." autocomplete="off" spellcheck="false" />
           <div class="row" style="margin-top:12px">
             <button class="btn small" id="wizSaveBtn">创建</button>
             <button class="btn small" id="wizCancelBtn">取消</button>
           </div>
         </div>
 
-        <!-- 连接编辑（名称/base_url/model/key） -->
         <div class="sec" id="connSec" hidden>
           <label id="connTitle">编辑</label>
-          <label style="margin-top:6px" for="connName">名称</label>
+          <label style="margin-top:6px" for="connName" id="i18nConnName">Provider</label>
           <input id="connName" type="text" autocomplete="off" spellcheck="false" />
-          <label style="margin-top:10px" for="connBase">地址 base_url</label>
+          <label style="margin-top:10px" for="connBase" id="i18nConnBase">Base_URL</label>
           <input id="connBase" type="text" autocomplete="off" spellcheck="false" />
           <div class="hint" id="connBaseHint"></div>
-          <label style="margin-top:10px" for="connKey">API Key / Token</label>
+          <label style="margin-top:10px" for="connKey" id="i18nConnKey">API Key</label>
           <input id="connKey" type="password" autocomplete="off" spellcheck="false" />
-          <div class="hint">留空＝不改 key。</div>
           <label style="margin-top:10px" id="connModelLabel">启用模型</label>
           <div id="connModelInfo" class="modelinfo" hidden></div>
           <input id="connModel" list="connModelList" hidden aria-hidden="true" tabindex="-1" autocomplete="off" spellcheck="false" />
@@ -67,7 +72,6 @@
           </div>
         </div>
 
-        <!-- 反馈消息：有真实反馈才显示，空闲不占位。 -->
         <div class="sec feedback" hidden>
           <div class="msg" id="msg" role="status" aria-live="polite"></div>
         </div>
@@ -75,10 +79,12 @@
 
       <div class="panel-foot list-only">
         <details class="sec adv" id="advSec">
-          <summary>端口管理</summary>
-          <div class="ports">
-            <div class="fld"><label for="proxyPort">代理</label><input id="proxyPort" inputmode="numeric" value="18991" /></div>
-            <div class="fld"><label for="sandboxPort">沙箱</label><input id="sandboxPort" inputmode="numeric" value="8990" /></div>
+          <summary><span class="adv-label" id="i18nPorts">端口管理</span></summary>
+          <div class="adv-body">
+            <div class="ports">
+              <div class="fld"><label for="proxyPort" id="i18nProxyPort">代理</label><input id="proxyPort" inputmode="numeric" value="18991" /></div>
+              <div class="fld"><label for="sandboxPort" id="i18nSandboxPort">沙箱</label><input id="sandboxPort" inputmode="numeric" value="8990" /></div>
+            </div>
           </div>
         </details>
 
