@@ -223,7 +223,7 @@ function renderModelPick(container, defaultSel, defaultLabel, builtin, selected,
   container.innerHTML = pool.map((id) => {
     const checked = selSet.has(id) ? " checked" : "";
     return '<label class="model-pick-item"><input type="checkbox" data-model="' +
-      escapeHtml(id) + '"' + checked + "> " + escapeHtml(id) + "</label>";
+      escapeHtml(id) + '"' + checked + '><span class="model-pick-label">' + escapeHtml(id) + "</span></label>";
   }).join("");
   container.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
     cb.addEventListener("change", () => { if (onChange) onChange(); });
@@ -265,8 +265,13 @@ function applyModelCapability(t, ui, profileOrModel) {
   ui.sel.value = currentModel || (builtin[0] || "");
   ui.hint.textContent = cap === CAP.FOLLOW ? MODEL_HINT.follow : MODEL_HINT.fixed;
   if (cap === CAP.FIXED && ui.pick) {
+    ui.sel.hidden = true;
+    if (ui.modelLabel) ui.modelLabel.textContent = "启用模型";
+    if (dl) dl.innerHTML = "";
     renderModelPick(ui.pick, ui.defaultSel, ui.defaultLabel, builtin, selected, onPickChange);
   } else if (ui.pick) {
+    ui.sel.hidden = false;
+    if (ui.modelLabel) ui.modelLabel.textContent = "模型";
     ui.pick.hidden = true;
     ui.pick.innerHTML = "";
     if (ui.defaultSel) ui.defaultSel.hidden = true;
@@ -313,9 +318,6 @@ function syncProfileBusyState() {
     row.classList.toggle("pworking", isTarget);
     row.querySelectorAll("button[data-act]").forEach((btn) => {
       btn.disabled = busy;
-      if (btn.getAttribute("data-act") === "activate") {
-        btn.textContent = isTarget ? "正在启用…" : "设为当前";
-      }
     });
     if (busy) closeAllMenus();
   });
@@ -385,8 +387,8 @@ function setBusy(on, op) {
   [
     els.oneClickBtn, els.stopBtn, els.newBtn,
     els.wizSaveBtn, els.wizFetchBtn, els.wizCancelBtn,
-    els.connSaveBtn, els.connFetchBtn, els.connClearBtn, els.connCancelBtn,
-    els.metaSaveBtn, els.metaCancelBtn, els.skipActivateBtn,
+    els.connSaveBtn, els.connFetchBtn, els.connCancelBtn,
+    els.skipActivateBtn,
     // 端口输入也纳入忙碌禁用：忙碌中改端口会与在途操作竞态（修 P1-c 前端侧）。
     els.proxyPort, els.sandboxPort,
   ].forEach((b) => b && (b.disabled = on));
@@ -409,13 +411,12 @@ function tplById(id) {
   return (configState.templates || []).find((t) => t.id === id) || null;
 }
 
-// ── 视图切换：列表 / 新建向导 / 连接编辑 / 改名。一次只显示一个表单（列表隐去减少高度）。──
+// ── 视图切换：列表 / 新建向导 / 连接编辑。一次只显示一个表单（列表隐去减少高度）。──
 function showView(v) {
   els.listSec.hidden = v !== "list";
   els.advSec.hidden = v !== "list";
   els.wizSec.hidden = v !== "wizard";
   els.connSec.hidden = v !== "conn";
-  els.metaSec.hidden = v !== "meta";
   els.panel.classList.toggle("view-form", v !== "list");
   if (v === "list") hideSkip();
 }
@@ -500,12 +501,10 @@ function renderList() {
         '<div class="pmeta">' + escapeHtml(p.base_url || "（未填地址）") + "</div>" +
         '<div class="pmeta">' + metaTxt + " · Key：" + keyMask + "</div>" +
         '<div class="prow-acts">' +
-          (active ? "" : '<button class="abtn prim" data-act="activate">设为当前</button>') +
-          '<button class="abtn" data-act="editconn">编辑</button>' +
           '<div class="pmenu-wrap">' +
             '<button type="button" class="abtn pmenu-btn" data-act="menu" aria-haspopup="true" aria-expanded="false" title="更多">⋯</button>' +
             '<div class="pmenu" hidden role="menu">' +
-              '<button type="button" class="pmenu-item" data-act="editmeta" role="menuitem">改名</button>' +
+              '<button type="button" class="pmenu-item" data-act="editconn" role="menuitem">编辑</button>' +
               '<button type="button" class="pmenu-item" data-act="clearkey" role="menuitem">清除 key</button>' +
               '<button type="button" class="pmenu-item danger" data-act="delete" role="menuitem">删除</button>' +
             "</div>" +
@@ -566,17 +565,27 @@ function renderModelOptions(sel, models, sourceLabel) {
 
 // fetch_models 返回体 → 刷新 datalist 候选 + 提示（向导与连接编辑共用）。
 // requiresOverride 保留形参（调用点仍传），但 datalist 无「跟随」空项，故此处不用。
-function applyFetchResult(sel, requiresOverride, r) {
+function applyFetchResult(sel, requiresOverride, r, pickUi) {
   void requiresOverride;
   const models = (r && r.models) || [];
   const src = r && r.source;
-  // unsupported（端点不提供发现，4xx）与 builtin（200 但空）都铺内置，标「内置」；network/未知标「未验证」。
   const srcLabel = src === "live" ? "实时" : src === "builtin" || src === "unsupported" ? "内置" : "未验证";
   const prev = sel.value;
-  renderModelOptions(sel, models, srcLabel);
-  if (prev) sel.value = prev; // 保留用户已填/已选值，拉列表只刷新候选、绝不清空输入
+  const ids = models.map((m) => m.id);
+  if (pickUi && pickUi.pick && !pickUi.pick.hidden) {
+    const pool = ids.length ? ids : (pickUi.builtin || []);
+    const selected = collectCheckedModels(pickUi.pick);
+    const keep = selected.filter((id) => pool.includes(id));
+    const use = keep.length ? keep : (pool[0] ? [pool[0]] : (prev ? [prev] : []));
+    renderModelPick(
+      pickUi.pick, pickUi.defaultSel, pickUi.defaultLabel,
+      pool, use, pickUi.onPickChange
+    );
+  } else {
+    renderModelOptions(sel, models, srcLabel);
+    if (prev) sel.value = prev;
+  }
   if (src === "unsupported") {
-    // 端点未提供 /v1/models（如 Kimi）：内置模型可直接选，绝不表述成 key 无效。
     setMsg("该端点未提供模型列表，已用内置模型（可直接选择保存）。", "ok");
   } else if (r && r.error_kind === "network") {
     setMsg("未能连上上游验证，已铺内置模型（标「未验证」）。可仍试保存或重试。", "err");
@@ -624,7 +633,7 @@ function onWizTemplate() {
   if (!t) return;
   els.wizName.value = t.name;
   // 把「新建不自动生效」放进顶部常驻提示（默认窗口下反馈区首屏可能在折叠线下，见 #6）。
-  els.wizTplHint.textContent = sourceHint(t) + " 新建后需在列表点「设为当前」才生效。";
+  els.wizTplHint.textContent = sourceHint(t) + " 新建后点击列表中的卡片即可切换启用。";
   if (t.base_url_editable) {
     // 预设：预填官方默认地址（仍可改到套餐 / 区域端点）；真·自定义：留空 + 占位提示。
     els.wizBase.value = t.base_url || "";
@@ -647,7 +656,7 @@ function onWizTemplate() {
   applyModelCapability(t, {
     info: els.wizModelInfo, sel: els.wizModel, hint: els.wizModelHint, fetchBtn: els.wizFetchBtn,
     pick: els.wizModelPick, defaultSel: els.wizDefaultModel, defaultLabel: els.wizDefaultModelLabel,
-    onPickChange: refreshWizGate,
+    modelLabel: els.wizModelLabel, onPickChange: refreshWizGate,
   }, null);
   refreshWizGate();
 }
@@ -692,7 +701,10 @@ async function wizFetch() {
   startFetchModelsFeedback("wizard");
   try {
     const r = await call("fetch_models", { req: { template_id: t.id, base_url: base, key } });
-    applyFetchResult(els.wizModel, modelRequired(t), r);
+    applyFetchResult(els.wizModel, modelRequired(t), r, {
+      pick: els.wizModelPick, defaultSel: els.wizDefaultModel, defaultLabel: els.wizDefaultModelLabel,
+      onPickChange: refreshWizGate, builtin: (t.builtin_models || []).slice(),
+    });
   } catch (e) {
     setMsg("获取模型失败：" + e, "err");
   } finally {
@@ -724,7 +736,7 @@ async function wizSave() {
     await call("create_profile", args);
     els.wizKey.value = "";
     await loadConfig();
-    setMsg("已创建「" + name + "」。可在列表点「设为当前」启用。", "ok");
+    setMsg("已创建「" + name + "」。点击卡片可切换启用。", "ok");
   } catch (e) {
     setMsg("创建失败：" + e, "err");
   } finally {
@@ -746,7 +758,8 @@ function openConn(id) {
   const editable = t ? t.base_url_editable : true;
   const active = id === configState.active_id;
   els.connSec.dataset.id = id;
-  els.connTitle.textContent = "编辑连接 · " + p.name + (active ? "（当前生效）" : "");
+  els.connTitle.textContent = "编辑" + (active ? "（当前生效）" : "");
+  els.connName.value = p.name;
   els.connBase.value = p.base_url || (t ? t.base_url : "");
   els.connBase.readOnly = !editable;
   els.connBase.placeholder = capSrc && (capSrc.api_format === "openai_chat" || capSrc.api_format === "openai_responses")
@@ -767,7 +780,7 @@ function openConn(id) {
   applyModelCapability(capSrc, {
     info: els.connModelInfo, sel: els.connModel, hint: els.connModelHint, fetchBtn: els.connFetchBtn,
     pick: els.connModelPick, defaultSel: els.connDefaultModel, defaultLabel: els.connDefaultModelLabel,
-    onPickChange: refreshConnGate,
+    modelLabel: els.connModelLabel, onPickChange: refreshConnGate,
   }, p);
   els.connKey.value = "";
   els.connKey.placeholder = p.key ? "已存：" + p.key + "（留空＝不改）" : "粘贴 key（只存本地）";
@@ -804,7 +817,10 @@ async function connFetch() {
     const r = await call("fetch_models", {
       req: { template_id: p.template_id, api_format: p.api_format || (t ? t.api_format : ""), base_url: base, key, profile_id: p.id },
     });
-    applyFetchResult(els.connModel, p.capabilities ? modelRequired(p) : (t ? modelRequired(t) : true), r);
+    applyFetchResult(els.connModel, p.capabilities ? modelRequired(p) : (t ? modelRequired(t) : true), r, {
+      pick: els.connModelPick, defaultSel: els.connDefaultModel, defaultLabel: els.connDefaultModelLabel,
+      onPickChange: refreshConnGate, builtin: ((t && t.builtin_models) || []).slice(),
+    });
   } catch (e) {
     setMsg("获取模型失败：" + e, "err");
   } finally {
@@ -816,6 +832,8 @@ async function connFetch() {
 async function connSave() {
   const p = currentConn();
   if (!p) { setMsg("配置不存在。", "err"); return; }
+  const name = els.connName.value.trim();
+  if (!name) { setMsg("名称不能为空。", "err"); return; }
   const t = tplById(p.template_id);
   const capSrc = profileCapabilitySource(p, t);
   const req = p.capabilities ? modelRequired(p) : (t ? modelRequired(t) : true);
@@ -844,6 +862,9 @@ async function connSave() {
   startSaveConnectionFeedback(p.id, active);
   try {
     const r = await call("update_profile_connection", args);
+    if (name !== p.name) {
+      await call("update_profile_metadata", { id: p.id, name, notes: p.notes || "" });
+    }
     els.connKey.value = "";
     await loadConfig();
     // 非 active：后端如实回传 validated，连不通/native 也保存，但据实说明未校验（修 P2-d truthful-save）。
@@ -878,40 +899,12 @@ async function doClearKey(id) {
     await loadConfig();
     setMsg(
       wasActive
-        ? "已清除 key（该配置是当前生效，链路已断，请重新填 key 再「设为当前」）。"
+        ? "已清除 key（该配置是当前生效，链路已断，请重新填 key 并保存）。"
         : "已清除 key。",
       "ok"
     );
   } catch (e) {
     setMsg("清除失败：" + e, "err");
-  } finally {
-    setBusy(false);
-  }
-}
-
-// ── C4：改名/备注 + 删除 + 设为当前 ──
-function openMeta(id) {
-  const p = (configState.profiles || []).find((x) => x.id === id);
-  if (!p) return;
-  els.metaSec.dataset.id = id;
-  els.metaName.value = p.name;
-  els.metaNotes.value = p.notes || "";
-  showView("meta");
-  setMsg("改名 / 备注不影响运行中的代理。");
-}
-async function metaSave() {
-  const id = els.metaSec.dataset.id;
-  const name = els.metaName.value.trim();
-  if (!name) { setMsg("名称不能为空。", "err"); return; }
-  const notes = els.metaNotes.value.trim();
-  setBusy(true);
-  setMsg("保存中…");
-  try {
-    await call("update_profile_metadata", { id, name, notes });
-    await loadConfig();
-    setMsg("已保存。", "ok");
-  } catch (e) {
-    setMsg("保存失败：" + e, "err");
   } finally {
     setBusy(false);
   }
@@ -931,7 +924,7 @@ async function doDelete(id) {
     await loadConfig();
     setMsg(
       wasActive
-        ? "已删除。删掉的是当前生效配置，请重新选择一条并「设为当前」。"
+        ? "已删除。删掉的是当前生效配置，请点击另一条配置切换。"
         : "已删除。",
       "ok"
     );
@@ -942,7 +935,7 @@ async function doDelete(id) {
   }
 }
 
-// 设为当前：走后端切换事务（校验→起正式→健康才提交）。
+// 点击卡片切换当前配置：走后端切换事务（校验→起正式→健康才提交）。
 // 返回体 committed:true=已生效；committed:false=未生效（可能可 skip）；抛错=回滚/中止。
 async function activate(id, skipVerify) {
   hideSkip();
@@ -952,7 +945,7 @@ async function activate(id, skipVerify) {
     const r = await call("set_active_profile", { id, skipVerify: !!skipVerify });
     if (r && r.committed) {
       await loadConfig();
-      setMsg(r.hint || "已设为当前生效。", "ok");
+      setMsg(r.hint || "已切换为当前配置。", "ok");
     } else {
       await loadConfig(); // 反映未变（仍是原 active）
       setMsg((r && r.hint) || "校验未通过，未切换。", "err");
@@ -960,7 +953,7 @@ async function activate(id, skipVerify) {
     }
   } catch (e) {
     await loadConfig();
-    setMsg("设为当前失败：" + e, "err");
+    setMsg("切换失败：" + e, "err");
   } finally {
     setBusy(false);
   }
@@ -969,7 +962,7 @@ async function activate(id, skipVerify) {
 // ── 启动 Claude Science：读 active profile。无生效则引导先建/选一条。──
 async function oneClick() {
   if (!configState.active_id) {
-    setMsg("还没有「当前生效」的配置。请先「＋ 新建」或在列表点「设为当前」选一条，再点「启动 Claude Science」。", "err");
+    setMsg("还没有「当前生效」的配置。请先「＋ 新建」或点击一条配置切换，再点「启动 Claude Science」。", "err");
     return;
   }
   setBusy(true, { kind: "oneClick" });
@@ -1004,41 +997,44 @@ function wire() {
     "listSec", "profileList", "newBtn", "skipActivateBtn",
     "wizSec", "wizTemplate", "wizTemplateChips", "wizTplLabel", "wizTplHint", "wizName", "wizBase", "wizBaseHint",
     "wizFetchBtn", "wizModelInfo", "wizModel", "wizModelHint", "wizModelPick", "wizDefaultModelLabel", "wizDefaultModel", "wizKey", "wizSaveBtn", "wizCancelBtn",
-    "connSec", "connTitle", "connBase", "connBaseHint", "connFetchBtn",
-    "connModelInfo", "connModel", "connModelHint", "connModelPick", "connDefaultModelLabel", "connDefaultModel", "connKey", "connSaveBtn", "connClearBtn", "connCancelBtn",
-    "metaSec", "metaName", "metaNotes", "metaSaveBtn", "metaCancelBtn",
+    "connSec", "connTitle", "connName", "connBase", "connBaseHint", "connFetchBtn",
+    "connModelInfo", "connModel", "connModelHint", "connModelPick", "connDefaultModelLabel", "connDefaultModel", "connKey", "connSaveBtn", "connCancelBtn",
   ].forEach((id) => (els[id] = $(id)));
   els.panel = document.querySelector(".panel");
 
   els.proxyPort.addEventListener("change", persistPorts);
   els.sandboxPort.addEventListener("change", persistPorts);
 
-  // 列表行内操作（事件委托；忙碌时忽略）。
+  // 列表：点击卡片切换当前配置；⋯ 菜单收纳编辑/清除/删除。
   els.profileList.addEventListener("click", (e) => {
     if (busy) return;
     const btn = e.target.closest("[data-act]");
-    const row = e.target.closest("[data-id]");
-    if (!btn || !row) return;
-    const id = row.getAttribute("data-id");
-    const act = btn.getAttribute("data-act");
-    if (act === "menu") {
-      const wrap = btn.closest(".pmenu-wrap");
-      const menu = wrap && wrap.querySelector(".pmenu");
-      if (!menu) return;
-      const wasOpen = !menu.hidden;
-      closeAllMenus();
-      if (!wasOpen) {
-        menu.hidden = false;
-        btn.setAttribute("aria-expanded", "true");
+    const row = e.target.closest(".prow[data-id]");
+    if (btn && row) {
+      const id = row.getAttribute("data-id");
+      const act = btn.getAttribute("data-act");
+      if (act === "menu") {
+        const wrap = btn.closest(".pmenu-wrap");
+        const menu = wrap && wrap.querySelector(".pmenu");
+        if (!menu) return;
+        const wasOpen = !menu.hidden;
+        closeAllMenus();
+        if (!wasOpen) {
+          menu.hidden = false;
+          btn.setAttribute("aria-expanded", "true");
+        }
+        return;
       }
+      closeAllMenus();
+      if (act === "editconn") openConn(id);
+      else if (act === "clearkey") clearKey(id);
+      else if (act === "delete") del(id);
       return;
     }
-    closeAllMenus();
-    if (act === "activate") activate(id, false);
-    else if (act === "editconn") openConn(id);
-    else if (act === "editmeta") openMeta(id);
-    else if (act === "clearkey") clearKey(id);
-    else if (act === "delete") del(id);
+    if (row && !e.target.closest(".pmenu-wrap")) {
+      const id = row.getAttribute("data-id");
+      if (id && id !== configState.active_id) activate(id, false);
+    }
   });
   document.addEventListener("click", (e) => {
     if (!e.target.closest(".pmenu-wrap")) closeAllMenus();
@@ -1063,11 +1059,7 @@ function wire() {
   els.connModel.addEventListener("input", refreshConnGate); // input：键入即刷新保存门（#9 P1-b）
   els.connFetchBtn.addEventListener("click", connFetch);
   els.connSaveBtn.addEventListener("click", connSave);
-  els.connClearBtn.addEventListener("click", () => clearKey(els.connSec.dataset.id));
   els.connCancelBtn.addEventListener("click", cancelForm);
-
-  els.metaSaveBtn.addEventListener("click", metaSave);
-  els.metaCancelBtn.addEventListener("click", cancelForm);
 
   els.oneClickBtn.addEventListener("click", oneClick);
   els.stopBtn.addEventListener("click", stopAll);
