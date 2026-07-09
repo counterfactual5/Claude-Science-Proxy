@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# CSSwitch doctor：只读环境诊断。
+# Claude Science Proxy (CSP) doctor：只读环境诊断。
 #   - 不启动任何进程、不联网、绝不读写/删除真实 ~/.claude-science。
 #   - 绝不打印任何 provider key 的值（只报 present/absent）。
 #   - 端口命中真实实例保留端口 8765 直接失败（铁律）。
@@ -27,7 +27,7 @@ pass() { echo "  ✓ $1"; }
 warn() { echo "  ⚠ $1"; WARN=$((WARN + 1)); }
 fail() { echo "  ✗ $1"; FAIL=$((FAIL + 1)); }
 
-echo "CSSwitch doctor（只读诊断，不启动进程、不联网、绝不碰真实目录）"
+echo "CSP doctor（Claude Science Proxy 只读诊断，不启动进程、不联网、绝不碰真实目录）"
 echo "生效来源=${PROVIDER:-（无）}  适配器=${ADAPTER:-（无）}  代理端口=$PROXY_PORT  沙箱端口=$SANDBOX_PORT"
 
 echo "[依赖]"
@@ -59,7 +59,7 @@ classify_port() {  # $1=port；打印占用分型
   local lc
   lc="$(printf '%s' "$cmd" | tr '[:upper:]' '[:lower:]')"
   case "$lc" in
-    *python*|*csswitch*|*claude-science*) echo "疑似 CSSwitch 旧进程：${cmd}（可 stop_all 或手动清）" ;;
+    *python*|*csswitch*|*claude-science*) echo "疑似 CSP 旧进程：${cmd}（可 stop_all 或手动清）" ;;
     *) echo "未知占用：$cmd" ;;
   esac
 }
