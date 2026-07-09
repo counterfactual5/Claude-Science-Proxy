@@ -192,7 +192,7 @@ pub fn scratch_probe(
         }
     };
     let _guard = ScratchGuard(Some(child)); // killed on drop
-    // Health poll budget ~4s.
+                                            // Health poll budget ~4s.
     let mut alive = false;
     for _ in 0..(operation::SCRATCH_READY_BUDGET_MS / operation::POLL_INTERVAL_MS) {
         std::thread::sleep(Duration::from_millis(operation::POLL_INTERVAL_MS));
@@ -450,6 +450,9 @@ mod tests {
             let p = pick_scratch_port().unwrap();
             TcpListener::bind(("127.0.0.1", p)).is_ok()
         });
-        assert!(rebound, "port from pick_scratch_port should be released and re-bindable");
+        assert!(
+            rebound,
+            "port from pick_scratch_port should be released and re-bindable"
+        );
     }
 }

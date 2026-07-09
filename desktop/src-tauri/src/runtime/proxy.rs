@@ -75,7 +75,10 @@ mod tests {
             occ.contains("errProxyPortOccupied"),
             "should report port conflict: {occ}"
         );
-        assert!(!occ.contains("key"), "port conflict must not mention key: {occ}");
+        assert!(
+            !occ.contains("key"),
+            "port conflict must not mention key: {occ}"
+        );
         let generic = health_timeout_reason(18991, "ModuleNotFoundError: No module named 'x'");
         assert!(
             generic.contains("errProxyHealthTimeout"),

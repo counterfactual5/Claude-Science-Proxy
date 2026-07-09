@@ -1,3 +1,5 @@
+//! Profile switch transaction: scratch-verify candidate → start formal proxy → health → commit or rollback.
+
 use serde_json::{json, Value};
 
 use crate::runtime::i18n::{hint_payload, i18n_err};

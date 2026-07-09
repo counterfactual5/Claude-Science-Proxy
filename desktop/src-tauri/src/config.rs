@@ -1,6 +1,6 @@
 //! Local config I/O: `~/.csp/CSP.json` (multi-profile, schema v4).
 //!
-//! Security (see also [`crate::CLAUDE`] iron rules):
+//! Security (see `CLAUDE.md` iron rules):
 //!   - dir `0700`, file `0600`; reject symlinks via `lstat` before read/write.
 //!   - atomic write: temp file `O_CREAT|O_EXCL` + rename.
 //!   - profile keys stored in plaintext (user-aware); never logged; API returns masked tail only.
