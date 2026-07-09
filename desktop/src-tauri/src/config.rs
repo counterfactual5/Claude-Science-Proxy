@@ -261,7 +261,7 @@ pub fn detect_version(data: &[u8]) -> io::Result<VersionKind> {
     let probe: VersionProbe = serde_json::from_slice(data).map_err(|e| {
         io::Error::new(
             io::ErrorKind::InvalidData,
-            format!("CSP.json 解析失败：{e}"),
+            i18n_err("errCspJsonParse", json!({ "detail": e.to_string() })),
         )
     })?;
     Ok(match probe.schema_version {
@@ -451,7 +451,10 @@ pub(crate) fn assert_not_symlink(path: &Path) -> io::Result<()> {
     match fs::symlink_metadata(path) {
         Ok(md) if md.file_type().is_symlink() => Err(io::Error::new(
             io::ErrorKind::InvalidInput,
-            format!("拒绝符号链接（防跟随写/读到别处）：{}", path.display()),
+            i18n_err(
+                "errSymlinkRejected",
+                json!({ "path": path.display().to_string() }),
+            ),
         )),
         Ok(_) => Ok(()),
         Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
@@ -469,7 +472,10 @@ pub fn ensure_dir(dir: &Path) -> io::Result<()> {
     if !md.is_dir() {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
-            format!("配置目录不是目录：{}", dir.display()),
+            i18n_err(
+                "errConfigDirNotDir",
+                json!({ "path": dir.display().to_string() }),
+            ),
         ));
     }
     fs::set_permissions(dir, fs::Permissions::from_mode(0o700))?;
@@ -541,9 +547,7 @@ pub fn load_from(dir: &Path) -> io::Result<Config> {
     match detect_version(&data)? {
         VersionKind::TooNew(v) => Err(io::Error::new(
             io::ErrorKind::InvalidData,
-            format!(
-                "CSP.json 由更新版本（schema {v}）写入，请升级 Claude Science Proxy 后再打开。"
-            ),
+            i18n_err("errSchemaTooNew", json!({ "v": v })),
         )),
         VersionKind::Legacy => {
             write_migration_backup(dir)?; // backup failure aborts migration
@@ -551,7 +555,7 @@ pub fn load_from(dir: &Path) -> io::Result<Config> {
                 serde_json::from_slice(&data).map_err(|e| {
                     io::Error::new(
                         io::ErrorKind::InvalidData,
-                        format!("旧 config 解析失败：{e}"),
+                        i18n_err("errLegacyConfigParse", json!({ "detail": e.to_string() })),
                     )
                 })?;
             let cfg = normalize_active(migrate_v1_to_v2(legacy));
@@ -563,7 +567,7 @@ pub fn load_from(dir: &Path) -> io::Result<Config> {
             let cfg: Config = serde_json::from_slice(&data).map_err(|e| {
                 io::Error::new(
                     io::ErrorKind::InvalidData,
-                    format!("CSP.json 解析失败：{e}"),
+                    i18n_err("errCspJsonParse", json!({ "detail": e.to_string() })),
                 )
             })?;
             let cfg = migrate_v3_to_v4(migrate_v2_to_v3(normalize_active(cfg)));
@@ -575,7 +579,7 @@ pub fn load_from(dir: &Path) -> io::Result<Config> {
             let cfg: Config = serde_json::from_slice(&data).map_err(|e| {
                 io::Error::new(
                     io::ErrorKind::InvalidData,
-                    format!("CSP.json 解析失败：{e}"),
+                    i18n_err("errCspJsonParse", json!({ "detail": e.to_string() })),
                 )
             })?;
             let mut cfg = migrate_v3_to_v4(normalize_active(cfg));
@@ -590,7 +594,7 @@ pub fn load_from(dir: &Path) -> io::Result<Config> {
             let raw: Config = serde_json::from_slice(&data).map_err(|e| {
                 io::Error::new(
                     io::ErrorKind::InvalidData,
-                    format!("CSP.json 解析失败：{e}"),
+                    i18n_err("errCspJsonParse", json!({ "detail": e.to_string() })),
                 )
             })?;
             let mode_migrated = raw.mode != "proxy";
@@ -610,12 +614,8 @@ pub fn load_from(dir: &Path) -> io::Result<Config> {
 }
 
 fn validate_loaded_ports(cfg: &Config) -> io::Result<()> {
-    validate_runtime_ports(cfg.proxy_port, cfg.sandbox_port).map_err(|e| {
-        io::Error::new(
-            io::ErrorKind::InvalidData,
-            format!("CSP.json 端口无效：{e}"),
-        )
-    })
+    validate_runtime_ports(cfg.proxy_port, cfg.sandbox_port)
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
 }
 
 /// Post-load invariants (spec §4): unknown template_id → `custom`; dangling active_* cleared;
@@ -682,7 +682,7 @@ pub fn save_to(dir: &Path, cfg: &Config) -> io::Result<()> {
     let json = serde_json::to_vec_pretty(cfg).map_err(|e| {
         io::Error::new(
             io::ErrorKind::InvalidData,
-            format!("config 序列化失败：{e}"),
+            i18n_err("errConfigSerialize", json!({ "detail": e.to_string() })),
         )
     })?;
 
@@ -917,13 +917,13 @@ mod tests {
     #[test]
     fn load_rejects_invalid_runtime_ports() {
         let cases = [
-            ("proxy_8765", 8765, 8990),
-            ("sandbox_8765", 18991, 8765),
-            ("proxy_zero", 0, 8990),
-            ("sandbox_zero", 18991, 0),
-            ("same_ports", 18991, 18991),
+            ("proxy_8765", 8765, 8990, "errPortReserved8765"),
+            ("sandbox_8765", 18991, 8765, "errPortReserved8765"),
+            ("proxy_zero", 0, 8990, "errPortZero"),
+            ("sandbox_zero", 18991, 0, "errPortZero"),
+            ("same_ports", 18991, 18991, "errPortSame"),
         ];
-        for (name, proxy_port, sandbox_port) in cases {
+        for (name, proxy_port, sandbox_port, i18n_key) in cases {
             let d = tmpdir().join(format!(".csswitch-{name}"));
             fs::create_dir_all(&d).unwrap();
             fs::write(
@@ -936,8 +936,8 @@ mod tests {
             let err = load_from(&d).unwrap_err();
             assert_eq!(err.kind(), io::ErrorKind::InvalidData, "{name}");
             assert!(
-                err.to_string().contains("CSP.json 端口无效"),
-                "error should identify invalid config ports for {name}: {err}"
+                err.to_string().contains(i18n_key),
+                "error should contain i18n key {i18n_key} for {name}: {err}"
             );
         }
     }
@@ -1186,7 +1186,7 @@ mod tests {
         fs::write(config_path(&d), br#"{"schema_version":9,"profiles":[]}"#).unwrap();
         let e = load_from(&d).unwrap_err();
         assert_eq!(e.kind(), io::ErrorKind::InvalidData);
-        assert!(e.to_string().contains("更新版本"));
+        assert!(e.to_string().contains("errSchemaTooNew"));
     }
     #[test]
     fn load_normalizes_dangling_active() {

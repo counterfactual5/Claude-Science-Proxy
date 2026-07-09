@@ -51,19 +51,26 @@ pub(crate) fn one_click_login<R: Runtime>(
                 st.sandbox_port = sport;
                 st.sandbox_url = Some(url.clone());
             }
-            let base = match proxy_action {
-                ProxyAction::Reused => "已在运行",
-                ProxyAction::Restarted => "已用新配置重启代理，Science 沿用不变",
-            };
-            let msg = match open_in_browser(&url) {
-                Ok(()) => format!("{base}，已重新打开 Science。"),
-                Err(_) => format!("{base}，服务已就绪，请手动打开：{url}"),
+            let (msg_key, msg_vars) = match proxy_action {
+                ProxyAction::Reused => match open_in_browser(&url) {
+                    Ok(()) => ("msgOneClickReopenedReusedOpened", json!({})),
+                    Err(_) => ("msgOneClickReopenedReusedManual", json!({ "url": url })),
+                },
+                ProxyAction::Restarted => match open_in_browser(&url) {
+                    Ok(()) => ("msgOneClickReopenedRestartedOpened", json!({})),
+                    Err(_) => ("msgOneClickReopenedRestartedManual", json!({ "url": url })),
+                },
             };
             trace.finish(format!(
                 "ok action=reopened proxy_action={}",
                 proxy_action.as_str()
             ));
-            return Ok(json!({ "url": url, "msg": msg, "action": "reopened" }));
+            return Ok(json!({
+                "url": url,
+                "msg_key": msg_key,
+                "msg_vars": msg_vars,
+                "action": "reopened"
+            }));
         }
         {
             let mut st = lock(&state);
@@ -165,18 +172,25 @@ pub(crate) fn one_click_login<R: Runtime>(
         st.sandbox_port = sport;
         st.sandbox_url = Some(url.clone());
     }
-    let started = match login_action {
-        oauth_forge::LoginAction::Created => "已启动",
-        _ => "沙箱已重新启动，沿用原有对话",
-    };
-    let msg = match open_in_browser(&url) {
-        Ok(()) => format!("{started}。"),
-        Err(_) => format!("{started}，服务已就绪，请手动打开：{url}"),
+    let (msg_key, msg_vars) = match login_action {
+        oauth_forge::LoginAction::Created => match open_in_browser(&url) {
+            Ok(()) => ("msgOneClickStartedFreshOpened", json!({})),
+            Err(_) => ("msgOneClickStartedFreshManual", json!({ "url": url })),
+        },
+        _ => match open_in_browser(&url) {
+            Ok(()) => ("msgOneClickStartedResumeOpened", json!({})),
+            Err(_) => ("msgOneClickStartedResumeManual", json!({ "url": url })),
+        },
     };
     trace.stage(OperationStage::OpenBrowser, "done");
     trace.finish(format!(
         "ok action=started proxy_action={}",
         proxy_action.as_str()
     ));
-    Ok(json!({ "url": url, "msg": msg, "action": "started" }))
+    Ok(json!({
+        "url": url,
+        "msg_key": msg_key,
+        "msg_vars": msg_vars,
+        "action": "started"
+    }))
 }

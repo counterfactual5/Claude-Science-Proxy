@@ -24,8 +24,10 @@ mod templates;
 use std::process::Child;
 use std::sync::{Arc, Mutex};
 
+use serde_json::json;
 use tauri::Manager;
 
+use runtime::i18n::i18n_err;
 use runtime::system::kill_child;
 
 #[derive(Default)]
@@ -70,9 +72,12 @@ pub(crate) async fn run_blocking<T>(
 where
     T: Send + 'static,
 {
-    tauri::async_runtime::spawn_blocking(f)
-        .await
-        .map_err(|e| format!("后台任务失败：{e}"))?
+    tauri::async_runtime::spawn_blocking(f).await.map_err(|e| {
+        i18n_err(
+            "errBackgroundTaskFailed",
+            json!({ "detail": e.to_string() }),
+        )
+    })?
 }
 
 // ---------- Entry ----------

@@ -3,6 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde::Deserialize;
 use serde_json::{json, Value};
 
+use crate::runtime::i18n::i18n_err;
 use crate::runtime::provider::adapter_for_profile;
 use crate::{config, templates};
 
@@ -60,16 +61,16 @@ impl CapabilityCatalog {
 
 pub(crate) fn load_static_catalog() -> Result<CapabilityCatalog, String> {
     let catalog: CapabilityCatalog = serde_json::from_str(STATIC_CATALOG_JSON)
-        .map_err(|e| format!("catalog JSON 解析失败：{e}"))?;
+        .map_err(|e| i18n_err("errCatalogParseFailed", json!({ "detail": e.to_string() })))?;
     validate_catalog(&catalog)?;
     Ok(catalog)
 }
 
 pub(crate) fn validate_catalog(catalog: &CapabilityCatalog) -> Result<(), String> {
     if catalog.schema_version != 1 {
-        return Err(format!(
-            "不支持的 catalog schema_version：{}",
-            catalog.schema_version
+        return Err(i18n_err(
+            "errCatalogSchemaUnsupported",
+            json!({ "version": catalog.schema_version }),
         ));
     }
     let scopes = [
@@ -94,34 +95,43 @@ pub(crate) fn validate_catalog(catalog: &CapabilityCatalog) -> Result<(), String
     let mut ids = BTreeSet::new();
     for rule in catalog.all_rules() {
         if rule.id.trim().is_empty() {
-            return Err("catalog rule id 不能为空".to_string());
+            return Err(i18n_err("errCatalogRuleIdEmpty", json!({})));
         }
         if !ids.insert(rule.id.clone()) {
-            return Err(format!("catalog rule id 重复：{}", rule.id));
+            return Err(i18n_err(
+                "errCatalogRuleIdDuplicate",
+                json!({ "id": rule.id }),
+            ));
         }
         if !scopes.contains(&rule.scope.as_str()) {
-            return Err(format!(
-                "catalog rule scope 非法：{} ({})",
-                rule.scope, rule.id
+            return Err(i18n_err(
+                "errCatalogRuleScopeInvalid",
+                json!({ "scope": rule.scope, "id": rule.id }),
             ));
         }
         if !statuses.contains(&rule.status.as_str()) {
-            return Err(format!(
-                "catalog rule status 非法：{} ({})",
-                rule.status, rule.id
+            return Err(i18n_err(
+                "errCatalogRuleStatusInvalid",
+                json!({ "status": rule.status, "id": rule.id }),
             ));
         }
         if !actions.contains(&rule.action.as_str()) {
-            return Err(format!(
-                "catalog rule action 非法：{} ({})",
-                rule.action, rule.id
+            return Err(i18n_err(
+                "errCatalogRuleActionInvalid",
+                json!({ "action": rule.action, "id": rule.id }),
             ));
         }
         if rule.reason.trim().is_empty() {
-            return Err(format!("catalog rule reason 不能为空：{}", rule.id));
+            return Err(i18n_err(
+                "errCatalogRuleReasonEmpty",
+                json!({ "id": rule.id }),
+            ));
         }
         if rule.evidence.is_empty() {
-            return Err(format!("catalog rule evidence 不能为空：{}", rule.id));
+            return Err(i18n_err(
+                "errCatalogRuleEvidenceEmpty",
+                json!({ "id": rule.id }),
+            ));
         }
     }
     Ok(())
