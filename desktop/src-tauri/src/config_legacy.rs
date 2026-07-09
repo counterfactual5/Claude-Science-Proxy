@@ -1,12 +1,12 @@
-//! 旧固定槽配置（schema v1）的只读副本，仅供一次性迁移读取。生产代码不再写它。
+//! Read-only copy of legacy fixed-slot config (schema v1) for one-time migration reads. Production code never writes this.
 //!
-//! v1 = PR #4 「每家固定槽」形态：顶层 `provider` 指针 + `providers: {slot -> {key, base_url, model}}`。
-//! v2（[`crate::config`]）改为用户自管命名 `profiles` 列表 + `active_id` 生效指针。
-//! 迁移只读这里、写新结构，读完即弃；这些类型永不参与保存。
+//! v1 = PR #4 fixed-slot layout: top-level `provider` pointer + `providers: {slot -> {key, base_url, model}}`.
+//! v2 ([`crate::config`]) uses user-named `profiles` + `active_id` pointer.
+//! Migration reads here, writes the new shape, then discards; these types never participate in saves.
 use serde::Deserialize;
 use std::collections::BTreeMap;
 
-/// 旧单槽配置（等价于旧 `config::ProviderCfg`）。字段全 optional，缺字段的更旧文件也能读。
+/// Legacy per-slot config (equivalent to old `config::ProviderCfg`). All fields optional for older files.
 #[derive(Deserialize, Clone, Default)]
 pub struct ProviderCfgV1 {
     #[serde(default)]
@@ -17,7 +17,7 @@ pub struct ProviderCfgV1 {
     pub model: String,
 }
 
-/// 旧顶层配置（等价于旧 `config::Config`）。端口/mode 复用新配置的默认函数保持一致。
+/// Legacy top-level config (equivalent to old `config::Config`). Port/mode defaults match the new config helpers.
 #[derive(Deserialize, Clone)]
 pub struct ConfigV1 {
     #[serde(default)]

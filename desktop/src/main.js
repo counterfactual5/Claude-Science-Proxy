@@ -1,22 +1,22 @@
-// Claude Science Proxy 桌面面板前端。只调用后端 Tauri command，绝不碰任何密钥落盘逻辑。
-// 后端只把 key 的【掩码】回显给这里；完整 key 永不进前端。
+// Claude Science Proxy desktop panel frontend. Only calls backend Tauri commands; never touches key persistence logic.
+// Backend echoes only masked keys here; full keys never enter the frontend.
 //
-// ── Tauri 参数键约定（务必遵守）──────────────────────────────────────────────
-// 本项目所有命令都是裸 `#[tauri::command]`（无 rename_all）。tauri-macros 默认
-// `ArgumentCase::Camel`，会把 Rust 蛇形【顶层参数名】转成 lowerCamelCase 交给 JS：
+// ── Tauri argument key conventions (must follow) ───────────────────────────────────────────────
+// All commands use bare `#[tauri::command]` (no rename_all). tauri-macros defaults to
+// `ArgumentCase::Camel`, converting Rust snake_case top-level param names to lowerCamelCase for JS:
 //   template_id→templateId、base_url→baseUrl、api_format→apiFormat、skip_verify→skipVerify。
-// 所以 invoke 顶层 args 用【小驼峰】。而 serde 结构体入参（`req`=FetchModelsReq、
-// `cfg`=UiSettings）内部字段按结构体字段名（蛇形）：proxy_port/sandbox_port、
-// template_id/base_url/key/profile_id。
+// So invoke top-level args use camelCase. Serde struct args (`req`=FetchModelsReq,
+// `cfg`=UiSettings) keep snake_case field names internally: proxy_port/sandbox_port,
+// template_id/base_url/key/profile_id.
 //
-// 预览兜底：在普通浏览器（没有 Tauri 后端）里打开时用 mockInvoke 返回假数据，
-// 让界面能完整渲染。真实 app 里 window.__TAURI__ 存在，走真后端，此兜底不生效。
+// Preview fallback: when opened in a regular browser (no Tauri backend), mockInvoke returns fake data
+// so the UI renders fully. In the real app, window.__TAURI__ exists and uses the real backend; this fallback does not run.
 const PREVIEW = !window.__TAURI__;
 const invoke = PREVIEW
   ? (cmd, args) => mockInvoke(cmd, args)
   : window.__TAURI__.core.invoke;
 
-// ── 版本：国内 cn / 国际 intl（语言 + 提供商列表）────────────────────────────
+// ── Edition: domestic cn / international intl (language + provider list) ─────────────────────────────
 function detectEdition() {
   const q = new URLSearchParams(location.search).get("edition");
   if (q === "cn" || q === "intl") return q;
@@ -413,7 +413,7 @@ function modelHints() {
   return { native: t.modelHintNative, fixed: t.modelHintFixed };
 }
 
-/** 国内版：每家一个默认端点，仅保留国内常用线路。 */
+/** CN edition: one default endpoint per provider; domestic routes only. */
 const WIZ_PRESETS_CN = [
   { id: "deepseek", templateId: "deepseek", name: "DeepSeek", label: "DeepSeek", baseUrl: "https://api.deepseek.com/anthropic", lockUrl: true },
   { id: "glm", templateId: "glm", name: "GLM", label: "智谱 GLM", baseUrl: "https://open.bigmodel.cn/api/anthropic" },
@@ -424,7 +424,7 @@ const WIZ_PRESETS_CN = [
   { id: "xiaomi-token", templateId: "xiaomi", name: "MiMo", label: "小米 MiMo · Token 套餐", baseUrl: "https://token-plan-cn.xiaomimimo.com/anthropic" },
 ];
 
-/** 国际版：海外常用端点。 */
+/** Intl edition: common overseas endpoints. */
 const WIZ_PRESETS_INTL = [
   { id: "deepseek", templateId: "deepseek", name: "DeepSeek", label: "DeepSeek", baseUrl: "https://api.deepseek.com/anthropic", lockUrl: true },
   { id: "glm", templateId: "glm", name: "ZAI", label: "ZAI", baseUrl: "https://api.z.ai/api/anthropic" },
@@ -439,7 +439,7 @@ function wizPresets() {
   return EDITION === "cn" ? WIZ_PRESETS_CN : WIZ_PRESETS_INTL;
 }
 
-/** 向导里最近一次自动填入的 base URL；用户手改后清空，避免覆盖自定义地址。 */
+/** Last auto-filled base URL in the wizard; cleared after manual edits to avoid overwriting custom URLs. */
 let wizLastAutoBase = "";
 
 function applyEditionUI() {
@@ -477,7 +477,7 @@ function refreshWizPlaceholders() {
   if (els.wizBase) els.wizBase.placeholder = t.wizBasePlaceholder || "https://api.example.com/v1";
 }
 
-// ── 预览兜底 mock（仅浏览器预览用） ──
+// ── Preview fallback mock (browser preview only) ──
 const MOCK_TEMPLATES = [
   { id: "deepseek", name: "DeepSeek", api_format: "anthropic", adapter: "deepseek", base_url: "https://api.deepseek.com/anthropic", base_url_editable: false, requires_model_override: false, builtin_models: ["claude-opus-4-8", "claude-haiku-4-5"], icon: "deepseek", icon_color: "#1E88E5" },
   { id: "glm", name: "GLM", api_format: "anthropic", adapter: "relay", base_url: "https://open.bigmodel.cn/api/anthropic", base_url_editable: true, requires_model_override: true, builtin_models: ["glm-5.2", "glm-4.7"], icon: "glm", icon_color: "#2E6BE6" },
@@ -560,12 +560,12 @@ const els = {};
 let busy = false;
 let busyOp = null;
 let busyMsgTimers = [];
-// 当前配置快照（get_config 结果）。全 key 绝不在此，只有掩码。
+// Current config snapshot (get_config result). Full keys never stored here—only masks.
 let configState = { profiles: [], templates: [], active_id: "", proxy_port: 18991, sandbox_port: 8990 };
-let pendingSkipActivateId = null;   // set_active 校验含糊时，允许「跳过验证」再切
-let pendingConfirm = null;          // 危险操作（清 key / 删除）的「再点一次确认」态
+let pendingSkipActivateId = null;   // when set_active validation is ambiguous, allow switch via "skip verify"
+let pendingConfirm = null;          // dangerous ops (clear key / delete): "click again to confirm" state
 
-// ── 模型能力：native 内置映射 / relay 多选固定模型 ──
+// ── Model capability: native builtin mapping / relay multi-select fixed models ──
 const CAP = { NATIVE: "native", FIXED: "fixed" };
 function templateCaps(t) { return (t && t.capabilities) || {}; }
 function modelCapability(t) {
@@ -629,7 +629,7 @@ function renderModelPick(container, builtin, selected, onChange) {
   });
 }
 
-// native：只读说明；relay：checkbox 多选。
+// native: read-only hint; relay: checkbox multi-select.
 function applyModelCapability(t, ui, profileOrModel) {
   const p = profileOrModel && typeof profileOrModel === "object" ? profileOrModel : null;
   const currentModel = p ? (p.default_model || p.model || "") : (profileOrModel || "");
@@ -656,7 +656,7 @@ function applyModelCapability(t, ui, profileOrModel) {
 }
 
 function setMsg(text, kind) {
-  // 反馈区仅展示错误；成功/进度/中性提示一律不占位。
+  // Feedback area shows errors only; success/progress/neutral messages take no space.
   const t = kind === "err" && text && text !== T("ready") ? text : "";
   els.msg.textContent = t;
   els.msg.className = "msg" + (t ? " err" : "");
@@ -794,11 +794,11 @@ function setBusy(on, op) {
     els.wizSaveBtn, els.wizCancelBtn,
     els.connSaveBtn, els.connCancelBtn,
     els.skipActivateBtn,
-    // 端口输入也纳入忙碌禁用：忙碌中改端口会与在途操作竞态（修 P1-c 前端侧）。
+    // Disable port inputs while busy: changing ports mid-operation races in-flight work (P1-c frontend).
     els.proxyPort, els.sandboxPort,
   ].forEach((b) => b && (b.disabled = on));
   syncProfileBusyState();
-  // 松开忙碌时，把模型必填保存门控交回门（避免 setBusy(false) 覆盖门控）。
+  // On busy release, hand model-required save gating back to gates (avoid setBusy(false) overwriting gate).
   if (!on) { refreshWizGate(); refreshConnGate(); }
 }
 
@@ -816,7 +816,7 @@ function tplById(id) {
   return (configState.templates || []).find((t) => t.id === id) || null;
 }
 
-// ── 视图切换：列表 / 新建向导 / 连接编辑。一次只显示一个表单（列表隐去减少高度）。──
+// ── View switching: list / new wizard / connection edit. One form visible at a time (list hidden to reduce height). ──
 function showView(v) {
   els.listSec.hidden = v !== "list";
   els.advSec.hidden = v !== "list";
@@ -830,7 +830,7 @@ function cancelForm() { showView("list"); setMsg(T("ready")); }
 function showSkip() { els.skipActivateBtn.hidden = false; }
 function hideSkip() { els.skipActivateBtn.hidden = true; pendingSkipActivateId = null; }
 
-// 危险操作「再点一次确认」（避免依赖 window.confirm，Tauri webview 里不可靠）。
+// Dangerous ops "click again to confirm" (avoid window.confirm; unreliable in Tauri webview).
 function confirmAction(token, promptText, fn) {
   if (pendingConfirm && pendingConfirm.token === token) {
     clearTimeout(pendingConfirm.timer);
@@ -846,7 +846,7 @@ function confirmAction(token, promptText, fn) {
   setMsg(T("confirmRetry", { prompt: promptText }), "err");
 }
 
-// ── 加载配置 + 渲染列表 ──
+// ── Load config + render list ──
 async function loadConfig() {
   try {
     const cfg = await call("get_config");
@@ -859,14 +859,14 @@ async function loadConfig() {
     els.sandboxPort.value = configState.sandbox_port;
     renderList();
     showView("list");
-    // 一次性迁移提示（#9 甲）：后端 get_config 读后已清盘，只会出现一次。
+    // One-time migration notice (#9): backend clears after get_config read; appears only once.
     if (cfg.pending_notice) setMsg(cfg.pending_notice, "ok");
   } catch (e) {
     setMsg(T("loadConfigFail", { err: resolveBackendErr(e) }), "err");
   }
 }
 
-// 列表卡片第二行：弱化模型 ID，突出能力与 key 状态。
+// List card second line: de-emphasize model IDs; highlight capability and key status.
 function profileMetaLine(p) {
   const models = profileModels(p);
   const cap = modelCapability(p.capabilities ? p : tplById(p.template_id));
@@ -918,28 +918,28 @@ function renderList() {
   syncProfileBusyState();
 }
 
-// ── 端口设置（替旧 set_config；纯端口，不含 provider/连接）──
+// ── Port settings (replaces old set_config; ports only, no provider/connection) ──
 async function persistPorts() {
-  if (busy) return; // 忙碌中不改端口（防与在途操作竞态；输入亦已禁用，此为双保险）。修 P1-c
+  if (busy) return; // don't change ports while busy (prevents race with in-flight ops; inputs also disabled—belt and suspenders). P1-c
   const p = parseInt(els.proxyPort.value, 10) || 18991;
   const s = parseInt(els.sandboxPort.value, 10) || 8990;
   const changed = p !== configState.proxy_port || s !== configState.sandbox_port;
-  // 本次端口提交全程置忙：仅靠开头的 `if (busy) return` 只挡「已在忙时进入」，挡不住本函数在途
-  // 时其它操作（切模式/一键/连接编辑）启动。置忙 + 禁用控件才能保证操作顺序符合用户预期。修 GPT 三轮 P2
+  // Keep busy for entire port submit: initial `if (busy) return` only blocks re-entry while already busy,
+  // not other ops (mode switch / one-click / connection edit) started while this call is in flight. Busy + disabled controls enforce order. GPT round-3 P2
   setBusy(true, { kind: "ports" });
   startPortSaveFeedback(changed);
   try {
     await call("set_settings", { cfg: { proxy_port: p, sandbox_port: s } });
     configState.proxy_port = p;
     configState.sandbox_port = s;
-    // 后端在端口变化时会拆掉旧代理/沙箱（否则会复用指向旧端口的死链路），如实告知需重开。修 P1-c
+    // Backend tears down old proxy/sandbox on port change (otherwise stale dead links reuse old ports); tell user to restart. P1-c
     if (changed) {
       setMsg(T("portSavedReset"), "ok");
     } else {
       setMsg(T("portUnchanged"), "ok");
     }
   } catch (e) {
-    // 出错＝端口未落盘（校验不过 / 停旧沙箱失败）：把输入框还原成实际生效值，避免显示未保存的数字。
+    // Error = ports not persisted (validation failed / stop old sandbox failed): reset inputs to effective values so UI doesn't show unsaved numbers.
     els.proxyPort.value = configState.proxy_port;
     els.sandboxPort.value = configState.sandbox_port;
     setMsg(resolveBackendErr(e), "err");
@@ -948,7 +948,7 @@ async function persistPorts() {
   }
 }
 
-// fetch_models 返回体 → 刷新 checkbox 池（编辑页自动拉取用）。
+// fetch_models response → refresh checkbox pool (auto-fetch on edit page).
 async function discoverModelIds({ templateId, baseUrl, key, profileId, builtin }) {
   const t = tplById(templateId);
   const cap = modelCapability(t);
@@ -966,11 +966,11 @@ async function discoverModelIds({ templateId, baseUrl, key, profileId, builtin }
     });
     const ids = ((r && r.models) || []).map((m) => m.id).filter(Boolean);
     if (ids.length) return ids;
-  } catch (_) { /* 回落内置 */ }
+  } catch (_) { /* fall back to builtins */ }
   return fallback;
 }
 
-/** 新建 profile 时默认启用前 N 个模型；其余在编辑页勾选或改 CSP.json。 */
+/** On new profile, enable first N models by default; rest via edit page or CSP.json. */
 const MAX_AUTO_ENABLE_MODELS = 8;
 
 function modelsToEnableOnCreate(discoveredIds, builtin) {
@@ -980,7 +980,7 @@ function modelsToEnableOnCreate(discoveredIds, builtin) {
   return candidates.slice(0, MAX_AUTO_ENABLE_MODELS);
 }
 
-// fetch_models 返回体 → 刷新 checkbox 池（编辑页自动拉取用）。
+// fetch_models response → refresh checkbox pool (auto-fetch on edit page).
 function applyFetchToPick(r, pickUi, selected) {
   const models = (r && r.models) || [];
   const ids = models.map((m) => m.id).filter(Boolean);
@@ -990,7 +990,7 @@ function applyFetchToPick(r, pickUi, selected) {
   return ids.length;
 }
 
-// ── C2：新建（Provider 预设 + base_url + key）──
+// ── C2: create (provider preset + base_url + key) ──
 
 function wizPresetById(id) {
   return wizPresets().find((item) => item.id === id) || null;
@@ -1161,7 +1161,7 @@ function resolvedConnectionModels(cap, pickContainer) {
   return { models: checked, defaultModel: checked[0] || "" };
 }
 
-// ── C3：连接编辑（base_url/model/key）+ 清 key ──
+// ── C3: connection edit (base_url/model/key) + clear key ──
 function currentConn() {
   const id = els.connSec.dataset.id;
   return (configState.profiles || []).find((x) => x.id === id) || null;
@@ -1182,7 +1182,7 @@ function openConn(id) {
   els.connBase.placeholder = capSrc && (capSrc.api_format === "openai_chat" || capSrc.api_format === "openai_responses")
     ? "https://open.bigmodel.cn/api/paas/v4"
     : "https://your-relay/claude";
-  // native（deepseek/qwen）隐藏「获取模型」按钮，别再提示一个不存在的操作（修 #5）。
+  // native (deepseek/qwen): hide "fetch models" button—don't hint at a nonexistent action (#5).
   els.connBaseHint.textContent = editable
     ? (t && t.base_url
         ? T("connBaseHintDefault")
@@ -1268,13 +1268,13 @@ async function connSave() {
   const model = resolved.defaultModel || resolved.models[0] || "";
   const editable = t ? t.base_url_editable : true;
   const base = editable ? els.connBase.value.trim() : (t ? t.base_url : els.connBase.value.trim());
-  // 可编辑地址的模板都是中转/自定义端点，必须带 base_url；清空后保存会得到不可用连接（激活必失败）。
-  // 保存前就拦（后端也有同款守卫兜底，修 P2）。
+  // Editable-url templates are relay/custom endpoints and require base_url; saving empty yields unusable connection (activation fails).
+  // Block before save (backend has matching guard; P2).
   if (editable && !base) { setMsg(S().fillBaseUrl, "err"); return; }
   const baseErr = openaiCustomAnthropicBaseMessage(t, base);
   if (baseErr) { setMsg(baseErr, "err"); return; }
   const active = p.id === configState.active_id;
-  // key 留空＝不改（后端语义）；base_url/model 照传。api_format 不在此改（保留模板值）。
+  // empty key = unchanged (backend semantics); base_url/model sent as-is. api_format not edited here (keep template value).
   const args = {
     id: p.id,
     baseUrl: base,
@@ -1292,7 +1292,7 @@ async function connSave() {
     }
     els.connKey.value = "";
     await loadConfig();
-    // 非 active：后端如实回传 validated，连不通/native 也保存，但据实说明未校验（修 P2-d truthful-save）。
+    // non-active: backend returns validated truthfully; saves even if unreachable/native but reports unvalidated (P2-d truthful-save).
     if (active) {
       setMsg(T("savedApplied"), "ok");
     } else if (r && r.validated) {
