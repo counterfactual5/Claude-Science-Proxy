@@ -1,12 +1,12 @@
-"""代理级端到端：证明 DSML 兜底 shim 已真正接进 csp_proxy（Codex P0）。
+"""Proxy-level e2e: proves DSML fallback shim is wired into csp_proxy (Codex P0).
 
-启动【真实代理】子进程，用 CSP_UPSTREAM_URL 把上游指到一个会吐 DSML 纯文本
-工具调用的假上游，再对代理发真实 HTTP。断言：
-  - rewrite 模式：流式/非流式里泄漏成文本的 DSML 被还原成真正的 tool_use 块，
-    stop_reason 被覆写成 tool_use；
-  - off  模式（默认）：字节级透传，DSML 仍是文本、无 tool_use（零回归）。
+Starts a real proxy subprocess with CSP_UPSTREAM_URL pointing at a fake upstream that emits DSML as plain-text
+tool calls, then sends real HTTP to the proxy. Asserts:
+  - rewrite mode: DSML leaked as text in stream/non-stream is restored to real tool_use blocks,
+    stop_reason rewritten to tool_use;
+  - off mode (default): byte-level passthrough, DSML stays text, no tool_use (zero regression).
 
-隔离层测试：只打代理 ↔ 假上游，全程不碰 Science（守铁律 4）。
+Isolation-layer test: proxy ↔ fake upstream only, never touches Science (iron rule 4).
 """
 import json
 import os
@@ -23,9 +23,9 @@ from _capability import loopback_available
 HERE = os.path.dirname(__file__)
 PROXY = os.path.join(HERE, "..", "proxy", "csp_proxy.py")
 SEC = "dsmltok"
-P2 = "｜｜"   # 双全角竖线（issue #8 实测泄漏形态）
+P2 = "｜｜"   # fullwidth double pipe (issue #8 observed leak shape)
 
-# 一段「模型本想调用 web_search、却泄漏成纯文本」的 DSML（与 test_dsml_shim 的 wrap_typed 同构）。
+# DSML where model meant web_search but leaked as plain text (same shape as test_dsml_shim wrap_typed).
 DSML_TEXT = (
     "<" + P2 + "DSML" + P2 + "tool_calls> "
     "<" + P2 + "DSML" + P2 + 'invoke name="web_search">'
@@ -67,7 +67,7 @@ def _build_json():
 
 
 def start_dsml_upstream():
-    """假上游：按请求体里的 stream 标志，返回含 DSML 文本的 SSE 或非流式 JSON。"""
+    """Fake upstream: by stream flag in request body, returns DSML text in SSE or non-stream JSON."""
     srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     srv.bind(("127.0.0.1", 0))
@@ -163,7 +163,7 @@ def raw_post(host, port, path, body):
 
 
 def dechunk(raw):
-    """把代理的 chunked 响应体解开成裸 body；非 chunked 原样返回 body。"""
+    """Decode proxy chunked response body to raw body; non-chunked returns body as-is."""
     head, _, rest = raw.partition(b"\r\n\r\n")
     if b"chunked" not in head.lower():
         return rest
@@ -177,7 +177,7 @@ def dechunk(raw):
         if size == 0:
             break
         out += buf[:size]
-        buf = buf[size + 2:]      # 跳过分块尾随的 \r\n
+        buf = buf[size + 2:]      # skip chunk trailing \r\n
     return out
 
 
@@ -199,7 +199,7 @@ def launch_proxy(port, shim_mode, upstream):
     proc = subprocess.Popen(
         [sys.executable, PROXY, "--provider", "deepseek", "--port", str(port), "--auth-token", SEC],
         env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    # 探活：等 /health 起来
+    # Probe: wait for /health to come up
     for _ in range(50):
         try:
             r = raw_post("127.0.0.1", port, f"/{SEC}/v1/messages", b'{"messages":[]}')
@@ -213,12 +213,12 @@ def launch_proxy(port, shim_mode, upstream):
 
 @unittest.skipUnless(loopback_available(), "env-blocked: loopback bind/connect not permitted")
 class DsmlRewriteWired(unittest.TestCase):
-    """rewrite 模式：DSML 泄漏被还原成真正的 tool_use（P0 已接通的核心证明）。"""
+    """rewrite mode: DSML leak restored to real tool_use (core P0 wiring proof)."""
 
     @classmethod
     def setUpClass(cls):
         cls.up_url, cls.up_sock = start_dsml_upstream()
-        cls.port = 18979  # S0 全局唯一端口：DsmlRewriteWired
+        cls.port = 18979  # S0 globally unique port: DsmlRewriteWired
         cls.proc = launch_proxy(cls.port, "rewrite", cls.up_url)
 
     @classmethod
@@ -231,11 +231,11 @@ class DsmlRewriteWired(unittest.TestCase):
         raw = raw_post("127.0.0.1", self.port, f"/{SEC}/v1/messages", _req_body(True))
         body = dechunk(raw).decode("utf-8", "replace")
         self.assertIn("200", raw.split(b"\r\n", 1)[0].decode())
-        self.assertIn('"type": "tool_use"', body)          # 合成了 tool_use 块
+        self.assertIn('"type": "tool_use"', body)          # synthesized tool_use block
         self.assertIn('"name": "web_search"', body)
-        self.assertIn("GSE207177", body)                    # 参数保真
-        self.assertIn('"stop_reason": "tool_use"', body)    # stop_reason 被覆写
-        self.assertNotIn("DSML", body)                      # 原始泄漏标记已被消化
+        self.assertIn("GSE207177", body)                    # args preserved
+        self.assertIn('"stop_reason": "tool_use"', body)    # stop_reason rewritten
+        self.assertNotIn("DSML", body)                      # original leak marker digested
 
     def test_nonstreaming_dsml_becomes_tool_use(self):
         raw = raw_post("127.0.0.1", self.port, f"/{SEC}/v1/messages", _req_body(False))
@@ -251,13 +251,13 @@ class DsmlRewriteWired(unittest.TestCase):
 
 @unittest.skipUnless(loopback_available(), "env-blocked: loopback bind/connect not permitted")
 class DsmlOffIsVerbatim(unittest.TestCase):
-    """off 模式（默认）：字节级透传，DSML 仍是文本、无 tool_use（零回归护栏）。"""
+    """off mode (default): byte-level passthrough, DSML stays text, no tool_use (zero-regression guard)."""
 
     @classmethod
     def setUpClass(cls):
         cls.up_url, cls.up_sock = start_dsml_upstream()
-        cls.port = 18980  # S0 全局唯一端口：DsmlOffIsVerbatim
-        cls.proc = launch_proxy(cls.port, None, cls.up_url)   # 不设 env → 默认 off
+        cls.port = 18980  # S0 globally unique port: DsmlOffIsVerbatim
+        cls.proc = launch_proxy(cls.port, None, cls.up_url)   # no env → default off
 
     @classmethod
     def tearDownClass(cls):
@@ -268,8 +268,8 @@ class DsmlOffIsVerbatim(unittest.TestCase):
     def test_streaming_passes_dsml_verbatim(self):
         raw = raw_post("127.0.0.1", self.port, f"/{SEC}/v1/messages", _req_body(True))
         body = dechunk(raw).decode("utf-8", "replace")
-        self.assertIn("DSML", body)                          # 原样保留泄漏文本
-        self.assertNotIn('"type": "tool_use"', body)         # 未改写
+        self.assertIn("DSML", body)                          # leak text preserved verbatim
+        self.assertNotIn('"type": "tool_use"', body)         # not rewritten
 
     def test_nonstreaming_passes_dsml_verbatim(self):
         raw = raw_post("127.0.0.1", self.port, f"/{SEC}/v1/messages", _req_body(False))
