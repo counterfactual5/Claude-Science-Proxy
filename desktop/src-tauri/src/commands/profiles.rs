@@ -6,7 +6,10 @@ use crate::runtime::profile::{
     delete_profile_inner, update_profile_connection_inner, update_profile_metadata_inner,
     ConnectionEdit,
 };
-use crate::runtime::profile_switch::{scratch_validate_candidate, set_active_profile_txn};
+use crate::runtime::profile_switch::{
+    activate_profile_in_pool_txn, deactivate_profile_from_pool_txn, scratch_validate_candidate,
+    set_active_profile_txn, toggle_profile_active_txn,
+};
 use crate::runtime::provider::{
     adapter_for_profile, reject_openai_custom_anthropic_base, relay_missing_base_url,
     relay_missing_profile_models,
@@ -69,7 +72,7 @@ pub(crate) fn clear_profile_key(
     lifecycle.with_serialized(|| {
         let dir = config::default_dir();
         let was_active = config::load_from(&dir)
-            .map(|c| c.active_id == id)
+            .map(|c| c.is_profile_active(&id))
             .unwrap_or(false);
         clear_profile_key_inner(&dir, &id)?;
         if was_active {
@@ -91,7 +94,7 @@ pub(crate) fn delete_profile(
     lifecycle.with_serialized(|| {
         let dir = config::default_dir();
         let was_active = config::load_from(&dir)
-            .map(|c| c.active_id == id)
+            .map(|c| c.is_profile_active(&id))
             .unwrap_or(false);
         delete_profile_inner(&dir, &id)?;
         if was_active {
@@ -170,7 +173,7 @@ fn update_profile_connection_inner_cmd(
         if relay_missing_profile_models(adapter, &candidate) {
             return Err("中转 / 自定义端点必须选择或填写一个模型，连接未保存。".to_string());
         }
-        if cfg.active_id == id {
+        if cfg.is_profile_active(&id) {
             // active（有正在服务的代理）：validate-before-persist —— 新连接作【内存候选】喂进
             // 切换事务（校验→起正式→健康），探活健康【才】连同落盘；失败则磁盘连接零改动、
             // 仍跑旧连接（杜绝「盘新运行旧」，修 P1-4）。
@@ -231,4 +234,60 @@ fn set_active_profile_inner_cmd(
     lifecycle.with_serialized(|| {
         set_active_profile_txn(&app, &state, lifecycle.as_ref(), &id, skip_verify, None)
     })
+}
+
+/// 将 profile 加入 provider pool（保留其它 active）。
+#[tauri::command]
+pub(crate) async fn activate_profile_in_pool(
+    app: tauri::AppHandle,
+    state: State<'_, SharedAppState>,
+    lifecycle: State<'_, SharedLifecycle>,
+    id: String,
+    skip_verify: bool,
+) -> Result<serde_json::Value, String> {
+    let state = state.inner().clone();
+    let lifecycle = lifecycle.inner().clone();
+    run_blocking(move || {
+        lifecycle.with_serialized(|| {
+            activate_profile_in_pool_txn(&app, &state, lifecycle.as_ref(), &id, skip_verify)
+        })
+    })
+    .await
+}
+
+/// 从 provider pool 移除 profile。
+#[tauri::command]
+pub(crate) async fn deactivate_profile_from_pool(
+    app: tauri::AppHandle,
+    state: State<'_, SharedAppState>,
+    lifecycle: State<'_, SharedLifecycle>,
+    id: String,
+) -> Result<serde_json::Value, String> {
+    let state = state.inner().clone();
+    let lifecycle = lifecycle.inner().clone();
+    run_blocking(move || {
+        lifecycle.with_serialized(|| {
+            deactivate_profile_from_pool_txn(&app, &state, lifecycle.as_ref(), &id)
+        })
+    })
+    .await
+}
+
+/// 切换 profile 在 pool 中的 active 状态。
+#[tauri::command]
+pub(crate) async fn toggle_profile_active(
+    app: tauri::AppHandle,
+    state: State<'_, SharedAppState>,
+    lifecycle: State<'_, SharedLifecycle>,
+    id: String,
+    skip_verify: bool,
+) -> Result<serde_json::Value, String> {
+    let state = state.inner().clone();
+    let lifecycle = lifecycle.inner().clone();
+    run_blocking(move || {
+        lifecycle.with_serialized(|| {
+            toggle_profile_active_txn(&app, &state, lifecycle.as_ref(), &id, skip_verify)
+        })
+    })
+    .await
 }

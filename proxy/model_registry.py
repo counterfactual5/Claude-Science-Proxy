@@ -36,6 +36,7 @@ class RegistryEntry:
     real_id: str
     display_name: str
     tier: str
+    profile_id: str = ""
 
 
 @dataclass
@@ -43,11 +44,15 @@ class ModelRegistry:
     entries: list[RegistryEntry] = field(default_factory=list)
     routes: dict[str, str] = field(default_factory=dict)
     display_names: dict[str, str] = field(default_factory=dict)
+    profile_routes: dict[str, str] = field(default_factory=dict)
     default_model: str = ""
     fast_model: str = ""
+    default_profile_id: str = ""
 
     @classmethod
     def from_payload(cls, payload: dict) -> "ModelRegistry":
+        if payload.get("merge") and isinstance(payload.get("profiles"), list):
+            return cls.merge_payloads(payload["profiles"])
         models = payload.get("models") or []
         if isinstance(models, str):
             models = [models]
@@ -65,11 +70,59 @@ class ModelRegistry:
         fast_model = str(payload.get("fast_model") or "").strip()
         if not fast_model:
             fast_model = cleaned[-1] if len(cleaned) > 1 else default_model
-        return cls.from_models(cleaned, default_model=default_model, fast_model=fast_model)
+        profile_id = str(payload.get("profile_id") or "").strip()
+        display_prefix = str(payload.get("display_name") or "").strip()
+        return cls.from_models(
+            cleaned,
+            default_model=default_model,
+            fast_model=fast_model,
+            profile_id=profile_id,
+            display_prefix=display_prefix,
+        )
 
     @classmethod
     def from_json(cls, raw: str) -> "ModelRegistry":
         return cls.from_payload(json.loads(raw))
+
+    @classmethod
+    def merge_payloads(cls, payloads: list[dict]) -> "ModelRegistry":
+        reg = cls()
+        if not payloads:
+            return reg
+        used_shells: set[str] = set()
+        pool_iter = iter(SHELL_POOL)
+        entries: list[RegistryEntry] = []
+        first_default = ""
+        first_fast = ""
+        first_profile = ""
+        for payload in payloads:
+            if not isinstance(payload, dict):
+                continue
+            slice_reg = cls.from_payload(payload)
+            if not slice_reg.entries:
+                continue
+            for entry in slice_reg.entries:
+                shell_id, tier = _next_shell(pool_iter, used_shells)
+                used_shells.add(shell_id)
+                entries.append(RegistryEntry(
+                    shell_id,
+                    entry.real_id,
+                    entry.display_name,
+                    tier,
+                    entry.profile_id,
+                ))
+            if not first_default and slice_reg.default_model:
+                first_default = slice_reg.default_model
+                first_fast = slice_reg.fast_model or slice_reg.default_model
+                first_profile = slice_reg.default_profile_id
+        reg.entries = entries
+        reg.routes = {e.shell_id: e.real_id for e in entries}
+        reg.display_names = {e.shell_id: e.display_name for e in entries}
+        reg.profile_routes = {e.shell_id: e.profile_id for e in entries if e.profile_id}
+        reg.default_model = first_default
+        reg.fast_model = first_fast or first_default
+        reg.default_profile_id = first_profile
+        return reg
 
     @classmethod
     def from_models(
@@ -78,34 +131,46 @@ class ModelRegistry:
         *,
         default_model: str = "",
         fast_model: str = "",
+        profile_id: str = "",
+        display_prefix: str = "",
     ) -> "ModelRegistry":
         reg = cls()
         if not models:
             return reg
         reg.default_model = default_model or models[0]
         reg.fast_model = fast_model or (models[-1] if len(models) > 1 else reg.default_model)
+        reg.default_profile_id = profile_id
         used_shells = set()
         entries = []
         pool_iter = iter(SHELL_POOL)
         for real_id in models:
             shell_id, tier = _next_shell(pool_iter, used_shells)
             used_shells.add(shell_id)
-            entries.append(RegistryEntry(shell_id, real_id, real_id, tier))
+            display = f"{display_prefix}: {real_id}" if display_prefix else real_id
+            entries.append(RegistryEntry(shell_id, real_id, display, tier, profile_id))
         reg.entries = entries
         reg.routes = {e.shell_id: e.real_id for e in entries}
         reg.display_names = {e.shell_id: e.display_name for e in entries}
+        reg.profile_routes = {e.shell_id: e.profile_id for e in entries if e.profile_id}
         return reg
 
     def resolve(self, shell_id: str) -> str | None:
+        routed = self.resolve_route(shell_id)
+        return routed[0] if routed else None
+
+    def resolve_route(self, shell_id: str) -> tuple[str, str] | None:
+        """Return (real_id, profile_id) for a shell id."""
         if not shell_id:
-            return self.default_model or None
+            if self.default_model:
+                return self.default_model, self.default_profile_id
+            return None
         if shell_id in self.routes:
-            return self.routes[shell_id]
+            return self.routes[shell_id], self.profile_routes.get(shell_id, self.default_profile_id)
         kind = FALLBACK_SHELLS.get(shell_id)
         if kind == "fast" and self.fast_model:
-            return self.fast_model
+            return self.fast_model, self.default_profile_id
         if kind == "default" and self.default_model:
-            return self.default_model
+            return self.default_model, self.default_profile_id
         return None
 
     def models_response(self):

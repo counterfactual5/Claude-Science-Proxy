@@ -79,20 +79,21 @@ where
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .plugin(tauri_plugin_opener::init())
         .manage(Arc::new(Mutex::new(AppState::default())))
         .manage(Arc::new(lifecycle::Lifecycle::new()))
         .invoke_handler(tauri::generate_handler![
             commands::profiles::get_config,
             commands::profiles::list_templates,
             commands::runtime::set_settings,
-            commands::runtime::set_mode,
             commands::profiles::create_profile,
             commands::profiles::update_profile_metadata,
             commands::profiles::update_profile_connection,
             commands::profiles::clear_profile_key,
             commands::profiles::delete_profile,
             commands::profiles::set_active_profile,
+            commands::profiles::activate_profile_in_pool,
+            commands::profiles::deactivate_profile_from_pool,
+            commands::profiles::toggle_profile_active,
             commands::runtime::start_proxy,
             commands::runtime::verify_key,
             commands::runtime::fetch_models,

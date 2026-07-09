@@ -8,15 +8,23 @@ use crate::runtime::provider::{
     assert_format_supported, is_native_adapter, is_openai_adapter, proxy_args_for,
     proxy_fingerprint, ProxyLaunch,
 };
+use crate::runtime::provider_pool::{proxy_args_for_active_profiles, proxy_fingerprint_pool};
 use crate::runtime::proxy::{ere_escape, health_timeout_reason, should_write_back, ProxyAction};
 use crate::runtime::system::{asset_root, log_path, open_log, redact, tail_file};
 use crate::{config, lifecycle, lock, proc, SharedAppState};
 
 fn formal_proxy_env(launch: &ProxyLaunch) -> Vec<(&'static str, String)> {
     let native = is_native_adapter(&launch.adapter);
+    let pool = launch.adapter == "pool";
     let mut env = vec![(launch.key_env, launch.key.clone())];
     if let Some(reg) = &launch.model_registry_json {
         env.push(("CSSWITCH_MODEL_REGISTRY", reg.clone()));
+    }
+    if let Some(pool_json) = &launch.provider_pool_json {
+        env.push(("CSSWITCH_PROVIDER_POOL", pool_json.clone()));
+    }
+    if pool {
+        return env;
     }
     if !native {
         if is_openai_adapter(&launch.adapter) {
@@ -40,7 +48,41 @@ fn formal_proxy_env(launch: &ProxyLaunch) -> Vec<(&'static str, String)> {
     env
 }
 
-/// Ensure the active profile's proxy is running and healthy.
+fn launch_fingerprint(profiles: &[config::Profile], launch: &ProxyLaunch) -> u64 {
+    if profiles.len() > 1 {
+        proxy_fingerprint_pool(profiles, launch)
+    } else if let Some(p) = profiles.first() {
+        proxy_fingerprint(p, launch)
+    } else {
+        0
+    }
+}
+
+fn validate_profiles_for_proxy(profiles: &[config::Profile]) -> Result<(), String> {
+    if profiles.is_empty() {
+        return Err("未配置生效 profile，请先在面板选择或新建一条配置。".into());
+    }
+    for p in profiles {
+        assert_format_supported(p)?;
+        let launch = proxy_args_for(p);
+        if launch.key.is_empty() {
+            return Err(format!(
+                "「{}」还没填 API key，请先在面板填写并保存。",
+                p.name
+            ));
+        }
+        let native = is_native_adapter(&launch.adapter);
+        if !native && launch.base_url.is_empty() {
+            return Err(format!(
+                "「{}」需要填 base_url（如 https://your-relay/claude），请先在面板填写并保存。",
+                p.name
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Ensure active profile(s) proxy is running and healthy.
 pub(crate) fn ensure_proxy<R: Runtime>(
     app: &tauri::AppHandle<R>,
     state: &SharedAppState,
@@ -48,16 +90,11 @@ pub(crate) fn ensure_proxy<R: Runtime>(
     trace: Option<&OperationTrace>,
 ) -> Result<(u16, String, ProxyAction), String> {
     let cfg = config::load_from(&config::default_dir()).map_err(|e| e.to_string())?;
-    let profile = cfg
-        .active_profile()
-        .cloned()
-        .ok_or("未配置生效 profile，请先在面板选择或新建一条配置。")?;
-    start_proxy_for(app, state, lifecycle, &profile, trace)
+    let profiles: Vec<config::Profile> = cfg.active_profiles().into_iter().cloned().collect();
+    start_proxy_for_profiles(app, state, lifecycle, &profiles, trace)
 }
 
-/// Start or reuse a proxy for a specific profile, without reading the active profile.
-///
-/// This function does not take the command serializer lock; callers own that boundary.
+/// Start or reuse a proxy for one profile (legacy single-profile path).
 pub(crate) fn start_proxy_for<R: Runtime>(
     app: &tauri::AppHandle<R>,
     state: &SharedAppState,
@@ -65,22 +102,20 @@ pub(crate) fn start_proxy_for<R: Runtime>(
     profile: &config::Profile,
     trace: Option<&OperationTrace>,
 ) -> Result<(u16, String, ProxyAction), String> {
-    assert_format_supported(profile)?;
-    let launch = proxy_args_for(profile);
-    if launch.key.is_empty() {
-        return Err(format!(
-            "「{}」还没填 API key，请先在面板填写并保存。",
-            profile.name
-        ));
-    }
-    let native = is_native_adapter(&launch.adapter);
-    if !native && launch.base_url.is_empty() {
-        return Err(
-            "该配置需要填 base_url（如 https://your-relay/claude），请先在面板填写并保存。".into(),
-        );
-    }
+    start_proxy_for_profiles(app, state, lifecycle, std::slice::from_ref(profile), trace)
+}
 
-    let key_fp = proxy_fingerprint(profile, &launch);
+/// Start or reuse a proxy for one or more active profiles (pool when len > 1).
+pub(crate) fn start_proxy_for_profiles<R: Runtime>(
+    app: &tauri::AppHandle<R>,
+    state: &SharedAppState,
+    lifecycle: &lifecycle::Lifecycle,
+    profiles: &[config::Profile],
+    trace: Option<&OperationTrace>,
+) -> Result<(u16, String, ProxyAction), String> {
+    validate_profiles_for_proxy(profiles)?;
+    let launch = proxy_args_for_active_profiles(profiles)?;
+    let key_fp = launch_fingerprint(profiles, &launch);
     let dir = config::default_dir();
     let cfg = config::load_from(&dir).map_err(|e| e.to_string())?;
     let port = cfg.proxy_port;
@@ -133,7 +168,11 @@ pub(crate) fn start_proxy_for<R: Runtime>(
         if let Some(t) = trace {
             t.stage(
                 OperationStage::ProxySpawn,
-                format!("port={port} adapter={}", launch.adapter),
+                format!(
+                    "port={port} adapter={} profiles={}",
+                    launch.adapter,
+                    profiles.len()
+                ),
             );
         }
         cmd.arg(&script)
@@ -212,11 +251,14 @@ mod tests {
             key: "test-key".to_string(),
             key_env: if matches!(adapter, "openai-custom" | "openai-responses") {
                 "CSSWITCH_OPENAI_KEY"
+            } else if adapter == "pool" {
+                "CSSWITCH_POOL_MARKER"
             } else {
                 "CSSWITCH_RELAY_KEY"
             },
             thinking_policy,
             model_registry_json: None,
+            provider_pool_json: None,
         }
     }
 
@@ -233,6 +275,17 @@ mod tests {
             launch.model_registry_json.clone().unwrap()
         )));
         assert!(!env.iter().any(|(k, _)| *k == "CSSWITCH_RELAY_MODEL"));
+    }
+
+    #[test]
+    fn formal_proxy_env_pool_sets_pool_and_registry_only() {
+        let mut launch = launch("pool", "glm-5.2");
+        launch.model_registry_json = Some(r#"{"merge":true,"profiles":[]}"#.to_string());
+        launch.provider_pool_json = Some(r#"{"profiles":[]}"#.to_string());
+        let env = formal_proxy_env(&launch);
+        assert!(env.iter().any(|(k, _)| *k == "CSSWITCH_PROVIDER_POOL"));
+        assert!(env.iter().any(|(k, _)| *k == "CSSWITCH_MODEL_REGISTRY"));
+        assert!(!env.iter().any(|(k, _)| *k == "CSSWITCH_RELAY_BASE_URL"));
     }
 
     #[test]

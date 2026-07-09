@@ -6,7 +6,7 @@ use crate::runtime::provider::{
     assert_format_supported, is_native_adapter, proxy_args_for,
     reject_openai_custom_anthropic_base, relay_missing_profile_models, should_scratch_candidate,
 };
-use crate::runtime::proxy_lifecycle::start_proxy_for;
+use crate::runtime::proxy_lifecycle::{start_proxy_for, start_proxy_for_profiles};
 use crate::runtime::system::asset_root;
 use crate::runtime::transaction::{
     decide_switch, rollback_status_clause, skip_scratch_verify, SwitchOutcome,
@@ -94,7 +94,6 @@ pub(crate) fn set_active_profile_txn(
         );
     }
 
-    let old_active = cfg.active_id.clone();
     let trace = OperationTrace::start(
         if is_edit {
             OperationKind::UpdateActiveConnection
@@ -156,8 +155,9 @@ pub(crate) fn set_active_profile_txn(
     };
 
     lifecycle.bump_generation();
-    let real_healthy =
-        scratch_ok && start_proxy_for(app, state, lifecycle, &candidate, Some(&trace)).is_ok();
+    let profiles_after: Vec<config::Profile> = vec![candidate.clone()];
+    let real_healthy = scratch_ok
+        && start_proxy_for_profiles(app, state, lifecycle, &profiles_after, Some(&trace)).is_ok();
 
     match decide_switch(scratch_ok, real_healthy) {
         SwitchOutcome::Commit => {
@@ -165,7 +165,7 @@ pub(crate) fn set_active_profile_txn(
                 config::write_rolling_backup(&dir).ok();
             }
             if let Err(e) = config::update(&dir, |c| {
-                c.active_id = id.to_string();
+                c.set_exclusive_active(id);
                 if let Some(edit) = conn_edit {
                     if let Some(p) = c.profile_by_id_mut(id) {
                         edit.apply(p);
@@ -173,12 +173,11 @@ pub(crate) fn set_active_profile_txn(
                 }
             }) {
                 trace.stage(OperationStage::Rollback, "reason=config_write_failed");
-                let restored = restore_proxy_for_active(
+                let restored = restore_proxy_for_active_set(
                     app,
                     state,
                     lifecycle,
                     &cfg,
-                    &old_active,
                     Some(&trace),
                 );
                 trace.finish(format!("error=config_write_failed restored={restored}"));
@@ -194,12 +193,17 @@ pub(crate) fn set_active_profile_txn(
             };
             trace.stage(OperationStage::Commit, "ok");
             trace.finish("committed=true");
-            Ok(json!({ "committed": true, "active_id": id, "hint": hint }))
+            Ok(json!({
+                "committed": true,
+                "active_id": id,
+                "active_ids": [id],
+                "hint": hint
+            }))
         }
         SwitchOutcome::RollbackToOld => {
             trace.stage(OperationStage::Rollback, "reason=proxy_unhealthy");
             let restored =
-                restore_proxy_for_active(app, state, lifecycle, &cfg, &old_active, Some(&trace));
+                restore_proxy_for_active_set(app, state, lifecycle, &cfg, Some(&trace));
             let clause = rollback_status_clause(restored);
             trace.finish(format!("rollback restored={restored}"));
             if is_edit {
@@ -223,6 +227,267 @@ pub(crate) fn set_active_profile_txn(
     }
 }
 
+/// 将 profile 加入 provider pool（不取消其它 active）。校验通过后重启 pool 代理并落盘。
+pub(crate) fn activate_profile_in_pool_txn(
+    app: &tauri::AppHandle,
+    state: &SharedAppState,
+    lifecycle: &lifecycle::Lifecycle,
+    id: &str,
+    skip_verify: bool,
+) -> Result<Value, String> {
+    let dir = config::default_dir();
+    let cfg = config::load_from(&dir).map_err(|e| e.to_string())?;
+    if cfg.is_profile_active(id) {
+        return Ok(json!({
+            "committed": true,
+            "active_ids": cfg.active_ids,
+            "hint": "该连接已在当前池中。",
+        }));
+    }
+    let candidate = cfg
+        .profile_by_id(id)
+        .cloned()
+        .ok_or_else(|| format!("找不到 profile：{id}"))?;
+    pool_activation_txn(app, state, lifecycle, &cfg, &candidate, skip_verify, |c| {
+        c.activate_profile(id);
+    })
+}
+
+/// 从 provider pool 移除 profile；若池空则停代理。
+pub(crate) fn deactivate_profile_from_pool_txn(
+    app: &tauri::AppHandle,
+    state: &SharedAppState,
+    lifecycle: &lifecycle::Lifecycle,
+    id: &str,
+) -> Result<Value, String> {
+    let dir = config::default_dir();
+    let cfg = config::load_from(&dir).map_err(|e| e.to_string())?;
+    if !cfg.is_profile_active(id) {
+        return Ok(json!({
+            "committed": true,
+            "active_ids": cfg.active_ids,
+            "hint": "该连接未在池中。",
+        }));
+    }
+    let old_ids = cfg.active_ids.clone();
+#[allow(clippy::needless_borrows_for_generic_args)]
+    let mut next_ids: Vec<String> = cfg
+        .active_ids
+        .iter()
+        .filter(|x| *x != id)
+        .cloned()
+        .collect();
+    lifecycle.bump_generation();
+    if next_ids.is_empty() {
+        config::update(&dir, |c| c.deactivate_profile(id)).map_err(|e| e.to_string())?;
+        let mut st = crate::lock(state);
+        st.stop_proxy();
+        return Ok(json!({
+            "committed": true,
+            "active_ids": [],
+            "hint": "已从池中移除，当前无生效连接。",
+        }));
+    }
+    let profiles: Vec<config::Profile> = next_ids
+        .iter()
+        .filter_map(|pid| cfg.profile_by_id(pid).cloned())
+        .collect();
+    let healthy =
+        start_proxy_for_profiles(app, state, lifecycle, &profiles, None).is_ok();
+    if !healthy {
+        lifecycle.bump_generation();
+        let rollback_profiles: Vec<config::Profile> = old_ids
+            .iter()
+            .filter_map(|pid| cfg.profile_by_id(pid).cloned())
+            .collect();
+        let _ = start_proxy_for_profiles(app, state, lifecycle, &rollback_profiles, None);
+        return Err("移除后重启代理失败，已回滚到原池。".into());
+    }
+    config::update(&dir, |c| {
+        c.active_ids = next_ids.clone();
+        c.sync_active_id();
+    })
+    .map_err(|e| e.to_string())?;
+    Ok(json!({
+        "committed": true,
+        "active_ids": next_ids,
+        "hint": "已从池中移除。",
+    }))
+}
+
+/// 切换 profile 在 pool 中的成员状态。
+pub(crate) fn toggle_profile_active_txn(
+    app: &tauri::AppHandle,
+    state: &SharedAppState,
+    lifecycle: &lifecycle::Lifecycle,
+    id: &str,
+    skip_verify: bool,
+) -> Result<Value, String> {
+    let cfg = config::load_from(&config::default_dir()).map_err(|e| e.to_string())?;
+    if cfg.is_profile_active(id) {
+        deactivate_profile_from_pool_txn(app, state, lifecycle, id)
+    } else {
+        activate_profile_in_pool_txn(app, state, lifecycle, id, skip_verify)
+    }
+}
+
+fn pool_activation_txn<F>(
+    app: &tauri::AppHandle,
+    state: &SharedAppState,
+    lifecycle: &lifecycle::Lifecycle,
+    cfg: &config::Config,
+    candidate: &config::Profile,
+    skip_verify: bool,
+    apply: F,
+) -> Result<Value, String>
+where
+    F: FnOnce(&mut config::Config),
+{
+    assert_format_supported(candidate)?;
+    let launch = proxy_args_for(&candidate);
+    reject_openai_custom_anthropic_base(&launch.adapter, &candidate.base_url)?;
+    if launch.key.is_empty() {
+        return Err(format!("「{}」还没填 API key，请先填写。", candidate.name));
+    }
+    let native = is_native_adapter(&launch.adapter);
+    if !native && launch.base_url.is_empty() {
+        return Err("该配置需要填 base_url（http:// 或 https:// 开头）。".into());
+    }
+    if relay_missing_profile_models(&launch.adapter, candidate) {
+        return Err(
+            "该配置需要选择或填写一个模型（中转/自定义端点必填），请在连接编辑里补上。".into(),
+        );
+    }
+
+    let mut next_ids = cfg.active_ids.clone();
+    if !next_ids.iter().any(|x| x == &candidate.id) {
+        next_ids.push(candidate.id.clone());
+    }
+    let mut next_profiles: Vec<config::Profile> = next_ids
+        .iter()
+        .filter_map(|pid| {
+            if pid == &candidate.id {
+                Some(candidate.clone())
+            } else {
+                cfg.profile_by_id(pid).cloned()
+            }
+        })
+        .collect();
+
+    let trace = OperationTrace::start(
+        OperationKind::ActivateProfile,
+        format!(
+            "pool_add profile_id={} adapter={} pool_size={}",
+            candidate.id,
+            launch.adapter,
+            next_profiles.len()
+        ),
+    );
+
+    let scratch_ok = if skip_scratch_verify(native, skip_verify) {
+        trace.stage(OperationStage::ScratchUpstreamProbe, "skipped_by_user");
+        true
+    } else {
+        let root = asset_root(app).ok_or("找不到代理脚本 proxy/csswitch_proxy.py。")?;
+        let py = proc::find_exe("python3").ok_or("缺少依赖 python3（起临时代理需要）。")?;
+        let script = root.join("proxy/csswitch_proxy.py");
+        let res = scratch::scratch_probe(
+            &py,
+            &script,
+            &scratch::ScratchTarget {
+                provider: &launch.adapter,
+                key_env: launch.key_env,
+                base_url: &launch.base_url,
+                key: &launch.key,
+                model: Some(&launch.model),
+                relay_thinking: launch.thinking_policy,
+            },
+            probe_kind_for(&launch.adapter, &launch.model),
+            Some(&trace),
+        );
+        let outcome = scratch::classify(res.status);
+        trace.stage(
+            OperationStage::ScratchUpstreamProbe,
+            format!("outcome={outcome:?}"),
+        );
+        match outcome {
+            scratch::ProbeOutcome::Ok => true,
+            scratch::ProbeOutcome::Auth(code) => {
+                trace.finish(format!("rejected status={code}"));
+                return Ok(json!({
+                    "committed": false,
+                    "hint": format!("上游拒绝（{code}），key/权限有误，未加入池。"),
+                }));
+            }
+            scratch::ProbeOutcome::ModelError(code) => {
+                trace.finish(format!("model_error status={code}"));
+                return Ok(json!({
+                    "committed": false,
+                    "hint": format!("上游拒绝该模型（{code}），未加入池。请换一个模型或核对 base_url。"),
+                }));
+            }
+            scratch::ProbeOutcome::Ambiguous(_)
+            | scratch::ProbeOutcome::NoResponse
+            | scratch::ProbeOutcome::Unsupported(_) => {
+                trace.finish("ambiguous can_skip=true");
+                return Ok(json!({
+                    "committed": false,
+                    "can_skip": true,
+                    "hint": "无法确认（网络/上游繁忙），未加入池。可重试，或用「跳过验证」。",
+                }));
+            }
+        }
+    };
+
+    lifecycle.bump_generation();
+    let real_healthy = scratch_ok
+        && start_proxy_for_profiles(app, state, lifecycle, &next_profiles, Some(&trace)).is_ok();
+
+    if !scratch_ok {
+        trace.finish("aborted_before_start");
+        return Err("候选上游校验失败（key/base_url/网络？），未加入池。".into());
+    }
+    if !real_healthy {
+        trace.stage(OperationStage::Rollback, "reason=proxy_unhealthy");
+        let restored = restore_proxy_for_active_set(app, state, lifecycle, cfg, Some(&trace));
+        trace.finish(format!("rollback restored={restored}"));
+        return Err(format!(
+            "候选配置校验通过，但正式代理启动/探活失败，{}。",
+            rollback_status_clause(restored)
+        ));
+    }
+
+    let dir = config::default_dir();
+    let id = candidate.id.clone();
+    config::update(&dir, |c| apply(c)).map_err(|e| e.to_string())?;
+    let active_ids = config::load_from(&dir)
+        .map_err(|e| e.to_string())?
+        .active_ids;
+    trace.finish("committed=true pool");
+    Ok(json!({
+        "committed": true,
+        "active_id": active_ids.first().cloned().unwrap_or(id.clone()),
+        "active_ids": active_ids,
+        "hint": format!("已将「{}」加入当前池。", candidate.name),
+    }))
+}
+
+fn restore_proxy_for_active_set(
+    app: &tauri::AppHandle,
+    state: &SharedAppState,
+    lifecycle: &lifecycle::Lifecycle,
+    cfg: &config::Config,
+    trace: Option<&OperationTrace>,
+) -> bool {
+    let profiles: Vec<config::Profile> = cfg.active_profiles().into_iter().cloned().collect();
+    if profiles.is_empty() {
+        return true;
+    }
+    lifecycle.bump_generation();
+    start_proxy_for_profiles(app, state, lifecycle, &profiles, trace).is_ok()
+}
+
+#[allow(dead_code)]
 fn restore_proxy_for_active(
     app: &tauri::AppHandle,
     state: &SharedAppState,

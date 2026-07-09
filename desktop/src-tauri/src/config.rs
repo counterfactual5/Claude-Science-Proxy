@@ -7,6 +7,7 @@
 //!   - profile key 明文存盘（用户已知悉），但**绝不进日志**；回显给前端只给掩码（末 4 位）。
 //!
 //! 存储升级：schema_version 探测 + v1（旧固定槽）一次性迁移 → v2（profile 列表 + active_id），
+//! v3（多模型 active_models）→ v4（provider pool：active_ids[]），
 //! 迁移前留 `config.json.v1.bak`（失败即中止），普通覆盖前留滚动 `config.json.bak`，
 //! 清 key / 删 profile 后净化滚动备份（旧明文 key 不可从 .bak 恢复）。
 //!
@@ -43,8 +44,8 @@ pub(crate) fn validate_runtime_ports(proxy_port: u16, sandbox_port: u16) -> Resu
     Ok(())
 }
 
-/// 当前配置 schema 版本。>2 的文件由更新版本 app 写入，本版本拒绝启动（不误改）。
-pub const CURRENT_SCHEMA_VERSION: u32 = 3;
+/// 当前配置 schema 版本。>4 的文件由更新版本 app 写入，本版本拒绝启动（不误改）。
+pub const CURRENT_SCHEMA_VERSION: u32 = 4;
 
 fn default_schema_version() -> u32 {
     CURRENT_SCHEMA_VERSION
@@ -91,9 +92,12 @@ pub struct Config {
     pub schema_version: u32,
     #[serde(default)]
     pub profiles: Vec<Profile>,
-    /// 生效 profile 的 id；空=无生效配置（运行时据此停代理、要求用户选）。
+    /// 生效 profile 的 id（向后兼容：等于 active_ids 首项；新代码以 active_ids 为准）。
     #[serde(default)]
     pub active_id: String,
+    /// 同时生效的 profile id 列表（provider pool）。空=无生效配置。
+    #[serde(default)]
+    pub active_ids: Vec<String>,
     #[serde(default = "default_proxy_port")]
     pub proxy_port: u16,
     #[serde(default = "default_sandbox_port")]
@@ -117,6 +121,7 @@ impl Default for Config {
             schema_version: CURRENT_SCHEMA_VERSION,
             profiles: Vec::new(),
             active_id: String::new(),
+            active_ids: Vec::new(),
             proxy_port: default_proxy_port(),
             sandbox_port: default_sandbox_port(),
             secret: String::new(),
@@ -172,12 +177,49 @@ impl Profile {
 }
 
 impl Config {
-    /// 当前生效 profile（active_id 空或悬空 → None）。
-    pub fn active_profile(&self) -> Option<&Profile> {
-        if self.active_id.is_empty() {
-            return None;
+    /// 当前生效 profile 列表（active_ids 中仍存在的项，保持顺序）。
+    pub fn active_profiles(&self) -> Vec<&Profile> {
+        self.active_ids
+            .iter()
+            .filter_map(|id| self.profile_by_id(id))
+            .collect()
+    }
+
+    /// 是否在某条 profile 在 active pool 中。
+    pub fn is_profile_active(&self, id: &str) -> bool {
+        self.active_ids.iter().any(|x| x == id)
+    }
+
+    /// 向 pool 追加 active（已存在则不变）。
+    pub fn activate_profile(&mut self, id: &str) {
+        if self.profile_by_id(id).is_some() && !self.is_profile_active(id) {
+            self.active_ids.push(id.to_string());
+            self.sync_active_id();
         }
-        self.profile_by_id(&self.active_id)
+    }
+
+    /// 从 pool 移除 active。
+    pub fn deactivate_profile(&mut self, id: &str) {
+        self.active_ids.retain(|x| x != id);
+        self.sync_active_id();
+    }
+
+    /// 仅保留一条 active（legacy 独占切换）。
+    pub fn set_exclusive_active(&mut self, id: &str) {
+        if self.profile_by_id(id).is_some() {
+            self.active_ids = vec![id.to_string()];
+            self.sync_active_id();
+        }
+    }
+
+    /// 保持 active_id 与 active_ids 首项一致（API 向后兼容）。
+    pub fn sync_active_id(&mut self) {
+        self.active_id = self.active_ids.first().cloned().unwrap_or_default();
+    }
+
+    /// 当前生效 profile（active_ids 空 → None；兼容旧 active_id 只读路径）。
+    pub fn active_profile(&self) -> Option<&Profile> {
+        self.active_profiles().first().copied()
     }
     pub fn profile_by_id(&self, id: &str) -> Option<&Profile> {
         self.profiles.iter().find(|p| p.id == id)
@@ -217,6 +259,7 @@ pub enum VersionKind {
     Legacy,
     V2,
     V3,
+    V4,
     TooNew(u32),
 }
 
@@ -226,7 +269,7 @@ struct VersionProbe {
     schema_version: u32,
 }
 
-/// <2（含缺失=0）→ Legacy；==2 → V2（迁移到 v3）；==3 → V3；>3 → TooNew。
+/// <2（含缺失=0）→ Legacy；==2 → V2；==3 → V3（迁移到 v4）；==4 → V4；>4 → TooNew。
 pub fn detect_version(data: &[u8]) -> io::Result<VersionKind> {
     let probe: VersionProbe = serde_json::from_slice(data).map_err(|e| {
         io::Error::new(
@@ -237,7 +280,8 @@ pub fn detect_version(data: &[u8]) -> io::Result<VersionKind> {
     Ok(match probe.schema_version {
         v if v < 2 => VersionKind::Legacy,
         2 => VersionKind::V2,
-        v if v == CURRENT_SCHEMA_VERSION => VersionKind::V3,
+        3 => VersionKind::V3,
+        v if v == CURRENT_SCHEMA_VERSION => VersionKind::V4,
         v => VersionKind::TooNew(v),
     })
 }
@@ -297,7 +341,12 @@ pub fn migrate_v1_to_v2(mut legacy: crate::config_legacy::ConfigV1) -> Config {
     Config {
         schema_version: CURRENT_SCHEMA_VERSION,
         profiles,
-        active_id,
+        active_id: active_id.clone(),
+        active_ids: if active_id.is_empty() {
+            Vec::new()
+        } else {
+            vec![active_id]
+        },
         proxy_port: legacy.proxy_port,
         sandbox_port: legacy.sandbox_port,
         secret: legacy.secret,
@@ -443,7 +492,7 @@ pub fn load_from(dir: &Path) -> io::Result<Config> {
                     format!("config.json 解析失败：{e}"),
                 )
             })?;
-            let mut cfg = migrate_v2_to_v3(normalize_active(cfg));
+            let mut cfg = migrate_v3_to_v4(migrate_v2_to_v3(normalize_active(cfg)));
             let filled = backfill_relay_models(&mut cfg);
             if !filled.is_empty() {
                 cfg.pending_notice = Some(format!(
@@ -456,6 +505,28 @@ pub fn load_from(dir: &Path) -> io::Result<Config> {
             Ok(cfg)
         }
         VersionKind::V3 => {
+            let cfg: Config = serde_json::from_slice(&data).map_err(|e| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("config.json 解析失败：{e}"),
+                )
+            })?;
+            let mut cfg = migrate_v3_to_v4(normalize_active(cfg));
+            for p in cfg.profiles.iter_mut() {
+                p.sync_model_fields();
+            }
+            let filled = backfill_relay_models(&mut cfg);
+            if !filled.is_empty() {
+                cfg.pending_notice = Some(format!(
+                    "已为 {} 个旧配置补上默认模型（可在连接编辑修改）。",
+                    filled.len()
+                ));
+            }
+            validate_loaded_ports(&cfg)?;
+            save_to(dir, &cfg)?;
+            Ok(cfg)
+        }
+        VersionKind::V4 => {
             let cfg: Config = serde_json::from_slice(&data).map_err(|e| {
                 io::Error::new(
                     io::ErrorKind::InvalidData,
@@ -491,27 +562,54 @@ fn validate_loaded_ports(cfg: &Config) -> io::Result<()> {
     })
 }
 
-/// 加载后归一化两个不变式（spec §4）：
-/// - `template_id` 未命中注册表 → 归一化为 `custom`（保留连接字段；据它派生 adapter/UI 能力）；
-/// - `active_id` 指向不存在的 profile → 归一化为空（运行时据此停代理、要求用户选）。
+/// 加载后归一化不变式（spec §4）：
+/// - `template_id` 未命中注册表 → 归一化为 `custom`；
+/// - `active_ids` / `active_id` 悬空 → 剔除并同步；
+/// - 旧文件仅有 `active_id` → 回填 `active_ids`。
 fn normalize_active(mut cfg: Config) -> Config {
     for p in cfg.profiles.iter_mut() {
         if crate::templates::by_id(&p.template_id).is_none() {
             p.template_id = "custom".to_string();
         }
     }
-    if !cfg.active_id.is_empty() && cfg.profile_by_id(&cfg.active_id).is_none() {
+    if cfg.active_ids.is_empty() && !cfg.active_id.is_empty() {
+        if cfg.profile_by_id(&cfg.active_id).is_some() {
+            cfg.active_ids.push(cfg.active_id.clone());
+        }
+    }
+    cfg.active_ids = cfg
+        .active_ids
+        .iter()
+        .filter(|id| cfg.profile_by_id(id).is_some())
+        .cloned()
+        .collect();
+    if !cfg.active_id.is_empty()
+        && cfg.profile_by_id(&cfg.active_id).is_none()
+    {
         cfg.active_id.clear();
     }
+    cfg.sync_active_id();
     cfg
 }
 
 /// v2 → v3：补齐 active_models/default_model，并 bump schema_version。
 fn migrate_v2_to_v3(mut cfg: Config) -> Config {
-    cfg.schema_version = CURRENT_SCHEMA_VERSION;
+    cfg.schema_version = 3;
     for p in cfg.profiles.iter_mut() {
         p.sync_model_fields();
     }
+    cfg
+}
+
+/// v3 → v4：active_id → active_ids，并 bump schema_version。
+fn migrate_v3_to_v4(mut cfg: Config) -> Config {
+    cfg.schema_version = CURRENT_SCHEMA_VERSION;
+    if cfg.active_ids.is_empty() && !cfg.active_id.is_empty() {
+        if cfg.profile_by_id(&cfg.active_id).is_some() {
+            cfg.active_ids = vec![cfg.active_id.clone()];
+        }
+    }
+    cfg.sync_active_id();
     cfg
 }
 
@@ -626,12 +724,13 @@ mod tests {
 
     // ---------- A1: 结构 + 访问器 + new_id/now_ms ----------
     #[test]
-    fn config_default_is_v3_empty() {
+    fn config_default_is_v4_empty() {
         let c = Config::default();
         assert_eq!(c.schema_version, CURRENT_SCHEMA_VERSION);
-        assert_eq!(c.schema_version, 3);
+        assert_eq!(c.schema_version, 4);
         assert!(c.profiles.is_empty());
         assert_eq!(c.active_id, "");
+        assert!(c.active_ids.is_empty());
         assert_eq!(c.proxy_port, 18991);
         assert_eq!(c.mode, "proxy");
     }
@@ -651,17 +750,58 @@ mod tests {
         };
         let c = Config {
             profiles: vec![p.clone()],
-            active_id: "abc".into(),
+            active_ids: vec!["abc".into()],
             ..Default::default()
         };
         assert_eq!(c.profile_by_id("abc").unwrap().name, "DS");
         assert!(c.profile_by_id("nope").is_none());
         assert_eq!(c.active_profile().unwrap().id, "abc");
+        assert!(c.is_profile_active("abc"));
         let c2 = Config {
-            active_id: "".into(),
+            active_ids: vec![],
             ..c.clone()
         };
         assert!(c2.active_profile().is_none());
+    }
+
+    #[test]
+    fn activate_and_deactivate_profile_pool() {
+        let mut c = Config {
+            profiles: vec![
+                Profile {
+                    id: "a".into(),
+                    ..Default::default()
+                },
+                Profile {
+                    id: "b".into(),
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        };
+        c.activate_profile("a");
+        c.activate_profile("b");
+        assert_eq!(c.active_ids, vec!["a", "b"]);
+        assert_eq!(c.active_id, "a");
+        c.deactivate_profile("a");
+        assert_eq!(c.active_ids, vec!["b"]);
+        c.set_exclusive_active("a");
+        assert_eq!(c.active_ids, vec!["a"]);
+    }
+
+    #[test]
+    fn migrate_v3_to_v4_populates_active_ids() {
+        let d = tmpdir().join(".csswitch-v3");
+        fs::create_dir_all(&d).unwrap();
+        fs::write(
+            config_path(&d),
+            br#"{"schema_version":3,"profiles":[{"id":"p1","name":"X","template_id":"glm","category":"relay","api_format":"anthropic","base_url":"https://x/y"}],"active_id":"p1"}"#,
+        )
+        .unwrap();
+        let cfg = load_from(&d).unwrap();
+        assert_eq!(cfg.schema_version, 4);
+        assert_eq!(cfg.active_ids, vec!["p1"]);
+        assert_eq!(cfg.active_id, "p1");
     }
 
     #[test]
@@ -734,6 +874,7 @@ mod tests {
         let cfg = Config {
             profiles: vec![p],
             active_id: "id1".into(),
+            active_ids: vec!["id1".into()],
             proxy_port: 12345,
             ..Default::default()
         };
@@ -812,9 +953,15 @@ mod tests {
     }
 
     #[test]
-    fn detect_version_four_is_too_new() {
+    fn detect_version_four_is_v4() {
         let d = br#"{"schema_version":4}"#;
-        assert!(matches!(detect_version(d).unwrap(), VersionKind::TooNew(4)));
+        assert!(matches!(detect_version(d).unwrap(), VersionKind::V4));
+    }
+
+    #[test]
+    fn detect_version_five_is_too_new() {
+        let d = br#"{"schema_version":5}"#;
+        assert!(matches!(detect_version(d).unwrap(), VersionKind::TooNew(5)));
     }
     #[test]
     fn detect_version_garbage_errors() {
@@ -859,8 +1006,7 @@ mod tests {
             providers,
         };
         let cfg = migrate_v1_to_v2(legacy);
-        assert_eq!(cfg.schema_version, 3);
-        assert_eq!(cfg.profiles.len(), 2, "空 qwen 槽跳过");
+        assert_eq!(cfg.schema_version, CURRENT_SCHEMA_VERSION);
         let glm = cfg
             .profiles
             .iter()
@@ -988,14 +1134,14 @@ mod tests {
         )
         .unwrap();
         let cfg = load_from(&d).unwrap();
-        assert_eq!(cfg.schema_version, 3);
+        assert_eq!(cfg.schema_version, CURRENT_SCHEMA_VERSION);
         assert_eq!(cfg.profiles.len(), 1);
         assert_eq!(cfg.active_profile().unwrap().api_key, "sk-x");
         assert!(d.join("config.json.v1.bak").exists(), "迁移必须留 v1 备份");
-        // 落盘后再读是 v2（幂等，不再迁移）。
+        // 落盘后再读是 v4（幂等，不再迁移）。
         let again = load_from(&d).unwrap();
         assert_eq!(again, cfg);
-        assert_eq!(again.schema_version, 3);
+        assert_eq!(again.schema_version, CURRENT_SCHEMA_VERSION);
     }
     #[test]
     fn load_too_new_errors() {
@@ -1019,7 +1165,8 @@ mod tests {
         };
         save_to(&d, &cfg).unwrap();
         let got = load_from(&d).unwrap();
-        assert_eq!(got.active_id, "", "悬空 active → 归一化为空");
+        assert_eq!(got.active_ids, vec![] as Vec<String>, "悬空 active → 归一化为空");
+        assert_eq!(got.active_id, "");
     }
 
     // ---------- MP-2 Minor [2]: template_id 未命中 → 归一 custom ----------
@@ -1046,6 +1193,7 @@ mod tests {
         assert_eq!(p.template_id, "custom", "未命中 template_id → 归一 custom");
         assert_eq!(p.base_url, "https://relay.example/claude", "连接字段保留");
         assert_eq!(p.api_key, "sk-x");
+        assert_eq!(got.active_ids, vec!["p1"]);
         assert_eq!(got.active_id, "p1", "active 仍有效，不被清空");
     }
 
@@ -1055,7 +1203,7 @@ mod tests {
         let d = tmpdir().join(".csswitch");
         let cfg = load_from(&d).unwrap();
         assert_eq!(cfg, Config::default());
-        assert_eq!(cfg.schema_version, 3);
+        assert_eq!(cfg.schema_version, CURRENT_SCHEMA_VERSION);
         assert_eq!(cfg.proxy_port, 18991);
     }
 
@@ -1152,10 +1300,11 @@ mod tests {
                 template_id: "qwen".into(),
                 ..Default::default()
             });
-            c.active_id = "id1".into();
+            c.set_exclusive_active("id1");
         })
         .unwrap();
         let got = load_from(&d).unwrap();
+        assert_eq!(got.active_ids, vec!["id1"]);
         assert_eq!(got.active_id, "id1");
         assert_eq!(got.active_profile().unwrap().name, "Q");
     }

@@ -112,7 +112,10 @@ pub(crate) fn build_get_config(dir: &Path) -> Result<serde_json::Value, String> 
         })
         .collect();
     Ok(json!({
-        "schema_version": cfg.schema_version, "active_id": cfg.active_id, "profiles": profiles,
+        "schema_version": cfg.schema_version,
+        "active_id": cfg.active_id,
+        "active_ids": cfg.active_ids,
+        "profiles": profiles,
         "templates": build_list_templates(), "proxy_port": cfg.proxy_port,
         "sandbox_port": cfg.sandbox_port, "mode": cfg.mode, "pending_notice": notice,
     }))
@@ -217,9 +220,7 @@ pub(crate) fn clear_profile_key_inner(dir: &Path, id: &str) -> Result<(), String
 pub(crate) fn delete_profile_inner(dir: &Path, id: &str) -> Result<(), String> {
     config::update(dir, |c| {
         c.profiles.retain(|p| p.id != id);
-        if c.active_id == id {
-            c.active_id.clear(); // 删 active → 置空
-        }
+        c.deactivate_profile(id);
     })
     .map_err(|e| e.to_string())?;
     config::drop_rolling_backup(dir);
@@ -646,7 +647,7 @@ mod tests {
         )
         .unwrap();
         let v = build_get_config(&d).unwrap();
-        assert_eq!(v["schema_version"], 3);
+        assert_eq!(v["schema_version"], 4);
         let arr = v["profiles"].as_array().unwrap();
         let p = arr.iter().find(|p| p["id"] == id).unwrap();
         assert!(p["key"].as_str().unwrap().ends_with("9999"));
