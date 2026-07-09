@@ -87,7 +87,6 @@ pub fn run() {
             commands::profiles::list_templates,
             commands::runtime::set_settings,
             commands::runtime::set_mode,
-            commands::runtime::open_official,
             commands::profiles::create_profile,
             commands::profiles::update_profile_metadata,
             commands::profiles::update_profile_connection,
@@ -102,9 +101,6 @@ pub fn run() {
             commands::runtime::status,
             commands::runtime::open_url,
             commands::diagnostics::run_doctor,
-            commands::diagnostics::app_version,
-            commands::diagnostics::open_release_page,
-            commands::diagnostics::report_bug,
             commands::diagnostics::open_logs,
             commands::runtime::quit_app
         ])

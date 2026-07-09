@@ -1,6 +1,3 @@
-use std::path::Path;
-use std::process::Command;
-
 use serde::Deserialize;
 use serde_json::json;
 use tauri::State;
@@ -93,26 +90,6 @@ fn set_mode_inner(
         .map_err(|e| e.to_string())?;
         Ok(())
     })
-}
-
-/// 官方模式：干净地打开用户【真实】的 Claude Science（不碰/复制真实凭证，抹掉 ANTHROPIC_*）。
-#[tauri::command]
-pub(crate) fn open_official() -> Result<(), String> {
-    let app_path = "/Applications/Claude Science.app";
-    let mut cmd = Command::new("open");
-    if Path::new(app_path).is_dir() {
-        cmd.arg(app_path);
-    } else {
-        cmd.arg("-a").arg("Claude Science");
-    }
-    cmd.env_remove("ANTHROPIC_BASE_URL")
-        .env_remove("ANTHROPIC_API_KEY")
-        .env_remove("ANTHROPIC_AUTH_TOKEN");
-    match cmd.status() {
-        Ok(s) if s.success() => Ok(()),
-        Ok(_) => Err("未能打开 Claude Science。请确认已安装官方 Claude Science。".into()),
-        Err(e) => Err(format!("打开官方 Claude Science 失败：{e}")),
-    }
 }
 
 #[derive(Deserialize)]

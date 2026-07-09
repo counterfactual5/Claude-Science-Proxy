@@ -106,8 +106,6 @@ function mockInvoke(cmd, args) {
       return Promise.resolve({ url: "http://127.0.0.1:8990", msg: "（预览模式：假装已就绪）", action: "started" });
     case "status":
       return Promise.resolve({ proxy: "amber", sandbox: "amber", upstream: "amber" });
-    case "app_version":
-      return Promise.resolve("0.0.0-preview");
     case "run_doctor":
       return Promise.resolve("（预览模式：后端未运行，这里是占位文本）");
     default:
