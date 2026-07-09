@@ -43,12 +43,12 @@ openai-compatible  llm  proxy  mcp  tauri  menubar  macos
 
 ## 5. 首个 Release：v0.1.0
 
-- **Tag**：`v0.1.0`；**标题**：`CSSwitch v0.1.0 — macOS 菜单栏 app`。
-- **附件**：`CSSwitch_0.1.0_aarch64.dmg`（arm64）。
+- **Tag**：`v0.1.0`；**标题**：`CSP v0.1.0 — macOS 菜单栏 app`。
+- **附件**：`CSP_0.1.0_aarch64.dmg`（arm64）。
 - **正文草稿**：
 
   ```markdown
-  CSSwitch：让 Claude Science 的推理走你自选的第三方 API，Science 那套「AI Jupyter」体验照旧。
+  CSP：让 Claude Science 的推理走你自选的第三方 API，Science 那套「AI Jupyter」体验照旧。
 
   ### 能做什么
   - 保留 Science 的**工具调用、代码执行、Skill、MCP**，模型换成自选的第三方 API。
@@ -57,7 +57,7 @@ openai-compatible  llm  proxy  mcp  tauri  menubar  macos
   - 支持 **DeepSeek、通义千问（Qwen）**，或任意 **OpenAI 兼容端点**（自定义 API）。
 
   ### 安装（macOS · Apple Silicon）
-  1. 下载 `CSSwitch_0.1.0_aarch64.dmg`，拖进「应用程序」。
+  1. 下载 `CSP_0.1.0_aarch64.dmg`，拖进「应用程序」。
   2. 首次打开被 Gatekeeper 拦是正常的（本 app 做了 ad-hoc 签名但**未做 Apple 公证**）：
      **右键 →「打开」**，或系统设置 → 隐私与安全性 →「仍要打开」。
   3. 菜单栏出现开关图标，点开面板，填第三方 key 即可用。
@@ -78,7 +78,7 @@ openai-compatible  llm  proxy  mcp  tauri  menubar  macos
 
 1. `gh auth refresh -h github.com`（用户自己做，Claude 不代登录）。
 2. **再跑一遍 gitleaks**：工作树 + 暂存区 + 历史三处，确认 0 泄露（含新加的 `docs/assets/`、图标资源）。
-3. `git remote add origin <用户确认的仓库>`，仓库名建议 `CSSwitch`（与本地一致）。
+3. `git remote add origin <用户确认的仓库>`，仓库名建议 `CSP`（与本地一致）。
 4. `git push -u origin main`。
 5. `gh release create v0.1.0 <dmg 路径> --title ... --notes-file <第 5 节正文>`。
 6. 仓库设置：填 About（第 2 节）+ Topics（第 3 节）+ 上传 Social preview（第 4 节）。
@@ -86,6 +86,6 @@ openai-compatible  llm  proxy  mcp  tauri  menubar  macos
 
 ## 7. 待用户拍板
 
-- 仓库名（默认 `CSSwitch`）、公开/私有（§12.1 已选公开全量）、GitHub 账号（`junjieashan`）。
+- 仓库名（默认 `CSP`）、公开/私有（§12.1 已选公开全量）、GitHub 账号（`junjieashan`）。
 - 是否随源码一并发 `.dmg`（附在 Release）。
 - 是否现在就做 universal（Intel）构建（需再装 x86_64 工具链，国内网络较慢）。

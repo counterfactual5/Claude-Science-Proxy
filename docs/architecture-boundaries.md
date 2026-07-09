@@ -1,4 +1,4 @@
-# CSSwitch Architecture Boundaries
+# CSP Architecture Boundaries
 
 This document is the public-safe boundary map for current `main`. It records how the app is split today and what future refactors must preserve. It does not claim real Claude account state, real `~/.claude-science` verification, Science GUI E2E, live provider E2E, published DMG parity, signing, notarization, or official hosted capability support.
 
@@ -24,7 +24,7 @@ Key invariant: control-plane state changes must go through serialized Rust comma
 
 ### Inference Data Plane
 
-Sandboxed Science sends Anthropic-shaped inference requests to `ANTHROPIC_BASE_URL`, which points at the local CSSwitch proxy path containing the path secret. The proxy strips inbound Science `Authorization` / `x-api-key`, injects the configured third-party key, applies the provider compatibility policy, and sends the request to the selected upstream provider.
+Sandboxed Science sends Anthropic-shaped inference requests to `ANTHROPIC_BASE_URL`, which points at the local CSP proxy path containing the path secret. The proxy strips inbound Science `Authorization` / `x-api-key`, injects the configured third-party key, applies the provider compatibility policy, and sends the request to the selected upstream provider.
 
 Key invariant: only this data plane may transform inference payloads. Runtime/status/docs changes must not silently mutate outbound payload shape.
 
@@ -32,7 +32,7 @@ Key invariant: only this data plane may transform inference payloads. Runtime/st
 
 The sandbox also has outbound network behavior outside inference. Current proxy HTTPS `CONNECT` behavior fast-fails Anthropic/Claude hosts with 401 and directly tunnels non-Anthropic HTTPS CONNECT targets. Ordinary HTTP proxying and general upstream proxy support remain future work. This helps virtual-login startup avoid hangs, but it does not make hosted MCP, Directory connectors, or official remote skills available.
 
-Key invariant: diagnostics can explain these boundaries, but CSSwitch must not claim it fully repairs official hosted capabilities.
+Key invariant: diagnostics can explain these boundaries, but CSP must not claim it fully repairs official hosted capabilities.
 
 ## State Model
 
@@ -81,14 +81,14 @@ Provider compatibility is driven by current source and tests, not by broad provi
 
 - Anthropic-compatible native paths can preserve Anthropic tool blocks better than translated paths, but may still need provider-specific policy filters.
 - OpenAI Chat and OpenAI Responses paths translate request/response shapes and are compatibility slices, not full native parity claims.
-- Hosted MCP, Directory connectors, and official remote skills are claude.ai hosted capabilities. CSSwitch can diagnose and offer local alternatives, but virtual OAuth does not grant those hosted permissions.
+- Hosted MCP, Directory connectors, and official remote skills are claude.ai hosted capabilities. CSP can diagnose and offer local alternatives, but virtual OAuth does not grant those hosted permissions.
 - External Streamable HTTP MCP depends on transport egress. Current non-Anthropic CONNECT is direct tunneling; upstream proxy support remains future work until implemented and tested.
 
 The static capability catalog and provider matrix should describe these facts, not drive unreviewed behavior changes.
 
 ## Reference Projects
 
-CC Switch and CS Native are reference projects for control-plane and provider-switching ideas only. Do not vendor large blocks of code or assume their runtime model applies to Claude Science. CSSwitch has a Science-specific virtual-login, sandbox, and transport boundary that those references do not remove.
+CC Switch and CS Native are reference projects for control-plane and provider-switching ideas only. Do not vendor large blocks of code or assume their runtime model applies to Claude Science. CSP has a Science-specific virtual-login, sandbox, and transport boundary that those references do not remove.
 
 ## Refactor Discipline
 

@@ -73,7 +73,7 @@
 >
 > 原查证结论（历史留存）：根因已查证（只读追踪，未实机验证复原）。数据不丢，是活动组织漂移；根因与 #3 同源，修 #3 即修本条的「复发」部分。
 
-- **现象**：用户更新 CSSwitch（v0.1.4 → v0.1.5）后重进 Science，之前的对话看不到了。
+- **现象**：用户更新 CSP（v0.1.4 → v0.1.5）后重进 Science，之前的对话看不到了。
 - **查证结论**：
   - **更新本身不删数据**。沙箱对话库在稳定用户目录 `~/.csp/sandbox/home/.claude-science/orgs/<org_uuid>/operon-cli.db`，路径只依赖 `$HOME`（`config.rs`、`science.rs`），与 app 版本 / 安装路径无关；换 `.app` 不碰它。启动/停止脚本无 data-dir 级删除；虚拟 OAuth 重伪造只写 `encryption.key` / `active-org.json` / `.oauth-tokens/*.enc`，**绝不碰 `orgs/` 对话库**（`oauth_forge.rs:294-315`）。
   - **真正原因：每次点「一键开始」都无条件重伪造一个全新随机 org**（`oauth_forge.rs:270-271` 每次新 `org_uuid`，覆盖 `active-org.json` 见 `:326`；对应 #3 的「② 无条件重新伪造」）。活动组织一换，Science 打开的是新空组织，**旧对话被孤儿化**（仍在磁盘旧 `org_uuid` 目录下，界面看不到）。磁盘实证：沙箱里已累积 7 个 org 目录 / 7 个独立 DB，`active-org.json` 只指其一。
@@ -92,7 +92,7 @@
 - **本轮已埋雏形**：`ensure_virtual_login` 遇「多历史组织但无法定位活动者」会**报恢复错误**并提示用户手动把 `org_uuid` 写回 `active-org.json`——这就是 6b 的人工版最小形态。
 - **优先级**：低于「下个主线」，但它是 #6 毕业的前置。
 
-## 7. ✅「开了 CSSwitch 仍要登录」登录热修（已随 v0.2.1 发布，已毕业）
+## 7. ✅「开了 CSP 仍要登录」登录热修（已随 v0.2.1 发布，已毕业）
 
 > **状态：已随 v0.2.1（2026-07-03，当时发布线）发布并毕业到 [`../CHANGELOG.md`](../CHANGELOG.md) 的 `[0.2.1]`。** 下游 0.2.0 用户反馈「开了 switch、一键开始走完仍要登录」。GPT 两轮诊断 + 对代码逐条核实，锁定 0.2.0 两处缺陷（走 systematic-debugging，test-first 红→绿修复）：
 >
