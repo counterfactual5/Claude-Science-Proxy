@@ -430,7 +430,7 @@ mod tests {
     };
     use crate::config;
 
-    /// 每个测试用独立临时 `.csswitch` 目录（进程 id + 线程 id + 随机后缀），互不干扰。
+    /// Per-test isolated temp `.csswitch` dir (process id + thread id + random suffix), no cross-test interference.
     fn tmpdir_profile() -> std::path::PathBuf {
         let base =
             std::env::temp_dir().join(format!("csswitch-profile-test-{}", std::process::id()));
@@ -444,7 +444,7 @@ mod tests {
         d.join(".csswitch")
     }
 
-    // ---------- P2-d: 非 active「如实标记后保存」裁决（明确拒绝才拦；200=已校验；含糊/无响应=落盘但未校验） ----------
+    // ---------- P2-d: non-active "save with honest label" verdict (explicit reject blocks; 200=verified; ambiguous/no response=save unverified) ----------
     #[test]
     fn nonactive_probe_verdict_maps_outcomes() {
         use crate::scratch::ProbeOutcome;
@@ -452,32 +452,32 @@ mod tests {
             nonactive_probe_verdict(&ProbeOutcome::Auth(401))
                 .unwrap_err()
                 .contains("errUpstreamAuthConnNotSaved"),
-            "401 明确鉴权失败 → 拦下不落盘"
+            "401 explicit auth failure → block save"
         );
         assert!(
             nonactive_probe_verdict(&ProbeOutcome::ModelError(404))
                 .unwrap_err()
                 .contains("errUpstreamModelRejected"),
-            "404 模型不被接受 → 拦下不落盘"
+            "404 model rejected → block save"
         );
         assert_eq!(
             nonactive_probe_verdict(&ProbeOutcome::Ok),
             Ok(true),
-            "200 → 落盘且【已校验】"
+            "200 → save and mark verified"
         );
         assert_eq!(
             nonactive_probe_verdict(&ProbeOutcome::Ambiguous(Some(429))),
             Ok(false),
-            "含糊(429) → best-effort 落盘但【未校验】"
+            "ambiguous (429) → best-effort save but unverified"
         );
         assert_eq!(
             nonactive_probe_verdict(&ProbeOutcome::NoResponse),
             Ok(false),
-            "无响应 → best-effort 落盘但【未校验】"
+            "no response → best-effort save but unverified"
         );
     }
 
-    // ---------- MP-2 fix [1]: 连接编辑 validate-before-persist 的字段应用逻辑（内存/落盘共用） ----------
+    // ---------- MP-2 fix [1]: connection edit validate-before-persist field application (shared by memory/persist) ----------
     #[test]
     fn connection_edit_apply_only_changes_provided_fields() {
         use crate::config::Profile;
@@ -498,17 +498,20 @@ mod tests {
         );
         edit.apply(&mut p);
         assert_eq!(p.base_url, "new-url");
-        assert_eq!(p.api_format, "anthropic", "None 字段不改");
+        assert_eq!(p.api_format, "anthropic", "None field unchanged");
         assert_eq!(p.model, "new-model");
-        assert_eq!(p.api_key, "old-key", "空 key 不覆盖已存 key");
+        assert_eq!(
+            p.api_key, "old-key",
+            "empty key does not overwrite stored key"
+        );
 
-        // 非空 key 覆盖；其余 None 不动。
+        // Non-empty key overwrites; other None fields unchanged.
         let edit2 =
             ConnectionEdit::with_models(None, None, None, None, None, Some("new-key".into()));
         edit2.apply(&mut p);
-        assert_eq!(p.api_key, "new-key", "非空 key 覆盖");
-        assert_eq!(p.base_url, "new-url", "None 字段不改");
-        assert_eq!(p.model, "new-model", "None 字段不改");
+        assert_eq!(p.api_key, "new-key", "non-empty key overwrites");
+        assert_eq!(p.base_url, "new-url", "None field unchanged");
+        assert_eq!(p.model, "new-model", "None field unchanged");
     }
 
     // ---------- B4: profile CRUD *_inner ----------
@@ -524,7 +527,7 @@ mod tests {
         assert_eq!(p.api_format, "anthropic");
         assert_eq!(p.base_url, "https://open.bigmodel.cn/api/anthropic");
         assert_eq!(p.api_key, "gk");
-        assert_eq!(cfg.active_id, "", "新建不自动生效");
+        assert_eq!(cfg.active_id, "", "new profile not auto-activated");
     }
 
     #[test]
@@ -547,7 +550,7 @@ mod tests {
         let p = cfg.profile_by_id(&id).unwrap();
         assert_eq!(p.name, "改名");
         assert_eq!(p.notes.as_deref(), Some("备注"));
-        assert_eq!(p.api_key, "secret9", "元数据编辑不动 key");
+        assert_eq!(p.api_key, "secret9", "metadata edit must not touch key");
     }
 
     #[test]
@@ -558,7 +561,7 @@ mod tests {
         delete_profile_inner(&d, &id).unwrap();
         let cfg = config::load_from(&d).unwrap();
         assert!(cfg.profile_by_id(&id).is_none());
-        assert_eq!(cfg.active_id, "", "删 active → 置空");
+        assert_eq!(cfg.active_id, "", "delete active → clear active");
     }
 
     #[test]
@@ -579,13 +582,13 @@ mod tests {
         assert!(e.is_err());
     }
 
-    // ---------- MP-2 Minor [4]: 未命中 id → Err（不静默 Ok） ----------
+    // ---------- MP-2 Minor [4]: unknown id → Err (not silent Ok) ----------
     #[test]
     fn update_metadata_unknown_id_errors() {
         let d = tmpdir_profile();
         create_profile_inner(&d, "glm", "GLM", Some("k"), None, Some("glm-5.2")).unwrap();
         let e = update_profile_metadata_inner(&d, "no-such-id", "改名", None);
-        assert!(e.is_err(), "未命中 id 应报错，而非静默成功");
+        assert!(e.is_err(), "unknown id should error, not silent success");
         assert!(e.unwrap_err().contains("errProfileNotFound"));
     }
 
@@ -603,7 +606,7 @@ mod tests {
             None,
             None,
         );
-        assert!(e.is_err(), "未命中 id 应报错，而非静默成功");
+        assert!(e.is_err(), "unknown id should error, not silent success");
         assert!(e.unwrap_err().contains("errProfileNotFound"));
     }
 
@@ -627,14 +630,17 @@ mod tests {
         assert!(p["key"].as_str().unwrap().ends_with("9999"));
         assert!(
             !p["key"].as_str().unwrap().contains("longsecret"),
-            "只回掩码"
+            "masked key only"
         );
         assert!(
             p.get("api_key").is_none() || p["api_key"].is_null(),
-            "全 key 不出后端"
+            "full key must not leave backend"
         );
         assert_eq!(p["has_key"], true);
-        assert_eq!(p["key_masked"], p["key"], "保留旧 key 字段并补新掩码字段");
+        assert_eq!(
+            p["key_masked"], p["key"],
+            "keep legacy key field and add masked field"
+        );
         assert_eq!(p["capabilities"]["model_required"], true);
         assert_eq!(
             p["capabilities"]["model_discovery"],
@@ -644,7 +650,7 @@ mod tests {
 
     #[test]
     fn get_config_returns_notes_so_rename_does_not_wipe_them() {
-        // M1 回归：build_get_config 必须回传 notes，否则前端读到空、下次改名把备注静默清掉。
+        // M1 regression: build_get_config must return notes or frontend reads empty and rename silently clears them.
         let d = tmpdir_profile();
         let id = create_profile_inner(&d, "glm", "GLM", Some("k"), None, Some("glm-5.2")).unwrap();
         update_profile_metadata_inner(&d, &id, "GLM", Some("我的备注")).unwrap();
@@ -655,7 +661,10 @@ mod tests {
             .iter()
             .find(|p| p["id"] == id)
             .unwrap();
-        assert_eq!(p["notes"], "我的备注", "notes 必须随 get_config 回传");
+        assert_eq!(
+            p["notes"], "我的备注",
+            "notes must be returned via get_config"
+        );
     }
 
     #[test]
@@ -752,7 +761,7 @@ mod tests {
             .collect();
         assert_eq!(ids[0], "m-tools");
         assert!(ids.contains(&"m-builtin-only".to_string()));
-        assert_eq!(ids.iter().filter(|i| *i == "m-tools").count(), 1, "去重");
+        assert_eq!(ids.iter().filter(|i| *i == "m-tools").count(), 1, "dedupe");
         assert_eq!(ids.last().unwrap(), "m-notools");
     }
 
@@ -768,11 +777,11 @@ mod tests {
         ));
     }
 
-    // ---------- 修真机 P1：native adapter 上游校验（GPT 验收报告 RM-06） ----------
+    // ---------- Native adapter upstream validation P1 (GPT acceptance RM-06) ----------
 
     #[test]
     fn native_probe_uses_message_since_native_models_is_static() {
-        // native 的 /v1/models 是静态列表、探不出坏 key，故一律用 Message（打上游 /v1/messages）。
+        // native /v1/models is static; cannot detect bad key → always Message (hits upstream /v1/messages).
         assert!(matches!(
             probe_kind_for("deepseek", ""),
             crate::scratch::ProbeKind::Message
@@ -781,7 +790,7 @@ mod tests {
             probe_kind_for("qwen", ""),
             crate::scratch::ProbeKind::Message
         ));
-        // relay：空 model 用 Models（/v1/models 回源即验鉴权）；选了 model 用 Message 验该模型。
+        // relay: empty model → Models (/v1/models back to origin validates auth); with model → Message validates that model.
         assert!(matches!(
             probe_kind_for("relay", ""),
             crate::scratch::ProbeKind::Models

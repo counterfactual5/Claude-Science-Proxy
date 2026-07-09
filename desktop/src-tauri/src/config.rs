@@ -1076,7 +1076,10 @@ mod tests {
         };
         let cfg = migrate_v1_to_v2(legacy);
         assert_eq!(cfg.profiles.len(), 1);
-        assert_eq!(cfg.active_id, "", "invalid active → empty, wait for user choice");
+        assert_eq!(
+            cfg.active_id, "",
+            "invalid active → empty, wait for user choice"
+        );
     }
 
     #[test]
@@ -1167,7 +1170,10 @@ mod tests {
         assert_eq!(cfg.schema_version, CURRENT_SCHEMA_VERSION);
         assert_eq!(cfg.profiles.len(), 1);
         assert_eq!(cfg.active_profile().unwrap().api_key, "sk-x");
-        assert!(d.join("CSP.json.v1.bak").exists(), "migration must leave v1 backup");
+        assert!(
+            d.join("CSP.json.v1.bak").exists(),
+            "migration must leave v1 backup"
+        );
         // After persist, reload is v4 (idempotent, no re-migration).
         let again = load_from(&d).unwrap();
         assert_eq!(again, cfg);
@@ -1224,8 +1230,14 @@ mod tests {
         save_to(&d, &cfg).unwrap();
         let got = load_from(&d).unwrap();
         let p = got.profile_by_id("p1").unwrap();
-        assert_eq!(p.template_id, "custom", "unknown template_id → normalize to custom");
-        assert_eq!(p.base_url, "https://relay.example/claude", "connection fields preserved");
+        assert_eq!(
+            p.template_id, "custom",
+            "unknown template_id → normalize to custom"
+        );
+        assert_eq!(
+            p.base_url, "https://relay.example/claude",
+            "connection fields preserved"
+        );
         assert_eq!(p.api_key, "sk-x");
         assert_eq!(got.active_ids, vec!["p1"]);
         assert_eq!(got.active_id, "p1", "active still valid, not cleared");
@@ -1344,7 +1356,10 @@ mod tests {
         // path-secret must persist once generated; proxy restart/reopen app keeps same value.
         let d = tmpdir().join(".csswitch");
         save_to(&d, &Config::default()).unwrap();
-        assert!(load_from(&d).unwrap().secret.is_empty(), "initial should be empty");
+        assert!(
+            load_from(&d).unwrap().secret.is_empty(),
+            "initial should be empty"
+        );
         update(&d, |c| c.secret = "deadbeef00112233".into()).unwrap();
         assert_eq!(load_from(&d).unwrap().secret, "deadbeef00112233");
         // Changing other fields must not affect secret.
