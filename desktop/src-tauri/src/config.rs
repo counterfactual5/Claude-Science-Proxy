@@ -748,7 +748,7 @@ mod tests {
     use std::os::unix::fs::symlink;
 
     fn tmpdir() -> PathBuf {
-        // 每个测试用「进程 id + 线程 id」独立子目录，避免并行测试相互踩。
+        // Per-test isolated subdir (process id + thread id) to avoid parallel test interference.
         let base = std::env::temp_dir().join(format!("csswitch-cfg-test-{}", std::process::id()));
         let d = base.join(format!("{:?}", std::thread::current().id()));
         let _ = fs::remove_dir_all(&d);
@@ -760,7 +760,7 @@ mod tests {
         fs::metadata(p).unwrap().permissions().mode() & 0o777
     }
 
-    // ---------- A1: 结构 + 访问器 + new_id/now_ms ----------
+    // ---------- A1: structure + accessors + new_id/now_ms ----------
     #[test]
     fn config_default_is_v4_empty() {
         let c = Config::default();
@@ -965,7 +965,7 @@ mod tests {
         assert!(d.join("CSP.json.v1.bak").is_file());
     }
 
-    // ---------- A2: 版本探测 ----------
+    // ---------- A2: version detection ----------
     #[test]
     fn detect_version_missing_field_is_legacy() {
         let d = br#"{"provider":"deepseek","providers":{}}"#;
@@ -998,7 +998,7 @@ mod tests {
         assert!(detect_version(b"not json").is_err());
     }
 
-    // ---------- A4: 迁移 v1 → v2 ----------
+    // ---------- A4: migration v1 → v2 ----------
     #[test]
     fn migrate_maps_slots_to_profiles_and_active() {
         use crate::config_legacy::{ConfigV1, ProviderCfgV1};
@@ -1026,7 +1026,7 @@ mod tests {
                 base_url: "".into(),
                 model: "".into(),
             },
-        ); // 空槽
+        ); // empty slot
         let legacy = ConfigV1 {
             provider: "relay-glm".into(),
             proxy_port: 18991,
@@ -1048,7 +1048,7 @@ mod tests {
         assert_eq!(glm.api_format, "anthropic");
         assert_eq!(
             cfg.active_id, glm.id,
-            "旧 provider=relay-glm → 生效指该 profile"
+            "legacy provider=relay-glm → active points at that profile"
         );
         assert_eq!(cfg.secret, "sec");
     }
@@ -1065,7 +1065,7 @@ mod tests {
                 model: "".into(),
             },
         );
-        // 旧 provider 指向空/不存在的槽 → active_id 必须为空（不静默选第一条）。
+        // Legacy provider points at empty/missing slot → active_id must be empty (no silent first-profile pick).
         let legacy = ConfigV1 {
             provider: "qwen".into(),
             proxy_port: 18991,
@@ -1076,7 +1076,7 @@ mod tests {
         };
         let cfg = migrate_v1_to_v2(legacy);
         assert_eq!(cfg.profiles.len(), 1);
-        assert_eq!(cfg.active_id, "", "非法 active → 空，等用户选");
+        assert_eq!(cfg.active_id, "", "invalid active → empty, wait for user choice");
     }
 
     #[test]
@@ -1109,7 +1109,7 @@ mod tests {
         assert_eq!(cfg.active_id, glm.id);
     }
 
-    // ---------- A5: 备份基础设施 ----------
+    // ---------- A5: backup infrastructure ----------
     #[test]
     fn migration_backup_copies_and_is_0600() {
         let d = tmpdir().join(".csswitch");
@@ -1137,7 +1137,7 @@ mod tests {
         drop_rolling_backup(&d);
         assert!(
             !bak.exists(),
-            "净化后滚动备份应删除，清了的 key 不可从 .bak 恢复"
+            "after sanitization rolling backup removed; cleared key not recoverable from .bak"
         );
     }
     #[test]
@@ -1153,7 +1153,7 @@ mod tests {
         assert_eq!(fs::read(&elsewhere).unwrap(), b"ORIG");
     }
 
-    // ---------- A6: load_from 整合 ----------
+    // ---------- A6: load_from integration ----------
     #[test]
     fn load_migrates_old_file_and_writes_v1_bak() {
         let d = tmpdir().join(".csswitch");
@@ -1167,8 +1167,8 @@ mod tests {
         assert_eq!(cfg.schema_version, CURRENT_SCHEMA_VERSION);
         assert_eq!(cfg.profiles.len(), 1);
         assert_eq!(cfg.active_profile().unwrap().api_key, "sk-x");
-        assert!(d.join("CSP.json.v1.bak").exists(), "迁移必须留 v1 备份");
-        // 落盘后再读是 v4（幂等，不再迁移）。
+        assert!(d.join("CSP.json.v1.bak").exists(), "migration must leave v1 backup");
+        // After persist, reload is v4 (idempotent, no re-migration).
         let again = load_from(&d).unwrap();
         assert_eq!(again, cfg);
         assert_eq!(again.schema_version, CURRENT_SCHEMA_VERSION);
@@ -1198,16 +1198,16 @@ mod tests {
         assert_eq!(
             got.active_ids,
             vec![] as Vec<String>,
-            "悬空 active → 归一化为空"
+            "dangling active → normalized to empty"
         );
         assert_eq!(got.active_id, "");
     }
 
-    // ---------- MP-2 Minor [2]: template_id 未命中 → 归一 custom ----------
+    // ---------- MP-2 Minor [2]: unknown template_id → normalize to custom ----------
     #[test]
     fn load_normalizes_unknown_template_id_to_custom() {
         let d = tmpdir().join(".csswitch");
-        // 造一条 template_id 未命中注册表的 v2 profile（连接字段保留）。
+        // Build v2 profile with template_id not in registry (connection fields preserved).
         let cfg = Config {
             active_id: "p1".into(),
             profiles: vec![Profile {
@@ -1224,14 +1224,14 @@ mod tests {
         save_to(&d, &cfg).unwrap();
         let got = load_from(&d).unwrap();
         let p = got.profile_by_id("p1").unwrap();
-        assert_eq!(p.template_id, "custom", "未命中 template_id → 归一 custom");
-        assert_eq!(p.base_url, "https://relay.example/claude", "连接字段保留");
+        assert_eq!(p.template_id, "custom", "unknown template_id → normalize to custom");
+        assert_eq!(p.base_url, "https://relay.example/claude", "connection fields preserved");
         assert_eq!(p.api_key, "sk-x");
         assert_eq!(got.active_ids, vec!["p1"]);
-        assert_eq!(got.active_id, "p1", "active 仍有效，不被清空");
+        assert_eq!(got.active_id, "p1", "active still valid, not cleared");
     }
 
-    // ---------- 既有安全/权限不变量（保留） ----------
+    // ---------- Existing security/permission invariants (retained) ----------
     #[test]
     fn load_missing_returns_default() {
         let d = tmpdir().join(".csswitch");
@@ -1316,7 +1316,7 @@ mod tests {
             .filter_map(|e| e.ok())
             .filter(|e| e.file_name().to_string_lossy().starts_with(".CSP.json.tmp"))
             .collect();
-        assert!(leftovers.is_empty(), "临时文件应已 rename 掉");
+        assert!(leftovers.is_empty(), "temp file should be renamed away");
     }
 
     #[test]
@@ -1341,27 +1341,27 @@ mod tests {
 
     #[test]
     fn secret_persists_and_survives_reload() {
-        // path-secret 一旦生成必须持久化，代理重启/重开 app 仍是同一个值。
+        // path-secret must persist once generated; proxy restart/reopen app keeps same value.
         let d = tmpdir().join(".csswitch");
         save_to(&d, &Config::default()).unwrap();
-        assert!(load_from(&d).unwrap().secret.is_empty(), "初始应为空");
+        assert!(load_from(&d).unwrap().secret.is_empty(), "initial should be empty");
         update(&d, |c| c.secret = "deadbeef00112233".into()).unwrap();
         assert_eq!(load_from(&d).unwrap().secret, "deadbeef00112233");
-        // 再改别的字段，secret 不受影响。
+        // Changing other fields must not affect secret.
         update(&d, |c| c.proxy_port = 20000).unwrap();
         assert_eq!(load_from(&d).unwrap().secret, "deadbeef00112233");
     }
 
     #[test]
     fn mask_hides_all_but_last4() {
-        assert_eq!(mask("sk-1234567890ab"), "••••90ab"); // 定长 4 点 + 末4
+        assert_eq!(mask("sk-1234567890ab"), "••••90ab"); // fixed 4 dots + last 4
         assert_eq!(mask(""), "");
         assert_eq!(mask("abc"), "•••");
         assert_eq!(mask("abcd"), "••••");
-        assert_eq!(mask("abcde"), "••••bcde"); // 定长 4 点 + 末4
+        assert_eq!(mask("abcde"), "••••bcde"); // fixed 4 dots + last 4
         let full = "sk-secret-tail9999";
         assert!(!mask(full).contains("secret"));
-        // 定长：掩码总长恒为 8（4 点 + 末4），不随 key 长度变长、不泄漏长度
+        // Fixed width: masked output always 8 chars (4 dots + last 4); no length leak
         assert_eq!(
             mask("sk-aaaaaaaaaaaaaaaaaaaaaaaaaaaa1234").chars().count(),
             8
