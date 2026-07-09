@@ -40,6 +40,7 @@ const I18N = {
     edit: "编辑",
     delete: "删除",
     models: "启用模型",
+    modelSingle: "模型",
     ports: "端口管理",
     proxyPort: "代理",
     sandboxPort: "沙箱",
@@ -52,12 +53,89 @@ const I18N = {
     emptyHint: "点右上「＋ 新建」添加一条连接",
     noUrl: "（未填地址）",
     keyLabel: "Key",
+    keySep: "：",
     keyMissing: "未填 key",
     fillProvider: "请填写 Provider。",
     fillBaseUrl: "请填写 Base_URL。",
     fillApiKey: "请填写 API Key。",
     skipActivate: "校验没过，仍要启用这条",
     menuMore: "更多",
+    ready: "就绪。",
+    modelHintNative: "由 Science 选择器 + 内置映射自动选择（opus 深度 / haiku 快速）。",
+    modelHintFollow: "留空＝跟随 Science 选择器（保留 opus/haiku 各档）；选一个＝固定用于所有请求。",
+    modelHintFixed: "勾选要在 Science 中启用的模型；列表第一个用于后台任务兜底。",
+    modelBuiltin: "内置",
+    toolsYes: " ·工具✓",
+    toolsNo: " ·无工具",
+    metaManyModels: "{n} 个模型已启用",
+    metaOneModel: "1 个模型已启用",
+    metaBuiltinMap: "内置映射",
+    metaFollowScience: "跟随 Science",
+    metaNoModel: "未选模型",
+    loadConfigFail: "读取配置失败：{err}",
+    portSavedReset: "端口已保存。改端口会重置正在运行的代理/沙箱，请重新启动 Claude Science。",
+    portUnchanged: "端口未变化。",
+    activateSkip: "正在启用「{name}」：已跳过上游校验，正在启动正式代理并探活…",
+    activateSkipWait: "仍在等待正式代理探活完成。完成后会自动应用，失败会保留原配置。",
+    activateVerify: "正在启用「{name}」：先用临时代理校验上游，网络慢时可能需要约 20 秒…",
+    activateVerifyWait1: "仍在等待上游校验响应。可以继续查看日志/报告，请不要重复切换配置。",
+    activateVerifyWait2: "上游校验仍未返回，接近本次等待上限。完成后会自动切换，或给出重试/跳过验证提示。",
+    saveConnActive: "正在保存当前生效配置：先校验新连接，再重启正式代理并探活…",
+    saveConnActiveWait1: "仍在等待新连接上游校验。失败会保留原连接和原代理。",
+    saveConnActiveWait2: "上游校验接近等待上限。完成后才会写盘并应用，失败会据实回滚。",
+    saveConnIdle: "保存连接中：正在做候选上游校验；无法确认时会保存但标记为未校验…",
+    saveConnIdleWait: "仍在等待候选连接校验。不会影响当前正在运行的代理。",
+    oneClickStart: "正在启动：检查代理 → 准备虚拟登录 → 启动/复用沙箱 → 探活…",
+    oneClickWait1: "仍在准备代理或沙箱。若代理配置已变更，可能需要重启本地代理。",
+    oneClickWait2: "仍在等待沙箱就绪。完成后会自动打开 Science；失败会显示日志摘要。",
+    portSaveChanged: "正在保存端口设置：端口变化会先重置当前代理/沙箱链路…",
+    portSaveChangedWait: "仍在应用端口设置。若旧沙箱无法停止，端口会保持原值并显示错误。",
+    portSaving: "正在保存端口设置…",
+    cancelled: "已取消。",
+    confirmRetry: "{prompt} —— 再点一次同一按钮确认（4 秒内）。",
+    creating: "创建中…",
+    fetchingModels: "正在拉取模型…",
+    createdMany: "已创建「{name}」，发现 {total} 个模型，已启用前 {enabled} 个。其余可在编辑里勾选，或直接改 CSP.json。",
+    createdSome: "已创建「{name}」，已启用 {enabled} 个模型。更多可在编辑里勾选，或直接改 CSP.json。",
+    createdNoModels: "已创建「{name}」，未能拉取模型列表。请在编辑里重试或手动配置。",
+    createFail: "创建失败：{err}",
+    anthropicBaseErr: "这个地址看起来是 Anthropic 兼容端点，请填写 OpenAI 兼容 base root（如 https://api.example.com/v1）。",
+    editConnActive: "编辑（当前生效）",
+    editConnHintActive: "编辑当前生效配置：保存会先校验→切换，失败自动回退到原配置（不谎报生效）。",
+    editConnHint: "编辑连接后点「保存」。",
+    connBaseHintDefault: "官方默认地址，可改到 token 套餐 / 区域端点。",
+    connBaseHintOpenAIChat: "OpenAI 兼容 base root，代理自动补 /chat/completions。",
+    connBaseHintOpenAIResp: "OpenAI 兼容 base root，代理自动补 /responses。",
+    connBaseHintCustom: "自定义端点根地址。",
+    connBaseHintNative: "模板地址（只读），模型由内置映射自动选择。",
+    connBaseHintReadonly: "模板地址（只读）。",
+    connKeySaved: "已保存（留空不改）",
+    modelsRefreshed: "已刷新 {n} 个可用模型，勾选要启用的项。",
+    modelsFetchFallback: "未能拉取模型列表，已显示已保存的模型。",
+    modelsFetchFail: "拉取模型失败：{err}",
+    profileMissing: "配置不存在。",
+    providerEmpty: "Provider 不能为空。",
+    needModel: "该来源需要至少选一个模型才能保存。",
+    savedApplied: "已保存并应用新连接。",
+    savedValidated: "已保存连接（已通过上游校验）。",
+    savedUnvalidated: "已保存连接（未能连通上游校验，激活时会再验）。",
+    saveConnFail: "连接未保存：{err}",
+    confirmDelete: "将删除配置「{name}」",
+    deleting: "删除中…",
+    deletedWasActive: "已删除。删掉的是当前生效配置，请点击另一条配置切换。",
+    deleted: "已删除。",
+    deleteFail: "删除失败：{err}",
+    switched: "已切换为当前配置。",
+    switchRejected: "校验未通过，未切换。",
+    switchFail: "切换失败：{err}",
+    noActiveProfile: "还没有「当前生效」的配置。请先「＋ 新建」或点击一条配置切换，再点「启动 Claude Science」。",
+    oneClickReady: "已就绪，正在打开面板…",
+    oneClickFail: "启动失败：{err}",
+    stopping: "停止中…",
+    stopped: "已停止代理与沙箱。",
+    stopFail: "停止失败：{err}",
+    openCspFail: "打开 CSP.json 失败：{err}",
+    previewMode: "预览模式：仅看界面，按钮不连后端（真实 app 里会连进程管家）。",
   },
   intl: {
     myConfigs: "Profiles",
@@ -73,6 +151,7 @@ const I18N = {
     edit: "Edit",
     delete: "Delete",
     models: "Enabled models",
+    modelSingle: "Model",
     ports: "Ports",
     proxyPort: "Proxy",
     sandboxPort: "Sandbox",
@@ -85,15 +164,104 @@ const I18N = {
     emptyHint: "Tap + New to add a connection",
     noUrl: "(no URL)",
     keyLabel: "Key",
+    keySep: ": ",
     keyMissing: "no key",
     fillProvider: "Enter a provider name.",
     fillBaseUrl: "Enter a base URL.",
     fillApiKey: "Enter an API key.",
     skipActivate: "Activate anyway (skip verify)",
     menuMore: "More",
+    ready: "Ready.",
+    modelHintNative: "Auto-mapped via Science picker + built-in routing (opus for depth, haiku for speed).",
+    modelHintFollow: "Leave empty to follow Science picker (opus/haiku tiers); pick one to pin all requests.",
+    modelHintFixed: "Check models to enable in Science; the first is the fallback for background tasks.",
+    modelBuiltin: "builtin",
+    toolsYes: " ·tools",
+    toolsNo: " ·no tools",
+    metaManyModels: "{n} models enabled",
+    metaOneModel: "1 model enabled",
+    metaBuiltinMap: "built-in mapping",
+    metaFollowScience: "follows Science",
+    metaNoModel: "no model selected",
+    loadConfigFail: "Failed to load config: {err}",
+    portSavedReset: "Ports saved. Changing ports resets the running proxy/sandbox — restart Claude Science.",
+    portUnchanged: "Ports unchanged.",
+    activateSkip: "Activating \"{name}\": skipped upstream verify, starting proxy and health check…",
+    activateSkipWait: "Still waiting for proxy health check. Will apply on success or keep previous config on failure.",
+    activateVerify: "Activating \"{name}\": probing upstream via scratch proxy (may take ~20s on slow networks)…",
+    activateVerifyWait1: "Still waiting for upstream probe. You can check logs; avoid switching profiles again.",
+    activateVerifyWait2: "Probe still pending, near timeout. Will switch or offer retry/skip when done.",
+    saveConnActive: "Saving active profile: verify new connection, restart proxy, then health check…",
+    saveConnActiveWait1: "Still verifying new connection. On failure, previous connection and proxy are kept.",
+    saveConnActiveWait2: "Verify near timeout. Will commit only after probe completes; rolls back on failure.",
+    saveConnIdle: "Saving connection: probing candidate upstream; may save as unverified if inconclusive…",
+    saveConnIdleWait: "Still probing candidate. Current running proxy is unaffected.",
+    oneClickStart: "Starting: check proxy → virtual login → start/reuse sandbox → health check…",
+    oneClickWait1: "Still preparing proxy or sandbox. Config changes may require a proxy restart.",
+    oneClickWait2: "Still waiting for sandbox. Science opens on success; errors show in logs.",
+    portSaveChanged: "Saving ports: port change resets proxy/sandbox chain…",
+    portSaveChangedWait: "Still applying ports. If old sandbox cannot stop, ports stay unchanged and an error is shown.",
+    portSaving: "Saving ports…",
+    cancelled: "Cancelled.",
+    confirmRetry: "{prompt} — click the same button again to confirm (within 4s).",
+    creating: "Creating…",
+    fetchingModels: "Fetching models…",
+    createdMany: "Created \"{name}\": found {total} models, enabled top {enabled}. Enable more in edit or edit CSP.json.",
+    createdSome: "Created \"{name}\": enabled {enabled} models. Enable more in edit or edit CSP.json.",
+    createdNoModels: "Created \"{name}\" but could not fetch models. Retry in edit or configure manually.",
+    createFail: "Create failed: {err}",
+    anthropicBaseErr: "This URL looks Anthropic-compatible. Use an OpenAI-compatible base root (e.g. https://api.example.com/v1).",
+    editConnActive: "Edit (active)",
+    editConnHintActive: "Editing active profile: save verifies then switches; failure rolls back (no false success).",
+    editConnHint: "Edit connection, then Save.",
+    connBaseHintDefault: "Official default; change for token plans / regional endpoints.",
+    connBaseHintOpenAIChat: "OpenAI-compatible base root; proxy appends /chat/completions.",
+    connBaseHintOpenAIResp: "OpenAI-compatible base root; proxy appends /responses.",
+    connBaseHintCustom: "Custom endpoint root URL.",
+    connBaseHintNative: "Template URL (read-only); models use built-in mapping.",
+    connBaseHintReadonly: "Template URL (read-only).",
+    connKeySaved: "Saved (leave blank to keep)",
+    modelsRefreshed: "Refreshed {n} models — check the ones to enable.",
+    modelsFetchFallback: "Could not fetch models; showing saved selection.",
+    modelsFetchFail: "Fetch models failed: {err}",
+    profileMissing: "Profile not found.",
+    providerEmpty: "Provider name is required.",
+    needModel: "Select at least one model for this provider.",
+    savedApplied: "Saved and applied.",
+    savedValidated: "Saved (upstream verified).",
+    savedUnvalidated: "Saved (upstream not verified; will re-check on activate).",
+    saveConnFail: "Not saved: {err}",
+    confirmDelete: "Delete profile \"{name}\"",
+    deleting: "Deleting…",
+    deletedWasActive: "Deleted active profile. Switch to another profile.",
+    deleted: "Deleted.",
+    deleteFail: "Delete failed: {err}",
+    switched: "Switched to this profile.",
+    switchRejected: "Verify failed; not switched.",
+    switchFail: "Switch failed: {err}",
+    noActiveProfile: "No active profile. Create or select one, then Start Claude Science.",
+    oneClickReady: "Ready, opening panel…",
+    oneClickFail: "Start failed: {err}",
+    stopping: "Stopping…",
+    stopped: "Proxy and sandbox stopped.",
+    stopFail: "Stop failed: {err}",
+    openCspFail: "Failed to open CSP.json: {err}",
+    previewMode: "Preview mode: UI only, no backend (real app uses Tauri).",
   },
 };
 function S() { return I18N[EDITION]; }
+function T(key, vars) {
+  const raw = S()[key];
+  if (!raw) return key;
+  return Object.entries(vars || {}).reduce(
+    (s, [k, v]) => s.replaceAll(`{${k}}`, String(v)),
+    raw
+  );
+}
+function modelHints() {
+  const t = S();
+  return { native: t.modelHintNative, fixed: t.modelHintFixed };
+}
 
 /** 国内版：每家一个默认端点，仅保留国内常用线路。 */
 const WIZ_PRESETS_CN = [
@@ -104,7 +272,6 @@ const WIZ_PRESETS_CN = [
   { id: "minimax", templateId: "minimax", name: "MiniMax", label: "MiniMax", baseUrl: "https://api.minimaxi.com/anthropic" },
   { id: "xiaomi", templateId: "xiaomi", name: "MiMo", label: "小米 MiMo", baseUrl: "https://api.xiaomimimo.com/anthropic" },
   { id: "xiaomi-token", templateId: "xiaomi", name: "MiMo", label: "小米 MiMo · Token 套餐", baseUrl: "https://token-plan-cn.xiaomimimo.com/anthropic" },
-  { id: "custom", templateId: "custom", name: "自定义", label: "自定义端点", baseUrl: "" },
 ];
 
 /** 国际版：海外常用端点。 */
@@ -113,6 +280,8 @@ const WIZ_PRESETS_INTL = [
   { id: "glm", templateId: "glm", name: "ZAI", label: "ZAI", baseUrl: "https://api.z.ai/api/anthropic" },
   { id: "kimi", templateId: "kimi", name: "Moonshot", label: "Moonshot", baseUrl: "https://api.moonshot.ai/anthropic" },
   { id: "minimax", templateId: "minimax", name: "MiniMax", label: "MiniMax", baseUrl: "https://api.minimax.io/anthropic" },
+  { id: "xiaomi", templateId: "xiaomi", name: "MiMo", label: "Xiaomi MiMo", baseUrl: "https://api.xiaomimimo.com/anthropic" },
+  { id: "xiaomi-token", templateId: "xiaomi", name: "MiMo", label: "MiMo · Token Plan", baseUrl: "https://token-plan-cn.xiaomimimo.com/anthropic" },
   { id: "openrouter", templateId: "openrouter", name: "OpenRouter", label: "OpenRouter", baseUrl: "https://openrouter.ai/api" },
 ];
 
@@ -148,19 +317,14 @@ function applyEditionUI() {
   populateWizPresetSelect();
 }
 
-// ── 预览兜底 mock（仅浏览器预览用；node --check 只验语法，真实 app 走真后端） ──
+// ── 预览兜底 mock（仅浏览器预览用） ──
 const MOCK_TEMPLATES = [
-  { id: "deepseek", name: "DeepSeek", category: "cn_official", api_format: "anthropic", adapter: "deepseek", base_url: "https://api.deepseek.com/anthropic", base_url_editable: false, requires_model_override: false, builtin_models: ["claude-opus-4-8", "claude-haiku-4-5"], icon: "deepseek", icon_color: "#1E88E5", website_url: "https://platform.deepseek.com" },
-  { id: "glm", name: "智谱 GLM", category: "cn_official", api_format: "anthropic", adapter: "relay", base_url: "https://open.bigmodel.cn/api/anthropic", base_url_editable: true, requires_model_override: true, builtin_models: ["glm-5.2", "glm-4.7", "glm-4.6", "glm-4.5-air"], icon: "glm", icon_color: "#2E6BE6", website_url: "https://open.bigmodel.cn" },
-  { id: "xiaomi", name: "小米 MiMo", category: "cn_official", api_format: "anthropic", adapter: "relay", base_url: "https://api.xiaomimimo.com/anthropic", base_url_editable: true, requires_model_override: true, builtin_models: ["mimo-v2.5-pro"], icon: "xiaomi", icon_color: "#FF6900", website_url: "https://xiaomimimo.com" },
-  { id: "siliconflow", name: "硅基流动", category: "cn_official", api_format: "anthropic", adapter: "relay", base_url: "https://api.siliconflow.cn", base_url_editable: true, requires_model_override: true, builtin_models: ["deepseek-ai/DeepSeek-V4-Pro", "deepseek-ai/DeepSeek-V4-Flash", "deepseek-ai/DeepSeek-V3.2", "zai-org/GLM-5.2"], icon: "siliconflow", icon_color: "#7C3AED", website_url: "https://siliconflow.cn" },
-  { id: "kimi", name: "Kimi（Moonshot）", category: "cn_official", api_format: "anthropic", adapter: "relay", base_url: "https://api.moonshot.cn/anthropic", base_url_editable: true, requires_model_override: true, builtin_models: ["kimi-k2.7-code", "kimi-k2.7-code-highspeed", "kimi-k2.6"], icon: "kimi", icon_color: "#16182F", website_url: "https://platform.moonshot.cn" },
-  { id: "minimax", name: "MiniMax", category: "cn_official", api_format: "anthropic", adapter: "relay", base_url: "https://api.minimaxi.com/anthropic", base_url_editable: true, requires_model_override: true, builtin_models: ["MiniMax-M3", "MiniMax-M2.7", "MiniMax-M2.7-highspeed"], icon: "minimax", icon_color: "#E1341E", website_url: "https://platform.minimaxi.com" },
-  { id: "openrouter", name: "OpenRouter", category: "custom", api_format: "anthropic", adapter: "relay", base_url: "https://openrouter.ai/api", base_url_editable: true, requires_model_override: true, builtin_models: ["anthropic/claude-sonnet-5", "anthropic/claude-opus-4.8", "anthropic/claude-opus-4.8-fast"], icon: "openrouter", icon_color: "#6467F2", website_url: "https://openrouter.ai" },
-  { id: "qwen", name: "通义千问", category: "cn_official", api_format: "openai_chat", adapter: "qwen", base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1", base_url_editable: false, requires_model_override: false, builtin_models: ["qwen-max", "qwen-plus", "qwen-turbo"], icon: "qwen", icon_color: "#615CED", website_url: "https://dashscope.aliyun.com" },
-  { id: "custom-openai", name: "自定义 OpenAI", category: "custom", api_format: "openai_chat", adapter: "openai-custom", base_url: "", base_url_editable: true, requires_model_override: true, builtin_models: [], icon: "custom", icon_color: "#2563EB", website_url: "" },
-  { id: "custom-openai-responses", name: "自定义 OpenAI Responses", category: "custom", api_format: "openai_responses", adapter: "openai-responses", base_url: "", base_url_editable: true, requires_model_override: true, builtin_models: [], icon: "custom", icon_color: "#0F766E", website_url: "" },
-  { id: "custom", name: "自定义 Anthropic", category: "custom", api_format: "anthropic", adapter: "relay", base_url: "", base_url_editable: true, requires_model_override: true, builtin_models: [], icon: "custom", icon_color: "#6B7280", website_url: "" },
+  { id: "deepseek", name: "DeepSeek", api_format: "anthropic", adapter: "deepseek", base_url: "https://api.deepseek.com/anthropic", base_url_editable: false, requires_model_override: false, builtin_models: ["claude-opus-4-8", "claude-haiku-4-5"], icon: "deepseek", icon_color: "#1E88E5" },
+  { id: "glm", name: "GLM", api_format: "anthropic", adapter: "relay", base_url: "https://open.bigmodel.cn/api/anthropic", base_url_editable: true, requires_model_override: true, builtin_models: ["glm-5.2", "glm-4.7"], icon: "glm", icon_color: "#2E6BE6" },
+  { id: "xiaomi", name: "MiMo", api_format: "anthropic", adapter: "relay", base_url: "https://api.xiaomimimo.com/anthropic", base_url_editable: true, requires_model_override: true, builtin_models: ["mimo-v2.5-pro"], icon: "xiaomi", icon_color: "#FF6900" },
+  { id: "kimi", name: "Moonshot", api_format: "anthropic", adapter: "relay", base_url: "https://api.moonshot.cn/anthropic", base_url_editable: true, requires_model_override: true, builtin_models: ["kimi-k2.7-code"], icon: "kimi", icon_color: "#16182F" },
+  { id: "openrouter", name: "OpenRouter", api_format: "anthropic", adapter: "relay", base_url: "https://openrouter.ai/api", base_url_editable: true, requires_model_override: true, builtin_models: ["anthropic/claude-sonnet-5"], icon: "openrouter", icon_color: "#6467F2" },
+  { id: "custom", name: "Custom", api_format: "anthropic", adapter: "relay", base_url: "", base_url_editable: true, requires_model_override: true, builtin_models: [], icon: "custom", icon_color: "#6B7280" },
 ];
 const mockStore = { 
   schema_version: 2,
@@ -168,7 +332,7 @@ const mockStore = {
   proxy_port: 18991,
   sandbox_port: 8990,
   profiles: [
-    { id: "p-demo1", name: "我的 GLM", template_id: "glm", category: "cn_official", api_format: "anthropic", base_url: "https://open.bigmodel.cn/api/anthropic", model: "glm-4.6", key: "••••••1234", icon: "glm", icon_color: "#2E6BE6", website_url: "https://open.bigmodel.cn", sort_index: 1, notes: "" },
+    { id: "p-demo1", name: "GLM", template_id: "glm", api_format: "anthropic", base_url: "https://open.bigmodel.cn/api/anthropic", model: "glm-5.2", active_models: ["glm-5.2"], key: "••••••1234", icon: "glm", icon_color: "#2E6BE6", notes: "" },
   ],
 };
 function mockMask(k) { return k ? "••••" + String(k).slice(-4) : ""; }
@@ -186,11 +350,10 @@ function mockInvoke(cmd, args) {
       const t = MOCK_TEMPLATES.find((x) => x.id === args.templateId) || {};
       const id = "p-" + Math.random().toString(16).slice(2, 10);
       mockStore.profiles.push({
-        id, name: args.name || t.name || "新配置", template_id: args.templateId,
-        category: t.category || "custom", api_format: t.api_format || "anthropic",
+        id, name: args.name || t.name || "Profile", template_id: args.templateId,
+        api_format: t.api_format || "anthropic",
         base_url: args.baseUrl || t.base_url || "", model: args.model || "",
-        key: mockMask(args.key || ""), icon: t.icon, icon_color: t.icon_color,
-        website_url: t.website_url, sort_index: mockStore.profiles.length + 1, notes: "",
+        key: mockMask(args.key || ""), icon: t.icon, icon_color: t.icon_color, notes: "",
       });
       return Promise.resolve(id);
     }
@@ -242,23 +405,21 @@ let configState = { profiles: [], templates: [], active_id: "", proxy_port: 1899
 let pendingSkipActivateId = null;   // set_active 校验含糊时，允许「跳过验证」再切
 let pendingConfirm = null;          // 危险操作（清 key / 删除）的「再点一次确认」态
 
-// ── 模型能力（三态，纯函数，无 DOM）：native 映射 / relay 跟随 / relay 固定。──
-const CAP = { NATIVE: "native", FOLLOW: "follow", FIXED: "fixed" };
+// ── 模型能力：native 内置映射 / relay 多选固定模型 ──
+const CAP = { NATIVE: "native", FIXED: "fixed" };
 function templateCaps(t) { return (t && t.capabilities) || {}; }
 function modelCapability(t) {
-  if (!t) return CAP.FIXED;                       // 未知模板：最保守，要求填模型
+  if (!t) return CAP.FIXED;
   const caps = templateCaps(t);
   if (caps.model_discovery === "builtin_static" && caps.model_required === false) return CAP.NATIVE;
-  if (caps.model_required === false) return CAP.FOLLOW;
-  if (Object.prototype.hasOwnProperty.call(caps, "model_required")) return CAP.FIXED;
-  if (t.adapter === "deepseek" || t.adapter === "qwen") return CAP.NATIVE; // 兼容旧后端 / preview mock
-  return t.requires_model_override ? CAP.FIXED : CAP.FOLLOW;
+  if (t.adapter === "deepseek" || t.adapter === "qwen") return CAP.NATIVE;
+  return CAP.FIXED;
 }
 function modelRequired(t) {
   if (!t) return true;
   const caps = templateCaps(t);
   if (Object.prototype.hasOwnProperty.call(caps, "model_required")) return !!caps.model_required;
-  return !!t.requires_model_override; // 兼容旧后端 / preview mock
+  return modelCapability(t) === CAP.FIXED;
 }
 function profileCapabilitySource(p, t) {
   if (!p || !p.capabilities) return t;
@@ -271,12 +432,6 @@ function profileCapabilitySource(p, t) {
     capabilities: p.capabilities,
   };
 }
-
-const MODEL_HINT = {
-  native: "由 Science 选择器 + 内置映射自动选择（opus 深度 / haiku 快速）。",
-  follow: "留空＝跟随 Science 选择器（保留 opus/haiku 各档）；选一个＝固定用于所有请求。",
-  fixed: "勾选要在 Science 中启用的模型；列表第一个用于后台任务兜底。",
-};
 
 function profileModels(p) {
   const active = (p && p.active_models) || [];
@@ -314,52 +469,35 @@ function renderModelPick(container, builtin, selected, onChange) {
   });
 }
 
-// 据能力渲染模型字段。native：只读信息 + 隐藏下拉/获取按钮，但把既有 model 留在隐藏下拉里
-// （避免保存时被空值覆盖，守「零运行语义变化」）；relay：走下拉 + 多选。
+// native：只读说明；relay：checkbox 多选。
 function applyModelCapability(t, ui, profileOrModel) {
   const p = profileOrModel && typeof profileOrModel === "object" ? profileOrModel : null;
   const currentModel = p ? (p.default_model || p.model || "") : (profileOrModel || "");
   const selected = p ? profileModels(p) : (currentModel ? [currentModel] : []);
   const cap = modelCapability(t);
-  const listId = ui.sel.getAttribute("list");
-  const dl = listId && document.getElementById(listId);
   const onPickChange = ui.onPickChange || (() => {});
+  const hints = modelHints();
   if (cap === CAP.NATIVE) {
-    ui.info.textContent = MODEL_HINT.native;
+    ui.info.textContent = hints.native;
     ui.info.hidden = false;
-    ui.sel.hidden = true;
-    ui.sel.value = currentModel || "";
     if (ui.pick) { ui.pick.hidden = true; ui.pick.innerHTML = ""; }
-    if (dl) dl.innerHTML = "";
-    if (ui.fetchBtn) ui.fetchBtn.hidden = true;
     ui.hint.textContent = "";
     return cap;
   }
   ui.info.hidden = true;
-  if (ui.fetchBtn) ui.fetchBtn.hidden = true;
   const builtin = ((t && t.builtin_models) || []).slice();
   if (currentModel && !builtin.includes(currentModel)) builtin.unshift(currentModel);
-  const models = builtin.map((id) => ({ id, supports_tools: null }));
-  renderModelOptions(ui.sel, models, "内置");
-  ui.sel.value = currentModel || (builtin[0] || "");
-  ui.hint.textContent = cap === CAP.FOLLOW ? MODEL_HINT.follow : MODEL_HINT.fixed;
-  if (cap === CAP.FIXED && ui.pick) {
-    ui.sel.hidden = true;
-    if (ui.modelLabel) ui.modelLabel.textContent = "启用模型";
-    if (dl) dl.innerHTML = "";
+  ui.hint.textContent = hints.fixed;
+  if (ui.modelLabel) ui.modelLabel.textContent = S().models;
+  if (ui.pick) {
     renderModelPick(ui.pick, builtin, selected, onPickChange);
-  } else if (ui.pick) {
-    ui.sel.hidden = false;
-    if (ui.modelLabel) ui.modelLabel.textContent = "模型";
-    ui.pick.hidden = true;
-    ui.pick.innerHTML = "";
   }
   return cap;
 }
 
 function setMsg(text, kind) {
   // 反馈区仅展示错误；成功/进度/中性提示一律不占位。
-  const t = kind === "err" && text && text !== "就绪。" ? text : "";
+  const t = kind === "err" && text && text !== T("ready") ? text : "";
   els.msg.textContent = t;
   els.msg.className = "msg" + (t ? " err" : "");
   els.msg.parentElement.hidden = !t;
@@ -448,42 +586,42 @@ function startActivateFeedback(id, skipVerify) {
   const name = profileName(id);
   clearBusyMsgTimers();
   if (skipVerify) {
-    setMsg("正在启用「" + name + "」：已跳过上游校验，正在启动正式代理并探活…");
-    scheduleBusyMsg(3500, { kind: "activate", id }, "仍在等待正式代理探活完成。完成后会自动应用，失败会保留原配置。");
+    setMsg(T("activateSkip", { name }));
+    scheduleBusyMsg(3500, { kind: "activate", id }, T("activateSkipWait"));
     return;
   }
-  setMsg("正在启用「" + name + "」：先用临时代理校验上游，网络慢时可能需要约 20 秒…");
-  scheduleBusyMsg(4500, { kind: "activate", id }, "仍在等待上游校验响应。可以继续查看日志/报告，请不要重复切换配置。");
-  scheduleBusyMsg(18000, { kind: "activate", id }, "上游校验仍未返回，接近本次等待上限。完成后会自动切换，或给出重试/跳过验证提示。");
+  setMsg(T("activateVerify", { name }));
+  scheduleBusyMsg(4500, { kind: "activate", id }, T("activateVerifyWait1"));
+  scheduleBusyMsg(18000, { kind: "activate", id }, T("activateVerifyWait2"));
 }
 
 function startSaveConnectionFeedback(id, active) {
   clearBusyMsgTimers();
   if (active) {
-    setMsg("正在保存当前生效配置：先校验新连接，再重启正式代理并探活…");
-    scheduleBusyMsg(4500, { kind: "saveConnection", id }, "仍在等待新连接上游校验。失败会保留原连接和原代理。");
-    scheduleBusyMsg(18000, { kind: "saveConnection", id }, "上游校验接近等待上限。完成后才会写盘并应用，失败会据实回滚。");
+    setMsg(T("saveConnActive"));
+    scheduleBusyMsg(4500, { kind: "saveConnection", id }, T("saveConnActiveWait1"));
+    scheduleBusyMsg(18000, { kind: "saveConnection", id }, T("saveConnActiveWait2"));
     return;
   }
-  setMsg("保存连接中：正在做候选上游校验；无法确认时会保存但标记为未校验…");
-  scheduleBusyMsg(4500, { kind: "saveConnection", id }, "仍在等待候选连接校验。不会影响当前正在运行的代理。");
+  setMsg(T("saveConnIdle"));
+  scheduleBusyMsg(4500, { kind: "saveConnection", id }, T("saveConnIdleWait"));
 }
 
 function startOneClickFeedback() {
   clearBusyMsgTimers();
-  setMsg("正在启动：检查代理 → 准备虚拟登录 → 启动/复用沙箱 → 探活…");
-  scheduleBusyMsg(3500, { kind: "oneClick" }, "仍在准备代理或沙箱。若代理配置已变更，可能需要重启本地代理。");
-  scheduleBusyMsg(9000, { kind: "oneClick" }, "仍在等待沙箱就绪。完成后会自动打开 Science；失败会显示日志摘要。");
+  setMsg(T("oneClickStart"));
+  scheduleBusyMsg(3500, { kind: "oneClick" }, T("oneClickWait1"));
+  scheduleBusyMsg(9000, { kind: "oneClick" }, T("oneClickWait2"));
 }
 
 function startPortSaveFeedback(changed) {
   clearBusyMsgTimers();
   if (changed) {
-    setMsg("正在保存端口设置：端口变化会先重置当前代理/沙箱链路…");
-    scheduleBusyMsg(3500, { kind: "ports" }, "仍在应用端口设置。若旧沙箱无法停止，端口会保持原值并显示错误。");
+    setMsg(T("portSaveChanged"));
+    scheduleBusyMsg(3500, { kind: "ports" }, T("portSaveChangedWait"));
     return;
   }
-  setMsg("正在保存端口设置…");
+  setMsg(T("portSaving"));
 }
 
 
@@ -527,7 +665,7 @@ function showView(v) {
   els.panel.classList.toggle("view-form", v !== "list");
   if (v === "list") hideSkip();
 }
-function cancelForm() { showView("list"); setMsg("就绪。"); }
+function cancelForm() { showView("list"); setMsg(T("ready")); }
 
 function showSkip() { els.skipActivateBtn.hidden = false; }
 function hideSkip() { els.skipActivateBtn.hidden = true; pendingSkipActivateId = null; }
@@ -543,9 +681,9 @@ function confirmAction(token, promptText, fn) {
   if (pendingConfirm) clearTimeout(pendingConfirm.timer);
   pendingConfirm = {
     token,
-    timer: setTimeout(() => { pendingConfirm = null; setMsg("已取消。"); }, 4000),
+    timer: setTimeout(() => { pendingConfirm = null; setMsg(T("cancelled")); }, 4000),
   };
-  setMsg(promptText + " —— 再点一次同一按钮确认（4 秒内）。", "err");
+  setMsg(T("confirmRetry", { prompt: promptText }), "err");
 }
 
 // ── 加载配置 + 渲染列表 ──
@@ -564,7 +702,7 @@ async function loadConfig() {
     // 一次性迁移提示（#9 甲）：后端 get_config 读后已清盘，只会出现一次。
     if (cfg.pending_notice) setMsg(cfg.pending_notice, "ok");
   } catch (e) {
-    setMsg("读取配置失败：" + e, "err");
+    setMsg(T("loadConfigFail", { err: e }), "err");
   }
 }
 
@@ -572,15 +710,13 @@ async function loadConfig() {
 function profileMetaLine(p) {
   const models = profileModels(p);
   const cap = modelCapability(p.capabilities ? p : tplById(p.template_id));
-  if (models.length > 1) return escapeHtml(models.length + " 个模型已启用");
+  if (models.length > 1) return escapeHtml(T("metaManyModels", { n: models.length }));
   if (models.length === 1) {
-    if (cap === CAP.NATIVE) return "内置映射";
-    if (cap === CAP.FOLLOW) return "跟随 Science";
-    return "1 个模型已启用";
+    if (cap === CAP.NATIVE) return T("metaBuiltinMap");
+    return T("metaOneModel");
   }
-  if (cap === CAP.NATIVE) return "内置映射";
-  if (cap === CAP.FOLLOW) return "跟随 Science";
-  return "未选模型";
+  if (cap === CAP.NATIVE) return T("metaBuiltinMap");
+  return T("metaNoModel");
 }
 
 function renderList() {
@@ -606,10 +742,10 @@ function renderList() {
           (active ? '<span class="badge on">' + escapeHtml(S().activeBadge) + "</span>" : "") +
         "</div>" +
         '<div class="pmeta">' + escapeHtml(p.base_url || S().noUrl) + "</div>" +
-        '<div class="pmeta">' + metaTxt + " · " + escapeHtml(S().keyLabel) + "：" + keyMask + "</div>" +
+        '<div class="pmeta">' + metaTxt + " · " + escapeHtml(S().keyLabel) + escapeHtml(S().keySep) + keyMask + "</div>" +
         '<div class="prow-acts">' +
           '<div class="pmenu-wrap">' +
-            '<button type="button" class="abtn pmenu-btn" data-act="menu" aria-haspopup="true" aria-expanded="false" title="更多">⋯</button>' +
+            '<button type="button" class="abtn pmenu-btn" data-act="menu" aria-haspopup="true" aria-expanded="false" title="' + escapeHtml(S().menuMore) + '">⋯</button>' +
             '<div class="pmenu" hidden role="menu">' +
               '<button type="button" class="pmenu-item" data-act="editconn" role="menuitem">' + escapeHtml(S().edit) + "</button>" +
               '<button type="button" class="pmenu-item danger" data-act="delete" role="menuitem">' + escapeHtml(S().delete) + "</button>" +
@@ -638,9 +774,9 @@ async function persistPorts() {
     configState.sandbox_port = s;
     // 后端在端口变化时会拆掉旧代理/沙箱（否则会复用指向旧端口的死链路），如实告知需重开。修 P1-c
     if (changed) {
-      setMsg("端口已保存。改端口会重置正在运行的代理/沙箱，请重新启动 Claude Science。", "ok");
+      setMsg(T("portSavedReset"), "ok");
     } else {
-      setMsg("端口未变化。", "ok");
+      setMsg(T("portUnchanged"), "ok");
     }
   } catch (e) {
     // 出错＝端口未落盘（校验不过 / 停旧沙箱失败）：把输入框还原成实际生效值，避免显示未保存的数字。
@@ -652,24 +788,7 @@ async function persistPorts() {
   }
 }
 
-// ── 模型下拉渲染（requires_override=false 时首项「跟随 Science 选择器」；按 supports_tools 标注）──
-// 候选填进 input 关联的 <datalist>（下拉建议）；input 的值由调用方另设，用户可自由改。
-function renderModelOptions(sel, models, sourceLabel) {
-  const listId = sel.getAttribute("list");
-  const dl = listId && document.getElementById(listId);
-  if (!dl) return;
-  dl.innerHTML = "";
-  for (const m of models || []) {
-    const o = document.createElement("option");
-    o.value = m.id;
-    const tag = m.supports_tools === true ? " ·工具✓" : m.supports_tools === false ? " ·无工具" : "";
-    const src = sourceLabel ? " [" + sourceLabel + "]" : "";
-    o.label = m.id + tag + src;
-    dl.appendChild(o);
-  }
-}
-
-// fetch_models → 模型 id 列表（创建/编辑自动拉取用）。
+// fetch_models 返回体 → 刷新 checkbox 池（编辑页自动拉取用）。
 async function discoverModelIds({ templateId, baseUrl, key, profileId, builtin }) {
   const t = tplById(templateId);
   const cap = modelCapability(t);
@@ -788,7 +907,7 @@ function refreshWizGate() {
 
 function openaiCustomAnthropicBaseMessage(t, base) {
   if (t && (t.id === "custom-openai" || t.id === "custom-openai-responses") && (base || "").trim().toLowerCase().includes("/anthropic")) {
-    return "这个地址看起来是 Anthropic 兼容端点，请填写 OpenAI 兼容 base root（如 https://api.example.com/v1）。";
+    return T("anthropicBaseErr");
   }
   return "";
 }
@@ -805,10 +924,10 @@ async function wizSave() {
   const baseErr = openaiCustomAnthropicBaseMessage(t, base);
   if (baseErr) { setMsg(baseErr, "err"); return; }
   setBusy(true);
-  setMsg("创建中…");
+  setMsg(T("creating"));
   try {
     const id = await call("create_profile", { templateId, name, key, baseUrl: base, model: "" });
-    setMsg("正在拉取模型…");
+    setMsg(T("fetchingModels"));
     const builtin = (t && t.builtin_models) || [];
     const discovered = await discoverModelIds({ templateId, baseUrl: base, key, builtin });
     const modelIds = modelsToEnableOnCreate(discovered, builtin);
@@ -827,29 +946,24 @@ async function wizSave() {
     if (modelIds.length) {
       const total = discovered.length || modelIds.length;
       if (total > modelIds.length) {
-        setMsg("已创建「" + name + "」，发现 " + total + " 个模型，已启用前 " + modelIds.length + " 个。其余可在编辑里勾选，或直接改 CSP.json。", "ok");
+        setMsg(T("createdMany", { name, total, enabled: modelIds.length }), "ok");
       } else {
-        setMsg("已创建「" + name + "」，已启用 " + modelIds.length + " 个模型。更多可在编辑里勾选，或直接改 CSP.json。", "ok");
+        setMsg(T("createdSome", { name, enabled: modelIds.length }), "ok");
       }
     } else {
-      setMsg("已创建「" + name + "」，未能拉取模型列表。请在编辑里重试或手动配置。", "ok");
+      setMsg(T("createdNoModels", { name }), "ok");
     }
   } catch (e) {
-    setMsg("创建失败：" + e, "err");
+    setMsg(T("createFail", { err: e }), "err");
   } finally {
     setBusy(false);
   }
 }
 
-function resolvedConnectionModels(cap, modelInput, pickContainer) {
-  if (cap === CAP.FIXED && pickContainer && !pickContainer.hidden) {
-    const checked = collectCheckedModels(pickContainer);
-    if (checked.length) {
-      return { models: checked, defaultModel: checked[0] };
-    }
-  }
-  const one = (modelInput || "").trim();
-  return { models: one ? [one] : [], defaultModel: one };
+function resolvedConnectionModels(cap, pickContainer) {
+  if (cap === CAP.NATIVE) return { models: [], defaultModel: "" };
+  const checked = collectCheckedModels(pickContainer);
+  return { models: checked, defaultModel: checked[0] || "" };
 }
 
 // ── C3：连接编辑（base_url/model/key）+ 清 key ──
@@ -866,7 +980,7 @@ function openConn(id) {
   const editable = t ? t.base_url_editable : true;
   const active = id === configState.active_id;
   els.connSec.dataset.id = id;
-  els.connTitle.textContent = "编辑" + (active ? "（当前生效）" : "");
+  els.connTitle.textContent = active ? T("editConnActive") : S().edit;
   els.connName.value = p.name;
   els.connBase.value = p.base_url || (t ? t.base_url : "");
   els.connBase.readOnly = !editable;
@@ -876,26 +990,24 @@ function openConn(id) {
   // native（deepseek/qwen）隐藏「获取模型」按钮，别再提示一个不存在的操作（修 #5）。
   els.connBaseHint.textContent = editable
     ? (t && t.base_url
-        ? "官方默认地址，可改到 token 套餐 / 区域端点。"
+        ? T("connBaseHintDefault")
         : (capSrc && capSrc.api_format === "openai_chat"
-          ? "OpenAI 兼容 base root，代理自动补 /chat/completions。"
+          ? T("connBaseHintOpenAIChat")
           : capSrc && capSrc.api_format === "openai_responses"
-          ? "OpenAI 兼容 base root，代理自动补 /responses。"
-          : "自定义端点根地址。"))
+          ? T("connBaseHintOpenAIResp")
+          : T("connBaseHintCustom")))
     : (modelCapability(capSrc) === CAP.NATIVE
-        ? "模板地址（只读），模型由内置映射自动选择。"
-        : "模板地址（只读）。");
+        ? T("connBaseHintNative")
+        : T("connBaseHintReadonly"));
   const cap = applyModelCapability(capSrc, {
-    info: els.connModelInfo, sel: els.connModel, hint: els.connModelHint,
+    info: els.connModelInfo, hint: els.connModelHint,
     pick: els.connModelPick, modelLabel: els.connModelLabel, onPickChange: refreshConnGate,
   }, p);
   els.connKey.value = "";
-  els.connKey.placeholder = p.key ? "已保存（留空不改）" : "sk-...";
+  els.connKey.placeholder = p.key ? T("connKeySaved") : "sk-...";
   showView("conn");
   refreshConnGate();
-  setMsg(active
-    ? "编辑当前生效配置：保存会先校验→切换，失败自动回退到原配置（不谎报生效）。"
-    : "编辑连接后点「保存」。");
+  setMsg(active ? T("editConnHintActive") : T("editConnHint"));
   if (cap !== CAP.NATIVE) autoFetchConnModels();
 }
 
@@ -927,10 +1039,10 @@ async function autoFetchConnModels() {
       builtin: ((t && t.builtin_models) || []).slice(),
       onPickChange: refreshConnGate,
     }, profileModels(p));
-    if (n) setMsg("已刷新 " + n + " 个可用模型，勾选要启用的项。", "ok");
-    else setMsg("未能拉取模型列表，已显示已保存的模型。", "ok");
+    if (n) setMsg(T("modelsRefreshed", { n }), "ok");
+    else setMsg(T("modelsFetchFallback"), "ok");
   } catch (e) {
-    setMsg("拉取模型失败：" + e, "err");
+    setMsg(T("modelsFetchFail", { err: e }), "err");
   } finally {
     setBusy(false);
     refreshConnGate();
@@ -943,27 +1055,27 @@ function refreshConnGate() {
   const capSrc = p ? profileCapabilitySource(p, t) : t;
   const need = p ? modelRequired(p.capabilities ? p : t) : false;
   const cap = capSrc ? modelCapability(capSrc) : CAP.FIXED;
-  const resolved = resolvedConnectionModels(cap, els.connModel.value, els.connModelPick);
+  const resolved = resolvedConnectionModels(cap, els.connModelPick);
   els.connSaveBtn.disabled = busy || !!(need && !resolved.models.length);
 }
 
 async function connSave() {
   const p = currentConn();
-  if (!p) { setMsg("配置不存在。", "err"); return; }
+  if (!p) { setMsg(T("profileMissing"), "err"); return; }
   const name = els.connName.value.trim();
-  if (!name) { setMsg("Provider 不能为空。", "err"); return; }
+  if (!name) { setMsg(T("providerEmpty"), "err"); return; }
   const t = tplById(p.template_id);
   const capSrc = profileCapabilitySource(p, t);
   const req = p.capabilities ? modelRequired(p) : (t ? modelRequired(t) : true);
   const cap = capSrc ? modelCapability(capSrc) : CAP.FIXED;
-  const resolved = resolvedConnectionModels(cap, els.connModel.value, els.connModelPick);
-  if (req && !resolved.models.length) { setMsg("该来源需要至少选一个模型才能保存。", "err"); return; }
-  const model = resolved.defaultModel || resolved.models[0] || els.connModel.value.trim();
+  const resolved = resolvedConnectionModels(cap, els.connModelPick);
+  if (req && !resolved.models.length) { setMsg(T("needModel"), "err"); return; }
+  const model = resolved.defaultModel || resolved.models[0] || "";
   const editable = t ? t.base_url_editable : true;
   const base = editable ? els.connBase.value.trim() : (t ? t.base_url : els.connBase.value.trim());
   // 可编辑地址的模板都是中转/自定义端点，必须带 base_url；清空后保存会得到不可用连接（激活必失败）。
   // 保存前就拦（后端也有同款守卫兜底，修 P2）。
-  if (editable && !base) { setMsg("请填写 Base_URL。", "err"); return; }
+  if (editable && !base) { setMsg(S().fillBaseUrl, "err"); return; }
   const baseErr = openaiCustomAnthropicBaseMessage(t, base);
   if (baseErr) { setMsg(baseErr, "err"); return; }
   const active = p.id === configState.active_id;
@@ -987,14 +1099,14 @@ async function connSave() {
     await loadConfig();
     // 非 active：后端如实回传 validated，连不通/native 也保存，但据实说明未校验（修 P2-d truthful-save）。
     if (active) {
-      setMsg("已保存并应用新连接。", "ok");
+      setMsg(T("savedApplied"), "ok");
     } else if (r && r.validated) {
-      setMsg("已保存连接（已通过上游校验）。", "ok");
+      setMsg(T("savedValidated"), "ok");
     } else {
-      setMsg("已保存连接（未能连通上游校验，激活时会再验）。", "ok");
+      setMsg(T("savedUnvalidated"), "ok");
     }
   } catch (e) {
-    setMsg("连接未保存：" + e, "err");
+    setMsg(T("saveConnFail", { err: e }), "err");
   } finally {
     setBusy(false);
   }
@@ -1003,23 +1115,18 @@ async function connSave() {
 function del(id) {
   const p = (configState.profiles || []).find((x) => x.id === id);
   const nm = p ? p.name : id;
-  confirmAction("delete:" + id, "将删除配置「" + nm + "」", () => doDelete(id));
+  confirmAction("delete:" + id, T("confirmDelete", { name: nm }), () => doDelete(id));
 }
 async function doDelete(id) {
   const wasActive = id === configState.active_id;
   setBusy(true);
-  setMsg("删除中…");
+  setMsg(T("deleting"));
   try {
     await call("delete_profile", { id });
     await loadConfig();
-    setMsg(
-      wasActive
-        ? "已删除。删掉的是当前生效配置，请点击另一条配置切换。"
-        : "已删除。",
-      "ok"
-    );
+    setMsg(wasActive ? T("deletedWasActive") : T("deleted"), "ok");
   } catch (e) {
-    setMsg("删除失败：" + e, "err");
+    setMsg(T("deleteFail", { err: e }), "err");
   } finally {
     setBusy(false);
   }
@@ -1035,15 +1142,15 @@ async function activate(id, skipVerify) {
     const r = await call("set_active_profile", { id, skipVerify: !!skipVerify });
     if (r && r.committed) {
       await loadConfig();
-      setMsg(r.hint || "已切换为当前配置。", "ok");
+      setMsg(r.hint || T("switched"), "ok");
     } else {
-      await loadConfig(); // 反映未变（仍是原 active）
-      setMsg((r && r.hint) || "校验未通过，未切换。", "err");
+      await loadConfig();
+      setMsg((r && r.hint) || T("switchRejected"), "err");
       if (r && r.can_skip) { pendingSkipActivateId = id; showSkip(); }
     }
   } catch (e) {
     await loadConfig();
-    setMsg("切换失败：" + e, "err");
+    setMsg(T("switchFail", { err: e }), "err");
   } finally {
     setBusy(false);
   }
@@ -1052,16 +1159,16 @@ async function activate(id, skipVerify) {
 // ── 启动 Claude Science：读 active profile。无生效则引导先建/选一条。──
 async function oneClick() {
   if (!configState.active_id) {
-    setMsg("还没有「当前生效」的配置。请先「＋ 新建」或点击一条配置切换，再点「启动 Claude Science」。", "err");
+    setMsg(T("noActiveProfile"), "err");
     return;
   }
   setBusy(true, { kind: "oneClick" });
   startOneClickFeedback();
   try {
     const r = await call("one_click_login");
-    setMsg((r.msg || "已就绪，正在打开面板…") + "\n" + (r.url || ""), "ok");
+    setMsg((r.msg || T("oneClickReady")) + "\n" + (r.url || ""), "ok");
   } catch (e) {
-    setMsg("启动失败：" + e, "err");
+    setMsg(T("oneClickFail", { err: e }), "err");
   } finally {
     setBusy(false);
   }
@@ -1069,12 +1176,12 @@ async function oneClick() {
 
 async function stopAll() {
   setBusy(true);
-  setMsg("停止中…");
+  setMsg(T("stopping"));
   try {
     await call("stop_all");
-    setMsg("已停止代理与沙箱。", "ok");
+    setMsg(T("stopped"), "ok");
   } catch (e) {
-    setMsg("停止失败：" + e, "err");
+    setMsg(T("stopFail", { err: e }), "err");
   } finally {
     setBusy(false);
   }
@@ -1089,7 +1196,7 @@ function wire() {
     "i18nConnName", "i18nConnBase", "i18nConnKey", "i18nPorts", "i18nProxyPort", "i18nSandboxPort",
     "wizSec", "wizName", "wizPreset", "wizBase", "wizKey", "wizSaveBtn", "wizCancelBtn",
     "connSec", "connTitle", "connName", "connBase", "connBaseHint",
-    "connModelInfo", "connModel", "connModelHint", "connModelPick", "connKey", "connSaveBtn", "connCancelBtn",
+    "connModelInfo", "connModelHint", "connModelPick", "connKey", "connSaveBtn", "connCancelBtn",
   ].forEach((id) => (els[id] = $(id)));
   els.panel = document.querySelector(".panel");
   els.panelBody = document.querySelector(".panel-body");
@@ -1146,7 +1253,7 @@ function wire() {
     try {
       await call("open_csp_json");
     } catch (e) {
-      setMsg("打开 CSP.json 失败：" + e, "err");
+      setMsg(T("openCspFail", { err: e }), "err");
     }
   });
   els.skipActivateBtn.addEventListener("click", () => {
@@ -1161,7 +1268,6 @@ function wire() {
   els.wizSaveBtn.addEventListener("click", wizSave);
   els.wizCancelBtn.addEventListener("click", cancelForm);
 
-  els.connModel.addEventListener("input", refreshConnGate);
   els.connSaveBtn.addEventListener("click", connSave);
   els.connCancelBtn.addEventListener("click", cancelForm);
 
@@ -1176,6 +1282,6 @@ window.addEventListener("DOMContentLoaded", async () => {
     if (!busy) loadConfig().catch(() => {});
   });
   if (PREVIEW) {
-    setMsg("预览模式：仅看界面，按钮不连后端（真实 app 里会连进程管家）。");
+    setMsg(T("previewMode"));
   }
 });
