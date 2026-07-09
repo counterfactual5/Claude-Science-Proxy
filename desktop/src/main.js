@@ -35,7 +35,6 @@ const mockStore = {
   active_id: "",
   proxy_port: 18991,
   sandbox_port: 8990,
-  mode: "proxy",
   profiles: [
     { id: "p-demo1", name: "我的 GLM", template_id: "glm", category: "cn_official", api_format: "anthropic", base_url: "https://open.bigmodel.cn/api/anthropic", model: "glm-4.6", key: "••••••1234", icon: "glm", icon_color: "#2E6BE6", website_url: "https://open.bigmodel.cn", sort_index: 1, notes: "" },
   ],
@@ -48,7 +47,7 @@ function mockInvoke(cmd, args) {
       return Promise.resolve({
         schema_version: mockStore.schema_version, active_id: mockStore.active_id,
         proxy_port: mockStore.proxy_port, sandbox_port: mockStore.sandbox_port,
-        mode: mockStore.mode, templates: MOCK_TEMPLATES,
+        templates: MOCK_TEMPLATES,
         profiles: mockStore.profiles.map((p) => ({ ...p })),
       });
     case "list_templates":
@@ -99,9 +98,6 @@ function mockInvoke(cmd, args) {
     case "set_settings":
       if (args.cfg) { mockStore.proxy_port = args.cfg.proxy_port; mockStore.sandbox_port = args.cfg.sandbox_port; }
       return Promise.resolve(null);
-    case "set_mode":
-      mockStore.mode = args.mode;
-      return Promise.resolve(null);
     case "one_click_login":
       return Promise.resolve({ url: "http://127.0.0.1:8990", msg: "（预览模式：假装已就绪）", action: "started" });
     case "status":
@@ -125,7 +121,7 @@ let configState = { profiles: [], templates: [], active_id: "", proxy_port: 1899
 let pendingSkipActivateId = null;   // set_active 校验含糊时，允许「跳过验证」再切
 let pendingConfirm = null;          // 危险操作（清 key / 删除）的「再点一次确认」态
 
-const CAT_LABELS = { official: "官方", cn_official: "国内", custom: "自定义" };
+const CAT_LABELS = { cn_official: "国内", custom: "自定义" };
 
 // ── 模型能力（三态，纯函数，无 DOM）：native 映射 / relay 跟随 / relay 固定。──
 const CAP = { NATIVE: "native", FOLLOW: "follow", FIXED: "fixed" };
@@ -470,9 +466,6 @@ async function loadConfig() {
     configState.sandbox_port = cfg.sandbox_port ?? 8990;
     els.proxyPort.value = configState.proxy_port;
     els.sandboxPort.value = configState.sandbox_port;
-    if (cfg.mode === "official") {
-      try { await call("set_mode", { mode: "proxy" }); } catch (_) {}
-    }
     renderList();
     showView("list");
     // 一次性迁移提示（#9 甲）：后端 get_config 读后已清盘，只会出现一次。

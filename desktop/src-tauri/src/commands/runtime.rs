@@ -48,50 +48,6 @@ fn stop_sandbox_state(app: &tauri::AppHandle, st: &mut AppState) -> Result<(), S
     stop_sandbox(app, &mut st.sandbox, &mut st.sandbox_url)
 }
 
-/// 切换运行模式（"proxy" 第三方 / "official" 官方）。切官方要先拆第三方链路成功再落盘。
-#[tauri::command]
-pub(crate) async fn set_mode(
-    app: tauri::AppHandle,
-    state: State<'_, SharedAppState>,
-    lifecycle: State<'_, SharedLifecycle>,
-    mode: String,
-) -> Result<(), String> {
-    let state = state.inner().clone();
-    let lifecycle = lifecycle.inner().clone();
-    run_blocking(move || set_mode_inner(app, state, lifecycle, mode)).await
-}
-
-fn set_mode_inner(
-    app: tauri::AppHandle,
-    state: SharedAppState,
-    lifecycle: SharedLifecycle,
-    mode: String,
-) -> Result<(), String> {
-    if mode != "proxy" && mode != "official" {
-        return Err(format!("未知模式：{mode}（只支持 proxy / official）。"));
-    }
-    // 经串行器（修 P1-b）：切官方的「拆链路 + 落盘」必须与「一键开始」等互斥，否则一键起到一半时
-    // 切官方会先停链路、一键随后又把沙箱/OAuth 起起来 → 显示官方却有第三方沙箱在跑。bump_generation
-    // 作废任何在途启动，防被停后又拿旧配置写回运行态。
-    lifecycle.with_serialized(|| {
-        let dir = config::default_dir();
-        if mode == "official" {
-            lifecycle.bump_generation();
-            let mut st = lock(&state);
-            stop_sandbox_state(&app, &mut st).map_err(|e| {
-                format!("停止沙箱失败，未切换到官方模式：{e}（真实实例 8765 未受影响）")
-            })?;
-            st.stop_proxy();
-        }
-        config::update(&dir, {
-            let mode = mode.clone();
-            move |c| c.mode = mode
-        })
-        .map_err(|e| e.to_string())?;
-        Ok(())
-    })
-}
-
 #[derive(Deserialize)]
 pub(crate) struct UiSettings {
     proxy_port: u16,
