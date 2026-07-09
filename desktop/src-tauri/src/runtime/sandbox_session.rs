@@ -9,7 +9,7 @@ use crate::runtime::operation::{
 };
 use crate::runtime::proxy::ProxyAction;
 use crate::runtime::proxy_lifecycle::ensure_proxy;
-use crate::runtime::science::{sandbox_home, sandbox_running_ours, sandbox_url, stop_sandbox};
+use crate::runtime::science::{ensure_sandbox_runtime_permissions, sandbox_home, sandbox_running_ours, sandbox_url, stop_sandbox};
 use crate::runtime::system::{asset_root, log_path, open_in_browser, open_log, redact, tail_file};
 use crate::{config, lifecycle, lock, oauth_forge, proc, AppState, SharedAppState};
 
@@ -37,6 +37,7 @@ pub(crate) fn one_click_login<R: Runtime>(
 
     let sbx_home = sandbox_home();
     let auth_dir = sbx_home.join(".claude-science");
+    ensure_sandbox_runtime_permissions(&auth_dir);
 
     if sandbox_running_ours(sport) {
         if oauth_forge::login_intact(&auth_dir, "virtual@localhost.invalid", &sbx_home) {
