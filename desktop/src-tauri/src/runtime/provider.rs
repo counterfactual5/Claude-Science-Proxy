@@ -1,3 +1,4 @@
+use crate::runtime::model_sort;
 use crate::{config, templates};
 
 /// key 的非加密指纹（SipHash），只用于判断「配置是否变了」。绝不打印、绝不落盘。
@@ -229,10 +230,11 @@ pub(crate) fn build_model_registry_json(p: &config::Profile) -> Option<String> {
     if is_native_adapter(&adapter) {
         return None;
     }
-    let models = p.effective_models();
+    let mut models = p.effective_models();
     if models.is_empty() {
         return None;
     }
+    model_sort::sort_model_ids(&mut models);
     let default_model = p.effective_default_model();
     let fast_model = models.last().cloned().unwrap_or_else(|| default_model.clone());
     let payload = serde_json::json!({

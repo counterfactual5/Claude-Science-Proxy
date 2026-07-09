@@ -1,6 +1,7 @@
 pub(crate) mod capability_catalog;
 pub(crate) mod diagnostics;
 pub(crate) mod model_discovery;
+pub(crate) mod model_sort;
 pub(crate) mod operation;
 pub(crate) mod profile;
 pub(crate) mod profile_switch;
