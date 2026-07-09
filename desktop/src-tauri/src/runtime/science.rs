@@ -1,3 +1,4 @@
+use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Output, Stdio};
@@ -45,6 +46,34 @@ fn is_executable_file(path: &Path) -> bool {
             .metadata()
             .map(|m| m.permissions().mode() & 0o111 != 0)
             .unwrap_or(false)
+}
+
+fn chmod_executable_if_regular_file(path: &Path) {
+    let Ok(meta) = path.metadata() else {
+        return;
+    };
+    if !meta.is_file() {
+        return;
+    }
+    let mode = meta.permissions().mode();
+    if mode & 0o111 != 0 {
+        return;
+    }
+    let _ = fs::set_permissions(path, fs::Permissions::from_mode(mode | 0o755));
+}
+
+/// `~/.csswitch` → `~/.csp` migration copies the sandbox tree with `0600` files,
+/// stripping `+x` from `micromamba` / `claude-science`. Fresh `cp -Rc` clones keep
+/// source modes; this helper is idempotent for both paths.
+pub(crate) fn ensure_sandbox_runtime_permissions(data_dir: &Path) {
+    chmod_executable_if_regular_file(&data_dir.join("bin").join("claude-science"));
+    let conda_bin = data_dir.join("conda").join("bin");
+    let Ok(entries) = fs::read_dir(&conda_bin) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        chmod_executable_if_regular_file(&entry.path());
+    }
 }
 
 fn science_bin_for_paths(
@@ -189,8 +218,9 @@ mod tests {
     use std::process::{ExitStatus, Output};
 
     use super::{
-        first_http_url, sandbox_home, sandbox_running_ours, sandbox_url, science_bin_for_paths,
-        science_status_running, settings_change_needs_teardown,
+        ensure_sandbox_runtime_permissions, first_http_url, sandbox_home, sandbox_running_ours,
+        sandbox_url, science_bin_for_paths, science_status_running,
+        settings_change_needs_teardown,
     };
 
     // ---------- P1-c: 端口变更是否需拆链路（纯函数，4 组合） ----------
@@ -309,6 +339,46 @@ mod tests {
         assert_eq!(
             science_bin_for_paths(&data_dir, Some(&explicit_bin), &app_bin),
             None
+        );
+        fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    #[test]
+    fn ensure_sandbox_runtime_permissions_restores_stripped_execute_bits(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let root = unique_temp_dir("sandbox-runtime-perms")?;
+        let data_dir = root.join("home").join(".claude-science");
+        let science_bin = data_dir.join("bin").join("claude-science");
+        let micromamba = data_dir.join("conda").join("bin").join("micromamba");
+
+        write_fake_bin(&science_bin, 0o600)?;
+        write_fake_bin(&micromamba, 0o600)?;
+
+        ensure_sandbox_runtime_permissions(&data_dir);
+
+        assert!(super::is_executable_file(&science_bin));
+        assert!(super::is_executable_file(&micromamba));
+        fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    #[test]
+    fn ensure_sandbox_runtime_permissions_is_idempotent_for_executable_files(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let root = unique_temp_dir("sandbox-runtime-perms-idem")?;
+        let data_dir = root.join("home").join(".claude-science");
+        let science_bin = data_dir.join("bin").join("claude-science");
+
+        write_fake_bin(&science_bin, 0o755)?;
+        ensure_sandbox_runtime_permissions(&data_dir);
+        assert_eq!(
+            science_bin
+                .metadata()?
+                .permissions()
+                .mode()
+                & 0o777,
+            0o755
         );
         fs::remove_dir_all(root)?;
         Ok(())
