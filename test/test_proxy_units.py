@@ -242,7 +242,8 @@ class RelayProvider(unittest.TestCase):
         self.assertEqual([m["id"] for m in body["data"]], ["glm-4.6"])
 
     def test_build_models_response_preserves_upstream_status(self):
-        import urllib.error, io
+        import urllib.error
+        import io
         def boom(url, headers):
             raise urllib.error.HTTPError(url, 401, "Unauthorized", {}, io.BytesIO(b"nope"))
         orig = cs.http_get_json
