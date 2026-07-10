@@ -34,7 +34,11 @@
 7. **DeepSeek 接入（默认上游，2026-07-02）**：主代理 `proxy/csp_proxy.py`，provider 可切（`--provider deepseek|qwen`）。
    - DeepSeek 走**原生 Anthropic 端点** `https://api.deepseek.com/anthropic/v1/messages`，鉴权头 `x-api-key`，代理只「改模型名 + 换鉴权 + 归一化 thinking + 夹 max_tokens + 重试」，**不翻译协议** → thinking/tool_use 原生保真。
    - 模型：`claude-opus-4-8→deepseek-v4-pro`、`claude-haiku/sonnet→deepseek-v4-flash`。
-   - **模型选择器主列表机制（逆向 `s0`/`ZjO`/`XjO`/`hB_`）**：① `s0`：id 必须以 `claude-` 开头否则不显示。② 只有 `ZjO(id)<3`（opus=0/sonnet=1/haiku=2/其它=3）且 `XjO(id)` 命中 `^claude-(opus|sonnet|haiku)-<纯数字版本>$` 的 id 才进【主列表】，每 family 一个；其余折叠进「More models」。所以要让第三方模型平铺，就挂在 `claude-opus-4-8`/`claude-haiku-4-5` 这类主列表 id 上、显示名照写第三方。
+   - **模型选择器机制（逆向 operon `k5W`/`qP_`/`V2_`，旧符号 `s0`/`ZjO`/`XjO` 同义）**：
+     ① **id 过滤**（`e4`/`k5W`）：必须以 `claude-` 开头，否则不显示。
+     ② **display_name 过滤**（`V2_`）：全小写、纯连字符分段（如 `glm-5`、`glm-5-turbo`）会被当成内部名整项丢弃；带点号或大写（`glm-5.2`、`DeepSeek V4 Pro`）安全。CSP 在 `science_safe_display_name()` 里自动改写（`glm-5`→`glm-5.0`，`glm-5-turbo`→`glm-5.turbo`）。
+     ③ **主列表 / More models**（`qP_`/`BRO`/`ARO`）：`opus=0/sonnet=1/haiku=2` 各留一个进主列表（最多 3）；其余进「More models」（`overflow:true`，最多 5）。壳池硬上限 **8**（`proxy/model_registry.py` `SHELL_POOL`）。
+     ④ **多模型正式路径**：Tauri 经 `CSP_MODEL_REGISTRY` → `ModelRegistry.from_models()` 分配壳 id + 消毒 display_name；单模型 force 回退走 `force_shell_response()`，同样须消毒。
    - **两处透传坑（已修）**：① Science 发 `thinking.type:"auto"` → 归一化 `adaptive`；② 强制 `tool_choice` 时 DeepSeek 不允许 thinking，且 flash 默认 thinking 开 → 强制工具时无条件置 `thinking:{type:disabled}`。
    - 健壮性：连接 + 完整读体都重试（覆盖 IncompleteRead、SSL EOF、503 too-busy）。
    - 实测：主推理(v4-pro 流式+thinking)、标题(v4-flash 强制工具)、工具循环全通；v4-pro 跟随 OPERON 协议明显比 qwen-max 稳。

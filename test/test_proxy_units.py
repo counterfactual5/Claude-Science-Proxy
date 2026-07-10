@@ -387,6 +387,14 @@ class BuildModelsResponse(unittest.TestCase):
         self.assertEqual(body["last_id"], "claude-opus-4-8")
         self.assertFalse(body["has_more"])
 
+    def test_force_sanitizes_hyphen_only_display_name(self):
+        cs.PROV = {"models_url": "https://r/v1/models"}
+        cs.PROV_NAME = "relay"
+        cs.RELAY_FORCE_MODEL = "glm-5-turbo"
+        code, body = cs.build_models_response()
+        self.assertEqual(code, 200)
+        self.assertEqual(body["data"][0]["display_name"], "glm-5.turbo")
+
     def test_not_forced_falls_back_to_source(self):
         # not forced (app scratch proxy for model pick): still fetch real ids for user selection (two consumers split).
         cs.PROV = {"models_url": "https://r/v1/models"}

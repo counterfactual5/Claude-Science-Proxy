@@ -231,6 +231,8 @@ pub(crate) fn relay_missing_profile_models(adapter: &str, profile: &config::Prof
 }
 
 /// Build virtual model registry JSON for the formal proxy (relay / openai family).
+/// Display-name sanitization for Science's V2_ filter happens in Python
+/// (`proxy/model_registry.py::science_safe_display_name`), not here.
 pub(crate) fn build_model_registry_json(p: &config::Profile) -> Option<String> {
     let adapter = adapter_for_profile(p);
     if is_native_adapter(adapter) {
