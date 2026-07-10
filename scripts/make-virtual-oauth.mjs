@@ -3,7 +3,7 @@
 // 让 Claude Science 认为已登录（virtual@localhost.invalid），推理经 ANTHROPIC_BASE_URL
 // 导去本项目翻译代理 → 第三方模型 API。全程零 Anthropic 接触、零真实凭证。
 //
-// 逆向依据（见 CLAUDE.md 与 findings/）:
+// 逆向依据（见 AGENT.md 与 findings/）:
 //   - 令牌文件: <auth_dir>/.oauth-tokens/<sanitized user_id>.enc  （目录里必须恰好一个 .enc）
 //   - 文件内容(读路径 eH.decryptToken 用的 v2 格式):
 //       "v2:" + base64( IV(12) ‖ AES-256-GCM(密文) ‖ authTag(16) )

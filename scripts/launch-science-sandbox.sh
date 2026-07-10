@@ -1,7 +1,7 @@
 #!/bin/zsh
 # Launch an [isolated, logged-out] Claude Science sandbox; inference routes through this project's translation proxy.
 #
-# Iron-rule safeguards (see CLAUDE.md):
+# Iron-rule safeguards (see AGENT.md):
 #   - Separate HOME + data-dir + port; never modify/delete real ~/.claude-science; never use port 8765
 #   - Read-only APFS clone of runtime assets from real ~/.claude-science (bin/conda/runtime/seed-assets); never copy login credentials
 #     (.oauth-tokens / encryption.key / active-org.json / orgs / .key-backups)
