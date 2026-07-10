@@ -14,8 +14,6 @@
   --accent-soft: rgba(217, 119, 87, 0.14);
   --accent-ring: rgba(217, 119, 87, 0.35);
   --green: #5BAE7A;
-  --green-soft: rgba(91, 174, 122, 0.16);
-  --amber: #D4A24C;
   --red: #E06B6B;
   --border: rgba(255, 255, 255, 0.08);
   --border-strong: #3D3A36;
@@ -26,14 +24,6 @@
   --radius-lg: 12px;
   --prow-slot: 94px;
   --list-slots: 3;
-
-  /* Legacy aliases for gradual mapping */
-  --panel: var(--bg-elevated);
-  --ink: var(--text);
-  --sub: var(--text-muted);
-  --line: var(--border);
-  --field: var(--bg-surface);
-  --accent2: var(--accent-deep);
 }
 
 * { box-sizing: border-box; }
@@ -149,8 +139,7 @@ label {
 
 /* ── Inputs ── */
 select,
-input,
-.pill {
+input {
   width: 100%;
   height: 34px;
   border: 1px solid var(--border-strong);
@@ -187,16 +176,6 @@ select:focus {
   box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.12), 0 0 0 3px var(--accent-ring);
 }
 
-code {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 10.5px;
-  background: var(--bg-inset);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 0 4px;
-  color: var(--text-secondary);
-}
-
 /* ── Buttons ── */
 .btn {
   height: 32px;
@@ -221,19 +200,6 @@ code {
 .btn:active { transform: translateY(1px); }
 .btn:disabled { opacity: 0.45; cursor: default; transform: none; }
 .btn.small { height: 30px; font-size: 11.5px; }
-
-.btn.subtle {
-  background: transparent;
-  border-color: transparent;
-  color: var(--accent);
-  padding: 0 8px;
-}
-
-.btn.subtle:hover {
-  background: var(--accent-soft);
-  border-color: rgba(217, 119, 87, 0.2);
-  color: var(--accent-hover);
-}
 
 /* ── Port management (collapsible) ── */
 .adv {
@@ -381,7 +347,6 @@ code {
 }
 
 .msg.err { color: var(--red); }
-.msg.ok { color: var(--green); }
 
 .hint {
   font-size: 10.5px;
@@ -390,7 +355,6 @@ code {
   line-height: 1.55;
 }
 
-#wizModelHint,
 #connModelHint { color: var(--text-faint); }
 
 /* ── List header ── */
@@ -659,33 +623,6 @@ code {
 .abtn:active { transform: translateY(1px); }
 .abtn:disabled { opacity: 0.45; cursor: default; transform: none; }
 .abtn:disabled:hover { border-color: var(--border-strong); color: var(--text-secondary); }
-
-.abtn.prim {
-  background: var(--accent);
-  color: #fff;
-  border-color: var(--accent-deep);
-}
-
-.abtn.prim:hover {
-  background: var(--accent-hover);
-  border-color: var(--accent);
-  color: #fff;
-}
-
-.abtn.prim:disabled {
-  color: #fff;
-  border-color: var(--accent-deep);
-}
-
-.abtn.danger:hover {
-  border-color: rgba(224, 107, 107, 0.45);
-  color: var(--red);
-}
-
-.abtn.danger:disabled:hover {
-  border-color: var(--border-strong);
-  color: var(--text-secondary);
-}
 
 /* ── Form view ── */
 .panel.view-form .list-only { display: none; }

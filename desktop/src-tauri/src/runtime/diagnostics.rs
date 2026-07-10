@@ -1,3 +1,7 @@
+//! Runtime status lights and diagnostic snapshot for unit tests / future doctor hooks.
+//! Not exposed as a Tauri command (frontend does not poll status lights).
+#![allow(dead_code)]
+
 use serde_json::json;
 
 use crate::runtime::capability_catalog::diagnostics_for_profile;
