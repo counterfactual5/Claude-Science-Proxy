@@ -31,10 +31,10 @@ pip3 install git-filter-repo   # 或 brew install git-filter-repo
 在仓库根目录、**工作区干净**且已备份后：
 
 ```bash
-cd /path/to/CSSwitch
+cd /path/to/Claude-Science-Proxy
 
 # 可选：备份
-git clone --mirror . ../CSSwitch.git.backup
+git clone --mirror . ../Claude-Science-Proxy.git.backup
 
 git filter-repo --force --commit-callback '
 REDACT = {

@@ -26,7 +26,7 @@
 ## 命名规范
 
 对外产品名统一写作 **Claude Science Proxy（CSP）**；简称 **CSP**。
-- GitHub 仓库目录仍为 `CSSwitch`（磁盘名不改，避免断链）；app `productName`、窗口标题、README、CHANGELOG 一律用 Claude Science Proxy / CSP。
+- GitHub 仓库目录已重命名为 `Claude-Science-Proxy`；app `productName`、窗口标题、README、CHANGELOG 一律用 Claude Science Proxy / CSP。
 - bundle id：`com.csp.menubar`（Tauri identifier）。
 - 用户数据目录：`~/.csp/`（`CSP.json`、`logs/`、`sandbox/home`）。
 - **内部 IPC 保持不动**：`CSP_*` 环境变量、`csp_proxy.py` 文件名、`CSP_REPO`（开发态指定仓库根）。
@@ -38,7 +38,7 @@
 
 | 旧名 | 用途 |
 |---|---|
-| 仓库目录名 `CSSwitch` | GitHub 路径稳定，避免断链 |
+| 磁盘目录名 `CSSwitch`（已改 `Claude-Science-Proxy`） | 仅 `CHANGELOG` / `findings/` 历史对照 |
 | `com.csswitch.maintenance` | 已 DEPRECATED；已从脚本中彻底清理移除 |
 | 测试临时目录 / 日志前缀 `csp-*` | 单测 / 集成测隔离文件名（如 `/tmp/csp-auth-*.log`） |
 | `findings/`、`CHANGELOG` 旧版本条目 | 历史证据，见 [`../findings/README.md`](../findings/README.md) |

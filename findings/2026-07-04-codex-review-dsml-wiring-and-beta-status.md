@@ -49,12 +49,12 @@
 
 - **已发 `v0.3.0-beta.2` 大预览版**（relay + 多 profile + DSML，prerelease + dmg `CSSwitch_0.3.0-beta.2_aarch64.dmg` 3.7M），撤回 beta.1。新增 commit：`acdcdd8`（多 profile 真机/外审修复落库）、`c306607`（release，CHANGELOG 如实描述）、`f02d659`（gitleaks allowlist 修 `sk-definitely-invalid` 假阳性）。全绿 cargo113/clippy0/run_all90/gitleaks0。
 - **已装机 + 清理**：本机 `/Applications/` 下 CSP 应用更新到 beta.2，删除冗余 Acceptance 构建副本与旧 target bundle，只保留一份安装。doctor 0/0。
-- **实机测试步骤**：`test/RM_0.3.0-beta.2_ALL_FEATURES.md`（覆盖核心冒烟 / 多 profile RM-04/06/13 / relay 四家 / DSML detect+rewrite+代理层 e2e）。
+- **实机测试步骤**：`test/RM_RETEST_STEPS.md`（覆盖核心冒烟 / 多 profile RM-04/06/13 / relay 四家 / DSML detect+rewrite+代理层 e2e；旧稿 `RM_0.3.0-beta.2_ALL_FEATURES.md` 已合并废弃）。
 - ⚠️ 真实 Science 全程在 8765，未碰。
 
 ## 待决清单（更新）
 1. ~~v0.3.0-beta 方向~~ → **已定 B，beta.2 已发**。
-2. **用户真机跑 `test/RM_0.3.0-beta.2_ALL_FEATURES.md`**（多 profile/relay/DSML 全测；登录只用户做）。
+2. **用户真机跑 `test/RM_RETEST_STEPS.md`**（多 profile/relay/DSML 全测；登录只用户做）。
 3. 据真机结果决：DSML / 多 profile / relay **往 main 合的顺序**。
 4. PR #4 底座：自研多 profile（建议）/ #4；PR #7 WSL2 收（需 rebase + 铁律审）；PR #10 bio 连接器可收。
 5. 审 #10 脚本尾段 + 起草 3 条 PR 中文回复（用户过目才发）。

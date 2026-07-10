@@ -101,9 +101,8 @@ PROVIDERS = {
         "models": [],
         "model_map": {},
         "model_caps": {},
-        # DashScope Responses rejects values above 65536; generic Responses-compatible
-        # endpoints commonly accept this as a safe ceiling. Chat Completions custom
-        # intentionally stays unclamped.
+        # Generic Responses-compatible endpoints commonly accept 65536 as a safe ceiling.
+        # Chat Completions custom intentionally stays unclamped.
         "default_cap": 65536,
         "default_model": "",
     },

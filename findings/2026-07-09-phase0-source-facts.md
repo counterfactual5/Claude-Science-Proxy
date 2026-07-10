@@ -56,7 +56,7 @@ Evidence anchors:
 - `test/test_proxy_connect.py`
 - open PR #14 is still outside current `main`
 
-Phase implication: #11 should remain a transport diagnostics / future upstream proxy item. CSSwitch can diagnose or document hosted/direct-egress boundaries, but must not claim to repair hosted MCP, Directory connectors, or official remote skills.
+Phase implication: #11 should remain a transport diagnostics / future upstream proxy item. CSP can diagnose or document hosted/direct-egress boundaries, but must not claim to repair hosted MCP, Directory connectors, or official remote skills.
 
 ## Legacy docs note: "bug-list #11" model selector
 
