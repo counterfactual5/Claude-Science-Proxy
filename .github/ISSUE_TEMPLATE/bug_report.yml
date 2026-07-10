@@ -14,7 +14,7 @@ body:
     attributes:
       label: CSP version
       description: App version or git tag / commit SHA
-      placeholder: e.g. 0.3.6 or main @ abc1234
+      placeholder: e.g. 1.0.0 or main @ abc1234
     validations:
       required: true
 
