@@ -788,10 +788,6 @@ mod tests {
             probe_kind_for("deepseek", ""),
             crate::scratch::ProbeKind::Message
         ));
-        assert!(matches!(
-            probe_kind_for("qwen", ""),
-            crate::scratch::ProbeKind::Message
-        ));
         // relay: empty model → Models (/v1/models back to origin validates auth); with model → Message validates that model.
         assert!(matches!(
             probe_kind_for("relay", ""),

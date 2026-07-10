@@ -270,7 +270,7 @@ class RelayProvider(unittest.TestCase):
         self.assertEqual(body["error_kind"], "network")
 
     def test_build_models_response_non_relay_returns_static(self):
-        # deepseek/qwen (no models_url) → still return static selector list, unchanged behavior.
+        # deepseek (no models_url) → still return static selector list, unchanged behavior.
         cs.PROV = cs.PROVIDERS["deepseek"]
         code, body = cs.build_models_response()
         self.assertEqual(code, 200)
@@ -306,12 +306,12 @@ class OpenAICustomProvider(unittest.TestCase):
             root + "/responses",
         )
         self.assertEqual(
-            cs.openai_endpoint("https://api.siliconflow.cn", "/chat/completions"),
-            "https://api.siliconflow.cn/v1/chat/completions",
+            cs.openai_endpoint("https://api.example.com", "/chat/completions"),
+            "https://api.example.com/v1/chat/completions",
         )
         self.assertEqual(
-            cs.openai_endpoint("https://api.siliconflow.cn/v1/models", "/chat/completions"),
-            "https://api.siliconflow.cn/v1/chat/completions",
+            cs.openai_endpoint("https://api.example.com/v1/models", "/chat/completions"),
+            "https://api.example.com/v1/chat/completions",
         )
 
     def test_relay_base_root_normalization(self):

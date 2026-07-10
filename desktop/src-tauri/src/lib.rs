@@ -5,7 +5,7 @@
 //! (never argv); liveness probes; open sandbox URL in the system browser. Verified privilege/translation logic stays in
 //! Python/Node/shell subprocesses to preserve iron-rule guards and verified behavior.
 //!
-//! Runtime behavior derives adapter (deepseek | qwen | relay | openai-custom | openai-responses) from the active
+//! Runtime behavior derives adapter (deepseek | relay | openai-custom | openai-responses) from the active
 //! profile's `template_id` via the [`templates`] registry, then passes it to the python proxy as `--provider`.
 //!
 //! Iron rules: keys only in memory and 0600 CSP.json; frontend gets masked keys only; sandbox port/dir guards
@@ -35,7 +35,7 @@ pub(crate) struct AppState {
     pub(crate) proxy: Option<Child>,
     pub(crate) proxy_port: u16,
     pub(crate) secret: String,
-    /// Current proxy adapter name (deepseek | qwen | relay | openai-custom | openai-responses); used for healthy reuse checks.
+    /// Current proxy adapter name (deepseek | relay | openai-custom | openai-responses); used for healthy reuse checks.
     pub(crate) provider: String,
     /// Non-cryptographic fingerprint of the proxy's current key (memory only, never persisted/logged).
     /// Key/upstream change → fingerprint changes → triggers restart to avoid reusing a proxy with stale config.

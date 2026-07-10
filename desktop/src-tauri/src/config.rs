@@ -932,7 +932,7 @@ mod tests {
             },
         );
         providers.insert(
-            "qwen".to_string(),
+            "dummy-empty-slot".to_string(),
             ProviderCfgV1 {
                 key: "".into(),
                 base_url: "".into(),
@@ -979,7 +979,7 @@ mod tests {
         );
         // Legacy provider points at empty/missing slot → active_id must be empty (no silent first-profile pick).
         let legacy = ConfigV1 {
-            provider: "qwen".into(),
+            provider: "nonexistent".into(),
             proxy_port: 18991,
             sandbox_port: 8990,
             secret: "".into(),
@@ -1251,7 +1251,7 @@ mod tests {
             c.profiles.push(Profile {
                 id: "id1".into(),
                 name: "Q".into(),
-                template_id: "qwen".into(),
+                template_id: "relay".into(),
                 ..Default::default()
             });
             c.set_exclusive_active("id1");

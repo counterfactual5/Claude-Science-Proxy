@@ -4,6 +4,8 @@
 `~/.csp`、独立 Science data-dir 和测试端口。真实 Science 只用 `lsof`
 观察 8765 监听 PID，绝不读取或改动真实 `~/.claude-science`。
 
+> **迁移注记（2026-07-10）**：`prepare-legacy` 仍写入 v1 的 `deepseek` + `qwen` 槽以测迁移；v2 起 `qwen` 槽映射为 `template_id: custom`，面板展示名 **Custom Anthropic**（relay），不是向导里的「通义千问」。native 探活用例请用 **DeepSeek**；详见 `test/RM_RETEST_STEPS.md`。
+
 ## 1. 自动化基线
 
 - `bash test/run_all.sh`：代理鉴权、畸形输入、CONNECT、流中断、脚本护栏。
@@ -49,11 +51,11 @@ PID 变化，立即终止验收。
 
 | ID | 场景 | 操作 | 必须满足 |
 |---|---|---|---|
-| RM-01 | v1→v2 迁移 | 用 `prepare-legacy` 后首次启动 | 列表出现 DeepSeek/Qwen；DeepSeek 生效；`config.json.v1.bak` 存在且 0600；key 只显示末四位 |
+| RM-01 | v1→v2 迁移 | 用 `prepare-legacy` 后首次启动 | 列表出现 DeepSeek + Custom Anthropic（legacy qwen 槽）；DeepSeek 生效；`CSP.json.v1.bak` 存在且 0600；key 只显示掩码 |
 | RM-02 | 新建 profile | 新建自定义配置并取消/完成一次 | 取消不落盘；完成后新增一条且不自动生效；同模板可多条 |
 | RM-03 | 元数据编辑 | 改名和备注，重启 app | 名称/备注持久；连接字段与 key 不变 |
 | RM-04 | 非 active 连接编辑 | 正确 key、错误 key、上游 5xx/断网各一次 | 200 标“已校验”；明确 4xx 拒绝且不落盘；含糊态保存但明确标“未校验” |
-| RM-05 | 激活切换 | DeepSeek↔Qwen | scratch→正式代理健康后才切 active；代理 PID/adapter 变化；沙箱 PID 不变；请求走新上游 |
+| RM-05 | 激活切换 | DeepSeek↔Custom Anthropic（legacy qwen 槽；relay） | scratch→正式代理健康后才切 active；代理 PID/adapter 变化；沙箱 PID 不变；请求走新上游 |
 | RM-06 | 激活失败回滚 | 候选填错误 key/模型后激活 | active_id 不变；旧代理恢复；UI 不谎称成功；沙箱不停止 |
 | RM-07 | active 连接编辑 | 修改当前连接为有效/无效值 | 有效值提交并换代理；无效值不落盘并恢复旧代理 |
 | RM-08 | 一键开始 | 生效配置下点击「启动 Claude Science」两次 | 首次起代理+独立沙箱；第二次幂等复用并重新打开；状态区文案符合实况 |

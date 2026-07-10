@@ -86,7 +86,7 @@ impl Drop for ScratchGuard {
 }
 
 /// Env pairs for a scratch launch (pure, testable). Key goes in `key_env`; base/model envs only when non-empty.
-/// Native adapters (deepseek/qwen) pass empty base_url → hard-coded upstream endpoints in the proxy.
+/// Native adapters (deepseek) pass empty base_url → hard-coded upstream endpoints in the proxy.
 pub fn scratch_env(
     provider: &str,
     key_env: &str,
@@ -120,7 +120,7 @@ pub fn scratch_env(
     v
 }
 
-/// Scratch probe target: `provider` is passed to `--provider` (native deepseek/qwen or relay).
+/// Scratch probe target: `provider` is passed to `--provider` (native deepseek or relay).
 /// `key_env` selects which env var receives the candidate key; relay uses `CSP_RELAY_*` base/model envs.
 pub struct ScratchTarget<'a> {
     pub provider: &'a str,
@@ -167,7 +167,7 @@ pub fn scratch_probe(
     }
     cmd.arg(script)
         .arg("--provider")
-        .arg(target.provider) // native deepseek/qwen or relay (Python accepts these)
+        .arg(target.provider) // native deepseek or relay (Python accepts these)
         .arg("--port")
         .arg(port.to_string())
         .arg("--auth-token")

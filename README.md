@@ -157,6 +157,17 @@ README 目前提供：
 
 应用界面当前以中文为主。README 多语言不代表桌面应用 UI 已经完成多语言切换；后续如果应用内 i18n 落地，会在这里单独说明。
 
+## 参与贡献
+
+欢迎 issue 与 PR。开始前建议：
+
+1. 读 [`CLAUDE.md`](./CLAUDE.md) 铁律（**任何改动不得违反**）。
+2. 读 [`docs/DEVELOPMENT.md`](./docs/DEVELOPMENT.md) 了解构建、测试与命名约定。
+3. 跑离线门禁：`bash test/run_all.sh`；改 Rust 再跑 `(cd desktop/src-tauri && cargo test)`。
+4. 真机 / Science 联调须隔离 HOME + 独立端口，见 [`test/REAL_MACHINE_TEST.md`](./test/REAL_MACHINE_TEST.md)；**默认不碰真实 `~/.claude-science` 与 8765**。
+
+**文档语言**：用户入口 README 中英各一份。架构边界 [`docs/architecture-boundaries.md`](./docs/architecture-boundaries.md)、支持矩阵 [`docs/provider-capability-matrix.md`](./docs/provider-capability-matrix.md) 为英文。`DEVELOPMENT.md`、`known-issues.md`、`verified-facts.md` 中文为主（维护者向）；[`docs/provider-support.md`](./docs/provider-support.md) 为早期调研封存，当前事实以 capability matrix 为准。
+
 ## 反馈与社区
 
 遇到问题时，建议先说明：
@@ -169,11 +180,9 @@ README 目前提供：
 
 提交日志前请删除 API Key、令牌、邮箱、私有 URL 和任何敏感数据。
 
+- [提交 Bug / 功能请求](https://github.com/counterfactual5/Claude-Science-Proxy/issues/new/choose)
+- [参与贡献（PR）](https://github.com/counterfactual5/Claude-Science-Proxy/pulls)
 - [查看更新日志](./CHANGELOG.md)
-
-<p align="center">
-  <img src="docs/assets/wechat-group.jpg" alt="Claude Science Proxy 微信群" width="420">
-</p>
 
 ## 开发与构建
 
@@ -200,7 +209,9 @@ node --check desktop/src/main.js
 
 - [desktop/README.md](./desktop/README.md)
 - [docs/DEVELOPMENT.md](./docs/DEVELOPMENT.md)
-- [docs/provider-support.md](./docs/provider-support.md)
+- [docs/architecture-boundaries.md](./docs/architecture-boundaries.md)（英文架构边界）
+- [docs/provider-capability-matrix.md](./docs/provider-capability-matrix.md)（英文当前 provider 契约）
+- [docs/provider-support.md](./docs/provider-support.md)（早期调研封存）
 - [docs/verified-facts.md](./docs/verified-facts.md)
 - [findings/README.md](./findings/README.md)（历史证据中的旧名/路径对照）
 
@@ -216,7 +227,7 @@ node --check desktop/src/main.js
 
 ## 致谢
 
-Claude Science Proxy（CSP）的产品形态参考了 [CC Switch](https://github.com/farion1231/cc-switch)。曾用名 CSSwitch。两个项目彼此独立，不存在从属或背书关系。
+Claude Science Proxy（CSP）的产品形态参考了 [CC Switch](https://github.com/farion1231/cc-switch)。两个项目彼此独立，不存在从属或背书关系。
 
 ## 许可
 

@@ -267,8 +267,8 @@ mod tests {
         assert_eq!(adapter_for("custom"), "relay");
         assert_eq!(adapter_for("unknown-xyz"), "relay"); // fallback
                                                          // Legacy template_id removed from catalog → relay fallback (existing profiles may still reference it).
-        assert_eq!(adapter_for("qwen"), "relay");
-        assert_eq!(adapter_for("siliconflow"), "relay");
+        assert_eq!(adapter_for("legacy-removed-1"), "relay");
+        assert_eq!(adapter_for("legacy-removed-2"), "relay");
     }
 
     #[test]
@@ -329,8 +329,8 @@ mod tests {
             "openrouter"
         );
         // Removed first-class templates: legacy slot ids fall back to custom.
-        assert_eq!(template_id_for_legacy_slot("qwen"), "custom");
-        assert_eq!(template_id_for_legacy_slot("relay-siliconflow"), "custom");
+        assert_eq!(template_id_for_legacy_slot("legacy-removed-1"), "custom");
+        assert_eq!(template_id_for_legacy_slot("legacy-removed-2"), "custom");
         assert_eq!(template_id_for_legacy_slot("relay-custom"), "custom");
         assert_eq!(template_id_for_legacy_slot("relay"), "custom"); // bare legacy relay fallback
         assert_eq!(template_id_for_legacy_slot("weird"), "custom");

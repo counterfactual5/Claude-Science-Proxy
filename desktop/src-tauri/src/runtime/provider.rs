@@ -15,7 +15,6 @@ pub(crate) fn key_fingerprint(s: &str) -> u64 {
 pub(crate) fn key_env_for_adapter(adapter: &str) -> &'static str {
     match adapter {
         "deepseek" => "DEEPSEEK_API_KEY",
-        "qwen" => "DASHSCOPE_API_KEY",
         "openai-custom" | "openai-responses" => "CSP_OPENAI_KEY",
         _ => "CSP_RELAY_KEY", // relay / fallback
     }
@@ -127,9 +126,9 @@ pub(crate) fn reject_openai_custom_anthropic_base(
     }
 }
 
-/// deepseek/qwen use fixed official endpoints (hardcoded in python); all others are relay and need base_url.
+/// deepseek uses fixed official endpoints (hardcoded in python); all others are relay and need base_url.
 pub(crate) fn is_native_adapter(adapter: &str) -> bool {
-    adapter == "deepseek" || adapter == "qwen"
+    adapter == "deepseek"
 }
 
 pub(crate) fn is_openai_adapter(adapter: &str) -> bool {
@@ -166,10 +165,6 @@ pub(crate) fn upstream_endpoint(adapter: &str, base_url: &str) -> Option<Upstrea
     match adapter {
         "deepseek" => Some(UpstreamEndpoint {
             host: "api.deepseek.com".to_string(),
-            port: 443,
-        }),
-        "qwen" => Some(UpstreamEndpoint {
-            host: "dashscope.aliyuncs.com".to_string(),
             port: 443,
         }),
         _ => parse_endpoint(base_url),
@@ -435,7 +430,6 @@ mod tests {
     #[test]
     fn key_env_for_adapter_maps_adapters() {
         assert_eq!(key_env_for_adapter("deepseek"), "DEEPSEEK_API_KEY");
-        assert_eq!(key_env_for_adapter("qwen"), "DASHSCOPE_API_KEY");
         assert_eq!(key_env_for_adapter("openai-custom"), "CSP_OPENAI_KEY");
         assert_eq!(key_env_for_adapter("openai-responses"), "CSP_OPENAI_KEY");
         assert_eq!(key_env_for_adapter("relay"), "CSP_RELAY_KEY");
@@ -534,7 +528,6 @@ mod tests {
         assert_eq!(normalize_shim_mode("deepseek", Some("rewrite")), "rewrite");
         assert_eq!(normalize_shim_mode("deepseek", Some("bad")), "off");
         assert_eq!(normalize_shim_mode("relay", Some("rewrite")), "off");
-        assert_eq!(normalize_shim_mode("qwen", Some("detect")), "off");
     }
 
     #[test]
@@ -548,7 +541,6 @@ mod tests {
     fn native_candidate_is_upstream_validated_even_without_base_url() {
         // Non-active edit: native adapters validate even with empty base_url (hardcoded official endpoint).
         assert!(should_scratch_candidate("deepseek", "sk-x", ""));
-        assert!(should_scratch_candidate("qwen", "sk-x", ""));
         // Relay still needs base_url; empty key skips validation.
         assert!(!should_scratch_candidate("relay", "sk-x", ""));
         assert!(should_scratch_candidate("relay", "sk-x", "https://r"));
@@ -565,7 +557,6 @@ mod tests {
         assert!(!relay_missing_base_url("relay", "https://r"));
         // Native uses hardcoded endpoints; empty base_url is fine → do not reject.
         assert!(!relay_missing_base_url("deepseek", ""));
-        assert!(!relay_missing_base_url("qwen", ""));
     }
 
     #[test]
@@ -580,7 +571,6 @@ mod tests {
         };
         assert!(!relay_missing_profile_models("relay", &with_model));
         assert!(!relay_missing_profile_models("deepseek", &empty));
-        assert!(!relay_missing_profile_models("qwen", &empty));
     }
 
     #[test]

@@ -4,7 +4,6 @@
 Providers:
   deepseek (default): native Anthropic at api.deepseek.com — passthrough, rename model, swap auth,
                    clamp max_tokens, retry; thinking/tool_use stay native.
-  qwen: DashScope compatible-mode — Anthropic↔OpenAI translation (streaming replays tool_use via SSE).
   openai-custom / openai-responses: arbitrary OpenAI-compatible roots (base + key + model).
   relay: arbitrary Anthropic-compatible relay (CSP_RELAY_BASE_URL + CSP_RELAY_KEY); passthrough model
          names; /v1/models fetched from upstream for the Science selector.
@@ -16,7 +15,6 @@ Security:
 
 Usage:
   DEEPSEEK_API_KEY=... python3 csp_proxy.py --provider deepseek --port 18991
-  DASHSCOPE_API_KEY=... python3 csp_proxy.py --provider qwen --port 18991
 """
 import argparse
 import json
@@ -77,30 +75,6 @@ PROVIDERS = {
         },
         "default_cap": 8192,
         "default_model": "deepseek-v4-flash",
-    },
-    "qwen": {
-        "mode": "openai",
-        "url": "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
-        "key_env": "DASHSCOPE_API_KEY",
-        "models": [
-            ("qwen-max", "Qwen Max"),
-            ("qwen-plus", "Qwen Plus"),
-            ("qwen-turbo", "Qwen Turbo"),
-        ],
-        "model_map": {
-            "claude-opus-4-8": "qwen-max",
-            "claude-sonnet-5": "qwen-plus",
-            "claude-sonnet-4-6": "qwen-plus",
-            "claude-haiku-4-5": "qwen-turbo",
-        },
-        # provisional caps until verified against DashScope docs.
-        "model_caps": {
-            "qwen-max": 8192,
-            "qwen-plus": 8192,
-            "qwen-turbo": 8192,
-        },
-        "default_cap": 8192,
-        "default_model": "qwen-plus",
     },
     "openai-custom": {
         "mode": "openai",
@@ -333,7 +307,7 @@ def fetch_relay_models(runtime=None):
 
 
 def build_models_response(runtime=None):
-    """Build /v1/models response (status, body). Relay/openai fetch live; static for deepseek/qwen."""
+    """Build /v1/models response (status, body). Relay/openai fetch live; static for deepseek."""
     runtime = runtime or current_runtime()
     if runtime.model_registry is not None:
         log(f"GET /v1/models -> {runtime.prov_name}(registry): "
@@ -360,11 +334,11 @@ def build_models_response(runtime=None):
         except Exception as e:
             log(f"GET /v1/models -> {runtime.prov_name} 回源网络异常，本地回 502: {e}")
             return 502, {"error_kind": "network", "upstream_status": None, "message": str(e)}
-    # deepseek/qwen: static selector list
+    # deepseek: static selector list
     return model_discovery.static_models_response(runtime.prov["models"])
 
 
-# ---------- Anthropic -> OpenAI translation (qwen path) ----------
+# ---------- Anthropic -> OpenAI translation ----------
 def anthropic_to_openai(req):
     return openai_chat_compat.anthropic_to_openai(req, _provider_state(req))
 
@@ -694,7 +668,7 @@ class H(BaseHTTPRequestHandler):
                 self._send_json(502, {"type": "error", "error": {
                     "type": "api_error", "message": str(e)}})
 
-    # ---- Qwen / OpenAI: translate to OpenAI; non-stream may replay as SSE ----
+    # ---- OpenAI compatible: translate to OpenAI; non-stream may replay as SSE ----
     def _handle_openai(self, areq, runtime=None):
         runtime = runtime or current_runtime()
         model_id = areq.get("model", "claude-sonnet-5")

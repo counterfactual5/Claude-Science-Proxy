@@ -2,6 +2,8 @@
 
 从 CLAUDE.md 拆分出来的详细技术记录（CLAUDE.md 只留铁律 + 架构 + 指针）。这些是**有证据、别重复推导**的结论，来自对二进制 `/Applications/Claude Science.app/Contents/Resources/bin/claude-science`（内部代号 operon）的静态分析 + 实测。证据文件在 `findings/`。
 
+> **产品状态（2026-07-10）**：面板向导已下架 `qwen` / `siliconflow` 模板；OpenAI 翻译路径走 **`openai-custom` / `openai-responses`**。下文千问相关条目保留作 **CLI `--provider qwen` 与历史证据**；当前实现矩阵见 [`provider-capability-matrix.md`](provider-capability-matrix.md)。
+
 ## 一、启动与鉴权
 
 1. **base_url 无条件生效**：`LJ()` 直接读 `process.env.ANTHROPIC_BASE_URL`，登录后推理请求打到它。实测登录态下 Science 向本地代理发出 `GET /v1/models`、`POST /v1/messages`。
