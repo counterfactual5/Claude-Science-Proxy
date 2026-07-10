@@ -53,7 +53,7 @@ These are related but not interchangeable. In particular, `fetch_models` is disc
 
 `set_active_profile` means: validate the candidate profile unless the user explicitly chooses skip verification after an ambiguous probe, start a formal proxy for that candidate, verify local proxy health, then commit the profile id and any active connection edit.
 
-Pinning the upstream model is a formal proxy launch property. Relay and custom OpenAI paths pass the selected model through environment variables such as `CSP_RELAY_MODEL` or `CSP_OPENAI_MODEL`. The formal proxy then returns a Science-visible shell model from `/v1/models` and force-routes outbound inference requests to the configured real upstream model.
+Pinning the upstream model is a formal proxy launch property. Relay and custom OpenAI paths **prefer `CSP_MODEL_REGISTRY`**: up to eight `claude-*` shell ids map to configured upstream models, with `display_name` sanitized for Science. When the registry env is absent, launch falls back to `CSP_RELAY_MODEL` or `CSP_OPENAI_MODEL` and returns a single Science-visible shell from `/v1/models` while force-routing outbound inference to the selected real model.
 
 `fetch_models` is different: it uses a temporary probe without the formal force-model environment so the app can discover real model ids from the upstream. It must not alter config, `AppState`, the active proxy, or the running sandbox.
 

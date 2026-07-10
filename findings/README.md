@@ -12,6 +12,7 @@
 | `com.csswitch.*` bundle / maintenance | **`com.csp.menubar`**；旧 maintenance label 安装时已卸载 |
 | 菜单栏 / 托盘 app | **正常窗口** Tauri app（已去托盘） |
 | `csswitch_proxy.py` | **`csp_proxy.py`** |
+| `CSP_RELAY_MODEL` / 单壳 force | **`CSP_MODEL_REGISTRY` 虚拟注册表优先**（最多 8 模型）；无 registry 时仍 force 回退 |
 
 **不要**根据 findings 里的路径或产品名去改运行时代码；当前路径与命名以 [`../docs/DEVELOPMENT.md`](../docs/DEVELOPMENT.md) 为准。
 

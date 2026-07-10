@@ -62,10 +62,10 @@ Phase implication: #11 should remain a transport diagnostics / future upstream p
 
 `docs/known-issues.md` also contains a historical user bug-list row numbered `11` for the Science model selector showing `claude`/`opus`. That is separate from GitHub issue #11 above.
 
-Current source facts for that legacy row:
+Current source facts for that legacy row (updated 2026-07-10):
 
-- Formal relay/OpenAI proxy force mode returns a single Science-visible shell model and puts the configured real model in `display_name`.
-- Formal launch env force-overrides to the configured real model when `CSP_RELAY_MODEL` / `CSP_OPENAI_MODEL` is set; the proxy maps the relay env into its internal force-model state.
+- Formal relay/OpenAI proxy **prefers `CSP_MODEL_REGISTRY`**: virtual shell pool (up to eight models), sanitized `display_name`, shell-id routing via `resolve_model`.
+- **Fallback** when registry env is absent: single Science-visible shell model with real model in `display_name`; launch env sets `CSP_RELAY_MODEL` / `CSP_OPENAI_MODEL` and the proxy maps into internal force-model state.
 - App-side `fetch_models` uses a temporary proxy without force model and is meant for discovery only.
 
 Evidence anchors:
