@@ -352,11 +352,7 @@ def map_responses_tool_choice(tc, tools):
 
 
 def responses_max_output_tokens(req, model, state, has_tools):
-    return responses_compat.max_output_tokens(req, model, state, has_tools, _is_dashscope_responses())
-
-
-def _is_dashscope_responses():
-    return responses_compat.is_dashscope_responses(current_runtime().prov)
+    return responses_compat.max_output_tokens(req, model, state, has_tools)
 
 
 def normalize_responses_tool_parameters(schema):
@@ -364,7 +360,7 @@ def normalize_responses_tool_parameters(schema):
 
 
 def map_responses_tools(tools):
-    return responses_compat.map_tools(tools, _is_dashscope_responses())
+    return responses_compat.map_tools(tools)
 
 
 def anthropic_to_openai_responses(req):
@@ -376,7 +372,6 @@ def anthropic_to_openai_responses_with_metadata(req):
     return responses_compat.anthropic_to_openai_with_metadata(
         req,
         _provider_state(req),
-        _is_dashscope_responses(),
     )
 
 

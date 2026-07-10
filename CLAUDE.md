@@ -63,6 +63,6 @@ findings/                         证据、二进制分析、诊断记录；auto
 ## 五、环境备忘
 
 - 真实 Science 数据目录 `~/.claude-science`、端口 8765，绝对不碰。
-- 上游 key 在用户 shell 环境：`DEEPSEEK_API_KEY` / `DASHSCOPE_API_KEY`（值不显示、不入库）。DashScope 兼容端点 `https://dashscope.aliyuncs.com/compatible-mode/v1`。
+- 上游 key 在用户 shell 环境：`DEEPSEEK_API_KEY` 等（值不显示、不入库）。
 - **代理环境变量**：若本机同时设了大写 `HTTPS_PROXY` 与小写 `https_proxy` 且指向不同端口，`gh`（Go）会读大写变量，可能导致连 GitHub 失败或误报 token invalid。发版前请确认 `HTTPS_PROXY` / `HTTP_PROXY` / `ALL_PROXY` 与 `https_proxy` 等**一致**（或临时 `unset` 大写变量再跑 `gh`/`git`）。
 - Python 用 conda 环境（见用户全局记忆），避免系统 3.9。

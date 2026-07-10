@@ -356,19 +356,4 @@ mod tests {
         assert!(boundaries.contains(&"science.auth.refresh-hardcoded-0_1_15".to_string()));
         assert!(boundaries.contains(&"transport.upstream-proxy.planned-for-http-mcp".to_string()));
     }
-
-    #[test]
-    fn diagnostics_surface_dashscope_responses_rules() {
-        let p = Profile {
-            template_id: "custom-openai-responses".into(),
-            api_format: "openai_responses".into(),
-            base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1".into(),
-            model: "dashscope-model".into(),
-            ..Default::default()
-        };
-        let v = diagnostics_for_profile(Some(&p), "off");
-        let active = ids(&v, "active_rules");
-        assert!(!active.contains(&"provider.dashscope.responses-tools-cap".to_string()));
-        assert!(!active.contains(&"tool.dashscope.responses.web_search-drop".to_string()));
-    }
 }

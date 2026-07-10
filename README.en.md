@@ -159,7 +159,7 @@ The desktop app UI is currently mainly Chinese. Multilingual README files do not
 
 ## Contributing
 
-Issues and PRs are welcome. Before you start:
+Issues and PRs are welcome. Use [GitHub Issues](https://github.com/counterfactual5/Claude-Science-Proxy/issues/new/choose) for bugs (no secrets in the report). Before you start:
 
 1. Read [`CLAUDE.md`](./CLAUDE.md) iron rules (**must not be violated**).
 2. Read [`docs/DEVELOPMENT.md`](./docs/DEVELOPMENT.md) for build, test, and naming conventions (Chinese; see doc-language note there).

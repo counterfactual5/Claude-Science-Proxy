@@ -159,7 +159,7 @@ README 目前提供：
 
 ## 参与贡献
 
-欢迎 issue 与 PR。开始前建议：
+欢迎 issue 与 PR。GitHub 上请用 [Issues](https://github.com/counterfactual5/Claude-Science-Proxy/issues/new/choose) 报告问题，勿在 issue 中粘贴密钥。开始前建议：
 
 1. 读 [`CLAUDE.md`](./CLAUDE.md) 铁律（**任何改动不得违反**）。
 2. 读 [`docs/DEVELOPMENT.md`](./docs/DEVELOPMENT.md) 了解构建、测试与命名约定。
