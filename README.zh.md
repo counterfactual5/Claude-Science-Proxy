@@ -116,7 +116,7 @@ Science 只认 `claude-` 开头的模型 ID。CSP 内置了一个虚拟模型注
 
 > 如果你的地址是 `/anthropic` 端点，请选择「自定义 Anthropic」。如果选择「自定义 OpenAI」，请填写 OpenAI 兼容的 base root，例如 `https://example.com/v1`，不要填 Anthropic 端点。
 
-OpenAI 兼容类 provider（含历史上的内置模板）请通过「自定义 OpenAI」/「自定义 OpenAI Responses」配置，面板不再单独提供 Qwen 预设。
+OpenAI 兼容类 provider 请通过「自定义 OpenAI」/「自定义 OpenAI Responses」配置。
 
 ## 状态诊断与能力 catalog
 

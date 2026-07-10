@@ -33,8 +33,7 @@ The public product name is **Claude Science Proxy (CSP)**.
 
 ### Legacy Wording (Intentionally Kept for Compatibility)
 
-The following names are kept in historical logs or legacy code blocks and should not be removed without confirming that it won't break database migrations:
-- Directory name `CSSwitch`: Kept in older entries of `CHANGELOG.md` or historical `findings/` archives.
+The following names are kept only where removing them would break test isolation or log grep workflows:
 - Test log prefixes `csp-*` (e.g. `/tmp/csp-auth-*.log`): Used for isolating temporary test files.
 
 ---

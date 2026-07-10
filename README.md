@@ -113,7 +113,7 @@ Claude Science (sandbox)
 
 > Use **Custom Anthropic** for `/anthropic` URLs. Use **Custom OpenAI** only for OpenAI-shaped roots like `https://example.com/v1`.
 
-OpenAI-compatible providers (including former built-in templates) are configured through **Custom OpenAI** / **Custom OpenAI Responses**, not a separate Qwen preset.
+OpenAI-compatible providers are configured through **Custom OpenAI** / **Custom OpenAI Responses**.
 
 ---
 
