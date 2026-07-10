@@ -211,21 +211,12 @@ pub(crate) fn set_active_profile_txn(
                     }),
                 ));
             }
-            let hint_key = if is_edit {
-                "switchConnSavedApplied"
-            } else {
-                "switchCommitted"
-            };
             trace.stage(OperationStage::Commit, "ok");
             trace.finish("committed=true");
-            Ok(merge_hint(
-                hint_payload(hint_key, json!({ "name": candidate.name })),
-                json!({
-                    "committed": true,
-                    "active_id": id,
-                    "active_ids": [id],
-                }),
-            ))
+            Ok(json!({
+                "committed": true,
+                "active_id": id,
+            }))
         }
         SwitchOutcome::RollbackToOld => {
             trace.stage(OperationStage::Rollback, "reason=proxy_unhealthy");
