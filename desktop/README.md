@@ -50,8 +50,7 @@ npm run tauri build
 ```
 
 产物是 `.app` / `.dmg`。运行所需的 proxy 文件与脚本 allowlist 已通过 `tauri.conf.json` 的 `bundle.resources`
-打进 `Contents/Resources/`，从 Finder 启动的正式 `.app` 也能找到并调用它们（自包含）。其中
-`proxy/qwen_proxy.py` 是 legacy/compat 资源，当前主链路由 `proxy/csp_proxy.py` 承载。
+打进 `Contents/Resources/`，从 Finder 启动的正式 `.app` 也能找到并调用它们（自包含）。
 沙箱运行状态落在可写的 `~/.csp/sandbox/home`（不写进只读的 `.app` 包内）。
 
 > **签名/分发说明**：本版做 **ad-hoc 签名**（`bundle.macOS.signingIdentity: "-"`，正确封装资源），
