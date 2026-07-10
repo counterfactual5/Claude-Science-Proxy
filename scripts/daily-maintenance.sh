@@ -8,7 +8,7 @@
 # Install/uninstall schedule: scripts/install-maintenance.sh {install|uninstall|status}
 set -euo pipefail
 
-REPO="/Users/superjj/ccproj/CSswitch"
+REPO="$(cd "$(dirname "$0")/.." && pwd)"
 PROMPT_FILE="$REPO/scripts/daily-maintenance.prompt.md"
 OUT_DIR="$REPO/findings/auto-maint"
 LOG_DIR="$OUT_DIR/logs"
