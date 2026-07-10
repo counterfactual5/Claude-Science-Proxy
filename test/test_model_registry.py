@@ -30,10 +30,20 @@ class ModelRegistryTests(unittest.TestCase):
 
     def test_from_json_payload(self):
         reg = mr.ModelRegistry.from_json(
-            '{"models":["a","b"],"default_model":"a","fast_model":"b"}'
+            '{"models":["glm-5.2","glm-4.5"],"default_model":"glm-4.5","fast_model":"glm-4.5"}'
         )
-        self.assertEqual(reg.resolve("claude-opus-4-8"), "a")
-        self.assertEqual(reg.resolve("claude-haiku-4-5"), "b")
+        self.assertEqual(reg.resolve("claude-opus-4-8"), "glm-5.2")
+        self.assertEqual(reg.resolve("claude-haiku-4-5"), "glm-4.5")
+
+    def test_display_keeps_version_sort_not_stale_default(self):
+        reg = mr.ModelRegistry.from_models(
+            ["glm-5.2", "glm-4.7", "glm-4.5"],
+            default_model="glm-4.5",
+            fast_model="glm-4.5",
+        )
+        names = [m["display_name"] for m in reg.models_response()[1]["data"]]
+        self.assertEqual(names[0], "glm-5.2")
+        self.assertEqual(names[-1], "glm-4.5")
 
 
 if __name__ == "__main__":
