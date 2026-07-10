@@ -7,7 +7,7 @@ body:
     attributes:
       value: |
         Thanks for taking the time to report an issue. Please **do not** paste API keys, OAuth tokens, or full `~/.csp/logs/` files.
-        See [README — Feedback](https://github.com/counterfactual5/Claude-Science-Proxy#反馈与社区) for what to include.
+        See [README — Feedback](https://github.com/counterfactual5/Claude-Science-Proxy#反馈与支持) for what to include.
 
   - type: input
     id: version

@@ -6,6 +6,7 @@
 
 - [ ] **无真实密钥**：`gitleaks detect --source .`（或等价扫描）0 泄露；README / findings / 测试文档里无真实 API key（测试用 `sk-definitely-invalid` 等已在 `.gitleaks.toml` allowlist）。
 - [ ] **无个人机器路径**：无 `/Users/<真实用户名>/`、维护者 HOME、disallowedTools 硬编码路径（`scripts/daily-maintenance.sh` 已泛化为 `$HOME`）。
+- [ ] **Git 历史邮箱**：`git log --format='%ae' | sort -u` 无 `gmail.com` / `foxmail.com` 等真实邮箱；若需改写见 [`git-history-email-redaction.md`](git-history-email-redaction.md)（改写后须 force push + 重打 tag）。
 - [ ] **`findings/`**：无遗漏密钥；端口仅为标准测试端口说明；见 [`findings/README.md`](../findings/README.md)。
 - [ ] **真机 bundle id**：验收用 `com.csp.acceptance`（`test/tauri.real-machine.conf.json`），无 `com.csswitch.acceptance` 残留。
 - [ ] **`.superpowers/`** 未进 git（`.gitignore` 已忽略）；`git ls-files` 无该目录。

@@ -1,5 +1,15 @@
 # GitHub 页面布置 + 首个 Release 设计
 
+> **⚠️ 历史文档 — 请勿按本文执行发布**
+>
+> 本文写于 2026-07 初版开源规划阶段，**大量内容已过时**（菜单栏 app、通义千问首发、v0.1.0 菜单栏 Release 文案等）。
+> 当前唯一权威来源：
+> [`README.md`](../README.md) · [`PUBLIC_RELEASE_CHECKLIST.md`](PUBLIC_RELEASE_CHECKLIST.md) ·
+> [`release-notes-public-preview.md`](release-notes-public-preview.md) · [`CHANGELOG.md`](../CHANGELOG.md) ·
+> GitHub Releases · [`known-issues.md`](known-issues.md)。
+>
+> 保留本文件仅为**内部规划存档**；公开仓库读者请忽略下文第 5–6 节的旧 Release 草稿。
+
 > **历史文档（v0.1.0 首发设计，2026-07 起已被实际的 `README.md` + 仓库 About + 各版 Release 取代）。**
 > 其中「菜单栏 app」「一键越登录」等为当时措辞：现 app 已改**正常窗口**（去托盘），对外文案也已**脱敏**
 > （不直说「越过登录」）。当前状态以 [`../README.md`](../README.md) / [`../CHANGELOG.md`](../CHANGELOG.md) /

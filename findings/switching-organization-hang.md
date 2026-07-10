@@ -68,4 +68,4 @@ claudeAiFetch: /api/oauth/profile → 403        （反复出现，无 treating 
 
 **实机验证（独立沙箱，未碰 8765）：** 换 401 后重启代理 + operon，operon 日志变为 `claudeAiFetch: 401 and refresh failed — treating as logged-out`，`/health` 返回 `{"status":"healthy",...,"agents_registered":4}`，不再卡 Switching organization。对照实验干净：唯一变量是 403→401（同一沙箱 data-dir、同一伪造登录、同一代理，仅状态码不同 → 前者卡、后者过）。
 
-> 附带发现（与本 bug 无关）：实机时有一个**旧 release build**（`target/release/bundle/macos/CSSwitch.app`，v0.1.4 前带菜单栏托盘）仍在跑，与 v0.1.4 dev 窗口并存，造成「点状态栏图标唤醒的是托盘而非可挪动窗口」的错觉。v0.1.4 已无任何 tray 代码；杀掉旧进程即恢复。
+> 附带发现（与本 bug 无关）：实机时有一个**旧 release build**（v0.1.4 前带菜单栏托盘的遗留 `.app`）仍在跑，与 v0.1.4 dev 窗口并存，造成「点状态栏图标唤醒的是托盘而非可挪动窗口」的错觉。v0.1.4 已无任何 tray 代码；杀掉旧进程即恢复。

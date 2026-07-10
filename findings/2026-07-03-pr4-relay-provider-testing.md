@@ -73,7 +73,7 @@ relay 代码对**四家全部跑通**（起代理/鉴权/透传/流式/错误传
 
 ## 三、整链验证（隔离沙箱 Science ↔ relay ↔ GLM）
 
-- **隔离**：HOME=`.sandbox/home`、data-dir=`.sandbox/home/.claude-science`、端口 **8990**，虚拟 OAuth（node 伪造，org 62169860…）。真实 **8765 / `~/.claude-science` 全程未碰**（launch 脚本硬护栏：拒 8765、拒 data-dir 真实路径指向真实目录；仅 APFS 克隆 `bin/conda/runtime/seed-assets`，**绝不拷凭证**）。启动时真实 Science 仍在 8765 跑，未受影响。
+- **隔离**：HOME=`.sandbox/home`、data-dir=`.sandbox/home/.claude-science`、端口 **8990**，虚拟 OAuth（node 伪造，org id 已省略）。真实 **8765 / `~/.claude-science` 全程未碰**（launch 脚本硬护栏：拒 8765、拒 data-dir 真实路径指向真实目录；仅 APFS 克隆 `bin/conda/runtime/seed-assets`，**绝不拷凭证**）。启动时真实 Science 仍在 8765 跑，未受影响。
 - Science 起在 8990，`ANTHROPIC_BASE_URL` 指 `http://127.0.0.1:18995/<secret>`（GLM relay）。
 - **relay 代理日志证据（沙箱 Science 启动后）**：
   - `CONNECT claude.ai:443 -> 401 未登录（fast-fail）`（多条，含 *.mcp.claude.com）：Anthropic 域名被拦 → **虚拟登录越过成功、无「Switching organization」卡死**。

@@ -36,9 +36,9 @@
 
 全部 fork→`main`（main 现停 v0.2.1 时代，无 relay/多 profile/DSML）：
 
-- **#10** 本地 bio 连接器 docs+安装脚本（yeqingmo，**MERGEABLE**）：脚本已审 = 守铁律（拒真实 `~/.claude-science`、拒 8765、只连沙箱、幂等），解「虚拟登录下 HCLS 托管连接器 401 失效」的真缺口 → **可直接收**（合前再过一遍脚本后半段 API 调用）。
-- **#7** WSL2/Docker 部署（visail，CONFLICTING，Closes #6）：用户想要。落地=请他 rebase 到最新 main + 我审容器铁律合规。收它=接下 Windows/Docker 维护负担。
-- **#4** 中转站 relay（chimeraHHH，CONFLICTING）：**与自研 relay/多 profile 重叠**（同一批文件）。需选底座：**A（建议）自研多 profile 为底、credit 贡献者（吸收 WAF UA 绕过 / `/v1/models` 归一化 / 裸 id 贴合）**；B 用 #4 先合再返工（不划算）。
+- **#10** 本地 bio 连接器 docs+安装脚本（外部贡献者 PR #10，**MERGEABLE**）：脚本已审 = 守铁律（拒真实 `~/.claude-science`、拒 8765、只连沙箱、幂等），解「虚拟登录下 HCLS 托管连接器 401 失效」的真缺口 → **可直接收**（合前再过一遍脚本后半段 API 调用）。
+- **#7** WSL2/Docker 部署（外部贡献者 PR #7，CONFLICTING，Closes #6）：用户想要。落地=请他 rebase 到最新 main + 我审容器铁律合规。收它=接下 Windows/Docker 维护负担。
+- **#4** 中转站 relay（外部贡献者 PR #4，CONFLICTING）：**与自研 relay/多 profile 重叠**（同一批文件）。需选底座：**A（建议）自研多 profile 为底、credit 贡献者（吸收 WAF UA 绕过 / `/v1/models` 归一化 / 裸 id 贴合）**；B 用 #4 先合再返工（不划算）。
 - **真瓶颈**：先把自研功能线合进 `main` 形成新基线，再让人 rebase 到新 main。「rebase 到 0.3.0」是伪需求（0.3.0 不在 main）。回复外部 PR = 定处置后草稿给用户过目才发。
 
 ## 5. main 分支保护已开
@@ -48,7 +48,7 @@
 ## 6. 后续（同日）：用户选 B「大预览版」，已执行
 
 - **已发 `v0.3.0-beta.2` 大预览版**（relay + 多 profile + DSML，prerelease + dmg `CSSwitch_0.3.0-beta.2_aarch64.dmg` 3.7M），撤回 beta.1。新增 commit：`acdcdd8`（多 profile 真机/外审修复落库）、`c306607`（release，CHANGELOG 如实描述）、`f02d659`（gitleaks allowlist 修 `sk-definitely-invalid` 假阳性）。全绿 cargo113/clippy0/run_all90/gitleaks0。
-- **已装机 + 清理**：`/Applications/CSSwitch.app` 更新到 beta.2，全机冗余拷贝（桌面测试副本、旧 Acceptance.app、target 构建产物）已删，只留 /Applications 一份。doctor 0/0。
+- **已装机 + 清理**：本机 `/Applications/` 下 CSP 应用更新到 beta.2，删除冗余 Acceptance 构建副本与旧 target bundle，只保留一份安装。doctor 0/0。
 - **实机测试步骤**：`test/RM_0.3.0-beta.2_ALL_FEATURES.md`（覆盖核心冒烟 / 多 profile RM-04/06/13 / relay 四家 / DSML detect+rewrite+代理层 e2e）。
 - ⚠️ 真实 Science 全程在 8765，未碰。
 
