@@ -30,9 +30,8 @@ build/
 # 本地开发工作流文档（brainstorm→spec→plan），不上传公开仓库
 docs/superpowers/
 
-# 内部调查/取证文档（base/知识库），不发布
+# 内部调查/取证文档（base/知识库），不发布；目录由维护脚本运行时 mkdir
 findings/
-!findings/.gitkeep
 
 # Local version comparison binaries; never commit.
 .science-binaries/

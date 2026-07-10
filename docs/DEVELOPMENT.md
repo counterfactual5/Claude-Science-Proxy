@@ -64,8 +64,8 @@ test/
   run_all.sh      thin shim → test/runners/run_all.sh
 catalog/          capabilities.v1.json (read-only rules)
 desktop/          Tauri menubar app
-docs/             DEVELOPMENT.md (+ assets)
-findings/         local evidence archive (gitignored except .gitkeep)
+docs/             DEVELOPMENT.md, known-issues.md (+ assets)
+findings/         local-only evidence archive (gitignored; created by maintenance scripts)
 ```
 
 Entry commands (unchanged for contributors):

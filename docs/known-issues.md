@@ -1,0 +1,126 @@
+# Known issues (user-facing)
+
+Current **limitations and open problems** visible to end users. Fixed items are in [`CHANGELOG.md`](../CHANGELOG.md).
+
+> **Product:** Claude Science Proxy (CSP) · config `~/.csp/CSP.json` · feedback via [GitHub Issues](https://github.com/counterfactual5/Claude-Science-Proxy/issues) only.
+
+---
+
+<a id="architecture-boundaries"></a>
+
+## Architecture boundaries (not bugs)
+
+These depend on a **real Anthropic / claude.ai account** and are **unavailable or fast-fail** under third-party models + local virtual login:
+
+- Anthropic-hosted remote MCP (`*.mcp.claude.com`)
+- Directory connectors, some remote plugins, and cloud-hosted skills
+- Features that show session expired / unavailable on official hosted services
+
+See also README [Current limitations](../README.md#current-limitations).
+
+---
+
+<a id="port-occupancy"></a>
+
+## Port occupancy
+
+When switching ports or starting the proxy, errors should **name port occupancy** clearly—not a vague “invalid key”. If you still see a mismatch, open an issue with a redacted snippet from `~/.csp/logs/`.
+
+---
+
+<a id="dsml-leak"></a>
+
+## DeepSeek tool calls and DSML leakage
+
+Some DeepSeek responses leak `tool_use` as plain text (`<｜｜DSML｜｜>` etc.), which can stall web search / tool chains. Root cause is **upstream model output**, not virtual login. Optional DSML shim defaults to **off**; see CHANGELOG and `proxy/dsml/dsml_shim.py`.
+
+---
+
+<a id="virtual-model-registry"></a>
+
+## Virtual model registry and force-model shell
+
+Science only accepts `claude-*` model IDs. With `CSP_MODEL_REGISTRY`, CSP maps up to eight shell IDs to real upstream models; without it, relay/OpenAI paths fall back to a single `claude-opus` shell with force-overridden outbound routing. See `proxy/registry/model_registry.py` and `proxy/registry/model_discovery.py`.
+
+---
+
+<a id="custom-endpoint-scratch"></a>
+
+## Custom endpoint scratch probe (needs repro)
+
+Some custom relay / OpenAI endpoints work in user `curl` but fail panel scratch probe with “network/upstream busy”. Needs concrete `base_url`, model, and probe logs to diagnose.
+
+---
+
+<a id="science-version-drift"></a>
+
+## Science version drift
+
+Claude Science binary updates can change virtual OAuth, routing, and package-proxy behavior. The capability catalog records known version boundaries; if something breaks after upgrading Science, report **Science version + CSP version**.
+
+---
+
+<a id="2a"></a>
+
+## Science OAuth refresh outside ANTHROPIC_BASE_URL
+
+Some Science builds (e.g. `0.1.15-dev` family) may refresh OAuth via hardcoded `api.anthropic.com/oauth/token` **outside** `ANTHROPIC_BASE_URL`. Virtual OAuth can then look “logged out”. CSP documents this as a version/auth boundary—not real-account success. CONNECT fast-fail to Anthropic hosts is intentional (`proxy/core/csp_proxy.py`).
+
+---
+
+<a id="11"></a>
+
+## External MCP egress and CONNECT tunneling
+
+Non-Anthropic `CONNECT` opens a **direct TCP tunnel** today. External Streamable HTTP MCP servers need outbound network access; blocked egress can fail. The virtual sandbox does **not** set `http_proxy` by default because the CSP proxy does not implement ordinary absolute-form HTTP forwarding. Upstream proxy support for HTTP MCP is **not implemented** on `main` (`proxy/core/http_transport.py`).
+
+---
+
+<a id="directory-connectors"></a>
+
+## Directory connectors, hosted skills, and remote official skills
+
+Directory connectors and official remote skills depend on claude.ai hosted services and real account state. Virtual login cannot make them available. Local / GitHub skills need post-install discoverability checks—installing alone does not prove Science can use them.
+
+---
+
+<a id="local-mcp"></a>
+
+## Local stdio MCP connectors
+
+Local stdio bio connectors are the preferred fallback for hosted MCP boundaries, but installation, discovery, and restart persistence still need explicit verification before we claim support.
+
+---
+
+<a id="sandbox-host-access"></a>
+
+## Sandbox `request_host_access` (under investigation)
+
+In some environments Science self-check `request_host_access` reports “path does not exist”, possibly related to sandbox HOME layout or capability grants. Needs repro.
+
+---
+
+<a id="session-recovery"></a>
+
+## Historical session recovery (#6b)
+
+Idempotent virtual login prevents **new** chats from being orphaned. If you already had multiple `orgs/` directories on an older build, older chats may need manually pointing `active-org.json` at a historical `org_uuid` (advanced; sandbox `~/.csp/sandbox/home/.claude-science/orgs/`).
+
+---
+
+## Roadmap (no dates promised)
+
+| Direction | Notes |
+|-----------|--------|
+| Proxy in Rust | Reduce `python3` runtime dependency |
+| Launch-and-stay-ready | Auto-prepare Science on app open (issue discussion) |
+| Intel / Universal build | Primary release is Apple Silicon today |
+| Apple notarization | Ad-hoc signed; first open via right-click → Open |
+
+---
+
+## How to report
+
+1. Use the [issue templates](https://github.com/counterfactual5/Claude-Science-Proxy/issues/new/choose).
+2. Include CSP version, macOS version, provider/model, and repro steps.
+3. **Do not paste** API keys, path secrets, OAuth files, or full logs—redacted `~/.csp/logs/` snippets only.

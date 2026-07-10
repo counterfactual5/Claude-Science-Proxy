@@ -13,12 +13,11 @@
       "reason": "DeepSeek uses the native Anthropic path; CSP maps Science shell model ids, clamps known token caps, and normalizes thinking/tool_choice quirks.",
       "evidence": [
         "proxy/core/csp_proxy.py:51",
-        "proxy/policy/provider_policy.py:69",
-        "docs/verified-facts.md:34"
+        "proxy/policy/provider_policy.py:69"
       ],
       "tests": [
-        "test.test_provider_policy.ResolveModelDeepseek",
-        "test.test_provider_policy.ThinkingNormalization.test_deepseek_forced_tool_choice_disables_thinking"
+        "test.unit.capability.test_provider_policy.ResolveModelDeepseek",
+        "test.unit.capability.test_provider_policy.ThinkingNormalization.test_deepseek_forced_tool_choice_disables_thinking"
       ]
     },
     {
@@ -34,10 +33,10 @@
         "proxy/registry/model_registry.py:57",
         "desktop/src-tauri/src/runtime/provider.rs:236",
         "desktop/src-tauri/src/runtime/proxy_lifecycle.rs:240",
-        "docs/verified-facts.md:37"
+        "docs/known-issues.md#virtual-model-registry"
       ],
       "tests": [
-        "test.test_model_registry.ModelRegistryTests.test_eight_models_all_have_safe_display_names",
+        "test.unit.proxy.test_proxy_units.BuildModelsResponse.test_registry_returns_eight_shells_with_safe_names",
         "desktop/src-tauri/src/runtime/provider.rs::build_model_registry_json_uses_flagship_default",
         "desktop/src-tauri/src/runtime/proxy_lifecycle.rs::formal_proxy_env_uses_registry_instead_of_force_model"
       ]
@@ -54,13 +53,12 @@
       "evidence": [
         "proxy/core/csp_proxy.py:343",
         "proxy/registry/model_discovery.py:40",
-        "docs/known-issues.md:146"
+        "docs/known-issues.md#virtual-model-registry"
       ],
       "tests": [
-        "test.test_proxy_units.BuildModelsResponse.test_force_returns_single_shell",
-        "test.test_proxy_units.BuildModelsResponse.test_force_sanitizes_hyphen_only_display_name",
-        "test.test_proxy_units.BuildModelsResponse.test_registry_returns_eight_shells_with_safe_names",
-        "test.test_proxy_auth.ProxyOpenAIForcedModels.test_formal_proxy_returns_claude_shell_for_science_selector"
+        "test.unit.proxy.test_proxy_units.BuildModelsResponse.test_force_returns_single_shell",
+        "test.unit.proxy.test_proxy_units.BuildModelsResponse.test_force_sanitizes_hyphen_only_display_name",
+        "test.unit.proxy.test_proxy_auth.ProxyOpenAIForcedModels.test_formal_proxy_returns_claude_shell_for_science_selector"
       ]
     },
     {
@@ -79,7 +77,7 @@
         "proxy/policy/provider_policy.py:103"
       ],
       "tests": [
-        "test.test_provider_policy.ThinkingNormalization.test_relay_enabled_policy_drops_forced_tool_choice"
+        "test.unit.capability.test_provider_policy.ThinkingNormalization.test_relay_enabled_policy_drops_forced_tool_choice"
       ]
     }
   ],
@@ -100,8 +98,8 @@
         "proxy/compat/anthropic_compat.py:178"
       ],
       "tests": [
-        "test.test_anthropic_compat.TransformRequest.test_kimi_relay_does_not_advertise_web_search_server_tool",
-        "test.test_anthropic_compat.MakeStreamRewriter.test_kimi_filter_drops_server_tool_blocks_and_compacts_indexes"
+        "test.unit.oauth.test_anthropic_compat.TransformRequest.test_kimi_relay_does_not_advertise_web_search_server_tool",
+        "test.unit.oauth.test_anthropic_compat.MakeStreamRewriter.test_kimi_filter_drops_server_tool_blocks_and_compacts_indexes"
       ]
     },
     {
@@ -119,8 +117,8 @@
         "proxy/compat/anthropic_compat.py:56"
       ],
       "tests": [
-        "test.test_anthropic_compat.TransformRequest.test_relay_normalizes_loose_tool_schemas",
-        "test.test_proxy_auth.ProxyRelayTools.test_relay_outbound_tools_are_normalized_before_provider"
+        "test.unit.oauth.test_anthropic_compat.TransformRequest.test_relay_normalizes_loose_tool_schemas",
+        "test.integration.test_proxy_auth.ProxyRelayTools.test_relay_outbound_tools_are_normalized_before_provider"
       ]
     },
     {
@@ -137,11 +135,10 @@
       "action": "normalize",
       "reason": "DeepSeek rejects forced tool use combined with thinking, so CSP disables thinking for forced Anthropic tool_choice on DeepSeek.",
       "evidence": [
-        "proxy/policy/provider_policy.py:103",
-        "docs/verified-facts.md:38"
+        "proxy/policy/provider_policy.py:103"
       ],
       "tests": [
-        "test.test_provider_policy.ThinkingNormalization.test_deepseek_forced_tool_choice_disables_thinking"
+        "test.unit.capability.test_provider_policy.ThinkingNormalization.test_deepseek_forced_tool_choice_disables_thinking"
       ]
     },
     {
@@ -157,11 +154,11 @@
       "reason": "When explicitly enabled, the DSML shim can turn known leaked DSML tool calls back into Anthropic tool_use blocks; default runtime behavior remains off.",
       "evidence": [
         "proxy/dsml/dsml_shim.py",
-        "docs/known-issues.md:164"
+        "docs/known-issues.md#dsml-leak"
       ],
       "tests": [
-        "test.test_dsml_shim",
-        "test.test_proxy_dsml_e2e"
+        "test.unit.dsml.test_dsml_shim",
+        "test.integration.test_proxy_dsml_e2e"
       ]
     }
   ],
@@ -183,8 +180,8 @@
       "action": "diagnose",
       "reason": "Anthropic-hosted MCP servers require real claude.ai authorization and user:mcp_servers scope; CSP virtual OAuth cannot make official hosted services available.",
       "evidence": [
-        "docs/verified-facts.md:13",
-        "docs/known-issues.md:167"
+        "docs/known-issues.md#architecture-boundaries",
+        "desktop/src-tauri/src/oauth_forge.rs:338"
       ],
       "tests": []
     },
@@ -209,7 +206,7 @@
         "scripts/sandbox/launch-virtual-sandbox.sh:112"
       ],
       "tests": [
-        "test.test_proxy_connect.ProxyConnect.test_connect_passthrough_tunnels_bytes"
+        "test.unit.proxy.test_proxy_connect.ProxyConnect.test_connect_passthrough_tunnels_bytes"
       ]
     },
     {
@@ -223,7 +220,7 @@
       "action": "document",
       "reason": "Local stdio bio connectors are the preferred fallback for hosted MCP boundaries, but installation, discovery, and restart persistence need explicit verification before support can be claimed.",
       "evidence": [
-        "findings/2026-07-08-issue-26-custom-selector-evidence.md"
+        "docs/known-issues.md#local-mcp"
       ],
       "tests": []
     },
@@ -238,7 +235,7 @@
       "action": "diagnose",
       "reason": "Directory connectors are hosted claude.ai capabilities and can report unavailable or session expired under virtual login.",
       "evidence": [
-        "docs/known-issues.md:170"
+        "docs/known-issues.md#directory-connectors"
       ],
       "tests": []
     }
@@ -257,7 +254,7 @@
       "action": "diagnose",
       "reason": "Local and GitHub skills need post-install discoverability checks; storing or installing a skill is not enough to prove Science can use it.",
       "evidence": [
-        "docs/known-issues.md:167"
+        "docs/known-issues.md#directory-connectors"
       ],
       "tests": []
     },
@@ -272,8 +269,8 @@
       "action": "diagnose",
       "reason": "Official remote skills may depend on claude.ai hosted services and real account state; CSP can document local alternatives but cannot promise hosted remote skill availability.",
       "evidence": [
-        "docs/known-issues.md:167",
-        "docs/verified-facts.md:13"
+        "docs/known-issues.md#directory-connectors",
+        "docs/known-issues.md#architecture-boundaries"
       ],
       "tests": []
     }
@@ -289,8 +286,7 @@
       "action": "document",
       "reason": "The installed /Applications Claude Science baseline has verified Info.plist and --version evidence; do not infer newer native routes from this seed.",
       "evidence": [
-        "docs/verified-facts.md:19",
-        "docs/known-issues.md:34"
+        "docs/known-issues.md#science-version-drift"
       ],
       "tests": []
     },
@@ -304,9 +300,8 @@
       "action": "document",
       "reason": "Local binary evidence records new auth nonce, auth, conda/pypi remote, token-series, preferences, and skills resync routes; these require isolated retest before runtime claims.",
       "evidence": [
-        "docs/verified-facts.md:21",
-        "docs/verified-facts.md:22",
-        "docs/known-issues.md:30"
+        "docs/known-issues.md#science-version-drift",
+        "docs/known-issues.md#2a"
       ],
       "tests": []
     },
@@ -322,11 +317,10 @@
       "reason": "Issue #15 reports that this Science build may refresh OAuth via hardcoded api.anthropic.com/oauth/token outside ANTHROPIC_BASE_URL; virtual OAuth can then be treated as logged-out. CSP surfaces this as a version/auth boundary, not as real-account success.",
       "evidence": [
         "docs/known-issues.md#2a",
-        "docs/known-issues.md:37",
-        "findings/switching-organization-hang.md:16"
+        "proxy/core/csp_proxy.py:206"
       ],
       "tests": [
-        "test.test_capability_catalog.CapabilityCatalogSchema.test_rule_ids_are_unique_and_key_rules_exist"
+        "test.unit.capability.test_capability_catalog.CapabilityCatalogSchema.test_rule_ids_are_unique_and_key_rules_exist"
       ]
     },
     {
@@ -343,7 +337,7 @@
       "action": "document",
       "reason": "Virtual OAuth can satisfy local Science inference/auth status paths, but listing scopes in local token material does not grant hosted claude.ai capabilities.",
       "evidence": [
-        "docs/verified-facts.md:13",
+        "docs/known-issues.md#architecture-boundaries",
         "desktop/src-tauri/src/oauth_forge.rs:338"
       ],
       "tests": []
@@ -369,8 +363,8 @@
         "proxy/core/csp_proxy.py:532"
       ],
       "tests": [
-        "test.test_proxy_connect.ProxyConnect.test_connect_anthropic_domains_fastfail_401",
-        "test.test_proxy_connect.ProxyConnect.test_connect_subdomain_of_blocked_is_blocked"
+        "test.unit.proxy.test_proxy_connect.ProxyConnect.test_connect_anthropic_domains_fastfail_401",
+        "test.unit.proxy.test_proxy_connect.ProxyConnect.test_connect_subdomain_of_blocked_is_blocked"
       ]
     },
     {
@@ -388,7 +382,7 @@
         "docs/known-issues.md#11"
       ],
       "tests": [
-        "test.test_proxy_connect.ProxyConnect.test_connect_passthrough_tunnels_bytes"
+        "test.unit.proxy.test_proxy_connect.ProxyConnect.test_connect_passthrough_tunnels_bytes"
       ]
     },
     {
@@ -402,7 +396,8 @@
       "action": "document",
       "reason": "The virtual sandbox intentionally does not set http_proxy because the CSP proxy does not implement ordinary absolute-form HTTP forwarding.",
       "evidence": [
-        "scripts/sandbox/launch-virtual-sandbox.sh:115"
+        "scripts/sandbox/launch-virtual-sandbox.sh:115",
+        "docs/known-issues.md#11"
       ],
       "tests": []
     },
@@ -417,7 +412,7 @@
       "action": "document",
       "reason": "An upstream proxy path is the recommended future fix for external MCP egress, but it is not implemented in the current main branch.",
       "evidence": [
-        "docs/architecture-boundaries.md",
+        "docs/known-issues.md#11",
         "proxy/core/http_transport.py"
       ],
       "tests": []

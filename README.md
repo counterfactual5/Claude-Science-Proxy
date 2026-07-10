@@ -139,6 +139,8 @@ Science only accepts model IDs starting with `claude-`. CSP allocates **up to ei
 - **Not Apple-notarized** — manual approval on first open
 - Proxy still requires **`python3`** today
 
+Details: [`docs/known-issues.md`](./docs/known-issues.md)
+
 ---
 
 ## Contributing
