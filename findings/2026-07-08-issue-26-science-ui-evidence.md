@@ -6,11 +6,11 @@ Scope: isolated Claude Science UI verification for issue #26 using a temporary o
 
 ## Environment
 
-- CSSwitch revision: `7215e27` (merge PR #38, custom selector evidence branch)
+- CSP revision: `7215e27` (merge PR #38, custom selector evidence branch)
 - Claude Science binary: `/Applications/Claude Science.app/Contents/Resources/bin/claude-science`
 - Claude Science version: `0.1.0-dev.20260630.t212931.sha2bc1ac8`
 - Science port: `53024`
-- CSSwitch proxy port: `53023`
+- CSP proxy port: `53023`
 - Provider: `openai-custom`
 - Configured force model: `glm-4.5`
 - Mock upstream: local `test/mock_upstream.py` mode `openai_models`

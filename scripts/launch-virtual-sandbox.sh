@@ -1,7 +1,7 @@
 #!/bin/zsh
 # Launch an [isolated + virtual-login] Claude Science sandbox:
 #   Uses locally forged virtual OAuth so Science thinks it is logged in (virtual@localhost.invalid);
-#   inference is routed via ANTHROPIC_BASE_URL to this project's translation proxy → Qwen.
+#   inference is routed via ANTHROPIC_BASE_URL to this project's translation proxy → custom providers.
 #   Inference uses zero Anthropic and zero real credentials; however, during startup Science may still
 #   try its hard-coded profile/account endpoints (api.anthropic.com). Those failures do not block use,
 #   so we do not claim absolute "zero Anthropic contact" (consistent with README disclaimer).
