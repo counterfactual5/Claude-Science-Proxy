@@ -48,7 +48,6 @@
       "../../proxy/model_sort.py": "proxy/model_sort.py",
       "../../proxy/openai_chat_compat.py": "proxy/openai_chat_compat.py",
       "../../proxy/provider_policy.py": "proxy/provider_policy.py",
-      "../../proxy/qwen_proxy.py": "proxy/qwen_proxy.py",
       "../../proxy/responses_compat.py": "proxy/responses_compat.py",
       "../../scripts/doctor.sh": "scripts/doctor.sh",
       "../../scripts/launch-virtual-sandbox.sh": "scripts/launch-virtual-sandbox.sh",
