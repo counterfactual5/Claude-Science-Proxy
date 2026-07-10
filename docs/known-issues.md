@@ -136,7 +136,7 @@
 
 ## 9. 模型选择器显示 claude / opus（用户 2026-07-04 批次，⭐高优先：先修再发 v0.3.2）
 
-> **状态：已实现 + 真机验证通过 + 已随 v0.3.2 发布。** 真机证据：沙箱 Science 顶部选择器显示真实模型名 `glm-5.2`（非 claude/opus），代理 `/v1/models` 在 force 时返回单壳 `{id:claude-opus-4-8, display_name:真实名}`；铁律全程守住（8765 与真实目录未碰）。对应用户 bug 清单 #11（智谱等显示 claude）+ #12 显示部分（自定义显示 opus）。**#12 的校验部分（自定义 scratch 探测误判 Ambiguous）仍待复现，未在本轮解决。**
+> **状态：已实现 + 真机验证通过 + 已随 v0.3.2 发布（单模型 force）；2026-07-10 起正式路径升级为 `CSP_MODEL_REGISTRY` 多模型虚拟注册表。** 真机证据：沙箱 Science 顶部选择器显示真实模型名 `glm-5.2`（非 claude/opus）；铁律全程守住（8765 与真实目录未碰）。对应用户 bug 清单 #11（智谱等显示 claude）+ #12 显示部分（自定义显示 opus）。**#12 的校验部分（自定义 scratch 探测误判 Ambiguous）仍待复现，未在本轮解决。**
 >
 > **2026-07-08 追加（#26 自定义 OpenAI / Responses 选择器空列表）：** 当前 main 已有本地隔离 proxy/mock 证据，正式 `openai-custom` 与 `openai-responses` profile 在已配置模型时，`/{secret}/v1/models` 只返回单壳 `claude-opus-4-8`，真实模型名放 `display_name`，且 force 模式不回源暴露第三方原始模型 id；见 [`findings/2026-07-08-issue-26-custom-selector-evidence.md`](../findings/2026-07-08-issue-26-custom-selector-evidence.md)。随后又用隔离 Science UI + mock/custom OpenAI 上游验证 `openai-custom` selector：菜单非空并显示/选中 `glm-4.5`；见 [`findings/2026-07-08-issue-26-science-ui-evidence.md`](../findings/2026-07-08-issue-26-science-ui-evidence.md)。这仍不是真实账号态、真实 HOME、published DMG、签名/公证或 live provider E2E 验证；关闭 #26 时应按“当前 main 源码代理契约 + 隔离 mock/UI 证据”表述。
 >
