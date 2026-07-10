@@ -1,6 +1,6 @@
 # Claude Science Proxy（CSP）真机复测步骤（P1/P2 修复验证）
 
-本文只覆盖需要真机确认的部分：**RM-06**（native 无效 key 必须被拦、不谎报「已切到」、旧代理不动）、**RM-04**（非 active native 连接编辑即时上游校验）、**RM-13**（端口占用报错措辞），外加全程安全不变量。完整 18 条矩阵与打包细节见 `test/REAL_MACHINE_TEST.md`。
+本文只覆盖需要真机确认的部分：**RM-06**（native 无效 key 必须被拦、不谎报「已切到」、旧代理不动）、**RM-04**（非 active native 连接编辑即时上游校验）、**RM-13**（端口占用报错措辞），外加全程安全不变量。完整 18 条矩阵与打包细节见 `test/docs/REAL_MACHINE_TEST.md`。
 
 > **2026-07-10 注记**：`prepare-legacy` 仅写入 v1 **单槽 DeepSeek** 样本。native 无效 key 用例需 **＋ 新建** 第二条 DeepSeek profile（见下文 RM-06 前置）。
 

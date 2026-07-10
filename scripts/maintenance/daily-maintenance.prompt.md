@@ -27,7 +27,7 @@
 ### 2. 检查代码库现状
 - `git status`、`git log -5 --oneline`、当前分支名。
 - 读 `AGENT.md` 的「四、尚未验证 / 待办」清单，列出还**没打勾**（`[ ]` / `[~]`）的待办项。
-- 扫 `proxy/` 和 `test/`：有没有 `TODO`/`FIXME`、未跟踪文件（如 `test/test_proxy_stream.py`）、
+- 扫 `proxy/` 和 `test/`：有没有 `TODO`/`FIXME`、未跟踪文件（如 `test/unit/proxy/test_proxy_stream.py`）、
   明显没接上的测试。
 
 ### 3. 先规划（只写不做）

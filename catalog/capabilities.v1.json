@@ -13,7 +13,7 @@
       "reason": "DeepSeek uses the native Anthropic path; CSP maps Science shell model ids, clamps known token caps, and normalizes thinking/tool_choice quirks.",
       "evidence": [
         "proxy/core/csp_proxy.py:51",
-        "proxy/provider_policy.py:69",
+        "proxy/policy/provider_policy.py:69",
         "docs/verified-facts.md:34"
       ],
       "tests": [
@@ -31,7 +31,7 @@
       "action": "normalize",
       "reason": "Formal relay/openai proxies with configured models launch CSP_MODEL_REGISTRY: up to eight claude-* shell ids map to real upstream models, display_name values are sanitized for Science V2_, and outbound routing resolves shell ids back to real models.",
       "evidence": [
-        "proxy/model_registry.py:57",
+        "proxy/registry/model_registry.py:57",
         "desktop/src-tauri/src/runtime/provider.rs:236",
         "desktop/src-tauri/src/runtime/proxy_lifecycle.rs:240",
         "docs/verified-facts.md:37"
@@ -53,7 +53,7 @@
       "reason": "Fallback when CSP_MODEL_REGISTRY is absent: return one Science-visible claude-opus shell with a sanitized display_name; outbound requests are force-overridden to the selected real model.",
       "evidence": [
         "proxy/core/csp_proxy.py:343",
-        "proxy/model_discovery.py:40",
+        "proxy/registry/model_discovery.py:40",
         "docs/known-issues.md:146"
       ],
       "tests": [
@@ -76,7 +76,7 @@
       "reason": "Kimi relay models require enabled thinking, but forced Anthropic tool_choice is removed so the model can choose tools itself.",
       "evidence": [
         "desktop/src-tauri/src/templates.rs:120",
-        "proxy/provider_policy.py:103"
+        "proxy/policy/provider_policy.py:103"
       ],
       "tests": [
         "test.test_provider_policy.ThinkingNormalization.test_relay_enabled_policy_drops_forced_tool_choice"
@@ -96,8 +96,8 @@
       "action": "drop",
       "reason": "Kimi treats web_search as a provider server tool and may stream server_tool_use/web_search_tool_result blocks; CSP keeps local known_tools but does not advertise web_search upstream and filters server-tool blocks.",
       "evidence": [
-        "proxy/anthropic_compat.py:84",
-        "proxy/anthropic_compat.py:178"
+        "proxy/compat/anthropic_compat.py:84",
+        "proxy/compat/anthropic_compat.py:178"
       ],
       "tests": [
         "test.test_anthropic_compat.TransformRequest.test_kimi_relay_does_not_advertise_web_search_server_tool",
@@ -115,8 +115,8 @@
       "action": "normalize",
       "reason": "Anthropic-compatible relay providers can reject empty or loose input_schema values, so CSP normalizes relay tools to object schemas without mutating the caller request.",
       "evidence": [
-        "proxy/anthropic_compat.py:26",
-        "proxy/anthropic_compat.py:56"
+        "proxy/compat/anthropic_compat.py:26",
+        "proxy/compat/anthropic_compat.py:56"
       ],
       "tests": [
         "test.test_anthropic_compat.TransformRequest.test_relay_normalizes_loose_tool_schemas",
@@ -137,7 +137,7 @@
       "action": "normalize",
       "reason": "DeepSeek rejects forced tool use combined with thinking, so CSP disables thinking for forced Anthropic tool_choice on DeepSeek.",
       "evidence": [
-        "proxy/provider_policy.py:103",
+        "proxy/policy/provider_policy.py:103",
         "docs/verified-facts.md:38"
       ],
       "tests": [
@@ -156,7 +156,7 @@
       "action": "normalize",
       "reason": "When explicitly enabled, the DSML shim can turn known leaked DSML tool calls back into Anthropic tool_use blocks; default runtime behavior remains off.",
       "evidence": [
-        "proxy/dsml_shim.py",
+        "proxy/dsml/dsml_shim.py",
         "docs/known-issues.md:164"
       ],
       "tests": [
@@ -418,7 +418,7 @@
       "reason": "An upstream proxy path is the recommended future fix for external MCP egress, but it is not implemented in the current main branch.",
       "evidence": [
         "docs/architecture-boundaries.md",
-        "proxy/http_transport.py"
+        "proxy/core/http_transport.py"
       ],
       "tests": []
     }

@@ -3,7 +3,7 @@
 // 完全相同的 v2 GCM 解密逻辑解开，打印令牌 blob（JSON）。仅供 node↔rust 双向对拍用，
 // 证明 Rust 版 oauth_forge 产出的 .enc 能被 Node 的解密逻辑读回（= 与 Science 侧一致）。
 //
-// 用法：node test/decrypt-oauth.mjs --auth-dir <目录>
+// 用法：node test/unit/oauth/decrypt-oauth.mjs --auth-dir <目录>
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";

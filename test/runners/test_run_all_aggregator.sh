@@ -1,6 +1,6 @@
-# test/run_all.sh
+# test/run_all.sh aggregator smoke (invokes legacy shim at repo root).
 set -u
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 out="$(bash "$ROOT/test/run_all.sh" 2>&1)"; rc=$?
 fails=0
 echo "$out" | grep -q "current-env clean" || { echo "NOT ok - 缺 current-env 判定"; fails=1; }

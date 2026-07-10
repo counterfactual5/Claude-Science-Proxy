@@ -4,7 +4,7 @@ Covers only non-rewrite body paths: passthrough JSON + thinking-bearing passthro
 Mock upstream (zero real upstream cost, iron rule 4).
 
 Record/replay: CSP_GOLDEN_RECORD=1 writes capture into fixture (one-time baseline); otherwise read fixture and compare.
-fixture = test/golden/anthropic_nonstream.json: case -> {status, content_type, content_length, body}.
+fixture = test/fixtures/anthropic_nonstream.json: case -> {status, content_type, content_length, body}.
 Skips Date and other dynamic headers. Invariant: content_length == len(body).
 """
 import json
@@ -14,8 +14,6 @@ import subprocess
 import sys
 import time
 import unittest
-
-import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]

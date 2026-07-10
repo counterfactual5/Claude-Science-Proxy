@@ -13,8 +13,8 @@
 #   - encryption.key keychain mirror account is derived by [path hash]; sandbox and real are naturally isolated
 #
 # Usage:
-#   Start proxy first: DEEPSEEK_API_KEY=... python3 proxy/csp_proxy.py --provider deepseek --port 18991
-#   Then sandbox: scripts/launch-virtual-sandbox.sh [--port 8990] [--proxy-url http://127.0.0.1:18991]
+#   Start proxy first: DEEPSEEK_API_KEY=... python3 proxy/core/csp_proxy.py --provider deepseek --port 18991
+#   Then sandbox: scripts/sandbox/launch-virtual-sandbox.sh [--port 8990] [--proxy-url http://127.0.0.1:18991]
 set -euo pipefail
 
 PROJ="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -147,4 +147,4 @@ echo
 echo "已后台启动。验证:"
 echo "  健康:   curl -s http://127.0.0.1:$PORT/health || true"
 echo "  状态:   HOME='$SANDBOX_HOME' '$BIN' status --data-dir '$DATA_DIR'"
-echo "停止:     scripts/stop-science-sandbox.sh   （data-dir 已改为虚拟沙箱同一路径）"
+echo "停止:     scripts/sandbox/stop-science-sandbox.sh   （data-dir 已改为虚拟沙箱同一路径）"

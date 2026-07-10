@@ -1,9 +1,9 @@
 #!/bin/bash
 # Install/uninstall/status/run the CSP daily maintenance launchd agent.
-#   scripts/install-maintenance.sh install
-#   scripts/install-maintenance.sh uninstall
-#   scripts/install-maintenance.sh status
-#   scripts/install-maintenance.sh run
+#   scripts/maintenance/install-maintenance.sh install
+#   scripts/maintenance/install-maintenance.sh uninstall
+#   scripts/maintenance/install-maintenance.sh status
+#   scripts/maintenance/install-maintenance.sh run
 set -euo pipefail
 
 REPO="$(cd "$(dirname "$0")/../.." && pwd)"

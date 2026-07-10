@@ -4,8 +4,8 @@
 # findings/auto-maint/. Never changes code, commits, pushes, touches ~/.claude-science, or starts any Science instance.
 # See scripts/daily-maintenance.prompt.md for details.
 #
-# Manual test: bash scripts/daily-maintenance.sh
-# Install/uninstall schedule: scripts/install-maintenance.sh {install|uninstall|status}
+# Manual test: bash scripts/maintenance/daily-maintenance.sh
+# Install/uninstall schedule: scripts/maintenance/install-maintenance.sh {install|uninstall|status}
 set -euo pipefail
 
 REPO="$(cd "$(dirname "$0")/../.." && pwd)"

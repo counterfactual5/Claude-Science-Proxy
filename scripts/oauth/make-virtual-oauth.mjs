@@ -17,7 +17,7 @@
 //   - 过期判定 qP: token_expires_at 是 ISO 日期串；设远期即不触发联网刷新 _refreshToken。
 //   - _tryManualApiKey 恒 null → 必须走 OAuth；provider 注册表只有 claude_ai。
 //
-// 用法: node make-virtual-oauth.mjs --auth-dir <沙箱/.claude-science> [--email virtual@localhost.invalid] [--force]
+// 用法: node scripts/oauth/make-virtual-oauth.mjs --auth-dir <沙箱/.claude-science> [--email virtual@localhost.invalid] [--force]
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
