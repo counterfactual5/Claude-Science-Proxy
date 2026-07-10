@@ -67,7 +67,7 @@ def _normalize_relay_tools(upstream, rule_ids=None):
 
     Some Anthropic-compatible relay providers reject Claude Science's empty or loose
     ``input_schema`` values with a provider-side 400. Keep this limited to relay
-    passthrough; OpenAI/Qwen/Responses conversions have their own mapping rules.
+    passthrough; OpenAI/custom OpenAI Responses conversions have their own mapping rules.
     """
     tools = upstream.get("tools")
     if not isinstance(tools, list):
