@@ -2,7 +2,6 @@ use serde::Deserialize;
 use serde_json::json;
 use tauri::State;
 
-use crate::runtime::diagnostics::runtime_status_snapshot;
 use crate::runtime::i18n::i18n_err;
 use crate::runtime::science::{settings_change_needs_teardown, stop_sandbox};
 use crate::runtime::settings::validate_runtime_ports;
@@ -154,12 +153,6 @@ fn one_click_login_cmd(
     lifecycle.with_serialized(|| {
         crate::runtime::sandbox_session::one_click_login(app, state, lifecycle.as_ref())
     })
-}
-
-/// Runtime status lights and diagnostic snapshot (internal/scripts; frontend does not poll today).
-#[tauri::command]
-pub(crate) fn status(state: State<'_, SharedAppState>) -> serde_json::Value {
-    runtime_status_snapshot(state.inner())
 }
 
 #[cfg(test)]

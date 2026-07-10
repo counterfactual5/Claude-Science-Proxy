@@ -98,7 +98,6 @@ pub fn run() {
             commands::runtime::fetch_models,
             commands::runtime::stop_all,
             commands::runtime::one_click_login,
-            commands::runtime::status,
         ])
         .setup(|app| {
             // Normal desktop app: Dock icon, standard lifecycle. Window in tauri.conf.json has

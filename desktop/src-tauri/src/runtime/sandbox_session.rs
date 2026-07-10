@@ -8,7 +8,6 @@ use crate::runtime::i18n::i18n_err;
 use crate::runtime::operation::{
     self, OperationKind, OperationStage, OperationTrace, POLL_INTERVAL_MS,
 };
-use crate::runtime::proxy::ProxyAction;
 use crate::runtime::proxy_lifecycle::ensure_proxy;
 use crate::runtime::science::{
     ensure_sandbox_runtime_permissions, sandbox_home, sandbox_running_ours, sandbox_url,
@@ -51,24 +50,13 @@ pub(crate) fn one_click_login<R: Runtime>(
                 st.sandbox_port = sport;
                 st.sandbox_url = Some(url.clone());
             }
-            let (msg_key, msg_vars) = match proxy_action {
-                ProxyAction::Reused => match open_in_browser(&url) {
-                    Ok(()) => ("msgOneClickReopenedReusedOpened", json!({})),
-                    Err(_) => ("msgOneClickReopenedReusedManual", json!({ "url": url })),
-                },
-                ProxyAction::Restarted => match open_in_browser(&url) {
-                    Ok(()) => ("msgOneClickReopenedRestartedOpened", json!({})),
-                    Err(_) => ("msgOneClickReopenedRestartedManual", json!({ "url": url })),
-                },
-            };
+            let _ = open_in_browser(&url);
             trace.finish(format!(
                 "ok action=reopened proxy_action={}",
                 proxy_action.as_str()
             ));
             return Ok(json!({
                 "url": url,
-                "msg_key": msg_key,
-                "msg_vars": msg_vars,
                 "action": "reopened"
             }));
         }
@@ -172,16 +160,7 @@ pub(crate) fn one_click_login<R: Runtime>(
         st.sandbox_port = sport;
         st.sandbox_url = Some(url.clone());
     }
-    let (msg_key, msg_vars) = match login_action {
-        oauth_forge::LoginAction::Created => match open_in_browser(&url) {
-            Ok(()) => ("msgOneClickStartedFreshOpened", json!({})),
-            Err(_) => ("msgOneClickStartedFreshManual", json!({ "url": url })),
-        },
-        _ => match open_in_browser(&url) {
-            Ok(()) => ("msgOneClickStartedResumeOpened", json!({})),
-            Err(_) => ("msgOneClickStartedResumeManual", json!({ "url": url })),
-        },
-    };
+    let _ = open_in_browser(&url);
     trace.stage(OperationStage::OpenBrowser, "done");
     trace.finish(format!(
         "ok action=started proxy_action={}",
@@ -189,8 +168,6 @@ pub(crate) fn one_click_login<R: Runtime>(
     ));
     Ok(json!({
         "url": url,
-        "msg_key": msg_key,
-        "msg_vars": msg_vars,
         "action": "started"
     }))
 }
