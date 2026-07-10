@@ -1,91 +1,101 @@
-# Git 历史提交邮箱脱敏
+# Git 历史提交者脱敏
 
-公开仓库时，`git log` 与 GitHub 提交页会暴露**提交作者邮箱**。本仓库曾出现：
+公开仓库时，`git log` 与 GitHub 提交页会暴露**提交作者邮箱与显示名**。本仓库已完成**两轮**本地 `git filter-repo` 改写（2026-07-10）。
 
-| 邮箱 | 提交数 | 处理建议 |
-|------|--------|----------|
-| `shanjunjie666@gmail.com` | 166 | 改写为 `63803490+SuperJJ007@users.noreply.github.com` |
-| `cnhym@foxmail.com` | 1 | 改写为 `41800000+contributor@users.noreply.github.com`（外部贡献者，保留作者名 `yiminghua`） |
-| `63803490+SuperJJ007@users.noreply.github.com` | 17 | 已是 GitHub noreply，**不改** |
-| `108983446+counterfactual5@users.noreply.github.com` | 108+ | 已是 GitHub noreply，**不改** |
+## 当前状态（改写后）
 
-源码树内**已无**上述真实邮箱字符串；风险仅在 **git 对象历史**。
+**作者显示名**（`git log --format='%an' | sort | uniq -c`）：
+
+| 名称 | 约提交数 | 说明 |
+|------|----------|------|
+| `shanjunjie` | 183 | 原作者历史（MIT `LICENSE` 署名行保留；GitHub **不再**用可关联的 SuperJJ 邮箱） |
+| `counterfactual5` | 113+ | 当前维护者 |
+| `contributor` | 1 | 外部贡献者（原 `yiminghua` / foxmail 已脱敏） |
+
+**邮箱**（`git log --format='%ae' | sort -u`）— 应**仅**含：
+
+```
+108983446+counterfactual5@users.noreply.github.com
+41800000+contributor@users.noreply.github.com
+41800001+legacy@users.noreply.github.com
+```
+
+不得出现 `gmail.com`、`foxmail.com`，也不得出现 `63803490+SuperJJ007@users.noreply.github.com`（该 noreply 会在 GitHub 上**关联到原作者账号**）。
+
+## 两轮改写做了什么
+
+### 第一轮：真实邮箱 → noreply
+
+| 原邮箱 | 处理 |
+|--------|------|
+| `shanjunjie666@gmail.com` | → 后由第二轮再改为 `41800001+legacy@...` |
+| `cnhym@foxmail.com` | → `41800000+contributor@users.noreply.github.com` |
+
+### 第二轮：显示名 + 可关联 noreply
+
+| 项 | 处理 |
+|----|------|
+| `SuperJJ` 显示名 | → `shanjunjie` |
+| `yiminghua` 显示名 | → `contributor` |
+| `63803490+SuperJJ007@users.noreply.github.com` | → `41800001+legacy@users.noreply.github.com`（避免 GitHub 自动链到 SuperJJ007 主页） |
+
+源码树内**不应**粘贴上述真实邮箱；`LICENSE` 中 `Copyright (c) 2026 shanjunjie` **保留**（MIT 要求）。
 
 ## 是否值得做？
 
 | 做法 | 优点 | 缺点 |
 |------|------|------|
-| **不改历史**（常见） | 零风险、不断协作链 | GitHub 提交页仍可见 2 个真实邮箱 |
-| **改写历史**（本指南） | 公开后搜索不到 gmail/foxmail | **所有 commit SHA 变化**；已 clone 的人需重 clone；**必须 force push**；已发 Release tag 需重打 |
+| **不改历史** | 零风险 | 暴露 gmail / foxmail；SuperJJ noreply 链到原作者 GitHub |
+| **改写历史**（已完成本地） | 上述风险消除 | **所有 commit SHA 变化**；须 **force push**；本地旧 tag 失效 |
 
-**建议**：若仓库**尚未公开**或远程几乎只有你在用 → 值得在首次 push 前改写。若已有他人 fork / 开放 PR → 优先沟通再改。
-
-## 前置条件
-
-```bash
-pip3 install git-filter-repo   # 或 brew install git-filter-repo
-```
-
-## 执行（本地，会重写整库历史）
-
-在仓库根目录、**工作区干净**且已备份后：
+## 推送前验证
 
 ```bash
 cd /path/to/Claude-Science-Proxy
 
-# 可选：备份
+git log --format='%ae' | sort -u    # 仅 3 个 418.../counterfactual5 noreply
+git log --format='%an' | sort -u    # shanjunjie / counterfactual5 / contributor
+
+git push --force-with-lease origin feat/multi-model-registry
+```
+
+`main` 若禁 force push，需临时调整分支保护或先只推 feature 分支。
+
+## 本地 Release tag（重要）
+
+历史改写后，**本地** `v0.1.0` … `v0.3.6` 等 tag 多半指向**已失效**的 commit（远程目前 **无 tag**，`gh api .../tags` 为空）。
+
+公开前建议**删掉本地旧 tag**，仅在首次公开 Release 时打新 tag：
+
+```bash
+# 删除全部本地旧 tag（确认不需要旧 SHA 后再执行）
+git tag -l | xargs git tag -d
+
+# 首次公开预览（在 force push 之后、对应当前 HEAD）
+git tag -a v0.1.0-public-preview -m "Early public preview — APIs may change."
+git push origin v0.1.0-public-preview
+```
+
+若曾把旧 tag 推到远程，需 `git push origin :refs/tags/<name>` 删除后再重打。
+
+## 复现改写（仅供新 clone 备份后使用）
+
+需安装：`brew install git-filter-repo`
+
+```bash
 git clone --mirror . ../Claude-Science-Proxy.git.backup
 
-git filter-repo --force --commit-callback '
-REDACT = {
-    b"shanjunjie666@gmail.com": b"63803490+SuperJJ007@users.noreply.github.com",
-    b"cnhym@foxmail.com": b"41800000+contributor@users.noreply.github.com",
-}
-for attr in ("author_email", "committer_email"):
-    old = getattr(commit, attr)
-    if old in REDACT:
-        setattr(commit, attr, REDACT[old])
-'
-
-# 验证：不应再出现真实邮箱
-git log --format='%ae' | sort -u
-```
-
-`git filter-repo` 默认会**移除 `origin` 远程**（防误推）。恢复并强推：
-
-```bash
+# 第一轮 + 第二轮可合并为一次 callback（见 git 笔记或本文件历史）
+git filter-repo --force --commit-callback '...'
 git remote add origin https://github.com/counterfactual5/Claude-Science-Proxy.git
-
-# ⚠️ 改写后所有 SHA 变了；协作方需 force pull 或重 clone
-git push --force-with-lease origin feat/multi-model-registry
-# 若也要更新 main：先确认分支保护允许 force（当前 main 禁强推，需临时关规则或只推 feature 分支）
 ```
 
-## 与 Release tag 的关系
+## 本机执行记录
 
-改写后旧 tag（如 `v0.3.0-beta.2`）指向的 commit **失效**。需要：
+- **2026-07-10**：两轮 `git filter-repo` 已在 `feat/multi-model-registry` 完成。
+- **尚未 force push**（除非你已在重命名后自行推送）。
 
-```bash
-git tag -d v0.3.0-beta.2   # 本地删旧 tag
-git push origin :refs/tags/v0.3.0-beta.2   # 远程删旧 tag（若曾推送）
-# 在新 HEAD 上重新打 tag 再 push
-```
+## 今后提交
 
-公开预览 tag `v0.1.0-public-preview` 应在**改写完成后**再打。
-
-## 本机是否已执行？
-
-**是（2026-07-10）**：已在本地 `feat/multi-model-registry` 运行 `git filter-repo` 完成改写。当前 `git log --format='%ae' | sort -u` 仅含 GitHub noreply 地址。
-
-**尚未 force push**。远程仍保留旧历史；你确认后执行：
-
-```bash
-git push --force-with-lease origin feat/multi-model-registry
-```
-
-若远程已有 Release tag，需按上文「与 Release tag 的关系」重打。
-
-## 不改写时的替代
-
-- GitHub → Settings → 勾选 **Block command line pushes that expose email**（对今后提交有效，不改历史）
-- 原作者/贡献者在 GitHub 设置里启用 **Keep my email addresses private**
+- 维护者请继续使用 `108983446+counterfactual5@users.noreply.github.com`（或 GitHub 提供的私有 noreply）。
+- Settings → **Block command line pushes that expose email**（防止新提交泄露真实邮箱）。
