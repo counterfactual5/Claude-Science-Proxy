@@ -4,8 +4,8 @@
 #   - Never prints provider key values (only reports present/absent).
 #   - Fails immediately if a port hits the real-instance reserved port 8765 (iron rule).
 # Override variables (for testing and customization):
-#   CSP_PROVIDER (active template_id, e.g. deepseek/qwen/glm/xiaomi/…)
-#   CSP_ADAPTER  (deepseek|qwen|relay)   CSP_KEY_PRESENT (0|1)
+#   CSP_PROVIDER (active template_id, e.g. deepseek/glm/relay/…)
+#   CSP_ADAPTER  (deepseek|relay)   CSP_KEY_PRESENT (0|1)
 #   CSP_PROXY_PORT  CSP_SANDBOX_PORT  CSP_CONFIG (path to CSP.json)  SCIENCE_BIN
 #   CSP_DOCTOR_CHECK_REAL_HOME=1  check whether $HOME/.claude-science exists only after explicit opt-in
 set -u

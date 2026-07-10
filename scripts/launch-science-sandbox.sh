@@ -9,7 +9,7 @@
 #
 # Usage:
 #   scripts/launch-science-sandbox.sh [--port 8990] [--proxy-url http://127.0.0.1:18991]
-#   Start the proxy in another terminal first: DASHSCOPE_API_KEY=... python3 proxy/qwen_proxy.py --port 18991
+#   Start the proxy in another terminal first: CSP_RELAY_KEY=... python3 proxy/csp_proxy.py --provider relay --port 18991
 set -euo pipefail
 
 PROJ="${0:A:h:h}"
@@ -73,5 +73,5 @@ echo
 echo "已后台启动。下一步（需你手动完成，Claude 不代做登录）:"
 echo "  1) 取登录链接: HOME='$SANDBOX_HOME' '$BIN' url --data-dir '$DATA_DIR'"
 echo "  2) 浏览器打开该链接，在沙箱里【全新登录】（另一套会话，真实登录不受影响）"
-echo "  3) 登录后发消息，推理即经代理走通义千问"
+echo "  3) Log in inside the sandbox, then inference will route through the CSP proxy."
 echo "停止: scripts/stop-science-sandbox.sh"
