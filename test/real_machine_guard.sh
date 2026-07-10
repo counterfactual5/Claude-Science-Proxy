@@ -7,7 +7,7 @@
 set -euo pipefail
 
 PROJ="$(cd "$(dirname "$0")/.." && pwd)"
-TEST_ROOT="${CSP_REAL_TEST_ROOT:-${TMPDIR:-/tmp}/csswitch-real-machine-${UID}}"
+TEST_ROOT="${CSP_REAL_TEST_ROOT:-${TMPDIR:-/tmp}/csp-real-machine-${UID}}"
 TEST_HOME="$TEST_ROOT/home"
 STATE_DIR="$TEST_ROOT/state"
 BASELINE="$STATE_DIR/port-8765.pids"
@@ -19,7 +19,7 @@ die() { echo "FAIL: $*" >&2; exit 1; }
 pass() { echo "PASS: $*"; }
 
 # Isolation guard (GPT round-3 P1): reject pre-placed symlinks on directories we create. Prevents TEST_HOME
-# symlinked to real HOME so prepare-legacy would overwrite real ~/.csswitch/config.json via symlink (or chmod real dir).
+# symlinked to real HOME so prepare-legacy would overwrite real ~/.csp/CSP.json via symlink (or chmod real dir).
 # Only checks directories we control, not system parents like /var (macOS TMPDIR defaults under /var/folders).
 reject_symlinks() {
   local p
@@ -45,7 +45,7 @@ assert_isolated_from_real_home() {
 
 # Safe write for state/config files (GPT round-4 P1): remove any pre-placed symlink at target (`rm -f` removes link,
 # does not follow), then write a fresh regular file from stdin. Prevents `>` following a pre-placed symlink into
-# a real file (e.g. real ~/.csswitch/config.json or port-8765.now symlinked in STATE_DIR). **Note: eliminates
+# a real file (e.g. real ~/.csp/CSP.json or port-8765.now symlinked in STATE_DIR). **Note: eliminates
 # follow-preplaced-symlink writes, not atomicity or check-then-write races** (local test helper, not adversarial threat model).
 write_fresh() {
   local target="$1"
@@ -112,13 +112,13 @@ prepare_legacy() {
   command -v jq >/dev/null 2>&1 || die "prepare-legacy 需要 jq"
   # Re-verify isolation dirs (incl. STATE_DIR) are not symlinks before write: narrows window after preflight,
   # gives clear early fail; real write safety is write_fresh below (remove symlink then write), not race-free.
-  reject_symlinks "$TEST_ROOT" "$TEST_HOME" "$STATE_DIR" "$TEST_HOME/.csswitch"
+  reject_symlinks "$TEST_ROOT" "$TEST_HOME" "$STATE_DIR" "$TEST_HOME/.csp"
   assert_isolated_from_real_home "$TEST_HOME"
-  local cfg_dir="$TEST_HOME/.csswitch"
+  local cfg_dir="$TEST_HOME/.csp"
   umask 077
   mkdir -p "$cfg_dir"
   chmod 700 "$cfg_dir"
-  # If config.json was pre-placed as symlink (to real ~/.csswitch/config.json), write_fresh removes it first
+  # If CSP.json was pre-placed as symlink (to real ~/.csp/CSP.json), write_fresh removes it first
   # then writes a fresh regular file, never overwriting real config via symlink.
   jq -n \
     --arg deepseek "$DEEPSEEK_API_KEY" \
@@ -126,16 +126,16 @@ prepare_legacy() {
     --argjson proxy_port "$PROXY_PORT" \
     --argjson sandbox_port "$SANDBOX_PORT" \
     '{provider:"deepseek",proxy_port:$proxy_port,sandbox_port:$sandbox_port,secret:"",mode:"proxy",providers:{deepseek:{key:$deepseek,base_url:"https://api.deepseek.com/anthropic",model:""},qwen:{key:$qwen,base_url:"https://dashscope.aliyuncs.com/compatible-mode/v1",model:"qwen3-max"}}}' \
-    | write_fresh "$cfg_dir/config.json"
-  chmod 600 "$cfg_dir/config.json"
-  pass "已在独立测试 HOME 写入 v1 迁移样本（key 未回显）"
+    | write_fresh "$cfg_dir/CSP.json"
+  chmod 600 "$cfg_dir/CSP.json"
+  pass "已在独立测试 HOME 写入 v1 schema 样本（key 未回显）"
 }
 
 assert_running() {
   assert_real_unchanged
   [ -n "$(listener_pids "$PROXY_PORT")" ] || die "代理端口 $PROXY_PORT 未监听"
   [ -n "$(listener_pids "$SANDBOX_PORT")" ] || die "沙箱端口 $SANDBOX_PORT 未监听"
-  local sbx_home="$TEST_HOME/.csswitch/sandbox/home"
+  local sbx_home="$TEST_HOME/.csp/sandbox/home"
   local data_dir="$sbx_home/.claude-science"
   local out
   out="$(HOME="$sbx_home" "$SCIENCE_BIN" status --data-dir "$data_dir" 2>/dev/null || true)"

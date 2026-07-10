@@ -15,10 +15,7 @@ ADAPTER="${CSP_ADAPTER:-}"
 KEY_PRESENT="${CSP_KEY_PRESENT:-0}"
 PROXY_PORT="${CSP_PROXY_PORT:-18991}"
 SANDBOX_PORT="${CSP_SANDBOX_PORT:-8990}"
-CONFIG="${CSP_CONFIG:-${CSP_CONFIG:-$HOME/.csp/CSP.json}}"
-if [ ! -f "$CONFIG" ] && [ -f "$HOME/.csswitch/config.json" ]; then
-  CONFIG="$HOME/.csswitch/config.json"
-fi
+CONFIG="${CSP_CONFIG:-$HOME/.csp/CSP.json}"
 SCIENCE_BIN="${SCIENCE_BIN:-/Applications/Claude Science.app/Contents/Resources/bin/claude-science}"
 CHECK_REAL_HOME="${CSP_DOCTOR_CHECK_REAL_HOME:-0}"
 

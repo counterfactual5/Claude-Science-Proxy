@@ -19,7 +19,7 @@
 - **后端错误 i18n**：Rust 经 `i18n_err` 返回 key，面板用 `resolveBackendErr` 渲染中英文（见 [`DEVELOPMENT.md`](DEVELOPMENT.md)「用户可见文案」）。
 - **README**：「反馈与报错」小节 + 隐私声明。
 
-> 路径说明：首次启动会从 `~/.csswitch/config.json` 迁移到 `~/.csp/CSP.json`；日志目录始终在 `~/.csp/logs/`。
+> 路径说明：用户数据在 `~/.csp/CSP.json`；日志目录在 `~/.csp/logs/`。
 
 ## 下一步（按优先级）
 

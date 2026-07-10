@@ -48,8 +48,6 @@ pub(crate) fn validate_runtime_ports(proxy_port: u16, sandbox_port: u16) -> Resu
 pub const CURRENT_SCHEMA_VERSION: u32 = 4;
 
 pub(crate) const CONFIG_BASENAME: &str = "CSP.json";
-pub(crate) const LEGACY_CONFIG_BASENAME: &str = "config.json";
-pub(crate) const LEGACY_DIR_BASENAME: &str = ".csswitch";
 const MIGRATION_BACKUP_NAME: &str = "CSP.json.v1.bak";
 const ROLLING_BACKUP_NAME: &str = "CSP.json.bak";
 
@@ -114,9 +112,6 @@ pub struct Config {
     /// Legacy official-mode field; always normalized to `proxy` on load.
     #[serde(default = "default_mode")]
     pub mode: String,
-    /// One-shot migration notice for the UI; cleared after `get_config`.
-    #[serde(default)]
-    pub pending_notice: Option<String>,
 }
 
 impl Default for Config {
@@ -130,7 +125,6 @@ impl Default for Config {
             sandbox_port: default_sandbox_port(),
             secret: String::new(),
             mode: default_mode(),
-            pending_notice: None,
         }
     }
 }
@@ -337,7 +331,6 @@ pub fn migrate_v1_to_v2(mut legacy: crate::config_legacy::ConfigV1) -> Config {
         sandbox_port: legacy.sandbox_port,
         secret: legacy.secret,
         mode: legacy.mode,
-        pending_notice: None,
     }
 }
 
@@ -351,99 +344,6 @@ pub fn default_dir() -> PathBuf {
 
 fn config_path(dir: &Path) -> PathBuf {
     dir.join(CONFIG_BASENAME)
-}
-
-/// One-time path migration: `~/.csswitch/config.json` → `~/.csp/CSP.json`, rename backups.
-/// Runs only on the production default dir (skipped for unit-test temp dirs).
-fn migrate_legacy_paths(dir: &Path) -> io::Result<()> {
-    if default_dir().as_path() != dir {
-        return Ok(());
-    }
-    let target = config_path(dir);
-    if target.exists() {
-        return Ok(());
-    }
-
-    if dir.exists() {
-        let legacy_in_dir = dir.join(LEGACY_CONFIG_BASENAME);
-        if legacy_in_dir.is_file() {
-            assert_not_symlink(&legacy_in_dir)?;
-            ensure_dir(dir)?;
-            fs::rename(&legacy_in_dir, &target)?;
-            rename_legacy_backups(dir);
-            return Ok(());
-        }
-    }
-
-    let home = std::env::var_os("HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("."));
-    let legacy_dir = home.join(LEGACY_DIR_BASENAME);
-    let legacy_config = legacy_dir.join(LEGACY_CONFIG_BASENAME);
-    if !legacy_config.is_file() {
-        return Ok(());
-    }
-    assert_not_symlink(&legacy_dir)?;
-    assert_not_symlink(&legacy_config)?;
-
-    let migrate_whole_dir = !dir.exists() || dir_is_empty(dir)?;
-    if migrate_whole_dir {
-        ensure_dir(dir)?;
-        copy_dir_contents(&legacy_dir, dir)?;
-        let copied_config = dir.join(LEGACY_CONFIG_BASENAME);
-        if copied_config.is_file() && !target.exists() {
-            fs::rename(&copied_config, &target)?;
-        }
-        crate::runtime::science::ensure_sandbox_runtime_permissions(
-            &dir.join("sandbox").join("home").join(".claude-science"),
-        );
-    } else {
-        ensure_dir(dir)?;
-        atomic_copy(&legacy_config, &target)?;
-    }
-    rename_legacy_backups(dir);
-    Ok(())
-}
-
-fn dir_is_empty(dir: &Path) -> io::Result<bool> {
-    Ok(fs::read_dir(dir)?.next().is_none())
-}
-
-fn rename_legacy_backups(dir: &Path) {
-    for (old, new) in [
-        ("config.json.v1.bak", MIGRATION_BACKUP_NAME),
-        ("config.json.bak", ROLLING_BACKUP_NAME),
-    ] {
-        let from = dir.join(old);
-        let to = dir.join(new);
-        if from.is_file() && !to.exists() {
-            let _ = fs::rename(from, to);
-        }
-    }
-}
-
-/// Recursively copy directory contents (skip symlinks; files via atomic_copy at mode 0600).
-fn copy_dir_contents(from: &Path, to: &Path) -> io::Result<()> {
-    for entry in fs::read_dir(from)? {
-        let entry = entry?;
-        let ft = entry.file_type()?;
-        if ft.is_symlink() {
-            continue;
-        }
-        let name = entry.file_name();
-        let src = entry.path();
-        let dest = to.join(&name);
-        if ft.is_dir() {
-            if !dest.exists() {
-                fs::create_dir_all(&dest)?;
-                fs::set_permissions(&dest, fs::Permissions::from_mode(0o700))?;
-            }
-            copy_dir_contents(&src, &dest)?;
-        } else if ft.is_file() && !dest.exists() {
-            atomic_copy(&src, &dest)?;
-        }
-    }
-    Ok(())
 }
 
 /// Error if `path` exists and is a symlink (never follow). Missing path is Ok.
@@ -532,7 +432,6 @@ pub fn drop_rolling_backup(dir: &Path) {
 /// Load config from `dir/CSP.json`. Missing file → [`Config::default`].
 /// Legacy schema migrates with v1.bak backup; schema too new → Err. Rejects symlink paths.
 pub fn load_from(dir: &Path) -> io::Result<Config> {
-    migrate_legacy_paths(dir)?;
     // Reject symlinked config dir (e.g. attacker swapping ~/.csp).
     assert_not_symlink(dir)?;
     let path = config_path(dir);
@@ -749,7 +648,7 @@ mod tests {
 
     fn tmpdir() -> PathBuf {
         // Per-test isolated subdir (process id + thread id) to avoid parallel test interference.
-        let base = std::env::temp_dir().join(format!("csswitch-cfg-test-{}", std::process::id()));
+        let base = std::env::temp_dir().join(format!("csp-cfg-test-{}", std::process::id()));
         let d = base.join(format!("{:?}", std::thread::current().id()));
         let _ = fs::remove_dir_all(&d);
         fs::create_dir_all(&d).unwrap();
@@ -775,7 +674,7 @@ mod tests {
 
     #[test]
     fn load_from_migrates_legacy_official_mode_to_proxy() {
-        let d = tmpdir().join(".csswitch");
+        let d = tmpdir().join(".csp");
         fs::create_dir_all(&d).unwrap();
         fs::write(
             config_path(&d),
@@ -889,7 +788,7 @@ mod tests {
 
     #[test]
     fn save_then_load_roundtrips() {
-        let d = tmpdir().join(".csswitch");
+        let d = tmpdir().join(".csp");
         let p = Profile {
             id: "id1".into(),
             name: "DeepSeek".into(),
@@ -1115,7 +1014,7 @@ mod tests {
     // ---------- A5: backup infrastructure ----------
     #[test]
     fn migration_backup_copies_and_is_0600() {
-        let d = tmpdir().join(".csswitch");
+        let d = tmpdir().join(".csp");
         fs::create_dir_all(&d).unwrap();
         fs::write(config_path(&d), b"OLD-V1-BYTES").unwrap();
         write_migration_backup(&d).unwrap();
@@ -1125,13 +1024,13 @@ mod tests {
     }
     #[test]
     fn migration_backup_missing_source_errors() {
-        let d = tmpdir().join(".csswitch");
+        let d = tmpdir().join(".csp");
         fs::create_dir_all(&d).unwrap();
         assert!(write_migration_backup(&d).is_err());
     }
     #[test]
     fn rolling_backup_then_drop_removes_key_recoverability() {
-        let d = tmpdir().join(".csswitch");
+        let d = tmpdir().join(".csp");
         fs::create_dir_all(&d).unwrap();
         fs::write(config_path(&d), br#"{"api_key":"sk-SECRET-TAIL"}"#).unwrap();
         write_rolling_backup(&d).unwrap();
@@ -1146,7 +1045,7 @@ mod tests {
     #[test]
     fn backup_rejects_symlinked_target() {
         let base = tmpdir();
-        let d = base.join(".csswitch");
+        let d = base.join(".csp");
         fs::create_dir_all(&d).unwrap();
         fs::write(config_path(&d), b"X").unwrap();
         let elsewhere = base.join("elsewhere");
@@ -1159,7 +1058,7 @@ mod tests {
     // ---------- A6: load_from integration ----------
     #[test]
     fn load_migrates_old_file_and_writes_v1_bak() {
-        let d = tmpdir().join(".csswitch");
+        let d = tmpdir().join(".csp");
         fs::create_dir_all(&d).unwrap();
         fs::write(
             config_path(&d),
@@ -1181,7 +1080,7 @@ mod tests {
     }
     #[test]
     fn load_too_new_errors() {
-        let d = tmpdir().join(".csswitch");
+        let d = tmpdir().join(".csp");
         fs::create_dir_all(&d).unwrap();
         fs::write(config_path(&d), br#"{"schema_version":9,"profiles":[]}"#).unwrap();
         let e = load_from(&d).unwrap_err();
@@ -1190,7 +1089,7 @@ mod tests {
     }
     #[test]
     fn load_normalizes_dangling_active() {
-        let d = tmpdir().join(".csswitch");
+        let d = tmpdir().join(".csp");
         let cfg = Config {
             active_id: "ghost".into(),
             profiles: vec![Profile {
@@ -1212,7 +1111,7 @@ mod tests {
     // ---------- MP-2 Minor [2]: unknown template_id → normalize to custom ----------
     #[test]
     fn load_normalizes_unknown_template_id_to_custom() {
-        let d = tmpdir().join(".csswitch");
+        let d = tmpdir().join(".csp");
         // Build v2 profile with template_id not in registry (connection fields preserved).
         let cfg = Config {
             active_id: "p1".into(),
@@ -1246,7 +1145,7 @@ mod tests {
     // ---------- Existing security/permission invariants (retained) ----------
     #[test]
     fn load_missing_returns_default() {
-        let d = tmpdir().join(".csswitch");
+        let d = tmpdir().join(".csp");
         let cfg = load_from(&d).unwrap();
         assert_eq!(cfg, Config::default());
         assert_eq!(cfg.schema_version, CURRENT_SCHEMA_VERSION);
@@ -1255,7 +1154,7 @@ mod tests {
 
     #[test]
     fn save_sets_dir_0700_and_file_0600() {
-        let d = tmpdir().join(".csswitch");
+        let d = tmpdir().join(".csp");
         save_to(&d, &Config::default()).unwrap();
         assert_eq!(mode_of(&d), 0o700, "dir must be 0700");
         assert_eq!(mode_of(&config_path(&d)), 0o600, "file must be 0600");
@@ -1263,7 +1162,7 @@ mod tests {
 
     #[test]
     fn load_resets_widened_perms_to_0600() {
-        let d = tmpdir().join(".csswitch");
+        let d = tmpdir().join(".csp");
         save_to(&d, &Config::default()).unwrap();
         let p = config_path(&d);
         fs::set_permissions(&p, fs::Permissions::from_mode(0o644)).unwrap();
@@ -1274,7 +1173,7 @@ mod tests {
     #[test]
     fn save_rejects_symlinked_file_and_leaves_target_untouched() {
         let base = tmpdir();
-        let d = base.join(".csswitch");
+        let d = base.join(".csp");
         fs::create_dir_all(&d).unwrap();
         let target = base.join("real-elsewhere.txt");
         fs::write(&target, b"ORIGINAL").unwrap();
@@ -1287,7 +1186,7 @@ mod tests {
     #[test]
     fn load_rejects_symlinked_file() {
         let base = tmpdir();
-        let d = base.join(".csswitch");
+        let d = base.join(".csp");
         fs::create_dir_all(&d).unwrap();
         let target = base.join("secret.txt");
         fs::write(&target, b"{\"schema_version\":2}").unwrap();
@@ -1302,7 +1201,7 @@ mod tests {
         let realdir = base.join("realdir");
         fs::create_dir_all(&realdir).unwrap();
         fs::write(realdir.join("CSP.json"), b"{\"schema_version\":2}").unwrap();
-        let link = base.join(".csswitch");
+        let link = base.join(".csp");
         symlink(&realdir, &link).unwrap();
         let err = load_from(&link).unwrap_err();
         assert_eq!(err.kind(), io::ErrorKind::InvalidInput);
@@ -1313,7 +1212,7 @@ mod tests {
         let base = tmpdir();
         let realdir = base.join("realdir");
         fs::create_dir_all(&realdir).unwrap();
-        let link = base.join(".csswitch");
+        let link = base.join(".csp");
         symlink(&realdir, &link).unwrap();
         let err = save_to(&link, &Config::default()).unwrap_err();
         assert_eq!(err.kind(), io::ErrorKind::InvalidInput);
@@ -1321,7 +1220,7 @@ mod tests {
 
     #[test]
     fn no_tmp_file_left_after_save() {
-        let d = tmpdir().join(".csswitch");
+        let d = tmpdir().join(".csp");
         save_to(&d, &Config::default()).unwrap();
         let leftovers: Vec<_> = fs::read_dir(&d)
             .unwrap()
@@ -1333,7 +1232,7 @@ mod tests {
 
     #[test]
     fn update_applies_and_persists() {
-        let d = tmpdir().join(".csswitch");
+        let d = tmpdir().join(".csp");
         save_to(&d, &Config::default()).unwrap();
         update(&d, |c| {
             c.profiles.push(Profile {
@@ -1354,7 +1253,7 @@ mod tests {
     #[test]
     fn secret_persists_and_survives_reload() {
         // path-secret must persist once generated; proxy restart/reopen app keeps same value.
-        let d = tmpdir().join(".csswitch");
+        let d = tmpdir().join(".csp");
         save_to(&d, &Config::default()).unwrap();
         assert!(
             load_from(&d).unwrap().secret.is_empty(),

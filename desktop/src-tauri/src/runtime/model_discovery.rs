@@ -196,10 +196,8 @@ mod tests {
     use crate::{config, runtime::profile::create_profile_inner};
 
     fn tmpdir_model_discovery() -> std::path::PathBuf {
-        let base = std::env::temp_dir().join(format!(
-            "csswitch-model-discovery-test-{}",
-            std::process::id()
-        ));
+        let base =
+            std::env::temp_dir().join(format!("csp-model-discovery-test-{}", std::process::id()));
         let d = base.join(format!(
             "{:?}-{}",
             std::thread::current().id(),
@@ -207,7 +205,7 @@ mod tests {
         ));
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(&d).unwrap();
-        d.join(".csswitch")
+        d.join(".csp")
     }
 
     #[test]

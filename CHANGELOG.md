@@ -7,7 +7,9 @@
 ## [Unreleased]
 
 ### 变更 Changed
-- **品牌重命名**：对外产品名由 CSSwitch 改为 **Claude Science Proxy（CSP）**；桌面 app 窗口标题与 bundle 标识更新为 `com.csp.menubar`。用户数据目录迁移至 `~/.csp/`（`CSP.json`、`logs/`、`sandbox/home`）；首次启动会自动从旧路径 `~/.csswitch/config.json` 一次性迁移。
+- **移除 `~/.csswitch` 路径迁移**：用户数据仅 `~/.csp/`；删除 `migrate_legacy_paths`、`doctor.sh` 旧路径回退；真机护栏改用 `.csp/CSP.json`。schema v1→v4 内存迁移仍保留。
+- **死代码清理（前后端对齐）**：面板 `#msg` 仅显示错误；移除 `get_config.pending_notice`、Tauri `status` command、`one_click_login` 成功 `msg_key`、切换成功 `hint_key` 等前端不再消费的字段；`runtime_status_snapshot` 仍供 Rust 单测/internal 使用。
+- **品牌重命名**：对外产品名由 CSSwitch 改为 **Claude Science Proxy（CSP）**；桌面 app 窗口标题与 bundle 标识更新为 `com.csp.menubar`。用户数据目录为 `~/.csp/`（`CSP.json`、`logs/`、`sandbox/home`）。
 - **代码注释英文化**：Rust / Python / JS 生产路径与测试、shell 脚本的 `#` 注释默认英文；用户可见文案仍走 I18N，运维 `log()` / `scripts` stdout 与测试断言中的中文有意保留。
 - **后端 i18n 统一**：`config`、`oauth_forge`、`scratch`、`capability_catalog`、`sandbox_session` 等模块的用户可见错误与一键启动成功提示改为 `i18n_err` / `msg_key` + `vars`；前端经 `resolveBackendErr` / `resolveHint` 渲染。
 - **模板展示名**：`templates.rs` 使用英文规范 `name`；前端 `tplName_*` 与 `wizPresetLabel()` 按 cn/intl 版本本地化，向导预设不再重复硬编码 label。
