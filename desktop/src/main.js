@@ -252,6 +252,19 @@ const I18N = {
     stopFail: "停止失败：{err}",
     openCspFail: "打开 CSP.json 失败：{err}",
     previewMode: "预览模式：仅看界面，按钮不连后端（真实 app 里会连进程管家）。",
+    tplName_deepseek: "DeepSeek",
+    tplName_glm: "智谱 GLM",
+    tplName_xiaomi: "小米 MiMo",
+    tplName_siliconflow: "硅基流动",
+    tplName_kimi: "Kimi（Moonshot）",
+    tplName_minimax: "MiniMax",
+    tplName_openrouter: "OpenRouter",
+    tplName_qwen: "通义千问",
+    tplName_custom_openai: "自定义 OpenAI",
+    tplName_custom_openai_responses: "自定义 OpenAI Responses",
+    tplName_custom: "自定义 Anthropic",
+    wizPresetLabel_glm_coding: "智谱 Coding Plan",
+    wizPresetLabel_xiaomi_token: "小米 MiMo · Token 套餐",
   },
   intl: {
     myConfigs: "Profiles",
@@ -479,9 +492,26 @@ const I18N = {
     stopFail: "Stop failed: {err}",
     openCspFail: "Failed to open CSP.json: {err}",
     previewMode: "Preview mode: UI only, no backend (real app uses Tauri).",
+    tplName_deepseek: "DeepSeek",
+    tplName_glm: "GLM",
+    tplName_xiaomi: "MiMo",
+    tplName_siliconflow: "SiliconFlow",
+    tplName_kimi: "Kimi (Moonshot)",
+    tplName_minimax: "MiniMax",
+    tplName_openrouter: "OpenRouter",
+    tplName_qwen: "Qwen",
+    tplName_custom_openai: "Custom OpenAI",
+    tplName_custom_openai_responses: "Custom OpenAI Responses",
+    tplName_custom: "Custom Anthropic",
+    wizPresetLabel_xiaomi_token: "MiMo · Token Plan",
   },
 };
 function S() { return I18N[EDITION]; }
+function templateDisplayName(id, fallback) {
+  const key = `tplName_${id.replace(/-/g, "_")}`;
+  const t = S()[key];
+  return t || fallback || id;
+}
 function T(key, vars) {
   const raw = S()[key];
   if (!raw) return key;
@@ -523,28 +553,35 @@ function modelHints() {
 
 /** CN edition: one default endpoint per provider; domestic routes only. */
 const WIZ_PRESETS_CN = [
-  { id: "deepseek", templateId: "deepseek", name: "DeepSeek", label: "DeepSeek", baseUrl: "https://api.deepseek.com/anthropic", lockUrl: true },
-  { id: "glm", templateId: "glm", name: "GLM", label: "智谱 GLM", baseUrl: "https://open.bigmodel.cn/api/anthropic" },
-  { id: "glm-coding", templateId: "custom-openai", name: "GLM Coding Plan", label: "智谱 Coding Plan", baseUrl: "https://open.bigmodel.cn/api/coding/paas/v4" },
-  { id: "kimi", templateId: "kimi", name: "Moonshot", label: "Moonshot", baseUrl: "https://api.moonshot.cn/anthropic" },
-  { id: "minimax", templateId: "minimax", name: "MiniMax", label: "MiniMax", baseUrl: "https://api.minimaxi.com/anthropic" },
-  { id: "xiaomi", templateId: "xiaomi", name: "MiMo", label: "小米 MiMo", baseUrl: "https://api.xiaomimimo.com/anthropic" },
-  { id: "xiaomi-token", templateId: "xiaomi", name: "MiMo", label: "小米 MiMo · Token 套餐", baseUrl: "https://token-plan-cn.xiaomimimo.com/anthropic" },
+  { id: "deepseek", templateId: "deepseek", name: "DeepSeek", baseUrl: "https://api.deepseek.com/anthropic", lockUrl: true },
+  { id: "glm", templateId: "glm", name: "GLM", baseUrl: "https://open.bigmodel.cn/api/anthropic" },
+  { id: "glm-coding", templateId: "custom-openai", name: "GLM Coding Plan", baseUrl: "https://open.bigmodel.cn/api/coding/paas/v4" },
+  { id: "kimi", templateId: "kimi", name: "Moonshot", baseUrl: "https://api.moonshot.cn/anthropic" },
+  { id: "minimax", templateId: "minimax", name: "MiniMax", baseUrl: "https://api.minimaxi.com/anthropic" },
+  { id: "xiaomi", templateId: "xiaomi", name: "MiMo", baseUrl: "https://api.xiaomimimo.com/anthropic" },
+  { id: "xiaomi-token", templateId: "xiaomi", name: "MiMo", baseUrl: "https://token-plan-cn.xiaomimimo.com/anthropic" },
 ];
 
 /** Intl edition: common overseas endpoints. */
 const WIZ_PRESETS_INTL = [
-  { id: "deepseek", templateId: "deepseek", name: "DeepSeek", label: "DeepSeek", baseUrl: "https://api.deepseek.com/anthropic", lockUrl: true },
-  { id: "glm", templateId: "glm", name: "ZAI", label: "ZAI", baseUrl: "https://api.z.ai/api/anthropic" },
-  { id: "kimi", templateId: "kimi", name: "Moonshot", label: "Moonshot", baseUrl: "https://api.moonshot.ai/anthropic" },
-  { id: "minimax", templateId: "minimax", name: "MiniMax", label: "MiniMax", baseUrl: "https://api.minimax.io/anthropic" },
-  { id: "xiaomi", templateId: "xiaomi", name: "MiMo", label: "Xiaomi MiMo", baseUrl: "https://api.xiaomimimo.com/anthropic" },
-  { id: "xiaomi-token", templateId: "xiaomi", name: "MiMo", label: "MiMo · Token Plan", baseUrl: "https://token-plan-cn.xiaomimimo.com/anthropic" },
-  { id: "openrouter", templateId: "openrouter", name: "OpenRouter", label: "OpenRouter", baseUrl: "https://openrouter.ai/api" },
+  { id: "deepseek", templateId: "deepseek", name: "DeepSeek", baseUrl: "https://api.deepseek.com/anthropic", lockUrl: true },
+  { id: "glm", templateId: "glm", name: "ZAI", baseUrl: "https://api.z.ai/api/anthropic" },
+  { id: "kimi", templateId: "kimi", name: "Moonshot", baseUrl: "https://api.moonshot.ai/anthropic" },
+  { id: "minimax", templateId: "minimax", name: "MiniMax", baseUrl: "https://api.minimax.io/anthropic" },
+  { id: "xiaomi", templateId: "xiaomi", name: "MiMo", baseUrl: "https://api.xiaomimimo.com/anthropic" },
+  { id: "xiaomi-token", templateId: "xiaomi", name: "MiMo", baseUrl: "https://token-plan-cn.xiaomimimo.com/anthropic" },
+  { id: "openrouter", templateId: "openrouter", name: "OpenRouter", baseUrl: "https://openrouter.ai/api" },
 ];
 
 function wizPresets() {
   return EDITION === "cn" ? WIZ_PRESETS_CN : WIZ_PRESETS_INTL;
+}
+
+function wizPresetLabel(preset) {
+  const presetKey = `wizPresetLabel_${preset.id.replace(/-/g, "_")}`;
+  const localized = S()[presetKey];
+  if (localized) return localized;
+  return templateDisplayName(preset.templateId, preset.name);
 }
 
 /** Last auto-filled base URL in the wizard; cleared after manual edits to avoid overwriting custom URLs. */
@@ -618,7 +655,7 @@ function mockInvoke(cmd, args) {
       const t = MOCK_TEMPLATES.find((x) => x.id === args.templateId) || {};
       const id = "p-" + Math.random().toString(16).slice(2, 10);
       mockStore.profiles.push({
-        id, name: args.name || t.name || "Profile", template_id: args.templateId,
+        id, name: args.name || templateDisplayName(t.id, t.name) || "Profile", template_id: args.templateId,
         api_format: t.api_format || "anthropic",
         base_url: args.baseUrl || t.base_url || "", model: args.model || "",
         key: mockMask(args.key || ""), icon: t.icon, icon_color: t.icon_color, notes: "",
@@ -1108,7 +1145,7 @@ function wizPresetByName(name) {
   const q = (name || "").trim().toLowerCase();
   if (!q) return null;
   return wizPresets().find(
-    (item) => item.name.toLowerCase() === q || item.label.toLowerCase() === q
+    (item) => item.name.toLowerCase() === q || wizPresetLabel(item).toLowerCase() === q
   ) || null;
 }
 
@@ -1149,7 +1186,7 @@ function populateWizPresetSelect() {
   for (const item of wizPresets()) {
     const opt = document.createElement("option");
     opt.value = item.id;
-    opt.textContent = item.label;
+    opt.textContent = wizPresetLabel(item);
     sel.appendChild(opt);
   }
 }

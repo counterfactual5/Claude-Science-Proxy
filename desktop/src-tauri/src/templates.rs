@@ -69,7 +69,7 @@ static TEMPLATES: &[Template] = &[
     },
     Template {
         id: "glm",
-        name: "智谱 GLM",
+        name: "GLM",
         category: "cn_official",
         api_format: "anthropic",
         adapter: "relay",
@@ -84,7 +84,7 @@ static TEMPLATES: &[Template] = &[
     },
     Template {
         id: "xiaomi",
-        name: "小米 MiMo",
+        name: "MiMo",
         category: "cn_official",
         api_format: "anthropic",
         adapter: "relay",
@@ -99,7 +99,7 @@ static TEMPLATES: &[Template] = &[
     },
     Template {
         id: "siliconflow",
-        name: "硅基流动",
+        name: "SiliconFlow",
         category: "cn_official",
         api_format: "anthropic",
         adapter: "relay",
@@ -119,7 +119,7 @@ static TEMPLATES: &[Template] = &[
     },
     Template {
         id: "kimi",
-        name: "Kimi（Moonshot）",
+        name: "Kimi (Moonshot)",
         category: "cn_official",
         api_format: "anthropic",
         adapter: "relay",
@@ -168,7 +168,7 @@ static TEMPLATES: &[Template] = &[
     },
     Template {
         id: "qwen",
-        name: "通义千问",
+        name: "Qwen",
         category: "cn_official",
         api_format: "openai_chat",
         adapter: "qwen",
@@ -183,7 +183,7 @@ static TEMPLATES: &[Template] = &[
     },
     Template {
         id: "custom-openai",
-        name: "自定义 OpenAI",
+        name: "Custom OpenAI",
         category: "custom",
         api_format: "openai_chat",
         adapter: "openai-custom",
@@ -198,7 +198,7 @@ static TEMPLATES: &[Template] = &[
     },
     Template {
         id: "custom-openai-responses",
-        name: "自定义 OpenAI Responses",
+        name: "Custom OpenAI Responses",
         category: "custom",
         api_format: "openai_responses",
         adapter: "openai-responses",
@@ -213,7 +213,7 @@ static TEMPLATES: &[Template] = &[
     },
     Template {
         id: "custom",
-        name: "自定义 Anthropic",
+        name: "Custom Anthropic",
         category: "custom",
         api_format: "anthropic",
         adapter: "relay",

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# 校验一个【正在运行】的 Claude Science Proxy（CSP）代理：GET /health 与 GET /v1/models。
-#   - 只读、只打本地回环代理；不启动 Science、不动真实目录。
-#   - /health 与 /v1/models 由代理本地作答，不触发任何上游调用，零花费。
-# 用法：verify-proxy.sh [--port 18991] [--secret <path-secret>] [--host 127.0.0.1]
+# Verify a [running] Claude Science Proxy (CSP): GET /health and GET /v1/models.
+#   - Read-only; hits local loopback proxy only; does not start Science or touch real directories.
+#   - /health and /v1/models are answered locally by the proxy; no upstream calls, zero cost.
+# Usage: verify-proxy.sh [--port 18991] [--secret <path-secret>] [--host 127.0.0.1]
 set -u
 
 HOST="127.0.0.1"

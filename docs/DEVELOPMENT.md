@@ -29,7 +29,7 @@
 | 模块头（`//!` / `"""`） | 英文摘要：职责、输入输出、关键不变量 |
 | 铁律 / 安全护栏 | 英文一句 + 链到 [`../CLAUDE.md`](../CLAUDE.md) 或 [`verified-facts.md`](verified-facts.md) |
 | 补丁痕迹 | 不写「修 P1」「修 #9」等无上下文说法；用 issue/PR 链接或删掉 |
-| 用户可见文案 | 只走 `desktop/src/main.js` 的 `I18N` 与 Rust `i18n_err`，不写进注释 |
+| 用户可见文案 | 只走 i18n 管线（见下节），不写进注释 |
 | 逆向 / Science 行为 | 英文注释；见 `proxy/csp_proxy.py` provider 表 |
 
 **有意保留中文的代码区**（非注释，触及时谨慎）：
@@ -37,14 +37,90 @@
 | 类别 | 位置 / 说明 |
 |---|---|
 | UI 文案 | `desktop/src/main.js` 的 `I18N.cn` / `intl` |
-| 用户可见错误串 | `io::Error` / `Err(...)` 等，待 i18n 迁移（`config.rs`、`oauth_forge.rs` 等） |
-| 运维输出 | `proxy/`、`scripts/` 中 `log()` / `print()` 类消息 |
+| 运维输出 | `proxy/`、`scripts/` 中 `log()` / `print()` 类消息（见下节「未迁移」） |
 | 测试 | 断言消息、fixture 字符串 |
 | Shell 脚本 | `echo` / `grep` 等匹配用户可见输出的模式 |
-| 模板展示名 | `templates.rs` 中 provider 显示名称 |
+| 模板展示名 | `templates.rs` 中 `name` 字段（见下节「未迁移」） |
 | 文档 | `*.md`（如 `REAL_MACHINE_TEST.md` 等） |
 
 `scripts/` 的 stdout 可为国内运维保留中文；除非后续引入 `CSP_LANG`，否则不强制英文化。
+
+## 用户可见文案（i18n）
+
+2026-07 已完成 Rust 后端用户可见串迁移：错误、成功提示、切换 hint 均走 key + vars，前端在 `desktop/src/main.js` 的 `I18N.cn` / `intl` 落地文案。
+
+### 错误串
+
+| 层 | 约定 |
+|---|---|
+| Rust | `i18n_err("errKey", json!({ "var": value }))` → 序列化为 `{"i18n":"errKey","vars":{...}}` 字符串（见 `runtime/i18n.rs`） |
+| 前端 | `resolveBackendErr(e)` 解析 JSON，调 `T(key, resolveBackendVars(vars))`；非 JSON 则原样显示（兼容旧串） |
+
+`resolveBackendVars` 会展开嵌套：`rollback_key` → `T(rollback_key)` 填入 `rollback`；`vars.error` 递归走 `resolveBackendErr`。
+
+### 成功消息
+
+命令成功体可带 `msg_key` + `msg_vars`（如 `one_click_login`）：
+
+```rust
+// sandbox_session.rs
+Ok(json!({
+    "url": url,
+    "msg_key": "msgOneClickStartedFreshOpened",
+    "msg_vars": json!({}),
+    "action": "started"
+}))
+```
+
+```javascript
+// main.js
+const msg = r.msg_key
+  ? T(r.msg_key, resolveBackendVars(r.msg_vars))
+  : (r.msg || T("oneClickReady"));
+```
+
+`msg*` 前缀；场景键如 `msgOneClickReopenedReusedOpened`、`msgOneClickStartedResumeManual` 等。
+
+### 切换 hint
+
+`set_active_profile` 等成功/拒绝响应用 `hint_key` + `hint_vars`（`hint_payload()` 生成）：
+
+```javascript
+setMsg(resolveHint(r, "switched"), "ok");   // 有 hint_key 则用，否则 fallback T("switched")
+```
+
+预览模式 mock 同样返回 `hint_key: "previewSwitched"`。
+
+### 已迁移模块
+
+| 模块 | 内容 |
+|---|---|
+| `config.rs` | 读写/迁移/校验错误 |
+| `oauth_forge.rs` | 虚拟登录伪造护栏与 I/O 错误 |
+| `scratch.rs` | 候选连接临时代理探测错误 |
+| `runtime/capability_catalog.rs` | catalog 解析与 rule 校验错误 |
+| `lib.rs` `run_blocking` | `spawn_blocking` 失败 → `errBackgroundTaskFailed` |
+| `runtime/sandbox_session.rs` 等 | 沙箱起停/探活错误 + `one_click_login` 成功 `msg_key` |
+| `runtime/profile_switch.rs` 等 | 切换事务 hint |
+
+其余 `runtime/*`、`commands/*` 中面向用户的 `Err(...)` 已对齐同一模式。
+
+### 有意未迁移
+
+| 类别 | 说明 |
+|---|---|
+| `scripts/` stdout | 运维/手测输出，可保留中文 |
+| `proxy/` `log()` | 代理运行日志，非 UI |
+| 测试 fixture / 断言串 | 不测 i18n 管线本身 |
+| `sandbox.log` 运维行 | 如 `[oauth] 虚拟登录已就绪...`，写日志非面板 |
+| 模板展示名 | `templates.rs` 的 `name` 仍为 Rust 侧 canonical（英文或历史中文）；**未**走 `i18n_err`。若改模板：Rust 保持英文 canonical `name`，前端用 `tplName_*`（`I18N.cn` / `intl`）做本地化展示，勿把展示文案硬编码进 Rust |
+
+### 新增 key 流程
+
+1. Rust：`i18n_err("errFooBar", json!({ "detail": ... }))` 或响应体 `msg_key` / `hint_key`。
+2. `main.js`：**同时**在 `I18N.cn` 与 `intl` 加同名键；占位符用 `{var}`，与 `vars` 字段一致。
+3. 命名：`err*`（错误）、`msg*`（成功/状态）、`hint*` 或语义化 hint 名（如 `previewSwitched`）；camelCase，与现有键对齐。
+4. 前端展示错误处统一 `resolveBackendErr(e)`；成功/hint 走 `msg_key` / `resolveHint()`。
 
 ## 分层
 

@@ -1,5 +1,5 @@
 #!/bin/zsh
-# 停止隔离沙箱 Science（只停沙箱 data-dir 的守护进程，绝不影响真实实例 8765）。
+# Stop isolated sandbox Science (stops only the sandbox data-dir daemon; never affects real instance on 8765).
 set -euo pipefail
 PROJ="${0:A:h:h}"
 SANDBOX_HOME="${SANDBOX_HOME:-$PROJ/.sandbox/home}"
