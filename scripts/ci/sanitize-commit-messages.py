@@ -31,8 +31,9 @@ pairs = [
     ("cc-switch", "external-reference"),
     ("SuperJJ007", "contributor"),
     ("硅基", "relay"),
+    ("qwen", "legacy-provider"),
 ]
 for old, new in pairs:
     text = text.replace(old, new)
 
-message = text.encode("utf-8")
+return text.encode("utf-8")
