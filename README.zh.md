@@ -57,42 +57,132 @@ CSP 做的是本地运行控制：
 
 ## 与 CC Switch 的差异
 
-两者**彼此独立**，无从属或背书关系。
+两者**彼此独立**，无从属或背书关系。下表帮助快速判断你是否需要 CSP：
 
 | | [CC Switch](https://github.com/farion1231/cc-switch) | **CSP（本项目）** |
 |---|---|---|
-| 目标应用 | Claude **Code** | Claude **Science** |
-| 核心问题 | 切换 API / 模型 | 启动门票 + 沙箱 + 模型转发 |
-| 虚拟登录 | 通常不需要 | 需要（本地门票，不复制真实凭证） |
-| 隔离程度 | 环境变量为主 | 独立 HOME、端口、`~/.csp/sandbox` |
-| 多模型 | 多 profile | profile + **虚拟模型注册表**（8 壳 ID） |
-| 平台 | 跨平台倾向 | 当前 **macOS Apple Silicon** |
+| 目标应用 | Claude **Code**（CLI / IDE 插件生态） | Claude **Science**（科研 Agent 桌面应用） |
+| 核心问题 | 切换 Claude Code 用的 API / 模型 | 为 Science 准备启动门票 + 沙箱 + 模型转发 |
+| 虚拟登录 | 通常不需要 | 需要（本地生成门票，不复制真实 Claude 凭证） |
+| 隔离程度 | 环境变量 / 配置切换为主 | 独立 HOME、端口、`~/.csp/sandbox` |
+| 多模型 | 多 profile 切换 | 多 profile + **虚拟模型注册表**（8 壳 ID 映射真实模型） |
+| 平台 | 跨平台倾向 | 当前主要 **macOS Apple Silicon** |
+
+```text
+Claude Science sandbox
+  -> CSP local proxy
+  -> DeepSeek / Kimi / MiniMax / GLM / OpenRouter / custom endpoint
+```
 
 ## 可以做什么
 
-- 桌面面板管理多套模型配置，切换前校验 Key。
-- 单条生效配置可启用多个模型（虚拟注册表），Science 选择器显示真实模型名。
-- 支持 DeepSeek、GLM、Kimi、MiniMax、OpenRouter 及自定义 Anthropic / OpenAI 兼容端点。
-- 配置与日志保存在 `~/.csp/`。
+**给普通用户**
+
+- 用桌面面板管理多套模型配置，不需要手改环境变量。
+- 同一家 provider 可以保存多套配置，例如不同 Key、不同模型、不同中转地址。
+- 点击一条配置切换为当前生效前会先验证 Key；失败不会悄悄切换到坏配置。
+- 点击「启动 Claude Science」会自动启动代理、准备隔离环境、打开 Science。
+- Science 顶部模型选择器会显示你选择的真实模型名，而不是笼统的 `claude` 或 `opus`。单条生效配置可启用多个模型（虚拟注册表分配壳 ID），Science 里可切换使用。
+
+**给进阶用户**
+
+- 支持原生 Anthropic 兼容端点、OpenAI Chat Completions 兼容端点、OpenAI Responses 兼容端点。
+- 支持自定义 `base_url`、模型名和中转站。
+- DeepSeek、Kimi、MiniMax 等原生 Anthropic 端点优先透传，尽量保留工具调用、thinking 和流式响应。
+- 支持单条生效配置下启用多个模型（虚拟注册表），在 Science 模型选择器里切换。
+- 配置和日志都保存在本机，便于自查和反馈。
 
 ## 快速开始
 
-1. 安装 [Claude Science](https://claude.com) 与 `python3`。
-2. 从 [Releases](https://github.com/counterfactual5/Claude-Science-Proxy/releases/latest) 下载 `Claude Science Proxy_*.dmg`。
-3. 右键打开（首次 Gatekeeper 拦截时）。
-4. 新建配置 → 设为当前 → **启动 Claude Science**。
+开始之前，请确认你已经安装：
+
+- [Claude Science](https://claude.com)
+- macOS Apple Silicon 设备
+- 一个可用的第三方模型 API Key
+- `python3`（当前代理仍需要；后续计划移入 Rust，减少运行时依赖）
+
+1. 从 [GitHub Releases](https://github.com/counterfactual5/Claude-Science-Proxy/releases/latest) 下载最新的 `Claude Science Proxy_*.dmg`。
+2. 将 Claude Science Proxy 拖入「应用程序」。
+3. 第一次打开如果被 Gatekeeper 拦截，请右键应用并选择「打开」。
+4. 点击「+ 新建」，选择 provider，填写 API Key、选择或填写模型（支持多选）和必要的 `base_url`。
+5. 点击「创建」保存配置。
+6. 在配置列表中点击一条配置切换为当前生效；同一时间只有一条 profile 生效。
+7. 验证通过后点击「启动 Claude Science」。
+8. CSP 会启动隔离 Science，并在浏览器中打开入口；Science 模型选择器里会显示你配置的真实模型名。
+
+## 虚拟模型注册表（multi-model）
+
+Science 只认 `claude-` 开头的模型 ID。CSP 内置了一个虚拟模型注册表，从固定的 8 个壳 ID（主列表 3 + More models 5）中分配，每个壳映射到一个真实上游模型。部分全小写连字符模型名（如 `glm-5-turbo`）会被 Science 隐藏，代理会自动改写为安全显示名（如 `glm-5.turbo`），出站仍用真实模型 ID。
+
+- **单条生效配置**：点击配置卡片切换为当前生效 profile。可在编辑页勾选多个模型，虚拟注册表为每个模型分配壳 ID，Science 模型选择器显示真实模型名；后台 agent 按角色（主模型 / 快速模型）路由到对应模型。
 
 ## 支持的模型来源
 
-| 来源 | 接入方式 |
-|---|---|
-| DeepSeek | 原生 Anthropic 端点 |
-| 智谱 GLM / Kimi / MiniMax / 小米 MiMo / OpenRouter | Anthropic 兼容端点 |
-| 自定义 Anthropic / OpenAI / OpenAI Responses | 自填 base root |
+| 来源 | 接入方式 | 说明 |
+|---|---|---|
+| DeepSeek | 原生 Anthropic 端点 | 默认来源，尽量保留 thinking、工具调用和流式能力 |
+| 智谱 GLM | Anthropic 兼容端点 | 可编辑官方默认地址，可选择或自填模型 |
+| 小米 MiMo | Anthropic 兼容端点 | 支持改到套餐或区域端点 |
+| Kimi / Moonshot | Anthropic 兼容端点 | 可编辑官方默认地址，支持 Kimi 系列模型 |
+| MiniMax | Anthropic 兼容端点 | 可编辑官方默认地址，支持 MiniMax 系列模型 |
+| OpenRouter | Anthropic 兼容聚合入口 | 可选择或自填模型 |
+| 自定义 Anthropic | 自填兼容端点 | 适合私有网关、Claude 兼容中转站、本地适配器 |
+| 自定义 OpenAI | 自填 OpenAI Chat Completions base root | 代理自动补 `/chat/completions` 与 `/models` |
+| 自定义 OpenAI Responses | 自填 OpenAI Responses base root | 代理自动补 `/responses` 与 `/models` |
+
+> 如果你的地址是 `/anthropic` 端点，请选择「自定义 Anthropic」。如果选择「自定义 OpenAI」，请填写 OpenAI 兼容的 base root，例如 `https://example.com/v1`，不要填 Anthropic 端点。
+
+OpenAI 兼容类 provider（含历史上的内置模板）请通过「自定义 OpenAI」/「自定义 OpenAI Responses」配置，面板不再单独提供 Qwen 预设。
+
+## 状态诊断与能力 catalog
+
+CSP 内置了只读的 capability catalog，用来把 provider、工具调用、MCP/skill、Science 版本和 transport 的已知兼容性边界显式化。诊断会返回当前 profile 命中的 catalog 规则和固定边界规则，便于定位「当前配置为什么这样处理」以及「哪些能力只能诊断或降级」。
+
+这个 catalog 是诊断与可观测性入口，不是 live provider、真实 Claude 账号态、Science GUI E2E、DMG 签名/公证或官方托管能力的验证结果。
+
+## 它如何保护你的真实账号
+
+CSP 的核心边界是：第三方模型模式只把凭证、数据目录和网络代理放在隔离环境里，不接管你的真实 Claude 账号。
+
+- 不复制、读取或修改真实 Claude 登录凭证、OAuth token、账号状态或用户数据。
+- 首次初始化沙箱时，可能会从真实 `~/.claude-science` 只读克隆 Science 运行时资源；这些不是账号凭证或对话数据。
+- 隔离 Science 使用独立 HOME、独立端口和独立数据目录。
+- 第三方 API Key 保存在 `~/.csp/CSP.json`，文件权限为 `0600`。
+- 代理只监听 `127.0.0.1`，并使用 path secret 验证请求。
+
+## 哪些能力暂时用不了
+
+- Anthropic 托管的远程 MCP 服务不可用（`*.mcp.claude.com`）。
+- 依赖真实 Claude 账号授权的目录连接器、远程插件、云端能力可能会显示 session expired 或 unavailable。
+- 当前 macOS 包尚未 Apple 公证；代理仍依赖 `python3`。
+
+已知问题见 [docs/known-issues.md](./docs/known-issues.md)。
+
+## 参与贡献
+
+欢迎 issue 与 PR。开始前请读 [`CLAUDE.md`](./CLAUDE.md) 与 [`docs/DEVELOPMENT.md`](./docs/DEVELOPMENT.md)，并跑 `bash test/run_all.sh`。
 
 ## 反馈与支持
 
 仅 [GitHub Issues](https://github.com/counterfactual5/Claude-Science-Proxy/issues) 与 Pull Requests。勿粘贴 API Key。
+
+## 开发与构建
+
+```bash
+cd desktop && npm install && npm run tauri dev
+bash test/run_all.sh
+```
+
+## 风险与免责声明
+
+- 本项目仅供个人学习与研究使用，使用风险由用户自行承担。
+- CSP 与 Anthropic 不存在从属、合作或背书关系。
+- 推理请求会发送到你自行配置并付费的第三方模型服务。
+- 软件按「现状」提供，不作任何形式的担保。
+
+## 致谢
+
+产品形态参考了 [CC Switch](https://github.com/farion1231/cc-switch)。两个项目彼此独立。
 
 ## 许可
 
