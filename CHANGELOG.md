@@ -6,6 +6,9 @@
 
 ## [Unreleased]
 
+### 修复 Fixed
+- **Science 多模型选择器**：虚拟注册表 `display_name` 经 `science_safe_display_name()` 消毒，避免 Science `V2_` 过滤全小写连字符名（如 `glm-5`/`glm-5-turbo`）导致 8 个配置模型只显示 6 个；`force_shell_response` / `static_models_response` / `ModelRegistry` 路径同步消毒（scratch 上游发现仍保留原始 id）。
+
 ### 变更 Changed
 - **移除 `~/.csswitch` 路径迁移**：用户数据仅 `~/.csp/`；删除 `migrate_legacy_paths`、`doctor.sh` 旧路径回退；真机护栏改用 `.csp/CSP.json`。schema v1→v4 内存迁移仍保留。
 - **死代码清理（前后端对齐）**：面板 `#msg` 仅显示错误；移除 `get_config.pending_notice`、Tauri `status` command、`one_click_login` 成功 `msg_key`、切换成功 `hint_key` 等前端不再消费的字段；`runtime_status_snapshot` 仍供 Rust 单测/internal 使用。
@@ -13,10 +16,11 @@
 - **代码注释英文化**：Rust / Python / JS 生产路径与测试、shell 脚本的 `#` 注释默认英文；用户可见文案仍走 I18N，运维 `log()` / `scripts` stdout 与测试断言中的中文有意保留。
 - **后端 i18n 统一**：`config`、`oauth_forge`、`scratch`、`capability_catalog`、`sandbox_session` 等模块的用户可见错误与一键启动成功提示改为 `i18n_err` / `msg_key` + `vars`；前端经 `resolveBackendErr` / `resolveHint` 渲染。
 - **模板展示名**：`templates.rs` 使用英文规范 `name`；前端 `tplName_*` 与 `wizPresetLabel()` 按 cn/intl 版本本地化，向导预设不再重复硬编码 label。
-- **文档**：`DEVELOPMENT.md` 补充 i18n 管线与「遗留命名」；`findings/README.md` 标明历史证据中的旧产品名/路径；修正 `error-reporting-plan`、`dependency-analysis` 等仍写 `~/.csswitch/logs` 或「缺 node」的过时表述。
+- **Capability catalog**：新增 `provider.virtual-model-registry`；`provider.relay.force-model-shell` 标注为无 registry 时的单模型回退。
 
 ### 文档 Documentation
 - **`docs/DEVELOPMENT.md`**：补充代码注释约定与 i18n 管线（错误串 / 成功消息 / hint、已迁移范围与有意保留中文的清单）。
+- **`docs/verified-facts.md` / `provider-capability-matrix.md`**：Science 选择器 operon 规则（`V2_`、8 壳上限）与 `CSP_MODEL_REGISTRY` 主路径。
 
 ## [0.3.6] — 2026-07-06
 

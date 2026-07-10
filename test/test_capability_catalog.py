@@ -57,6 +57,7 @@ ALLOWED_ACTIONS = {
 }
 
 REQUIRED_RULE_IDS = {
+    "provider.virtual-model-registry",
     "provider.relay.force-model-shell",
     "provider.kimi.relay-thinking-enabled",
     "provider.dashscope.responses-tools-cap",
@@ -71,6 +72,7 @@ REQUIRED_RULE_IDS = {
 }
 
 PROXY_RULE_ID_CONSTANTS = {
+    pp.RULE_PROVIDER_VIRTUAL_MODEL_REGISTRY,
     pp.RULE_PROVIDER_RELAY_FORCE_MODEL_SHELL,
     pp.RULE_PROVIDER_KIMI_RELAY_THINKING_ENABLED,
     pp.RULE_PROVIDER_DASHSCOPE_RESPONSES_TOOLS_CAP,

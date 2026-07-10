@@ -14,8 +14,8 @@ CLEAN="$ROOT/scripts/clean-bundle-resources.sh"
 PROXY="$ROOT/proxy/csp_proxy.py"
 T="$(mktemp -d)"
 cleanup_bundle_test_artifacts() {
-  rm -f "$ROOT/proxy/__pycache__/csswitch-clean-test.pyc" "$ROOT/scripts/csswitch-clean-test.pyc"
-  rm -f "$ROOT/proxy/csswitch-clean-test.pyo" "$ROOT/scripts/csswitch-clean-test.pyo"
+  rm -f "$ROOT/proxy/__pycache__/csp-clean-test.pyc" "$ROOT/scripts/csp-clean-test.pyc"
+  rm -f "$ROOT/proxy/csp-clean-test.pyo" "$ROOT/scripts/csp-clean-test.pyo"
   rmdir "$ROOT/proxy/__pycache__" 2>/dev/null || true
 }
 trap cleanup_bundle_test_artifacts EXIT
@@ -116,16 +116,16 @@ if grep -q "run_all.sh" "$SELFTEST"; then ok "self-test delegates to run_all.sh"
 
 # ---------- bundle resource cleanup ----------
 mkdir -p "$ROOT/proxy/__pycache__"
-: > "$ROOT/proxy/__pycache__/csswitch-clean-test.pyc"
-: > "$ROOT/scripts/csswitch-clean-test.pyc"
-: > "$ROOT/proxy/csswitch-clean-test.pyo"
-: > "$ROOT/scripts/csswitch-clean-test.pyo"
+: > "$ROOT/proxy/__pycache__/csp-clean-test.pyc"
+: > "$ROOT/scripts/csp-clean-test.pyc"
+: > "$ROOT/proxy/csp-clean-test.pyo"
+: > "$ROOT/scripts/csp-clean-test.pyo"
 out="$("$CLEAN" 2>&1)"; rc=$?
 if [ $rc -eq 0 ]; then ok "clean-bundle-resources exits 0"; else no "clean-bundle-resources failed (rc=$rc): $out"; fi
-if [ ! -e "$ROOT/proxy/__pycache__/csswitch-clean-test.pyc" ] \
-  && [ ! -e "$ROOT/scripts/csswitch-clean-test.pyc" ] \
-  && [ ! -e "$ROOT/proxy/csswitch-clean-test.pyo" ] \
-  && [ ! -e "$ROOT/scripts/csswitch-clean-test.pyo" ]; then
+if [ ! -e "$ROOT/proxy/__pycache__/csp-clean-test.pyc" ] \
+  && [ ! -e "$ROOT/scripts/csp-clean-test.pyc" ] \
+  && [ ! -e "$ROOT/proxy/csp-clean-test.pyo" ] \
+  && [ ! -e "$ROOT/scripts/csp-clean-test.pyo" ]; then
   ok "clean-bundle-resources removes pycache artifacts from bundled dirs"
 else
   no "clean-bundle-resources left pycache artifacts behind"

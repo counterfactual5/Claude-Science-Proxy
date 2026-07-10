@@ -28,7 +28,7 @@
 |---|---|
 | 仓库目录名 `CSSwitch` | GitHub 路径稳定，避免断链 |
 | `com.csswitch.maintenance` | 已 DEPRECATED；`install-maintenance.sh` 安装时卸载 |
-| 测试临时目录前缀 `csp-*` | 单测 / 真机护栏隔离目录名，非用户路径 |
+| 测试临时目录 / 日志前缀 `csp-*` | 单测 / 集成测隔离文件名（如 `/tmp/csp-auth-*.log`）；旧前缀 `csswitch-*` 已废弃 |
 | `findings/`、`CHANGELOG` 旧版本条目 | 历史证据，见 [`../findings/README.md`](../findings/README.md) |
 
 **不要**把 `scripts/`、`doctor` 的用户可见中文 stdout 或 `proxy/` 运维 `log()` 当「遗留品牌」清掉——那是运维语言选择，见「用户可见文案（i18n）」未迁移清单。

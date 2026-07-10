@@ -8,7 +8,7 @@ import path from "node:path";
 const SCRIPT = path.join(import.meta.dirname, "..", "scripts", "make-virtual-oauth.mjs");
 
 function mktmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), "csswitch-oauth-"));
+  return fs.mkdtempSync(path.join(os.tmpdir(), "csp-oauth-"));
 }
 function run(authDir, extra = []) {
   return execFileSync("node", [SCRIPT, "--auth-dir", authDir, ...extra],

@@ -10,6 +10,7 @@ from typing import Callable
 
 _DATE_SUFFIX = re.compile(r"-\d{8}$")
 
+RULE_PROVIDER_VIRTUAL_MODEL_REGISTRY = "provider.virtual-model-registry"
 RULE_PROVIDER_RELAY_FORCE_MODEL_SHELL = "provider.relay.force-model-shell"
 RULE_PROVIDER_KIMI_RELAY_THINKING_ENABLED = "provider.kimi.relay-thinking-enabled"
 RULE_PROVIDER_DASHSCOPE_RESPONSES_TOOLS_CAP = "provider.dashscope.responses-tools-cap"

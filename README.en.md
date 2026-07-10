@@ -94,7 +94,7 @@ Before starting, make sure you have:
 
 ## Virtual model registry (multi-model)
 
-Science only recognizes model IDs starting with `claude-`. CSP includes a built-in virtual model registry that allocates shell IDs from a fixed pool of `claude-opus-*` / `claude-sonnet-*` / `claude-haiku-*` prefixes. Each shell ID maps to a real upstream model, with the real model name displayed in the Science UI.
+Science only recognizes model IDs starting with `claude-`. CSP includes a built-in virtual model registry that allocates up to eight shell IDs (three in the main list plus five under More models). Each shell maps to a real upstream model. Science hides some all-lowercase hyphenated names (for example `glm-5-turbo`); the proxy rewrites them to safe display names (for example `glm-5.turbo`) while outbound requests still use the real model IDs.
 
 - **Single active profile**: Click a profile card to switch the active connection. In edit, check multiple models to enable; the virtual registry assigns shell IDs and Science shows real model names. Background agents route by role (primary / fast model).
 
