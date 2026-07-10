@@ -24,7 +24,7 @@ CSP is a **macOS desktop app** (Tauri) that:
 3. Routes inference through a **local proxy** on `127.0.0.1`
 4. Verifies API keys **before** switching the active profile
 
-> **Early public preview** — APIs and config formats may change. Report issues on [GitHub](https://github.com/counterfactual5/Claude-Science-Proxy/issues). App build line is around **0.3.x**; first public tag: `v0.1.0-public-preview`.
+> **Early public preview** — APIs and config formats may change. Report issues on [GitHub](https://github.com/counterfactual5/Claude-Science-Proxy/issues). App build line is around **1.0.x**; first public tag: `v1.0.0`.
 
 > **Platform:** macOS **Apple Silicon** today. The app is **not notarized** yet; on first launch, right-click → **Open**.
 
