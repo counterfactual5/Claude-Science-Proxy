@@ -59,6 +59,7 @@
       "tests": [
         "test.test_proxy_units.BuildModelsResponse.test_force_returns_single_shell",
         "test.test_proxy_units.BuildModelsResponse.test_force_sanitizes_hyphen_only_display_name",
+        "test.test_proxy_units.BuildModelsResponse.test_registry_returns_eight_shells_with_safe_names",
         "test.test_proxy_auth.ProxyOpenAIForcedModels.test_formal_proxy_returns_claude_shell_for_science_selector"
       ]
     },

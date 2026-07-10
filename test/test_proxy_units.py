@@ -5,6 +5,7 @@ import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "proxy"))
 import csp_proxy as cs
+import model_registry as mr
 
 
 class ToolChoiceMapping(unittest.TestCase):
@@ -364,10 +365,29 @@ class OpenAICustomProvider(unittest.TestCase):
 
 class BuildModelsResponse(unittest.TestCase):
     def setUp(self):
-        self._saved = (cs.PROV, cs.PROV_NAME, cs.RELAY_FORCE_MODEL)
+        self._saved = (cs.PROV, cs.PROV_NAME, cs.RELAY_FORCE_MODEL, cs.MODEL_REGISTRY)
 
     def tearDown(self):
-        cs.PROV, cs.PROV_NAME, cs.RELAY_FORCE_MODEL = self._saved
+        cs.PROV, cs.PROV_NAME, cs.RELAY_FORCE_MODEL, cs.MODEL_REGISTRY = self._saved
+
+    def test_registry_returns_eight_shells_with_safe_names(self):
+        models = [
+            "glm-5.2", "glm-5.1", "glm-5-turbo", "glm-5",
+            "glm-4.7", "glm-4.6", "glm-4.5-air", "glm-4.5",
+        ]
+        cs.PROV = {"models_url": "https://r/v1/models"}
+        cs.PROV_NAME = "relay"
+        cs.RELAY_FORCE_MODEL = "glm-4.5"
+        cs.MODEL_REGISTRY = mr.ModelRegistry.from_models(
+            models, default_model="glm-5.2", fast_model="glm-4.5",
+        )
+        code, body = cs.build_models_response()
+        self.assertEqual(code, 200)
+        self.assertEqual(len(body["data"]), 8)
+        names = {m["display_name"] for m in body["data"]}
+        self.assertIn("glm-5.turbo", names)
+        self.assertIn("glm-5.0", names)
+        self.assertTrue(all(m["id"].startswith("claude-") for m in body["data"]))
 
     def test_force_returns_single_shell(self):
         # force (Science resident proxy): /v1/models returns one shell, display_name=real model name.
