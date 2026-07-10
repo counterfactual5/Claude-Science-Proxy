@@ -171,7 +171,7 @@ class ShimMode(unittest.TestCase):
 
     def test_off_when_not_capable(self):
         os.environ["CSP_TOOLUSE_SHIM"] = "rewrite"
-        self.assertEqual(ds.shim_mode("qwen", {"dsml_capable": False}), "off")
+        self.assertEqual(ds.shim_mode("deepseek", {"dsml_capable": False}), "off")
 
     def test_deepseek_reads_env(self):
         prov = {"dsml_capable": True}

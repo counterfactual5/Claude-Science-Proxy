@@ -89,7 +89,6 @@ class ResolveModelOpenAICustom(unittest.TestCase):
 class ClampMaxTokens(unittest.TestCase):
     def setUp(self):
         self.ds = _state(cs.PROVIDERS["deepseek"], "deepseek")
-        self.qw = _state(cs.PROVIDERS["qwen"], "qwen")
         self.relay = _state(dict(cs.PROVIDERS["relay"]), "relay")
 
     def test_cap_uses_target_model_entry(self):
@@ -105,8 +104,7 @@ class ClampMaxTokens(unittest.TestCase):
     def test_none_passthrough(self):
         self.assertIsNone(pp.clamp_max_tokens(None, "deepseek-v4-pro", self.ds))
 
-    def test_qwen_per_model(self):
-        self.assertEqual(pp.clamp_max_tokens(100000, "qwen-max", self.qw), 8192)
+
 
     def test_relay_no_clamp(self):
         self.assertEqual(pp.clamp_max_tokens(1000000, "claude-opus-4-8", self.relay), 1000000)
@@ -198,7 +196,6 @@ class PolicyFromProv(unittest.TestCase):
     def test_extracts_force_model_override(self):
         self.assertTrue(pp.policy_from_prov(cs.PROVIDERS["openai-custom"]).force_model_override)
         self.assertTrue(pp.policy_from_prov(cs.PROVIDERS["relay"]).force_model_override)
-        self.assertFalse(pp.policy_from_prov(cs.PROVIDERS["qwen"]).force_model_override)
 
 
 if __name__ == "__main__":

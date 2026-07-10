@@ -9,7 +9,7 @@ import csp_proxy as cs
 
 class ToolChoiceMapping(unittest.TestCase):
     def setUp(self):
-        cs.PROV = cs.PROVIDERS["qwen"]
+        cs.PROV = cs.PROVIDERS["deepseek"]
 
     def test_tool_named_maps_to_function(self):
         out = cs.map_tool_choice({"type": "tool", "name": "grade"}, [{"name": "grade"}])

@@ -249,42 +249,7 @@ class ProxyUpstreamErrorPassthrough(unittest.TestCase):
         self.assertEqual(s, 401, f"应保留上游 401，实收 {s} {b[:160]!r}")
 
 
-@unittest.skipUnless(loopback_available(), "env-blocked: loopback bind/connect not permitted")
-class ProxyQwenUpstreamErrorPassthrough(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        cls.up_url, cls.hits, cls.stop_up = start_mock("status:401")
-        port = 18972  # S0 globally unique port: ProxyQwenUpstreamErrorPassthrough
-        cls.base = f"http://127.0.0.1:{port}"
-        cls.logf = os.path.join(tempfile.gettempdir(), f"csp-qwen401-{port}.log")
-        open(cls.logf, "w").close()
-        env = dict(os.environ, DASHSCOPE_API_KEY="fake-key",
-                   CSP_UPSTREAM_URL=cls.up_url)
-        cls.proc = subprocess.Popen(
-            [sys.executable, PROXY, "--provider", "qwen",
-             "--port", str(port), "--auth-token", SEC, "--log", cls.logf],
-            env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        for _ in range(50):
-            try:
-                s, _b = _req(f"{cls.base}/{SEC}/health")
-                if s == 200:
-                    break
-            except Exception:
-                pass
-            time.sleep(0.1)
 
-    @classmethod
-    def tearDownClass(cls):
-        cls.proc.terminate()
-        cls.proc.wait(timeout=5)
-        cls.stop_up()
-
-    def test_qwen_upstream_401_preserved_not_502(self):
-        # Fix P2 (GPT review): qwen (OpenAI translation path) upstream 401 should also passthrough, not normalize to 502.
-        s, b = _req(f"{self.base}/{SEC}/v1/messages", "POST",
-                    {"model": "claude-opus-4-8", "max_tokens": 1,
-                     "messages": [{"role": "user", "content": "ping"}]})
-        self.assertEqual(s, 401, f"qwen 也应保留上游 401，实收 {s} {b[:160]!r}")
 
 
 @unittest.skipUnless(loopback_available(), "env-blocked: loopback bind/connect not permitted")
