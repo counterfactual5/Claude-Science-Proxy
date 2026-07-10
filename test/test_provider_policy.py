@@ -6,6 +6,7 @@ HERE = os.path.dirname(__file__)
 sys.path.insert(0, os.path.join(HERE, "..", "proxy"))
 import csp_proxy as cs          # reuse PROVIDERS as config source of truth
 import provider_policy as pp
+import model_registry as mr
 
 
 def _state(prov, prov_name, **over):
@@ -17,6 +18,7 @@ def _state(prov, prov_name, **over):
         relay_thinking=over.get("relay_thinking"),
         shim_mode=over.get("shim_mode", "off"),
         nonce_factory=over.get("nonce_factory", pp._default_nonce),
+        model_registry=over.get("model_registry"),
     )
 
 
@@ -63,6 +65,16 @@ class ResolveModelRelay(unittest.TestCase):
         self.assertEqual(pp.resolve_model("claude-opus-4-8", st), "mimo-v2.5-pro")
         self.assertEqual(pp.resolve_model("claude-haiku-4-5", st), "mimo-v2.5-pro")
         self.assertEqual(pp.resolve_model("", st), "mimo-v2.5-pro")
+
+    def test_registry_beats_force_override(self):
+        reg = mr.ModelRegistry.from_models(["glm-5.2", "glm-4.7"])
+        st = _state(
+            self.prov, "relay",
+            relay_force_model="mimo-v2.5-pro",
+            model_registry=reg,
+        )
+        self.assertEqual(pp.resolve_model("claude-opus-4-8", st), "glm-5.2")
+        self.assertEqual(pp.resolve_model("claude-sonnet-5", st), "glm-4.7")
 
 
 class ResolveModelOpenAICustom(unittest.TestCase):
