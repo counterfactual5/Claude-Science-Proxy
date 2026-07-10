@@ -3,10 +3,13 @@
 Science only displays model ids starting with ``claude-``. This module allocates
 shell ids from a fixed pool and routes incoming requests to configured real ids.
 
-Science UI rules (binary s0/ZjO/XjO/hB_):
+Science UI rules (operon ``k5W`` / ``qP_`` / ``V2_``):
   1) id must start with ``claude-``
-  2) main list keeps one id per family (opus / sonnet / haiku)
-  3) remaining ids go to "More models", sorted by shell version
+  2) display_name must not match ``V2_`` (lowercase ``foo-bar-baz`` pattern) or
+     Science drops the model entirely — e.g. ``glm-5`` and ``glm-5-turbo``.
+  3) main list keeps one shell per family (opus / sonnet / haiku), max 3
+  4) remaining shells go to "More models" (``overflow: true``), up to 5
+  5) shell pool hard cap = 8 models total (3 main + 5 overflow)
 
 Critical: never emit a second haiku shell. If both ``claude-haiku-4-5`` and
 ``claude-haiku-4-4`` appear, Science parks the lower haiku in the main
@@ -15,6 +18,7 @@ Critical: never emit a second haiku shell. If both ``claude-haiku-4-5`` and
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from functools import cmp_to_key
@@ -45,6 +49,25 @@ FALLBACK_SHELLS = {
 FAST_PIN_SHELL = "claude-opus-4-5"
 
 _BASE_CREATED = datetime(2026, 1, 1, tzinfo=timezone.utc)
+
+# Science operon V2_(name): treats lowercase multi-hyphen ids as internal and hides them.
+_SCIENCE_INTERNAL_DISPLAY = re.compile(r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)+$")
+
+
+def science_safe_display_name(name: str) -> str:
+    """Return a display_name that Science will not filter via V2_.
+
+    Names like ``glm-5`` or ``glm-5-turbo`` match the internal pattern and never
+    appear in the selector. Dotted forms (``glm-5.2``) are already safe.
+    """
+    if not name or not _SCIENCE_INTERNAL_DISPLAY.match(name):
+        return name
+    parts = name.split("-")
+    brand, tail = parts[0], parts[1:]
+    if len(tail) == 1:
+        return f"{brand}-{tail[0]}.0"
+    dot_tail = ".".join(tail)
+    return f"{brand}-{dot_tail}"
 
 
 @dataclass(frozen=True)
@@ -180,7 +203,8 @@ class ModelRegistry:
         n = max(len(ordered) - 1, 1)
         entries: list[RegistryEntry] = []
         for shell_id, tier, real_id in pairs:
-            display = f"{display_prefix}: {real_id}" if display_prefix else real_id
+            raw_display = f"{display_prefix}: {real_id}" if display_prefix else real_id
+            display = science_safe_display_name(raw_display)
             created = _created_at_for_rank(rank.get(real_id, n), n)
             entries.append(
                 RegistryEntry(shell_id, real_id, display, tier, profile_id, created)
