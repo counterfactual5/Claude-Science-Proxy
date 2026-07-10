@@ -8,6 +8,7 @@ sys.path.insert(0, os.path.join(HERE, "..", "proxy"))
 import csp_proxy as cs          # reuse PROVIDERS as config source of truth
 import provider_policy as pp
 import anthropic_compat as ac
+import model_registry as mr
 
 P2 = "｜｜"   # fullwidth double pipe U+FF5C (issue #8 observed leak shape)
 # DSML where model meant web_search but leaked as plain text.
@@ -27,7 +28,9 @@ def _state(prov, prov_name, nonce="n", **over):
         relay_models=over.get("relay_models", []),
         relay_thinking=over.get("relay_thinking"),
         shim_mode=over.get("shim_mode", "off"),
-        nonce_factory=lambda: nonce)
+        nonce_factory=lambda: nonce,
+        model_registry=over.get("model_registry"),
+    )
 
 
 def _ctx(**over):
@@ -81,6 +84,15 @@ class TransformRequest(unittest.TestCase):
                           {"no_name": True}]}
         _up, ctx = ac.transform_request(body, st)
         self.assertEqual(list(ctx.known_tools), ["web_search"])
+
+    def test_virtual_model_registry_advertises_catalog_rule(self):
+        reg = mr.ModelRegistry.from_models(["glm-5.2", "glm-4.7"])
+        st = _state(dict(cs.PROVIDERS["relay"]), "relay", model_registry=reg)
+        _up, ctx = ac.transform_request(
+            {"model": "claude-opus-4-8", "messages": [], "max_tokens": 100},
+            st,
+        )
+        self.assertEqual(ctx.rule_ids[0], pp.RULE_PROVIDER_VIRTUAL_MODEL_REGISTRY)
 
     def test_kimi_relay_does_not_advertise_web_search_server_tool(self):
         st = _state(dict(cs.PROVIDERS["relay"]), "relay",
