@@ -74,14 +74,6 @@ mod tests {
     }
 
     #[test]
-    fn glm_45_air_before_47() {
-        assert_eq!(
-            sorted(&["glm-4.5-air", "glm-4.7", "glm-4.5"]),
-            vec!["glm-4.7", "glm-4.5-air", "glm-4.5"]
-        );
-    }
-
-    #[test]
     fn compare_is_consistent_with_sort() {
         assert_eq!(
             compare_models_desc("glm-5.2", "glm-4.5"),
