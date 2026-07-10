@@ -168,7 +168,9 @@ README 目前提供：
 
 **文档语言**：用户入口 README 中英各一份。架构边界 [`docs/architecture-boundaries.md`](./docs/architecture-boundaries.md)、支持矩阵 [`docs/provider-capability-matrix.md`](./docs/provider-capability-matrix.md) 为英文。`DEVELOPMENT.md`、`known-issues.md`、`verified-facts.md` 中文为主（维护者向）；[`docs/provider-support.md`](./docs/provider-support.md) 为早期调研封存，当前事实以 capability matrix 为准。
 
-## 反馈与社区
+## 反馈与支持
+
+本项目**不设微信群、QQ 群、私信或其他非 GitHub 渠道**。问题与功能请求请走 GitHub Issues；代码贡献请走 Pull Requests。
 
 遇到问题时，建议先说明：
 

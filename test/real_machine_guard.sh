@@ -108,7 +108,6 @@ prepare_legacy() {
   validate_ports
   [ -f "$BASELINE" ] || die "先运行 preflight"
   [ -n "${DEEPSEEK_API_KEY:-}" ] || die "DEEPSEEK_API_KEY 未设置"
-  [ -n "${DASHSCOPE_API_KEY:-}" ] || die "DASHSCOPE_API_KEY 未设置"
   command -v jq >/dev/null 2>&1 || die "prepare-legacy 需要 jq"
   # Re-verify isolation dirs (incl. STATE_DIR) are not symlinks before write: narrows window after preflight,
   # gives clear early fail; real write safety is write_fresh below (remove symlink then write), not race-free.

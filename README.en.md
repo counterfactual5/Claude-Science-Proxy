@@ -168,7 +168,9 @@ Issues and PRs are welcome. Use [GitHub Issues](https://github.com/counterfactua
 
 **Documentation**: bilingual README for users; [`docs/architecture-boundaries.md`](./docs/architecture-boundaries.md) and [`docs/provider-capability-matrix.md`](./docs/provider-capability-matrix.md) are English boundary docs. `known-issues.md` and `verified-facts.md` are maintainer-oriented (mostly Chinese). [`docs/provider-support.md`](./docs/provider-support.md) is archived research — use the capability matrix for current facts.
 
-## Feedback and community
+## Feedback and support
+
+There is **no WeChat group, QQ group, DM channel, or other off-GitHub support**. Use GitHub Issues for bugs and feature requests; use Pull Requests for code.
 
 When reporting a problem, please include:
 
