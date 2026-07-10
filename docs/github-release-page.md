@@ -64,7 +64,7 @@ openai-compatible  llm  proxy  mcp  tauri  macos  apple-silicon
   - 保留 Science 的**工具调用、代码执行、Skill、MCP**，模型换成自选的第三方 API。
   - **跳过登录**：本地自造虚拟 OAuth 门票，零真实 Anthropic 凭证。
   - **一个菜单栏 app** 管好一切：选 provider、填 key、起停代理、一键越登录、状态灯。
-  - 支持 **DeepSeek、通义千问（Qwen）**，或任意 **OpenAI 兼容端点**（自定义 API）。
+  - 支持 **DeepSeek**，或任意 **OpenAI 兼容端点**（自定义 API）。
 
   ### 安装（macOS · Apple Silicon）
   1. 下载 `CSP_0.1.0_aarch64.dmg`，拖进「应用程序」。
@@ -75,7 +75,7 @@ openai-compatible  llm  proxy  mcp  tauri  macos  apple-silicon
   ### 已知限制
   - 产物仅 **arm64（Apple Silicon）**；Intel Mac 需自行 x86_64 / universal 构建。
   - **未公证**：企业/严格 Gatekeeper 环境可能仍拦；需 Apple Developer ID 才能公证（本项目不提供）。
-  - **Qwen 流式**目前是「上游整段完成后再 SSE 回放」，首 token 延迟≈整段生成时间（DeepSeek 默认走原生透传，真流式）。
+  - **OpenAI 兼容端点**：优先尝试原生 SSE 流式透传，若上游不支持流式则自动平滑降级（DeepSeek 默认走原生流式）。
 
   ### 免责
   见仓库 README「免责声明」：个人研究用途；推理不经 Anthropic；逆向与「越过登录」可能触及服务条款
