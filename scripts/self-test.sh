@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Claude Science Proxy（CSP）self-test：跑离线回归套件（test/run_all.sh）。
-#   隔离环境，只打代理与伪造器/脚本单元，不碰真实 ~/.claude-science、不联网上游。
-#   安装后自检、或改动后回归都可直接跑这一条。
+# Claude Science Proxy (CSP) self-test: run offline regression suite (test/run_all.sh).
+#   Isolated environment; exercises proxy, forger, and script units only; never touches real ~/.claude-science or upstream network.
+#   Use after install for self-check, or after changes for regression.
 set -u
 PROJ="$(cd "$(dirname "$0")/.." && pwd)"
 echo "CSP self-test → 离线回归套件（隔离，不碰 Science、不联网）"
