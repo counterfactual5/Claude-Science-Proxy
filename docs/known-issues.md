@@ -140,6 +140,8 @@
 >
 > **2026-07-08 追加（#26 自定义 OpenAI / Responses 选择器空列表）：** 当前 main 已有本地隔离 proxy/mock 证据，正式 `openai-custom` 与 `openai-responses` profile 在已配置模型时，`/{secret}/v1/models` 只返回单壳 `claude-opus-4-8`，真实模型名放 `display_name`，且 force 模式不回源暴露第三方原始模型 id；见 [`findings/2026-07-08-issue-26-custom-selector-evidence.md`](../findings/2026-07-08-issue-26-custom-selector-evidence.md)。随后又用隔离 Science UI + mock/custom OpenAI 上游验证 `openai-custom` selector：菜单非空并显示/选中 `glm-4.5`；见 [`findings/2026-07-08-issue-26-science-ui-evidence.md`](../findings/2026-07-08-issue-26-science-ui-evidence.md)。这仍不是真实账号态、真实 HOME、published DMG、签名/公证或 live provider E2E 验证；关闭 #26 时应按“当前 main 源码代理契约 + 隔离 mock/UI 证据”表述。
 >
+> **2026-07-10 追加（多模型虚拟注册表 + V2_ 显示名）**：正式 relay/openai profile 经 `CSP_MODEL_REGISTRY` 分配最多 8 个 `claude-*` 壳 id，`science_safe_display_name()` 避免 `glm-5`/`glm-5-turbo` 等被 Science 整项隐藏；真机验证 3+5 模型全可见。单模型回退仍走 `force_shell_response`。
+>
 > **修复摘要（对齐 deepseek 借壳 + cc-switch 自填范式，spec/plan 见本地 `docs/superpowers/`，git 忽略）**：① 层二＝正式代理优先 `CSP_MODEL_REGISTRY` 虚拟注册表（最多 8 壳 + `science_safe_display_name` 消毒）；单模型回退仍用 `force_shell_response`（`claude-opus-4-8` + 消毒 display_name），出站由 `resolve_model` force/registry 分支覆盖。② 层一＝全 relay 统一 FIXED……（余下不变）
 
 - **现象**：① 智谱 GLM 等 relay 家在 Science 顶部模型选择器里「显示的是 claude」；② 自定义（填 claude 中转 API）「显示的是 opus」；用户说「自定义的模型也有问题」。
@@ -147,7 +149,7 @@
   - **deepseek（native）**：`models` **借壳** `claude-opus-4-8`/`claude-haiku-4-5` + `display_name`「DeepSeek V4 Pro/Flash」，`model_map` 出站还原真实 id → Science 显示真实名，正常。
   - **relay + `requires_model_override=false`（GLM/openrouter）**：`passthrough=True`，`fetch_relay_models` 回源拉**真实 id**（`glm-4.6` 非 claude-）→ **被 Science 硬规则过滤** → 选择器回退显示 claude 默认。= **#11 根因**。
   - **relay + `requires_model_override=true`（小米/硅基/kimi/minimax/自定义）**：面板选了模型→`RELAY_FORCE_MODEL` override 实际走选中模型，但 Science 选择器**仍显示 claude**；自定义 `default_model="claude-opus-4-8"` → **#12「显示 opus」**。
-- **修复方案（待定，倾向 A+B 结合，对齐 deepseek 成熟做法）**：让 relay 也**借壳**——`fetch_relay_models`/`build_models_response` 给回源真实模型分配 `claude-{family}-<数字>` 壳 id（进主列表）+ `display_name=真实模型名`，出站用动态 `model_map`（壳→真实 id）还原。
+- **修复方案（已落地 2026-07-10，`feat/multi-model-registry`）**：`proxy/model_registry.py` 虚拟注册表 + `CSP_MODEL_REGISTRY` 正式路径；出站 `resolve_model` 按壳 id 还原真实模型。历史方案 A/B 如下（留存）：
   - **A**：全 relay 回源模型借壳；主列表每 family 限 1（最多 3 个真实名进主列表，其余 More models）——多模型的 GLM/openrouter 需要。
   - **B**：`requires_model_override=true` 的家只借**选中的那一个**模型壳（简单，kimi/minimax/小米/硅基/自定义适用）。
   - **C（治标）**：不改协议，只在 CSP app 文案说明「Science 顶部显示 claude 是外壳，实际走你选的模型」。

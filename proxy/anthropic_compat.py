@@ -121,7 +121,13 @@ def transform_request(body, state):
     src = body.get("model", "?")
     target = provider_policy.resolve_model(src, state)
     rule_ids = []
-    if state.prov_name == "relay" and state.policy.force_model_override and state.relay_force_model:
+    if getattr(state, "model_registry", None) is not None:
+        _append_rule_id(rule_ids, provider_policy.RULE_PROVIDER_VIRTUAL_MODEL_REGISTRY)
+    elif (
+        state.prov_name in ("relay", "openai-custom", "openai-responses")
+        and state.policy.force_model_override
+        and state.relay_force_model
+    ):
         _append_rule_id(rule_ids, provider_policy.RULE_PROVIDER_RELAY_FORCE_MODEL_SHELL)
     if (
         state.prov_name == "relay"

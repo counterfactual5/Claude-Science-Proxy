@@ -169,19 +169,6 @@ impl Profile {
         self.default_model = flagship.clone();
         self.model = flagship;
     }
-
-    /// Keep model / default_model / active_models consistent before save.
-    pub fn sync_model_fields(&mut self) {
-        let models = self.effective_models();
-        if self.active_models.is_empty() && !models.is_empty() {
-            self.active_models = models.clone();
-        }
-        let default = self.effective_default_model();
-        if !default.is_empty() {
-            self.default_model = default.clone();
-            self.model = default;
-        }
-    }
 }
 
 impl Config {
