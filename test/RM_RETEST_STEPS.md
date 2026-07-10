@@ -11,7 +11,7 @@
 - 全程**不读、不改、不删**真实 `~/.claude-science`（登录凭证在里面）。
 - 真实 Science 跑在端口 **8765**，本测试只用 `lsof` 观察它的监听 PID，绝不动它。
 - 沙箱 Science 要**你手动**在沙箱里独立登录，Claude 不代做登录。
-- 测试用独立 HOME、独立 `~/.csp`（迁移期可能仍为 `~/.csswitch`）、独立 data-dir、独立测试端口（默认 18991/8990）。
+- 测试用独立 HOME、独立 `~/.csp`（沙箱数据在 `~/.csp/sandbox/home`；仅从 `~/.csswitch` **一次性迁移**旧配置）、独立 Science data-dir、独立测试端口（默认 18991/8990）。
 - 任一步若 8765 的 PID 变了，或发现真实 `~/.csswitch` / `~/.claude-science` 被动过，**立即停止**。
 
 ---
@@ -71,7 +71,7 @@ CSP_REPO="$PWD" \
 术语约定，用来客观取证（都不暴露 key/secret）：
 
 - 看代理/沙箱是否在跑、PID 多少：`lsof -nP -iTCP:$CSP_TEST_PROXY_PORT -sTCP:LISTEN` 和 `-iTCP:$CSP_TEST_SANDBOX_PORT`。
-- 看当前生效 profile：读隔离 HOME 里的 `~/.csp/CSP.json`（或迁移期 `~/.csswitch/config.json`）的 `active_id` 字段（**只看 active_id，别把 key 截进图**）。
+- 看当前生效 profile：读隔离 HOME 里的 `~/.csp/CSP.json` 的 `active_id` 字段（**只看 active_id，别把 key 截进图**）。仅当尚未迁移时才存在 `~/.csswitch/config.json`。
 
 ### RM-06a：native 无效 key 必须被拦（P1 核心）
 

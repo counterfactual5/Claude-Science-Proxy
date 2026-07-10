@@ -205,6 +205,7 @@ node --check desktop/src/main.js
 - [docs/DEVELOPMENT.md](./docs/DEVELOPMENT.md)
 - [docs/provider-support.md](./docs/provider-support.md)
 - [docs/verified-facts.md](./docs/verified-facts.md)
+- [findings/README.md](./findings/README.md)（历史证据中的旧名/路径对照）
 
 ## 风险与免责声明
 

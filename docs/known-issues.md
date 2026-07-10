@@ -2,6 +2,8 @@
 
 本文件记待修队列与近期排期。按用户反馈与自测记录，附根因与方向。
 
+> **文档约定（2026-07-10）**：下文历史条目中的 **CSSwitch**、**`~/.csswitch`**、**`config.json`**、菜单栏 app、**`com.csswitch.*`** 等为**当时**表述。当前：**Claude Science Proxy（CSP）**；用户数据 **`~/.csp/CSP.json`**；正常窗口 app（**`com.csp.menubar`**）。代码内迁移常量与 [`findings/README.md`](../findings/README.md) 说明见 [`DEVELOPMENT.md`](DEVELOPMENT.md)「遗留命名」。
+
 > **✅ 当前发布线（2026-07-09）：CHANGELOG 已到 `v0.3.6`。** 历史 `v0.3.0`（2026-07-04）发布了「多 API 支持 + UI 改版」，随后 `v0.3.2`–`v0.3.6` 继续补上模型选择器、自定义 OpenAI / Responses 等发布切片。发布事实以 [`../CHANGELOG.md`](../CHANGELOG.md) 与 GitHub Releases 为准。**长期剩余待办**：① issue #3 原生入口（打开 app 即自动起 Science + 后台常驻，spec 已写、待做）；② 翻译代理移 Rust/axum 拔 python；③ DSML 阶段二 rewrite 前 3 闸门（rewrite 仍默认 off）。
 
 > **2026-07-09 重构收口注记（当前源码工作树）：** main 已在 #37-#40 后继续补强 packaging gate、architecture boundary、runtime/status/provider/science diagnostics、set-current vs discovery/pin 边界、doctor 默认不探真实 HOME、frontend config snapshot 命名和文档边界。已验证的是源码单元/脚本/代理契约与隔离 mock 路径；这**不等于**真实账号态、真实 `~/.claude-science`、Science GUI E2E、live provider E2E、published DMG、签名或公证验证。Phase 7/release 前仍需按 `test/run_all.sh --require-release-ready`、打包资源 smoke、必要真机手测分开确认。
@@ -168,7 +170,7 @@
 | 1 | Claude 不可用重试；用 ds api，客户说不开梯子就报错 | 待辨：纯文本推理是否也需梯子（ds 国内直连，Science 静态资源/校验可能仍触外网）。需复现 |
 | 2 | **最严重**：websearch 拉下来没法输出就中断 | 模型端 DSML 泄漏（tool_use 吐成文本）→ 见 DSML shim 轨道；ds 透传把工具调用漏成 `<｜｜DSML｜｜>` 卡死 |
 | 3 | 国内反代中转站，回不了；"session no longer valid" | 架构边界：claude.ai 服务端功能被 401 隔离（虚拟登录）。非代理 bug |
-| 4 | 挂 csswitch 能登进去，但无输出/一晃而过（多人报告） | 疑可修代理 bug，需 proxy.log 复现 |
+| 4 | 挂 CSP 能登进去，但无输出/一晃而过（多人报告） | 疑可修代理 bug，需 proxy.log 复现 |
 | 5 | nature skills / GitHub 第三方插件装不了 | 架构边界：claude.ai 托管能力被 401 隔离 |
 | 6 | DSML tool_calls 泄漏成文本（截图） | 同 #2，模型端 DSML |
 | 7 | Artifact failed（截图） | 待辨（信息不全） |

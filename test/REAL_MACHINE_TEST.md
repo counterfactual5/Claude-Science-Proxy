@@ -1,7 +1,7 @@
 # Claude Science Proxy（CSP）多 profile 真机验收
 
 本验收覆盖当前工作树，而不是旧 DMG。执行时使用独立 `HOME`、独立
-`~/.csp`（或迁移期 `~/.csswitch`）、独立 Science data-dir 和测试端口；真实 Science 只用 `lsof`
+`~/.csp`、独立 Science data-dir 和测试端口；仅从 `~/.csswitch` 一次性迁移旧配置。真实 Science 只用 `lsof`
 观察 8765 监听 PID，绝不读取或改动真实 `~/.claude-science`。
 
 ## 1. 自动化基线
