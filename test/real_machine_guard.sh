@@ -122,10 +122,9 @@ prepare_legacy() {
   # then writes a fresh regular file, never overwriting real config via symlink.
   jq -n \
     --arg deepseek "$DEEPSEEK_API_KEY" \
-    --arg qwen "$DASHSCOPE_API_KEY" \
     --argjson proxy_port "$PROXY_PORT" \
     --argjson sandbox_port "$SANDBOX_PORT" \
-    '{provider:"deepseek",proxy_port:$proxy_port,sandbox_port:$sandbox_port,secret:"",mode:"proxy",providers:{deepseek:{key:$deepseek,base_url:"https://api.deepseek.com/anthropic",model:""},qwen:{key:$qwen,base_url:"https://dashscope.aliyuncs.com/compatible-mode/v1",model:"qwen3-max"}}}' \
+    '{provider:"deepseek",proxy_port:$proxy_port,sandbox_port:$sandbox_port,secret:"",mode:"proxy",providers:{deepseek:{key:$deepseek,base_url:"https://api.deepseek.com/anthropic",model:""}}}' \
     | write_fresh "$cfg_dir/CSP.json"
   chmod 600 "$cfg_dir/CSP.json"
   pass "已在独立测试 HOME 写入 v1 schema 样本（key 未回显）"

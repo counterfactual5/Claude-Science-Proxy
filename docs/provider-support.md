@@ -16,9 +16,9 @@
 - **代理【出站】格式由 provider 决定**，分两条路：
 
   1. **Anthropic 原生透传（首选）**：provider 提供 Anthropic 兼容端点（如 DeepSeek `https://api.deepseek.com/anthropic`）。代理只需**剥掉入站 OAuth、注入你的第三方 key、原样转发**。零翻译、保真最好（`tool_use`、流式、thinking 都不失真）。CSP 当前 DeepSeek 走这条。
-  2. **OpenAI 兼容翻译**：provider 只有 OpenAI 兼容端点（如千问 DashScope `https://dashscope.aliyuncs.com/compatible-mode/v1`）。代理必须**出站 Anthropic→OpenAI、回程 OpenAI→Anthropic 双向翻译**，含工具调用与流式的格式转换。CSP 当前 Qwen 走这条。
+  2. **OpenAI 兼容翻译**：provider 只有 OpenAI 兼容端点（如千问 DashScope `https://dashscope.aliyuncs.com/compatible-mode/v1`）。代理必须**出站 Anthropic→OpenAI、回程 OpenAI→Anthropic 双向翻译**，含工具调用与流式的格式转换。**当前产品**：面板走 **`openai-custom` / `openai-responses`**；千问仅 **`csp_proxy.py --provider qwen` CLI 遗留路径**（见 [`DEVELOPMENT.md`](DEVELOPMENT.md)）。
 
-- **实现取向**：**优先接「有 Anthropic 原生端点」的 provider**（透传，一条 `PROVIDERS` 配置即可，几乎零成本、零保真损失）；只有 OpenAI-only 的才写/复用翻译层。代理里 `PROVIDERS` 已经用这个二分法编码（deepseek=透传 / qwen=翻译）。
+- **实现取向**：**优先接「有 Anthropic 原生端点」的 provider**（透传，一条 `PROVIDERS` 配置即可，几乎零成本、零保真损失）；只有 OpenAI-only 的才写/复用翻译层。代理 `PROVIDERS` 二分法：`deepseek` = 透传；`qwen` = 翻译（CLI）；面板 OpenAI 自定义 = `openai-custom` adapter。
 
 ## 二、Claude Science 的工具调用格式，以及翻译保真坑
 

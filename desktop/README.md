@@ -25,7 +25,7 @@ desktop/
 - **Node** 与 npm：**仅构建/开发时需要**（Tauri CLI 走 npm）。打出的 app **运行时不需要 node**。
 - **Xcode Command Line Tools**（`xcode-select --install`）
 - 已安装 **Claude Science**（一键开始会启动其沙箱实例）
-- 第三方 key（DeepSeek 或 DashScope），在面板里填即可（存本地 `~/.csp/CSP.json`，0600）
+- 第三方 key（任意已支持来源，如 DeepSeek、GLM），在面板里填即可（存本地 `~/.csp/CSP.json`，0600）
 
 ## 开发运行
 

@@ -8,7 +8,6 @@ set -euo pipefail
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 LABEL="com.csp.maintenance"
-LEGACY_LABEL="com.csswitch.maintenance"
 SRC="$REPO/scripts/com.csp.maintenance.plist"
 DST="$HOME/Library/LaunchAgents/$LABEL.plist"
 DOMAIN="gui/$(id -u)"
@@ -22,7 +21,6 @@ case "$cmd" in
   install)
     mkdir -p "$HOME/Library/LaunchAgents" "$REPO/findings/auto-maint/logs"
     render_plist > "$DST"
-    launchctl bootout "$DOMAIN/$LEGACY_LABEL" 2>/dev/null || true
     launchctl bootout "$DOMAIN/$LABEL" 2>/dev/null || true
     launchctl bootstrap "$DOMAIN" "$DST"
     launchctl enable "$DOMAIN/$LABEL" 2>/dev/null || true
@@ -31,17 +29,13 @@ case "$cmd" in
     ;;
   uninstall)
     launchctl bootout "$DOMAIN/$LABEL" 2>/dev/null || true
-    launchctl bootout "$DOMAIN/$LEGACY_LABEL" 2>/dev/null || true
-    rm -f "$DST" "$HOME/Library/LaunchAgents/$LEGACY_LABEL.plist"
-    echo "Uninstalled: $LABEL (and legacy $LEGACY_LABEL if present)"
+    rm -f "$DST"
+    echo "Uninstalled: $LABEL"
     ;;
   status)
     if launchctl print "$DOMAIN/$LABEL" >/dev/null 2>&1; then
       echo "== loaded ($LABEL) =="
       launchctl print "$DOMAIN/$LABEL" 2>/dev/null | grep -E "state|program arguments|run at load|next fire" -A2 | head -20 || true
-    elif launchctl print "$DOMAIN/$LEGACY_LABEL" >/dev/null 2>&1; then
-      echo "== legacy loaded ($LEGACY_LABEL) — run install to migrate =="
-      launchctl print "$DOMAIN/$LEGACY_LABEL" 2>/dev/null | grep -E "state|program arguments" -A2 | head -10 || true
     else
       echo "== not loaded =="
     fi

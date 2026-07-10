@@ -144,7 +144,7 @@ CSP is not an official Claude service, and its locally generated launch ticket d
 - The macOS package is not notarized yet, so the first launch requires manual approval.
 - The current runtime still needs `python3` for the proxy. Moving to a Rust single-binary proxy is on the roadmap.
 
-Known issues and roadmap notes live in [docs/known-issues.md](./docs/known-issues.md).
+Known issues and roadmap notes live in [docs/known-issues.md](./docs/known-issues.md) (maintainer doc, mostly Chinese).
 
 ## Languages
 
@@ -156,6 +156,17 @@ README languages currently available:
 | English | [README.en.md](./README.en.md) |
 
 The desktop app UI is currently mainly Chinese. Multilingual README files do not mean the app UI already has an in-app language switch. If app i18n lands later, this section will say so explicitly.
+
+## Contributing
+
+Issues and PRs are welcome. Before you start:
+
+1. Read [`CLAUDE.md`](./CLAUDE.md) iron rules (**must not be violated**).
+2. Read [`docs/DEVELOPMENT.md`](./docs/DEVELOPMENT.md) for build, test, and naming conventions (Chinese; see doc-language note there).
+3. Run offline gates: `bash test/run_all.sh`; if you touch Rust, also `(cd desktop/src-tauri && cargo test)`.
+4. Real-machine / Science E2E requires isolated HOME and ports — see [`test/REAL_MACHINE_TEST.md`](./test/REAL_MACHINE_TEST.md). **Do not touch real `~/.claude-science` or port 8765** by default.
+
+**Documentation**: bilingual README for users; [`docs/architecture-boundaries.md`](./docs/architecture-boundaries.md) and [`docs/provider-capability-matrix.md`](./docs/provider-capability-matrix.md) are English boundary docs. `known-issues.md` and `verified-facts.md` are maintainer-oriented (mostly Chinese). [`docs/provider-support.md`](./docs/provider-support.md) is archived research — use the capability matrix for current facts.
 
 ## Feedback and community
 
@@ -196,8 +207,11 @@ More development notes:
 
 - [desktop/README.md](./desktop/README.md)
 - [docs/DEVELOPMENT.md](./docs/DEVELOPMENT.md)
-- [docs/provider-support.md](./docs/provider-support.md)
+- [docs/architecture-boundaries.md](./docs/architecture-boundaries.md)
+- [docs/provider-capability-matrix.md](./docs/provider-capability-matrix.md)
+- [docs/provider-support.md](./docs/provider-support.md) (archived research)
 - [docs/verified-facts.md](./docs/verified-facts.md)
+- [findings/README.md](./findings/README.md) (legacy naming in historical evidence)
 
 ## Risk and disclaimer
 
@@ -211,7 +225,7 @@ More development notes:
 
 ## Acknowledgements
 
-Claude Science Proxy (CSP) was inspired by [CC Switch](https://github.com/farion1231/cc-switch). Formerly known as CSSwitch. The two projects are independent and do not imply endorsement either way.
+Claude Science Proxy (CSP) was inspired by [CC Switch](https://github.com/farion1231/cc-switch). The two projects are independent and do not imply endorsement either way.
 
 ## License
 

@@ -363,7 +363,7 @@ mod tests {
             template_id: "custom-openai-responses".into(),
             api_format: "openai_responses".into(),
             base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1".into(),
-            model: "qwen-max".into(),
+            model: "dashscope-model".into(),
             ..Default::default()
         };
         let v = diagnostics_for_profile(Some(&p), "off");

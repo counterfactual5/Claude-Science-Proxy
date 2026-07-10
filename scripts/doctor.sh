@@ -56,7 +56,7 @@ classify_port() {  # $1=port; prints occupancy classification
   local lc
   lc="$(printf '%s' "$cmd" | tr '[:upper:]' '[:lower:]')"
   case "$lc" in
-    *python*|*csswitch*|*csp*|*claude-science*) echo "疑似 CSP 旧进程：${cmd}（可 stop_all 或手动清）" ;;
+    *python*|*csp*|*claude-science*) echo "疑似 CSP 旧进程：${cmd}（可 stop_all 或手动清）" ;;
     *) echo "未知占用：$cmd" ;;
   esac
 }
