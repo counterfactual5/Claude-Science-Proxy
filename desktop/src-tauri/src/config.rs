@@ -495,9 +495,6 @@ pub fn load_from(dir: &Path) -> io::Result<Config> {
                 )
             })?;
             let mut cfg = migrate_v3_to_v4(normalize_active(cfg));
-            for p in cfg.profiles.iter_mut() {
-                p.sync_model_fields();
-            }
             validate_loaded_ports(&cfg)?;
             save_to(dir, &cfg)?;
             Ok(cfg)
@@ -511,13 +508,28 @@ pub fn load_from(dir: &Path) -> io::Result<Config> {
             })?;
             let mode_migrated = raw.mode != "proxy";
             let before_active_len = raw.active_ids.len();
+            let before_models: Vec<_> = raw
+                .profiles
+                .iter()
+                .map(|p| {
+                    (
+                        p.active_models.clone(),
+                        p.default_model.clone(),
+                        p.model.clone(),
+                    )
+                })
+                .collect();
             let mut cfg = normalize_active(raw);
-            for p in cfg.profiles.iter_mut() {
-                p.sync_model_fields();
-            }
+            let models_normalized = cfg
+                .profiles
+                .iter()
+                .zip(before_models.iter())
+                .any(|(p, (am, dm, m))| {
+                    p.active_models != *am || p.default_model != *dm || p.model != *m
+                });
             validate_loaded_ports(&cfg)?;
             let folded_active = before_active_len > 1 && cfg.active_ids.len() <= 1;
-            if mode_migrated || folded_active {
+            if mode_migrated || folded_active || models_normalized {
                 save_to(dir, &cfg)?;
             }
             Ok(cfg)
@@ -538,6 +550,7 @@ fn normalize_active(mut cfg: Config) -> Config {
         if crate::templates::by_id(&p.template_id).is_none() {
             p.template_id = "custom".to_string();
         }
+        p.normalize_model_selection();
     }
     if cfg.active_ids.is_empty()
         && !cfg.active_id.is_empty()
@@ -568,7 +581,7 @@ fn normalize_active(mut cfg: Config) -> Config {
 fn migrate_v2_to_v3(mut cfg: Config) -> Config {
     cfg.schema_version = 3;
     for p in cfg.profiles.iter_mut() {
-        p.sync_model_fields();
+        p.normalize_model_selection();
     }
     cfg
 }
