@@ -21,7 +21,7 @@
 
 ## 第一印象（约 30 分钟）
 
-- [ ] **`README.md` / `README.en.md`**：特性、5 分钟上手、与 CC Switch 差异、early preview 说明。
+- [ ] **`README.md` / `README.zh.md`**：特性、5 分钟上手、early preview 说明。
 - [ ] **`LICENSE`**：MIT，含原作者与维护者署名行。
 - [ ] **首条公开 tag**：`v0.1.0-public-preview`（与桌面 app 内部 0.3.x 构建号可并存；Release 正文写明 *early preview, APIs may change*）。
 - [ ] **GitHub About**（仓库 Settings → General）：
