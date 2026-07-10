@@ -10,10 +10,10 @@ use crate::runtime::i18n::i18n_err;
 
 const OPERATION_LOG_MAX_BYTES: u64 = 1_048_576;
 
-/// Locate the CSP repository root containing `proxy/csp_proxy.py`.
+/// Locate the CSP repository root containing `proxy/core/csp_proxy.py`.
 /// Prefer `CSP_REPO`; otherwise walk upwards from the executable path.
 pub(crate) fn repo_root() -> Option<PathBuf> {
-    let marker = Path::new("proxy/csp_proxy.py");
+    let marker = Path::new("proxy/core/csp_proxy.py");
     if let Some(r) = std::env::var_os("CSP_REPO") {
         if let Ok(p) = std::fs::canonicalize(PathBuf::from(r)) {
             if p.join(marker).is_file() {
@@ -39,7 +39,7 @@ pub(crate) fn repo_root() -> Option<PathBuf> {
 /// Locate the asset root containing `proxy/` and `scripts/`.
 /// Packaged apps use `Contents/Resources`; dev builds fall back to repo root.
 pub(crate) fn asset_root<R: Runtime>(app: &tauri::AppHandle<R>) -> Option<PathBuf> {
-    let marker = Path::new("proxy/csp_proxy.py");
+    let marker = Path::new("proxy/core/csp_proxy.py");
     if let Ok(res) = app.path().resource_dir() {
         if res.join(marker).is_file() {
             return Some(res);

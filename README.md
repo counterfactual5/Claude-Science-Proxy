@@ -150,7 +150,7 @@ bash test/run_all.sh
 (cd desktop/src-tauri && cargo test)   # if you touch Rust
 ```
 
-Real-machine tests: [`test/REAL_MACHINE_TEST.md`](./test/REAL_MACHINE_TEST.md) — never touch real `~/.claude-science` or port **8765** without the guard scripts.
+Real-machine tests: [`test/docs/REAL_MACHINE_TEST.md`](./test/docs/REAL_MACHINE_TEST.md) — never touch real `~/.claude-science` or port **8765** without the guard scripts.
 
 **Support:** [GitHub Issues](https://github.com/counterfactual5/Claude-Science-Proxy/issues) only — no WeChat/QQ/DM. Do not paste API keys in issues.
 

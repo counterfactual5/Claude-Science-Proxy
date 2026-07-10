@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Feature requests are welcome. For provider support, check [`docs/provider-capability-matrix.md`](https://github.com/counterfactual5/Claude-Science-Proxy/blob/main/docs/provider-capability-matrix.md) first.
+        Feature requests are welcome. For provider boundaries, see [`catalog/capabilities.v1.json`](https://github.com/counterfactual5/Claude-Science-Proxy/blob/main/catalog/capabilities.v1.json) and [`docs/DEVELOPMENT.md`](https://github.com/counterfactual5/Claude-Science-Proxy/blob/main/docs/DEVELOPMENT.md).
 
   - type: textarea
     id: problem

@@ -52,7 +52,7 @@ pub(crate) fn scratch_validate_candidate(
     }
     let root = asset_root(app).ok_or_else(|| i18n_err("errProxyScriptMissing", json!({})))?;
     let py = proc::find_exe("python3").ok_or_else(|| i18n_err("errPythonMissing", json!({})))?;
-    let script = root.join("proxy/csp_proxy.py");
+    let script = root.join("proxy/core/csp_proxy.py");
     let res = scratch::scratch_probe(
         &py,
         &script,
@@ -130,7 +130,7 @@ pub(crate) fn set_active_profile_txn(
         let root = asset_root(app).ok_or_else(|| i18n_err("errProxyScriptMissing", json!({})))?;
         let py =
             proc::find_exe("python3").ok_or_else(|| i18n_err("errPythonMissing", json!({})))?;
-        let script = root.join("proxy/csp_proxy.py");
+        let script = root.join("proxy/core/csp_proxy.py");
         let res = scratch::scratch_probe(
             &py,
             &script,

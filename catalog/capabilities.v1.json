@@ -12,7 +12,7 @@
       "action": "normalize",
       "reason": "DeepSeek uses the native Anthropic path; CSP maps Science shell model ids, clamps known token caps, and normalizes thinking/tool_choice quirks.",
       "evidence": [
-        "proxy/csp_proxy.py:51",
+        "proxy/core/csp_proxy.py:51",
         "proxy/provider_policy.py:69",
         "docs/verified-facts.md:34"
       ],
@@ -52,7 +52,7 @@
       "action": "normalize",
       "reason": "Fallback when CSP_MODEL_REGISTRY is absent: return one Science-visible claude-opus shell with a sanitized display_name; outbound requests are force-overridden to the selected real model.",
       "evidence": [
-        "proxy/csp_proxy.py:343",
+        "proxy/core/csp_proxy.py:343",
         "proxy/model_discovery.py:40",
         "docs/known-issues.md:146"
       ],
@@ -205,8 +205,8 @@
       "reason": "External Streamable HTTP MCP servers depend on outbound network routing; current CONNECT tunneling is direct unless a future upstream proxy path is added.",
       "evidence": [
         "docs/known-issues.md#11",
-        "proxy/csp_proxy.py:532",
-        "scripts/launch-virtual-sandbox.sh:112"
+        "proxy/core/csp_proxy.py:532",
+        "scripts/sandbox/launch-virtual-sandbox.sh:112"
       ],
       "tests": [
         "test.test_proxy_connect.ProxyConnect.test_connect_passthrough_tunnels_bytes"
@@ -365,8 +365,8 @@
       "action": "diagnose",
       "reason": "Anthropic/Claude hosts are fast-failed with 401 so Science treats virtual login as logged out instead of retrying organization switching.",
       "evidence": [
-        "proxy/csp_proxy.py:206",
-        "proxy/csp_proxy.py:532"
+        "proxy/core/csp_proxy.py:206",
+        "proxy/core/csp_proxy.py:532"
       ],
       "tests": [
         "test.test_proxy_connect.ProxyConnect.test_connect_anthropic_domains_fastfail_401",
@@ -384,7 +384,7 @@
       "action": "document",
       "reason": "Non-Anthropic CONNECT currently opens a direct TCP tunnel; external MCP access can fail on networks where direct egress is blocked.",
       "evidence": [
-        "proxy/csp_proxy.py:554",
+        "proxy/core/csp_proxy.py:554",
         "docs/known-issues.md#11"
       ],
       "tests": [
@@ -402,7 +402,7 @@
       "action": "document",
       "reason": "The virtual sandbox intentionally does not set http_proxy because the CSP proxy does not implement ordinary absolute-form HTTP forwarding.",
       "evidence": [
-        "scripts/launch-virtual-sandbox.sh:115"
+        "scripts/sandbox/launch-virtual-sandbox.sh:115"
       ],
       "tests": []
     },

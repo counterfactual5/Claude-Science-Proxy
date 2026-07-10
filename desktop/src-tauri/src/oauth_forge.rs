@@ -1,6 +1,6 @@
 //! Virtual OAuth forger (Rust-native). Writes **sandbox-only** fake login material so Claude Science
 //! can start without touching real `~/.claude-science`. Zero network, zero real credentials.
-//! Wire format matches `scripts/make-virtual-oauth.mjs`.
+//! Wire format matches `scripts/oauth/make-virtual-oauth.mjs`.
 //!
 //! Sandbox `auth_dir` layout (byte-compatible with the Node forger; tests lock the format):
 //!   - Token file: `<auth_dir>/.oauth-tokens/<sanitized account_uuid>.enc` (exactly one `.enc`)
@@ -914,8 +914,8 @@ mod tests {
             return;
         }
         let root = repo_root();
-        let mjs = root.join("scripts/make-virtual-oauth.mjs");
-        let decrypt_mjs = root.join("test/decrypt-oauth.mjs");
+        let mjs = root.join("scripts/oauth/make-virtual-oauth.mjs");
+        let decrypt_mjs = root.join("test/unit/oauth/decrypt-oauth.mjs");
         let email = "virtual@localhost.invalid";
 
         // Direction 1: node forge → rust decrypt readback.

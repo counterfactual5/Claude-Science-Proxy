@@ -73,7 +73,7 @@ pub(crate) fn one_click_login<R: Runtime>(
         oauth_forge::ensure_virtual_login(&auth_dir, "virtual@localhost.invalid", &sbx_home)
             .map_err(|e| i18n_err("errSandboxVirtualLoginFailed", json!({ "error": e })))?;
 
-    let launch = root.join("scripts/launch-virtual-sandbox.sh");
+    let launch = root.join("scripts/sandbox/launch-virtual-sandbox.sh");
     if !launch.is_file() {
         return Err(i18n_err("errSandboxScriptMissing", json!({})));
     }

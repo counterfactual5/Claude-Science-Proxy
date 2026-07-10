@@ -32,7 +32,7 @@
 Claude Science（沙箱 · 虚拟登录；登录仅当启动门票，推理不走 Anthropic）
    │  ANTHROPIC_BASE_URL=http://127.0.0.1:<port>/<secret>
    ▼
-翻译代理 proxy/csp_proxy.py（默认 deepseek 原生透传，可切）
+翻译代理 proxy/core/csp_proxy.py（默认 deepseek 原生透传，可切）
    │  剥离入站 OAuth Bearer，注入第三方 key，按需 Anthropic ↔ OpenAI 互转，path-secret 鉴权
    ▼
 DeepSeek 原生 Anthropic 端点          --provider deepseek
@@ -58,24 +58,24 @@ DeepSeek 原生 Anthropic 端点          --provider deepseek
 - **对外文案（脱敏）**：用户**可见**文案不露骨，别直说「越过 / 绕过登录」；
   主按钮用「一键开始」类中性说法。技术**内部**文档描述机制时可仍用「越过门票」。
 - **默认 provider**：DeepSeek（原生 Anthropic 透传）。模型映射与选择器 id 见
-  `proxy/csp_proxy.py` 的 `PROVIDERS` 字典。
+  `proxy/core/csp_proxy.py` 的 `PROVIDERS` 字典。
 - **每日维护巡检**：launchd 每天 09:00/21:00（Asia/Shanghai）跑受限 `claude -p`，
   **只读仓库 + 抓公开网页 + 只往 `findings/auto-maint/` 写规划报告**
   （白名单工具、硬禁 commit/push/rm、禁读写 `~/.claude-science`、不启动 Science）。
-  装卸看：`scripts/install-maintenance.sh {install|uninstall|status|run}`。
+  装卸看：`scripts/maintenance/install-maintenance.sh {install|uninstall|status|run}`。
 
 ---
 
 ## 四、目录与常用命令
 
 ```
-proxy/csp_proxy.py                provider 可切代理（deepseek 默认）【主入口】
-scripts/make-virtual-oauth.mjs    虚拟 OAuth 伪造器（Node，字节级一致；只写沙箱，护栏拒真实目录）
-scripts/launch-virtual-sandbox.sh 起沙箱 Science + 写虚拟登录 + 指向代理（推荐整链入口）
-scripts/stop-science-sandbox.sh   停沙箱（按 data-dir，绝不影响真实 8765）
-scripts/doctor.sh                 只读环境诊断（依赖/key 有无/端口/权限/铁律自检）
+proxy/core/csp_proxy.py                provider 可切代理（deepseek 默认）【主入口】
+scripts/oauth/make-virtual-oauth.mjs    虚拟 OAuth 伪造器（Node，字节级一致；只写沙箱，护栏拒真实目录）
+scripts/sandbox/launch-virtual-sandbox.sh 起沙箱 Science + 写虚拟登录 + 指向代理（推荐整链入口）
+scripts/sandbox/stop-science-sandbox.sh   停沙箱（按 data-dir，绝不影响真实 8765）
+scripts/maintenance/doctor.sh                 只读环境诊断（依赖/key 有无/端口/权限/铁律自检）
 scripts/verify-proxy.sh           校验运行中的代理（/health + /v1/models，零上游花费）
-scripts/self-test.sh              离线回归套件（test/run_all.sh 包装）
+scripts/ci/self-test.sh              离线回归套件（test/run_all.sh 包装）
 scripts/*maintenance*             每日巡检 wrapper/提示词/launchd/安装器
 desktop/                          Tauri 桌面 app（正常窗口，构建见 desktop/README.md）
 test/                             隔离回归测试（只打代理，不碰 Science）
@@ -90,26 +90,26 @@ findings/                         证据、二进制分析、诊断记录；auto
 bash test/run_all.sh
 
 # 起代理 — DeepSeek（原生 Anthropic 透传，默认）
-DEEPSEEK_API_KEY=sk-... python3 proxy/csp_proxy.py --provider deepseek --port 18991
+DEEPSEEK_API_KEY=sk-... python3 proxy/core/csp_proxy.py --provider deepseek --port 18991
 
 # 起代理 — 任意 OpenAI Chat Completions 兼容端点
-CSP_OPENAI_KEY=sk-... python3 proxy/csp_proxy.py \
+CSP_OPENAI_KEY=sk-... python3 proxy/core/csp_proxy.py \
   --provider openai-custom \
   --base-url https://api.example.com/v1 \
   --model my-model --port 18991
 
 # 起代理 — 自定义 Anthropic 兼容中继
-CSP_RELAY_KEY=sk-... python3 proxy/csp_proxy.py \
+CSP_RELAY_KEY=sk-... python3 proxy/core/csp_proxy.py \
   --provider relay \
   --base-url https://relay.example.com \
   --port 18991
 
 # 整链（虚拟登录，推荐）
 # 先起代理（见上），再：
-scripts/launch-virtual-sandbox.sh --port 8990 \
+scripts/sandbox/launch-virtual-sandbox.sh --port 8990 \
   --proxy-url http://127.0.0.1:18991/<secret>
 # 停：
-scripts/stop-science-sandbox.sh
+scripts/sandbox/stop-science-sandbox.sh
 ```
 
 ---
@@ -152,7 +152,7 @@ scripts/stop-science-sandbox.sh
 Claude Science (sandbox · virtual login; login = ticket only, inference bypasses Anthropic)
    │  ANTHROPIC_BASE_URL=http://127.0.0.1:<port>/<secret>
    ▼
-Translation proxy  proxy/csp_proxy.py  (default: deepseek native passthrough)
+Translation proxy  proxy/core/csp_proxy.py  (default: deepseek native passthrough)
    │  Strips inbound OAuth Bearer, injects third-party key,
    │  translates Anthropic ↔ OpenAI as needed, path-secret auth
    ▼

@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "tauri": "bash ../scripts/clean-bundle-resources.sh && tauri"
+    "tauri": "bash ../scripts/ci/clean-bundle-resources.sh && tauri"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2"

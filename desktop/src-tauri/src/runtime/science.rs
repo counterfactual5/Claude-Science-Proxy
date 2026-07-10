@@ -177,7 +177,7 @@ pub(crate) fn stop_sandbox<R: Runtime>(
     let mut err = None;
     match asset_root(app) {
         Some(root) => {
-            let stop = root.join("scripts/stop-science-sandbox.sh");
+            let stop = root.join("scripts/sandbox/stop-science-sandbox.sh");
             if stop.is_file() {
                 match Command::new("zsh")
                     .arg(&stop)

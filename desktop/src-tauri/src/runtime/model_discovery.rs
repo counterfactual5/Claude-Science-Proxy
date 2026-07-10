@@ -103,7 +103,7 @@ pub(crate) fn fetch_models(
     let key = resolve_probe_key(req.profile_id.as_deref(), &req.key)?;
     let root = asset_root(&app).ok_or_else(|| i18n_err("errProxyScriptMissing", json!({})))?;
     let py = proc::find_exe("python3").ok_or_else(|| i18n_err("errPythonMissing", json!({})))?;
-    let script = root.join("proxy/csp_proxy.py");
+    let script = root.join("proxy/core/csp_proxy.py");
     let adapter = discovery_adapter(tid, tpl.adapter, &api_format);
     reject_openai_custom_anthropic_base(adapter, &base_url)?;
     let trace = OperationTrace::start(

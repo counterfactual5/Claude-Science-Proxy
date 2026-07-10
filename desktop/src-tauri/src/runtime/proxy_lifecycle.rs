@@ -134,7 +134,7 @@ pub(crate) fn start_proxy_for_profiles<R: Runtime>(
 
         st.stop_proxy();
         st.secret = secret.clone();
-        let script = root.join("proxy/csp_proxy.py");
+        let script = root.join("proxy/core/csp_proxy.py");
         let pat = format!("{}.*--port {port}", ere_escape(&script.to_string_lossy()));
         let _ = Command::new("pkill").arg("-f").arg(&pat).status();
 

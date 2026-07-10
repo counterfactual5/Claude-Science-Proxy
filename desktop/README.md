@@ -8,7 +8,7 @@ This document covers the `desktop/` subproject only — the Tauri desktop applic
 |-------|------------|
 | Frontend | Vanilla JS + Vite (`desktop/src/main.js`, `desktop/src/index.html`) |
 | Backend | Rust (Tauri commands) `desktop/src-tauri/src/` |
-| Proxy | Embedded Python (`proxy/csp_proxy.py`) + shell scripts |
+| Proxy | Embedded Python (`proxy/core/csp_proxy.py`) + shell scripts |
 | Sandbox | Isolated home at `~/.csp/sandbox/home` |
 
 **Bundle ID**: `com.csp.menubar`  
@@ -65,16 +65,18 @@ See `src-tauri/src/commands/` for full list.
 All runtime assets are bundled via `tauri.conf.json` → `bundle.resources`:
 
 ```
-proxy/csp_proxy.py
-proxy/http_transport.py
-proxy/dsml_shim.py
-proxy/provider_policy.py
-proxy/capability_catalog.py
-proxy/model_sort.py
-scripts/*.sh
+proxy/core/csp_proxy.py
+proxy/core/http_transport.py
+proxy/dsml/dsml_shim.py
+proxy/policy/provider_policy.py
+proxy/registry/model_sort.py
+proxy/compat/*.py
+scripts/sandbox/*.sh
+scripts/maintenance/doctor.sh
+scripts/ci/verify-proxy.sh
 ```
 
-At runtime, Rust resolves the bundle root via `asset_root()` (`src-tauri/src/lib.rs`), so the same binary works in:
+At runtime, Rust resolves the bundle root via `asset_root()` (`src-tauri/src/runtime/system.rs`), marker file `proxy/core/csp_proxy.py`. Same binary works in:
 - `cargo tauri dev` (dev)
 - `.app/Contents/Resources/` (release)
 
@@ -143,7 +145,7 @@ desktop/
 ├── src/
 │   ├── main.js          # Frontend entry (I18N, UI logic)
 │   ├── index.html
-│   └── style.css
+│   └── styles.css
 ├── src-tauri/
 │   ├── src/
 │   │   ├── main.rs           # Tauri entry, command router
@@ -166,7 +168,7 @@ desktop/
 
 | Symptom | Fix |
 |---------|-----|
-| `csp_proxy.py` not found | Ensure `tauri.conf.json` `bundle.resources` includes `proxy/` |
+| `proxy/core/csp_proxy.py` not found | Ensure `tauri.conf.json` `bundle.resources` includes nested `proxy/` paths |
 | Port 8765 in use | Kill existing proxy: `pkill -f csp_proxy` |
 | Config permission denied | `chmod 600 ~/.csp/CSP.json` (auto-fixed on next write) |
 | Gatekeeper blocks `.app` | Right-click → Open, or allow in Privacy & Security |

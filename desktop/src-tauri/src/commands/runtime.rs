@@ -449,7 +449,7 @@ esac
         assert!(status["last_error"].is_null());
 
         let csp_config = config_dir.join("CSP.json");
-        let doctor = std::process::Command::new(root.join("scripts/doctor.sh"))
+        let doctor = std::process::Command::new(root.join("scripts/maintenance/doctor.sh"))
             .env("HOME", &home)
             .env("SCIENCE_BIN", &fake_science)
             .env("CSP_CONFIG", &csp_config)

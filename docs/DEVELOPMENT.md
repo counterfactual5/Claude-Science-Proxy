@@ -39,6 +39,43 @@ The following names are kept in historical logs or legacy code blocks and should
 
 ---
 
+## Repository Layout (by function)
+
+Top-level directories are grouped by responsibility. **Rust, Tauri bundle paths, and shell scripts all use these nested paths** (not the old flat `proxy/*.py` / `scripts/*.sh` layout).
+
+```
+proxy/
+  core/           csp_proxy.py, http_transport.py
+  compat/         Anthropic / OpenAI protocol adapters
+  registry/       model discovery, registry, sort
+  policy/         provider_policy.py
+  dsml/           DSML shim
+scripts/
+  sandbox/        launch / stop isolated Science
+  maintenance/    doctor, daily-maintenance, launchd plist
+  oauth/          make-virtual-oauth.mjs (dev parity with Rust forger)
+  ci/             verify-proxy, self-test, clean-bundle-resources
+test/
+  runners/        S0 layered gate (run_all.sh, run-offline.sh, …)
+  unit/           unittest by domain (proxy, capability, model, …)
+  integration/    loopback / E2E proxy tests
+  fixtures/       mock upstream, golden JSON, real-machine conf
+  docs/           REAL_MACHINE_TEST.md, RM_RETEST_STEPS.md
+  run_all.sh      thin shim → test/runners/run_all.sh
+catalog/          capabilities.v1.json (read-only rules)
+desktop/          Tauri menubar app
+docs/             DEVELOPMENT.md (+ assets)
+findings/         local evidence archive (gitignored except .gitkeep)
+```
+
+Entry commands (unchanged for contributors):
+
+- `bash test/run_all.sh` — offline regression gate
+- `python3 proxy/core/csp_proxy.py --provider deepseek --port 18991`
+- `scripts/sandbox/launch-virtual-sandbox.sh` — full sandbox chain (dev)
+
+---
+
 ## Code Comments
 
 All production code comments (Rust, Python, JS) must be in **English**. If you modify an older file with Chinese comments, please refactor them to English.
@@ -127,13 +164,13 @@ Frontend code only invokes Rust commands via `invoke()`. API keys are never retu
 
 ```bash
 # Start DeepSeek (Native Anthropic passthrough)
-DEEPSEEK_API_KEY=sk-... python3 proxy/csp_proxy.py --provider deepseek --port 18991
+DEEPSEEK_API_KEY=sk-... python3 proxy/core/csp_proxy.py --provider deepseek --port 18991
 
 # Start Custom OpenAI Chat translation
-CSP_OPENAI_KEY=sk-... python3 proxy/csp_proxy.py --provider openai-custom --base-url https://api.example.com/v1 --port 18991
+CSP_OPENAI_KEY=sk-... python3 proxy/core/csp_proxy.py --provider openai-custom --base-url https://api.example.com/v1 --port 18991
 
 # Start Custom Relay (Anthropic compatible base)
-CSP_RELAY_KEY=sk-... python3 proxy/csp_proxy.py --provider relay --base-url https://relay.example.com --port 18991
+CSP_RELAY_KEY=sk-... python3 proxy/core/csp_proxy.py --provider relay --base-url https://relay.example.com --port 18991
 ```
 
 ### Developing and Building the App
@@ -187,17 +224,17 @@ To perform a complete integration test without running the Tauri UI (while respe
 # 1. Start the proxy manually with a path secret (simulating the Tauri app)
 SEC=$(python3 -c "import secrets; print(secrets.token_hex(16))")
 CSP_RELAY_BASE_URL=https://api.example.com/anthropic CSP_RELAY_KEY=sk-... CSP_RELAY_MODEL=my-model \
-  python3 proxy/csp_proxy.py --provider relay --port 18996 --auth-token "$SEC" &
+  python3 proxy/core/csp_proxy.py --provider relay --port 18996 --auth-token "$SEC" &
 
 # 2. Launch the isolated sandbox pointing to your manual proxy
-scripts/launch-virtual-sandbox.sh --port 8990 --proxy-url "http://127.0.0.1:18996/$SEC"
+scripts/sandbox/launch-virtual-sandbox.sh --port 8990 --proxy-url "http://127.0.0.1:18996/$SEC"
 
 # 3. Verify sandbox health and retrieve the virtual login URL
 curl -s http://127.0.0.1:8990/health
 HOME=.sandbox/home '/Applications/Claude Science.app/Contents/Resources/bin/claude-science' url --data-dir .sandbox/home/.claude-science
 
 # 4. Stop the sandbox after validation
-scripts/stop-science-sandbox.sh
+scripts/sandbox/stop-science-sandbox.sh
 ```
 
 *Note: Always pass the `--dry-run` flag if you want to dry-run scripts. Avoid using environments like `DRY_RUN=1`.*
