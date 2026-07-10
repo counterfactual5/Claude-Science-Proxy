@@ -157,6 +157,19 @@ impl Profile {
         self.effective_models().first().cloned().unwrap_or_default()
     }
 
+    /// Sort active models (newest first) and align default/model with the flagship entry.
+    pub fn normalize_model_selection(&mut self) {
+        let mut models = self.effective_models();
+        if models.is_empty() {
+            return;
+        }
+        crate::runtime::model_sort::sort_model_ids(&mut models);
+        self.active_models = models.clone();
+        let flagship = models[0].clone();
+        self.default_model = flagship.clone();
+        self.model = flagship;
+    }
+
     /// Keep model / default_model / active_models consistent before save.
     pub fn sync_model_fields(&mut self) {
         let models = self.effective_models();
