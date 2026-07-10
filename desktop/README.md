@@ -1,78 +1,188 @@
-# Claude Science Proxy（CSP）桌面 app（Tauri）
+# Desktop App (Tauri) — Developer Guide
 
-macOS 桌面 app（正常窗口，非菜单栏），把 CSP 的日常操作收进一个面板：新建/切换配置、填第三方 key、启动 Claude Science、起停代理与沙箱。
+This document covers the `desktop/` subproject only — the Tauri desktop application that wraps the CSP proxy and provides a GUI for configuration.
 
-架构上它只是**进程管家**：Rust 后端负责起停子进程、注入环境变量、读写配置、探活。虚拟 OAuth 伪造已在 v0.1.4 移进 Rust 原生实现（`src/oauth_forge.rs`，app 运行时不再需要 node）；翻译逻辑仍在 `proxy/csp_proxy.py` 作子进程调用（下一步移 axum 拔 python），沙箱启动仍走 `scripts/launch-virtual-sandbox.sh`，以保住铁律护栏与已验证行为。
+## Architecture
 
-## 组成
+| Layer | Technology |
+|-------|------------|
+| Frontend | Vanilla JS + Vite (`desktop/src/main.js`, `desktop/src/index.html`) |
+| Backend | Rust (Tauri commands) `desktop/src-tauri/src/` |
+| Proxy | Embedded Python (`proxy/csp_proxy.py`) + shell scripts |
+| Sandbox | Isolated home at `~/.csp/sandbox/home` |
 
-```
-desktop/
-  src/                    前端面板（原生 HTML/CSS/JS，无框架）
-    index.html  styles.css  main.js
-  src-tauri/
-    src/lib.rs            后端入口：Tauri command（进程管家）
-    src/oauth_forge.rs    虚拟 OAuth 伪造（Rust 原生：HKDF-SHA256 + AES-256-GCM v2 令牌；护栏拒真实目录）
-    src/config.rs         ~/.csp/CSP.json 读写（0700/0600、拒符号链接、原子写、掩码）
-    src/proc.rs           探活 / which（含登录 shell 兜底）/ 一次性 secret / 上游可达性（纯 std）
-    tauri.conf.json       正常窗口（有标题栏三键、启动居中、可缩放，min 320×520）
-    Cargo.toml            tauri + serde + aes-gcm/hkdf/sha2/base64（伪造器用）
-```
+**Bundle ID**: `com.csp.menubar`  
+**Data dir**: `~/.csp/` (config `CSP.json`, logs, sandbox)
 
-## 前置依赖
+---
 
-- **Rust**（rustup 安装）：<https://www.rust-lang.org/tools/install>
-- **Node** 与 npm：**仅构建/开发时需要**（Tauri CLI 走 npm）。打出的 app **运行时不需要 node**。
-- **Xcode Command Line Tools**（`xcode-select --install`）
-- 已安装 **Claude Science**（一键开始会启动其沙箱实例）
-- 第三方 key（任意已支持来源，如 DeepSeek、GLM），在面板里填即可（存本地 `~/.csp/CSP.json`，0600）
+## Prerequisites
 
-## 开发运行
+- Node.js 18+ (LTS)
+- Rust 1.78+ (`rustup default stable`)
+- Python 3.10+ (for embedded proxy)
+- macOS 13+ (target platform; Linux/Windows not tested)
 
 ```bash
+# One-time setup
 cd desktop
 npm install
-npm run tauri dev
 ```
 
-CSP 以正常窗口打开面板（约 340×700，已去托盘/菜单栏）。
+---
 
-后端定位 `proxy/` 与 `scripts/` 的顺序（`asset_root()`）：**① 打包后**优先用 Tauri 资源目录
-（`Contents/Resources/`，见下「构建」——运行所需的 proxy 与 scripts allowlist 已被 bundle 进去）；**② 开发态**回退到
-从可执行文件位置逐级上溯找仓库根（含 `proxy/csp_proxy.py`）。刻意**不看当前工作目录**，
-避免据启动目录找到来路不明的脚本；开发时也可用 `CSP_REPO=/path/to/CSP` 显式指定。
+## Development
 
-## 构建
+```bash
+# Hot-reload dev server (frontend + backend)
+npm run tauri dev
+
+# Frontend only (Vite)
+npm run dev
+
+# Rust unit tests (config, proc, crypto, sandbox)
+cd src-tauri && cargo test
+```
+
+### Key Tauri Commands (Rust → JS)
+
+| Command | Purpose |
+|---------|---------|
+| `get_config` | Read full config |
+| `save_config` | Atomic write + 0600 perm |
+| `start_proxy` | Launch embedded proxy |
+| `stop_proxy` | Stop proxy, optional sandbox keep-alive |
+| `list_providers` | Built-in provider templates |
+| `oauth_start` / `oauth_callback` | One-click login flow |
+| `resolve_model` | Model ID → provider + resolved name |
+
+See `src-tauri/src/commands/` for full list.
+
+---
+
+## Resource Bundling
+
+All runtime assets are bundled via `tauri.conf.json` → `bundle.resources`:
+
+```
+proxy/csp_proxy.py
+proxy/http_transport.py
+proxy/dsml_shim.py
+proxy/provider_policy.py
+proxy/capability_catalog.py
+proxy/model_sort.py
+scripts/*.sh
+```
+
+At runtime, Rust resolves the bundle root via `asset_root()` (`src-tauri/src/lib.rs`), so the same binary works in:
+- `cargo tauri dev` (dev)
+- `.app/Contents/Resources/` (release)
+
+**Environment override**: `CSP_REPO=/path/to/repo` forces an external repo (useful for debugging).
+
+---
+
+## Build & Package
 
 ```bash
 cd desktop
 npm run tauri build
 ```
 
-产物是 `.app` / `.dmg`。运行所需的 proxy 文件与脚本 allowlist 已通过 `tauri.conf.json` 的 `bundle.resources`
-打进 `Contents/Resources/`，从 Finder 启动的正式 `.app` 也能找到并调用它们（自包含）。
-沙箱运行状态落在可写的 `~/.csp/sandbox/home`（不写进只读的 `.app` 包内）。
+Outputs:
+- `src-tauri/target/release/bundle/macos/*.app`
+- `src-tauri/target/release/bundle/dmg/*.dmg` (arm64 only)
 
-> **签名/分发说明**：本版做 **ad-hoc 签名**（`bundle.macOS.signingIdentity: "-"`，正确封装资源），
-> 但**未做 Apple 公证（notarization）**——那需要付费的 Apple Developer ID 证书。因此从 Finder 首次打开会被
-> Gatekeeper 拦：请**右键 →「打开」**，或系统设置 → 隐私与安全性 →「仍要打开」。
-> 产物目前是 **arm64（Apple Silicon）**；Intel Mac 需要额外的 x86_64 / universal 构建。
+### Signing / Notarization
 
-## 铁律保障
+Current config: **ad-hoc signing only** (`bundle.macOS.signingIdentity: "-"`).
+- ✅ Correctly bundles resources
+- ❌ Not notarized → Gatekeeper blocks first launch
+- **User workaround**: Right-click → "Open", or System Settings → Privacy & Security → "Open Anyway"
 
-- 第三方 key 经**环境变量**注入代理子进程，绝不进命令行参数（避免 `ps` 泄露）；回显前端只给末 4 位掩码。
-- 沙箱端口/目录护栏由被调脚本负责（对真实端口 8765 与真实目录 `~/.claude-science` 失败关闭）。
-- 退 app 默认停代理、保留沙箱运行（见 spec §5.1）。
-- 子进程 stderr/stdout 收进 `~/.csp/logs/`。
+For distribution: set `signingIdentity` to a valid **Developer ID Application** certificate and enable notarization in `tauri.conf.json`.
 
-## 测试
+---
 
-后端纯逻辑（config / proc）有 Rust 单元测试：
+## Sandbox & Data Paths
+
+| Path | Purpose |
+|------|---------|
+| `~/.csp/CSP.json` | User config (atomic write, 0600) |
+| `~/.csp/logs/` | Proxy stdout/stderr, Tauri logs |
+| `~/.csp/sandbox/home` | Isolated Science home (claude config, auth) |
+| `/tmp/csp-*.log` | Test run logs (auto-cleaned) |
+
+**Hard guards** (enforced by shell scripts, not Tauri):
+- Real port `8765` must be free
+- Real dir `~/.claude-science` must NOT be touched
+- Symlinks rejected on config write
+
+---
+
+## Testing
 
 ```bash
-cd desktop/src-tauri
-cargo test
+# Rust unit tests (config, proc, crypto, sandbox, model_sort)
+cd desktop/src-tauri && cargo test
+
+# Python proxy tests (require running Science sandbox)
+cd ../../test && python -m pytest test_proxy_*.py -v
+
+# Full smoke test (manual)
+npm run tauri dev
+# → Click "Start Proxy" → Verify SSE stream in DevTools
 ```
 
-覆盖：0700/0600 权限、符号链接拒绝、原子写、key 掩码、探活、which、secret 生成。
-面板与整链联调为手动冒烟（会启动沙箱 Science，须用户明确同意，守铁律）。
+---
+
+## Project Structure
+
+```
+desktop/
+├── src/
+│   ├── main.js          # Frontend entry (I18N, UI logic)
+│   ├── index.html
+│   └── style.css
+├── src-tauri/
+│   ├── src/
+│   │   ├── main.rs           # Tauri entry, command router
+│   │   ├── lib.rs            # asset_root(), sandbox paths
+│   │   ├── config.rs         # Config schema + migrations
+│   │   ├── commands/         # Tauri command modules
+│   │   ├── runtime/          # Proxy process management
+│   │   ├── oauth_forge.rs    # OAuth PKCE flow
+│   │   └── templates.rs      # Provider templates
+│   ├── Cargo.toml
+│   └── tauri.conf.json
+├── package.json
+├── vite.config.js
+└── README.md          # ← This file
+```
+
+---
+
+## Common Issues
+
+| Symptom | Fix |
+|---------|-----|
+| `csp_proxy.py` not found | Ensure `tauri.conf.json` `bundle.resources` includes `proxy/` |
+| Port 8765 in use | Kill existing proxy: `pkill -f csp_proxy` |
+| Config permission denied | `chmod 600 ~/.csp/CSP.json` (auto-fixed on next write) |
+| Gatekeeper blocks `.app` | Right-click → Open, or allow in Privacy & Security |
+| Sandbox dir not created | `mkdir -p ~/.csp/sandbox/home` (auto-created on first start) |
+
+---
+
+## Contributing
+
+1. `cd desktop && npm run tauri dev`
+2. Make changes (frontend in `src/`, backend in `src-tauri/src/`)
+3. `cargo test` + `npm run lint` (if added)
+4. PR with description of UI/UX or backend change
+
+---
+
+## License
+
+MIT — same as root `LICENSE`.
