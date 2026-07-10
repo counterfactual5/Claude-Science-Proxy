@@ -12,7 +12,7 @@
    - `encryption.key` 是换行分隔 `KEY=VALUE`：`OAUTH_ENCRYPTION_KEY`/`ANTHROPIC_API_KEY_ENCRYPTION_KEY`/`USER_SECRET_ENCRYPTION_KEY`(base64≥16B) + `JWT_SIGNING_SECRET`(≥16 字符)。keychain 镜像账号按**路径 SHA256** 派生（`encryption.key-<hash12>`），沙箱与真实天然隔离；本机实测 keychain 写入超时被跳过，纯用文件。
    - 关键坑：`token_expires_at` 必须设远期 ISO 串（如 `2099-01-01T...Z`），否则 `qP()` 判过期 → `_refreshToken` 联网打 `platform.claude.com` → 失败即无凭证。`provider="claude_ai"`，scopes=`user:inference user:file_upload user:profile user:mcp_servers user:plugins`。
    - `subscription_type` 由令牌自填、启动/鉴权阶段**不做服务端付费校验**（profile/account 走硬编码 api.anthropic.com，失败无害）。**无需任何 Anthropic 账号**。
-   - 工具：`scripts/make-virtual-oauth.mjs`(Node，字节级一致) + `scripts/launch-virtual-sandbox.sh`。
+   - 工具（运行时）：**`desktop/src-tauri/src/oauth_forge.rs`（Rust，app 默认路径，护栏拒真实目录）**；`scripts/make-virtual-oauth.mjs` 为 Node **独立 CLI 等价实现**（字节兼容，仅命令行/对拍用）。沙箱编排仍用 `scripts/launch-virtual-sandbox.sh`。
    - Science 自身 `GET /api/auth/status` 返回 `authenticated:true, email:virtual@localhost.invalid`。
    - 沙箱守护 API：身份取自磁盘令牌；写操作需 `Origin: http://localhost:<port>` + 双提交 CSRF（cookie `operon_csrf` 回显头 `x-operon-csrf`）；建会话 `POST /api/frames {project_id}`，发消息 `POST /api/frames/:id/message {input_data:{request:"..."}, model}`（**用户文本键是 `request`，不是 text**）。
    - **沙箱钥匙串弹窗（已修 2026-07-02）**：Science 会把 `encryption.key` 镜像进 macOS 钥匙串；沙箱独立 HOME 下无钥匙串 → securityd 反复弹「找不到钥匙串」。修法：`launch-virtual-sandbox.sh` 在沙箱 HOME 内建一个独立、空密码、不自动锁的 `login.keychain-db`，只在 `HOME=$SANDBOX_HOME` 上下文里操作。核对前后**真实** `~/Library/Keychains` 逐字节不变。

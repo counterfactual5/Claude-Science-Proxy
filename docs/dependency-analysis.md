@@ -2,13 +2,18 @@
 
 > 目的：把「缺 node」这类报错的**问题本身**研究清楚，供决策与实机测试对照。不含具体改法（改法见 [`../CHANGELOG.md`](../CHANGELOG.md) / [`known-issues.md`](known-issues.md)）。
 
+> **截至 2026-07-10（当前）**
+> - **Node：已非 app 运行时依赖。** 虚拟 OAuth 在 Rust（`oauth_forge.rs`），一键流程零 node。
+> - **Python3：仍是活跃缺口。** 翻译代理仍由 `python3 proxy/csp_proxy.py` 子进程承载（纯标准库）；路线图是移入 Rust（axum）。
+> - 下文保留 **2026-07-03** 分析作决策记录；读「一句话结论」时请以上表为准。
+
 > **进展（2026-07-03，v0.1.4 已发布）：node 缺口已从根上拔掉。** 虚拟 OAuth 伪造器已用 Rust 原生密码学重写（`desktop/src-tauri/src/oauth_forge.rs`），与 `.mjs` 的 v2 GCM 格式字节兼容（node↔rust 对拍单测过），一键流程零 node。**A 类和 B 类都解决**（不管装没装 node）。**剩 python3 一个缺口**（代理，下一步同法移 axum）。下文分析保留为问题记录。
 
-## 一句话结论
+## 一句话结论（历史快照，node 部分已解决）
 
-一键越过登录的整条流程里，**「用户机器上不保证存在」的运行时依赖只有两个：`node` 和 `python3`**，而且**都是我们自己 shell out 去调解释器造成的**。其余全是 macOS 自带（zsh/bash/security/open/pkill/WebView）或 Science 本身（给定）。把这两处编译进 Rust，CSP 就只依赖「macOS + 已装 Science」——对目标用户是给定的，即真正开箱即用。
+一键开始（原「一键越过登录」）的整条流程里，**2026-07-03 时**「用户机器上不保证存在」的运行时依赖曾有两个：`node` 和 `python3`——**node 已在 v0.1.4 消除**；**仍剩 `python3`**（代理子进程）。其余全是 macOS 自带（zsh/bash/security/open/pkill/WebView）或 Science 本身（给定）。把代理移进 Rust 后，CSP 将只依赖「macOS + 已装 Science」。
 
-## 完整依赖面（点「一键越过登录」→ Science 起来）
+## 完整依赖面（点「一键开始」→ Science 起来）
 
 | 依赖 | 用途 | 用户机器上保证吗 |
 |------|------|----------------|
@@ -17,7 +22,7 @@
 | `open` / `pkill` | 开浏览器 / 清进程 | ✅ macOS 自带 |
 | WKWebView | 面板 UI（Tauri 用系统 WebView） | ✅ macOS 自带 |
 | Claude Science.app | 沙箱要跑的本体 | ⭘ 目标用户必装 = 给定 |
-| **`node`** | 伪造虚拟 OAuth（`make-virtual-oauth.mjs`） | ❌ **不保证** ← 缺口 |
+| **`node`** | 伪造虚拟 OAuth（`make-virtual-oauth.mjs`） | ✅ **app 已不需要**（Rust `oauth_forge.rs`）；仅 CLI 单独跑 `.mjs` 时要 node |
 | **`python3`** | 翻译代理（`csp_proxy.py`，纯标准库、无 pip 依赖） | ❌ **不保证**（见洞察 2） ← 缺口 |
 
 代理是**纯 Python 标准库**（无第三方包）→ 只要 python3 能跑就行，不需要 pip install。这也意味着把它移 Rust 时没有隐藏的第三方逻辑要搬。
