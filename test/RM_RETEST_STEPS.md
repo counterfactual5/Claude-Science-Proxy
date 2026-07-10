@@ -2,7 +2,7 @@
 
 本文只覆盖需要真机确认的部分：**RM-06**（native 无效 key 必须被拦、不谎报「已切到」、旧代理不动）、**RM-04**（非 active native 连接编辑即时上游校验）、**RM-13**（端口占用报错措辞），外加全程安全不变量。完整 18 条矩阵与打包细节见 `test/REAL_MACHINE_TEST.md`。
 
-> **2026-07-10 注记**：面板向导已无「通义千问」模板。`prepare-legacy` 里的 v1 `qwen` 槽迁移后展示名为 **Custom Anthropic**（`template_id: custom`，relay 适配器），**不是** native `--provider qwen`。下文 native 用例一律用 **DeepSeek**；若需测 legacy 迁移第二条 profile，见 RM-05 可选对照。
+> **2026-07-10 注记**：`prepare-legacy` 仅写入 v1 **单槽 DeepSeek** 样本。native 无效 key 用例需 **＋ 新建** 第二条 DeepSeek profile（见下文 RM-06 前置）。
 
 跑之前先跑离线基线确认没回归：`bash test/run_all.sh`（ALL GREEN）、`(cd desktop/src-tauri && cargo test --lib)`。
 
@@ -23,8 +23,6 @@
 ```bash
 export DEEPSEEK_API_KEY='你的有效 DeepSeek key'      # 正常切换 / 校验
 export BAD_KEY='sk-definitely-invalid-0000'          # 故意无效，用于 RM-06/RM-04 拦截
-# 可选：legacy v1 qwen 槽迁移对照（RM-05 可选）
-export DASHSCOPE_API_KEY='你的有效 DashScope key'
 ```
 
 依赖：`jq`（护栏 prepare-legacy 需要）、`python3`（代理需要）、已装好的 Rust 工具链。
@@ -60,7 +58,7 @@ CSP_REPO="$PWD" \
 "desktop/src-tauri/target/release/bundle/macos/CSP Acceptance.app/Contents/MacOS/desktop"
 ```
 
-首启后面板应列出 **DeepSeek**（当前生效）与 **Custom Anthropic**（legacy v1 `qwen` 槽迁移而来；若未设 `DASHSCOPE_API_KEY` 可能无 key），key 只显示掩码。
+首启后面板应列出 **DeepSeek**（当前生效），key 只显示掩码。
 
 **RM-06 前置**：在面板 **＋ 新建** 再建一条 **DeepSeek** profile（名称随意，如「DeepSeek 对照」），填入有效 `$DEEPSEEK_API_KEY` 并保存（不要切为生效）。
 
@@ -133,10 +131,6 @@ CSP_REPO="$PWD" \
 - 占位进程**没被误杀**（`kill -0 $OCC` 仍在）。
 
 收尾：`kill $OCC`。
-
-### RM-05 可选：legacy 迁移第二条 profile 切换
-
-若设置了 `DASHSCOPE_API_KEY`：在 **Custom Anthropic**（legacy qwen 槽）与 **DeepSeek** 之间切换，验证 scratch→正式代理健康后才改 `active_id`、代理 PID 变、沙箱 PID 不变。此为 **relay** 路径，不是 native qwen。
 
 ### RM-09（可选，整链推理）
 

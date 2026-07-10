@@ -14,9 +14,9 @@ OUT_DIR="$REPO/findings/auto-maint"
 LOG_DIR="$OUT_DIR/logs"
 LOCK="$OUT_DIR/.run.lock"
 
-# launchd provides a minimal environment; extend PATH ourselves (claude is in ~/.local/bin)
-export PATH="/Users/superjj/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
-export HOME="/Users/superjj"
+# launchd provides a minimal environment; extend PATH for claude CLI (often in ~/.local/bin).
+export PATH="${HOME}/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+REAL_HOME="${HOME:?HOME must be set}"
 
 mkdir -p "$LOG_DIR"
 STAMP="$(date +%Y%m%d-%H%M%S)"
@@ -31,8 +31,9 @@ trap 'rmdir "$LOCK" 2>/dev/null || true' EXIT
 
 cd "$REPO"
 
-CLAUDE_BIN="$(command -v claude || echo /Users/superjj/.local/bin/claude)"
+CLAUDE_BIN="$(command -v claude || echo "${HOME}/.local/bin/claude")"
 PROMPT="$(cat "$PROMPT_FILE")"
+SCIENCE_DENY="${REAL_HOME}/.claude-science/**"
 
 {
   echo "===== CSP daily-maintenance @ $STAMP ====="
@@ -47,7 +48,7 @@ run_with_timeout() { perl -e 'alarm shift @ARGV; exec @ARGV or exit 127' "$@"; }
 # Restricted headless run:
 #  - acceptEdits: allow file writes (report to disk) without prompts
 #  - allowedTools: read-only commands + WebFetch/WebSearch + file writes only; no arbitrary Bash
-#  - disallowedTools: hard-block dangerous git ops, rm, and read/write to ~/.claude-science (deny wins)
+#  - disallowedTools: hard-block dangerous git ops, rm, and read/write to real ~/.claude-science (deny wins)
 set +e
 run_with_timeout "$TIMEOUT" "$CLAUDE_BIN" -p "$PROMPT" \
   --permission-mode acceptEdits \
@@ -59,7 +60,7 @@ run_with_timeout "$TIMEOUT" "$CLAUDE_BIN" -p "$PROMPT" \
   --disallowedTools \
     "Bash(rm:*) Bash(git commit:*) Bash(git push:*) Bash(git add:*) Bash(git checkout:*) \
      Bash(git switch:*) Bash(git reset:*) Bash(git stash:*) Bash(git branch -D:*) \
-     Read(/Users/superjj/.claude-science/**) Write(/Users/superjj/.claude-science/**) Edit(/Users/superjj/.claude-science/**)" \
+     Read(${SCIENCE_DENY}) Write(${SCIENCE_DENY}) Edit(${SCIENCE_DENY})" \
   >>"$LOG" 2>&1
 RC=$?
 set -e

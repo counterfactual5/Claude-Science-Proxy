@@ -21,6 +21,8 @@
 ### 文档 Documentation
 - **`docs/DEVELOPMENT.md`**：补充代码注释约定与 i18n 管线（错误串 / 成功消息 / hint、已迁移范围与有意保留中文的清单）。
 - **`docs/verified-facts.md` / `provider-capability-matrix.md`**：Science 选择器 operon 规则（`V2_`、8 壳上限）与 `CSP_MODEL_REGISTRY` 主路径。
+- **开源协作**：移除微信群等非 GitHub 渠道；补齐 `.github/ISSUE_TEMPLATE` 与 PR 模板；`LICENSE` 保留原作者署名并追加维护者行；真机文档与 `prepare-legacy`（单槽 DeepSeek）对齐。
+- **公开前准备**：`docs/known-issues.md` 瘦身为用户向；`scripts/daily-maintenance.sh` 去除维护者 HOME 硬编码；`docs/PUBLIC_RELEASE_CHECKLIST.md` + `release-notes-public-preview.md`（tag `v0.1.0-public-preview`）。
 
 ## [0.3.6] — 2026-07-06
 
