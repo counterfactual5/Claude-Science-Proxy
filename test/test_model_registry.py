@@ -1,6 +1,8 @@
 import unittest
 
 import model_registry as mr
+import model_sort
+from functools import cmp_to_key
 
 
 class ModelRegistryTests(unittest.TestCase):
@@ -44,6 +46,55 @@ class ModelRegistryTests(unittest.TestCase):
         names = [m["display_name"] for m in reg.models_response()[1]["data"]]
         self.assertEqual(names[0], "glm-5.2")
         self.assertEqual(names[-1], "glm-4.5")
+
+    def test_single_haiku_keeps_flagship_on_main(self):
+        """A second haiku shell makes Science park glm-4.5 in the main Fast slot."""
+        models = [
+            "glm-5.2",
+            "glm-5.1",
+            "glm-5-turbo",
+            "glm-5",
+            "glm-4.7",
+            "glm-4.6",
+            "glm-4.5-air",
+            "glm-4.5",
+        ]
+        reg = mr.ModelRegistry.from_payload(
+            {"models": models, "default_model": "glm-5.2", "fast_model": "glm-4.5"}
+        )
+        haiku_shells = [e.shell_id for e in reg.entries if "haiku" in e.shell_id]
+        self.assertEqual(haiku_shells, ["claude-haiku-4-5"])
+        self.assertEqual(reg.routes["claude-haiku-4-5"], "glm-5-turbo")
+        self.assertEqual(
+            mr.science_main_display_names(reg),
+            ["glm-5.2", "glm-5.1", "glm-5-turbo"],
+        )
+
+    def test_overflow_more_models_version_order(self):
+        models = [
+            "glm-5.2",
+            "glm-5.1",
+            "glm-5-turbo",
+            "glm-5",
+            "glm-4.7",
+            "glm-4.6",
+            "glm-4.5-air",
+            "glm-4.5",
+        ]
+        reg = mr.ModelRegistry.from_payload(
+            {"models": models, "default_model": "glm-5.2", "fast_model": "glm-4.5"}
+        )
+        overflow = [e for e in reg.entries if e.tier == "overflow"]
+        overflow_by_shell = sorted(
+            overflow,
+            key=lambda e: cmp_to_key(model_sort.compare_models_desc)(e.shell_id),
+        )
+        self.assertEqual(
+            [e.display_name for e in overflow_by_shell],
+            ["glm-5", "glm-4.7", "glm-4.6", "glm-4.5-air", "glm-4.5"],
+        )
+        self.assertEqual(reg.resolve("claude-opus-4-5"), "glm-4.5")
+        self.assertNotIn("claude-haiku-4-4", reg.routes)
 
 
 if __name__ == "__main__":
