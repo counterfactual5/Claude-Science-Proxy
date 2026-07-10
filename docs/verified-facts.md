@@ -2,7 +2,7 @@
 
 从 CLAUDE.md 拆分出来的详细技术记录（CLAUDE.md 只留铁律 + 架构 + 指针）。这些是**有证据、别重复推导**的结论，来自对二进制 `/Applications/Claude Science.app/Contents/Resources/bin/claude-science`（内部代号 operon）的静态分析 + 实测。证据文件在 `findings/`。
 
-> **产品状态（2026-07-10）**：面板向导已下架 `qwen` / `siliconflow` 模板；OpenAI 翻译路径走 **`openai-custom` / `openai-responses`**。下文千问相关条目保留作 **CLI `--provider qwen` 与历史证据**；当前实现矩阵见 [`provider-capability-matrix.md`](provider-capability-matrix.md)。
+> **产品状态（2026-07-10）**：面板向导与运行时均已移除 `qwen` / `siliconflow`；OpenAI 翻译走 **`openai-custom` / `openai-responses`**。下文千问 / DashScope 条目为**历史证据**（`findings/`、`proxy/qwen_proxy.py` 早期单测）；当前矩阵见 [`provider-capability-matrix.md`](provider-capability-matrix.md)。
 
 ## 一、启动与鉴权
 
@@ -33,7 +33,7 @@
    - **翻译契合度极高**：`forwarder.rs` 对入站 `authorization/x-api-key/x-goog-api-key` 一律丢弃、换成 adapter 提供的上游鉴权头（`AuthStrategy`：Anthropic→x-api-key / Bearer / Google→x-goog-api-key / OAuth），正是我们「丢弃 Science 虚拟 OAuth、注入第三方 key」所需；`providers/transform*.rs` 双向 Anthropic↔OpenAI/Responses/Gemini，含 SSE + tool_use/tool_result。
    - **两个缺口**：① 入站**无鉴权**（无 path-secret，仅靠 bind localhost）→ 复用要自己加门；② 配置**存 SQLite、非配置文件**（provider 行 + `apiFormat` 字段 `anthropic|openai_chat|openai_responses|gemini_native`，由 GUI/IPC 灌），不是我们能直接写的文件。
    - **结论**：复用 = 把它的 MIT `transform*.rs` 等翻译模块**移植/vendor 进我们自己的（Rust）代理**当参考实现，不是插它的二进制。license MIT（署名即可），但仓库周更（v3.16.5、~2050 commits），fork 有持续跟进成本。证据：本会话 general-purpose 研究 agent（引用 `src-tauri/src/proxy/*`）。
-7. **DeepSeek 接入（默认上游，2026-07-02）**：主代理 `proxy/csp_proxy.py`，provider 可切（`--provider deepseek|qwen`）。
+7. **DeepSeek 接入（默认上游，2026-07-02，仍有效）**：主代理 `proxy/csp_proxy.py`，面板默认 `--provider deepseek`。
    - DeepSeek 走**原生 Anthropic 端点** `https://api.deepseek.com/anthropic/v1/messages`，鉴权头 `x-api-key`，代理只「改模型名 + 换鉴权 + 归一化 thinking + 夹 max_tokens + 重试」，**不翻译协议** → thinking/tool_use 原生保真。
    - 模型：`claude-opus-4-8→deepseek-v4-pro`、`claude-haiku/sonnet→deepseek-v4-flash`。
    - **模型选择器机制（逆向 operon `k5W`/`qP_`/`V2_`，旧符号 `s0`/`ZjO`/`XjO` 同义）**：
@@ -55,8 +55,8 @@
 - 已验：tool_use/tool_result/并行调用/verifier 子 agent；已修 max_tokens 夹取、SSE 回放、上游重试。**仍待验**：思考块、cache_control、多模态图像块。
 - **两个非代理问题**：(a) Science 里 `bash` 与 `read_file/edit_file` 文件视图不互通（bash 写 /tmp 的文件 read_file 读不到）；(b) qwen-max 在 OPERON 复杂协议里跟随力不稳（多步/并行/带 verifier 会跑偏）—— 模型质量问题，非代理/虚拟登录问题，换 v4-pro/deepseek 改善。
 
-## 四、其它
+## 四、其它（历史）
 
-- Qwen(DashScope) 为 OpenAI-兼容备选（`--provider qwen`，翻译路径）；`proxy/qwen_proxy.py` 是其早期单 provider 版，已被 `csp_proxy.py` 取代。
+- **千问 / DashScope（已移除）**：早期曾用 `proxy/qwen_proxy.py` 与 `csp_proxy.py --provider qwen` 验证 OpenAI 翻译链路；现由 **`openai-custom` / `openai-responses`** 承接。证据见 `findings/e2e-proxy-qwen-proof.log`。
 - **已决（2026-07-03）**：CC Switch 代理不能当 sidecar 直接复用（见事实 6）。方向 = 自研代理移 Rust（axum）+ vendor CC Switch 的 MIT 翻译模块拿广覆盖（治本 python-ectomy）。这条独立于「配置层多 profile 化」，各走节奏。见 `known-issues.md` #8。
 - DashScope 兼容端点：`https://dashscope.aliyuncs.com/compatible-mode/v1`。DashScope 偶发连接抖动（SSL EOF `_ssl.c:1129`/握手超时），代理已加连接级重试（4 次退避，仅重试连接错误）。

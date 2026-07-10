@@ -76,7 +76,6 @@ v1 catalog 只登记已知事实：
 - Relay Anthropic-compatible：空或松散 `input_schema` 会归一化成 object schema。
 - DeepSeek：forced `tool_choice` 时禁用 thinking。
 - Kimi relay thinking：`thinking_policy=enabled` 时去掉 forced `tool_choice`，保留 tools。
-- DashScope/OpenAI Responses：drop `web_search`，带工具时使用 conservative output cap。
 - Science model selector：正式路径优先 `CSP_MODEL_REGISTRY`（最多 8 个壳 id，display_name 经 `science_safe_display_name` 消毒）；无 registry 时 force 回退返回单壳 `claude-opus-4-8` + 消毒后的 display_name。
 - Hosted MCP / Directory connectors：虚拟 OAuth 下是官方托管能力边界，只能诊断和提供本地替代方向。
 - Streamable HTTP MCP：外部 HTTP MCP 依赖 transport/upstream proxy 能力，当前标 `limited`。
