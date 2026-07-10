@@ -250,7 +250,7 @@ fn resolve_guarded(
 ) -> Result<PathBuf, String> {
     let resolved = real_ancestor(auth_dir);
     // Load-bearing guard 0 (iron rule 1, highest priority, before sandbox-root check): resolved write root must
-    // never fall inside or equal real ~/.claude-science. Blocks pre-setting ~/.csswitch/sandbox (or an ancestor)
+    // never fall inside or equal real ~/.claude-science. Blocks pre-setting ~/.csp/sandbox/home (or an ancestor)
     // as a symlink into the real tree—then sandbox_root also resolves into the real tree and the sandbox-root
     // check below would pass (resolved and root both inside the real tree). Independent of sandbox root: absolute
     // protection of the real directory; any abnormal layout must never touch it.
@@ -717,12 +717,8 @@ mod tests {
 
     fn tmpdir(tag: &str) -> PathBuf {
         let n = CTR.fetch_add(1, Ordering::SeqCst);
-        let d = std::env::temp_dir().join(format!(
-            "csswitch-forge-{}-{}-{}",
-            std::process::id(),
-            tag,
-            n
-        ));
+        let d =
+            std::env::temp_dir().join(format!("csp-forge-{}-{}-{}", std::process::id(), tag, n));
         let _ = std::fs::remove_dir_all(&d);
         d
     }
@@ -820,7 +816,7 @@ mod tests {
 
         let csw = tmpdir("csw");
         std::fs::create_dir_all(&csw).unwrap();
-        // ~/.csswitch/sandbox -> real Science dir (pre-set malicious/abnormal symlink)
+        // ~/.csp/sandbox/home -> real Science dir (pre-set malicious/abnormal symlink)
         let sandbox_link = csw.join("sandbox");
         std::os::unix::fs::symlink(&real, &sandbox_link).unwrap();
 
