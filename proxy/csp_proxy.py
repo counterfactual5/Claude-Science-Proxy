@@ -50,10 +50,11 @@ PROVIDERS = {
         "dsml_capable": True,   # only DeepSeek enables DSML shim by default (relay needs explicit opt-in)
         "url": "https://api.deepseek.com/anthropic/v1/messages",
         "key_env": "DEEPSEEK_API_KEY",
-        # Models shown in the Science selector. Science enforces two hard rules (binary s0/ZjO/XjO/hB_):
+        # Models shown in the Science selector. Science operon rules (k5W/qP_/V2_):
         #   1) id must start with claude-
-        #   2) only claude-{opus|sonnet|haiku}-<digits...> land in the main list (one per family);
-        #      others go to "More models" (overflow:true).
+        #   2) display_name must not match V2_ lowercase multi-hyphen pattern
+        #   3) main list: one claude-{opus|sonnet|haiku} per family (max 3);
+        #      rest go to "More models" (overflow:true, max 5; 8 shells total).
         # We borrow Science-approved main-list shell ids (opus/haiku), display DeepSeek names,
         # and map back via model_map so both models appear flat without opening More models.
         #   claude-opus-4-8  → "DeepSeek V4 Pro"  (tier0; Science default inference id)

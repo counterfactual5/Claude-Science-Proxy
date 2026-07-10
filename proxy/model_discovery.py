@@ -6,6 +6,7 @@ process state.
 """
 
 import model_sort
+from model_registry import science_safe_display_name
 
 
 CREATED_AT = "2026-01-01T00:00:00Z"
@@ -22,10 +23,11 @@ def normalize_models_response(raw):
         # Capability bit: inferred from upstream supported_parameters only; never guessed (missing → None).
         sp = m.get("supported_parameters") if isinstance(m, dict) else None
         supports_tools = ("tools" in sp) if isinstance(sp, list) else None
+        raw_name = (m.get("display_name") if isinstance(m, dict) else None) or mid
         out.append({
             "type": "model",
             "id": mid,
-            "display_name": (m.get("display_name") if isinstance(m, dict) else None) or mid,
+            "display_name": science_safe_display_name(raw_name),
             "supports_tools": supports_tools,
             "created_at": CREATED_AT,
         })
@@ -39,7 +41,7 @@ def force_shell_response(model):
     shell = [{
         "type": "model",
         "id": "claude-opus-4-8",
-        "display_name": model,
+        "display_name": science_safe_display_name(model),
         "supports_tools": None,
         "created_at": CREATED_AT,
     }]
@@ -55,7 +57,7 @@ def static_models_response(models):
     data = [{
         "type": "model",
         "id": mid,
-        "display_name": disp,
+        "display_name": science_safe_display_name(disp),
         "supports_tools": None,
         "created_at": CREATED_AT,
     } for mid, disp in models]
