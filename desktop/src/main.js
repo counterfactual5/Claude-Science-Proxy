@@ -42,7 +42,6 @@ const I18N = {
     edit: "编辑",
     delete: "删除",
     models: "启用模型",
-    modelSingle: "模型",
     ports: "端口管理",
     proxyPort: "代理",
     sandboxPort: "沙箱",
@@ -62,49 +61,17 @@ const I18N = {
     fillApiKey: "请填写 API Key。",
     skipActivate: "校验没过，仍要启用这条",
     menuMore: "更多",
-    ready: "就绪。",
     modelHintNative: "由 Science 选择器 + 内置映射自动选择（opus 深度 / haiku 快速）。",
-    modelHintFollow: "留空＝跟随 Science 选择器（保留 opus/haiku 各档）；选一个＝固定用于所有请求。",
     modelHintFixed: "勾选要在 Science 中启用的模型；列表第一个用于后台任务兜底。",
-    modelBuiltin: "内置",
-    toolsYes: " ·工具✓",
-    toolsNo: " ·无工具",
     metaManyModels: "{n} 个模型已启用",
     metaOneModel: "1 个模型已启用",
     metaBuiltinMap: "内置映射",
-    metaFollowScience: "跟随 Science",
     metaNoModel: "未选模型",
     loadConfigFail: "读取配置失败：{err}",
-    portSavedReset: "端口已保存。改端口会重置正在运行的代理/沙箱，请重新启动 Claude Science。",
-    portUnchanged: "端口未变化。",
-    activateSkip: "正在启用「{name}」：已跳过上游校验，正在启动正式代理并探活…",
-    activateSkipWait: "仍在等待正式代理探活完成。完成后会自动应用，失败会保留原配置。",
-    activateVerify: "正在启用「{name}」：先用临时代理校验上游，网络慢时可能需要约 20 秒…",
-    activateVerifyWait1: "仍在等待上游校验响应。可以继续查看日志/报告，请不要重复切换配置。",
-    activateVerifyWait2: "上游校验仍未返回，接近本次等待上限。完成后会自动切换，或给出重试/跳过验证提示。",
-    saveConnActive: "正在保存当前生效配置：先校验新连接，再重启正式代理并探活…",
-    saveConnActiveWait1: "仍在等待新连接上游校验。失败会保留原连接和原代理。",
-    saveConnActiveWait2: "上游校验接近等待上限。完成后才会写盘并应用，失败会据实回滚。",
-    saveConnIdle: "保存连接中：正在做候选上游校验；无法确认时会保存但标记为未校验…",
-    saveConnIdleWait: "仍在等待候选连接校验。不会影响当前正在运行的代理。",
-    oneClickStart: "正在启动：检查代理 → 准备虚拟登录 → 启动/复用沙箱 → 探活…",
-    oneClickWait1: "仍在准备代理或沙箱。若代理配置已变更，可能需要重启本地代理。",
-    oneClickWait2: "仍在等待沙箱就绪。完成后会自动打开 Science；失败会显示日志摘要。",
-    portSaveChanged: "正在保存端口设置：端口变化会先重置当前代理/沙箱链路…",
-    portSaveChangedWait: "仍在应用端口设置。若旧沙箱无法停止，端口会保持原值并显示错误。",
-    portSaving: "正在保存端口设置…",
-    cancelled: "已取消。",
     confirmRetry: "{prompt} —— 再点一次同一按钮确认（4 秒内）。",
-    creating: "创建中…",
-    fetchingModels: "正在拉取模型…",
-    createdMany: "已创建「{name}」，发现 {total} 个模型，已启用前 {enabled} 个。其余可在编辑里勾选，或直接改 CSP.json。",
-    createdSome: "已创建「{name}」，已启用 {enabled} 个模型。更多可在编辑里勾选，或直接改 CSP.json。",
-    createdNoModels: "已创建「{name}」，未能拉取模型列表。请在编辑里重试或手动配置。",
     createFail: "创建失败：{err}",
     anthropicBaseErr: "这个地址看起来是 Anthropic 兼容端点，请填写 OpenAI 兼容 base root（如 https://api.example.com/v1）。",
     editConnActive: "编辑（当前生效）",
-    editConnHintActive: "编辑当前生效配置：保存会先校验→切换，失败自动回退到原配置（不谎报生效）。",
-    editConnHint: "编辑连接后点「保存」。",
     connBaseHintDefault: "官方默认地址，可改到 token 套餐 / 区域端点。",
     connBaseHintOpenAIChat: "OpenAI 兼容 base root，代理自动补 /chat/completions。",
     connBaseHintOpenAIResp: "OpenAI 兼容 base root，代理自动补 /responses。",
@@ -112,26 +79,15 @@ const I18N = {
     connBaseHintNative: "模板地址（只读），模型由内置映射自动选择。",
     connBaseHintReadonly: "模板地址（只读）。",
     connKeySaved: "已保存（留空不改）",
-    modelsRefreshed: "已刷新 {n} 个可用模型，勾选要启用的项。",
-    modelsFetchFallback: "未能拉取模型列表，已显示已保存的模型。",
     modelsFetchFail: "拉取模型失败：{err}",
     profileMissing: "配置不存在。",
     providerEmpty: "Provider 不能为空。",
     needModel: "该来源需要至少选一个模型才能保存。",
-    savedApplied: "已保存并应用新连接。",
-    savedValidated: "已保存连接（已通过上游校验）。",
-    savedUnvalidated: "已保存连接（未能连通上游校验，激活时会再验）。",
     saveConnFail: "连接未保存：{err}",
     confirmDelete: "将删除配置「{name}」",
-    deleting: "删除中…",
-    deletedWasActive: "已删除。删掉的是当前生效配置，请点击另一条配置切换。",
-    deleted: "已删除。",
     deleteFail: "删除失败：{err}",
-    switched: "已切换为当前配置。",
     switchRejected: "校验未通过，未切换。",
     switchFail: "切换失败：{err}",
-    switchCommitted: "已切到「{name}」。",
-    switchConnSavedApplied: "已保存并应用「{name}」的新连接。",
     switchUpstreamAuthEdit: "上游拒绝（{code}），key/权限有误，未保存（仍在用原配置运行）。",
     switchUpstreamAuthSwitch: "上游拒绝（{code}），key/权限有误，未切换（当前配置不变）。",
     switchUpstreamModelEdit: "上游拒绝该模型（{code}），未保存。请换一个模型或核对 base_url。",
@@ -229,7 +185,6 @@ const I18N = {
     errPortReserved8765: "端口 8765 是真实 Science 实例保留端口，不能用。",
     errPortZero: "端口不能为 0。",
     errPortSame: "代理端口与沙箱端口不能相同。",
-    previewSwitched: "（预览：已切换为当前）",
     errPortSandboxStopFailed: "端口未更改：无法停止指向旧端口的沙箱（{error}）。为避免留下失效链路，端口保持不变。请手动停止沙箱或重启 app 后重试。（真实实例 8765 未受影响）",
     errStopSandboxFailed: "代理已停；但{error}（真实实例 8765 未受影响）。",
     errScratchNoPort: "无法分配临时端口",
@@ -237,29 +192,15 @@ const I18N = {
     errScratchSpawnFailed: "起临时代理失败：{detail}",
     errScratchNotReady: "临时代理未就绪（多为 key/base_url 无效或依赖缺失）",
     noActiveProfile: "还没有「当前生效」的配置。请先「＋ 新建」或点击一条配置切换，再点「启动 Claude Science」。",
-    oneClickReady: "已就绪，正在打开面板…",
     oneClickFail: "启动失败：{err}",
-    msgOneClickReopenedReusedOpened: "已在运行，已重新打开 Science。",
-    msgOneClickReopenedReusedManual: "已在运行，服务已就绪，请手动打开：{url}",
-    msgOneClickReopenedRestartedOpened: "已用新配置重启代理，Science 沿用不变，已重新打开 Science。",
-    msgOneClickReopenedRestartedManual: "已用新配置重启代理，Science 沿用不变，服务已就绪，请手动打开：{url}",
-    msgOneClickStartedFreshOpened: "已启动。",
-    msgOneClickStartedFreshManual: "已启动，服务已就绪，请手动打开：{url}",
-    msgOneClickStartedResumeOpened: "沙箱已重新启动，沿用原有对话。",
-    msgOneClickStartedResumeManual: "沙箱已重新启动，沿用原有对话，服务已就绪，请手动打开：{url}",
-    stopping: "停止中…",
-    stopped: "已停止代理与沙箱。",
     stopFail: "停止失败：{err}",
     openCspFail: "打开 CSP.json 失败：{err}",
-    previewMode: "预览模式：仅看界面，按钮不连后端（真实 app 里会连进程管家）。",
     tplName_deepseek: "DeepSeek",
     tplName_glm: "智谱 GLM",
     tplName_xiaomi: "小米 MiMo",
-    tplName_siliconflow: "硅基流动",
     tplName_kimi: "Kimi（Moonshot）",
     tplName_minimax: "MiniMax",
     tplName_openrouter: "OpenRouter",
-    tplName_qwen: "通义千问",
     tplName_custom_openai: "自定义 OpenAI",
     tplName_custom_openai_responses: "自定义 OpenAI Responses",
     tplName_custom: "自定义 Anthropic",
@@ -282,7 +223,6 @@ const I18N = {
     edit: "Edit",
     delete: "Delete",
     models: "Enabled models",
-    modelSingle: "Model",
     ports: "Ports",
     proxyPort: "Proxy",
     sandboxPort: "Sandbox",
@@ -302,49 +242,17 @@ const I18N = {
     fillApiKey: "Enter an API key.",
     skipActivate: "Activate anyway (skip verify)",
     menuMore: "More",
-    ready: "Ready.",
     modelHintNative: "Auto-mapped via Science picker + built-in routing (opus for depth, haiku for speed).",
-    modelHintFollow: "Leave empty to follow Science picker (opus/haiku tiers); pick one to pin all requests.",
     modelHintFixed: "Check models to enable in Science; the first is the fallback for background tasks.",
-    modelBuiltin: "builtin",
-    toolsYes: " ·tools",
-    toolsNo: " ·no tools",
     metaManyModels: "{n} models enabled",
     metaOneModel: "1 model enabled",
     metaBuiltinMap: "built-in mapping",
-    metaFollowScience: "follows Science",
     metaNoModel: "no model selected",
     loadConfigFail: "Failed to load config: {err}",
-    portSavedReset: "Ports saved. Changing ports resets the running proxy/sandbox — restart Claude Science.",
-    portUnchanged: "Ports unchanged.",
-    activateSkip: "Activating \"{name}\": skipped upstream verify, starting proxy and health check…",
-    activateSkipWait: "Still waiting for proxy health check. Will apply on success or keep previous config on failure.",
-    activateVerify: "Activating \"{name}\": probing upstream via scratch proxy (may take ~20s on slow networks)…",
-    activateVerifyWait1: "Still waiting for upstream probe. You can check logs; avoid switching profiles again.",
-    activateVerifyWait2: "Probe still pending, near timeout. Will switch or offer retry/skip when done.",
-    saveConnActive: "Saving active profile: verify new connection, restart proxy, then health check…",
-    saveConnActiveWait1: "Still verifying new connection. On failure, previous connection and proxy are kept.",
-    saveConnActiveWait2: "Verify near timeout. Will commit only after probe completes; rolls back on failure.",
-    saveConnIdle: "Saving connection: probing candidate upstream; may save as unverified if inconclusive…",
-    saveConnIdleWait: "Still probing candidate. Current running proxy is unaffected.",
-    oneClickStart: "Starting: check proxy → virtual login → start/reuse sandbox → health check…",
-    oneClickWait1: "Still preparing proxy or sandbox. Config changes may require a proxy restart.",
-    oneClickWait2: "Still waiting for sandbox. Science opens on success; errors show in logs.",
-    portSaveChanged: "Saving ports: port change resets proxy/sandbox chain…",
-    portSaveChangedWait: "Still applying ports. If old sandbox cannot stop, ports stay unchanged and an error is shown.",
-    portSaving: "Saving ports…",
-    cancelled: "Cancelled.",
     confirmRetry: "{prompt} — click the same button again to confirm (within 4s).",
-    creating: "Creating…",
-    fetchingModels: "Fetching models…",
-    createdMany: "Created \"{name}\": found {total} models, enabled top {enabled}. Enable more in edit or edit CSP.json.",
-    createdSome: "Created \"{name}\": enabled {enabled} models. Enable more in edit or edit CSP.json.",
-    createdNoModels: "Created \"{name}\" but could not fetch models. Retry in edit or configure manually.",
     createFail: "Create failed: {err}",
     anthropicBaseErr: "This URL looks Anthropic-compatible. Use an OpenAI-compatible base root (e.g. https://api.example.com/v1).",
     editConnActive: "Edit (active)",
-    editConnHintActive: "Editing active profile: save verifies then switches; failure rolls back (no false success).",
-    editConnHint: "Edit connection, then Save.",
     connBaseHintDefault: "Official default; change for token plans / regional endpoints.",
     connBaseHintOpenAIChat: "OpenAI-compatible base root; proxy appends /chat/completions.",
     connBaseHintOpenAIResp: "OpenAI-compatible base root; proxy appends /responses.",
@@ -352,26 +260,15 @@ const I18N = {
     connBaseHintNative: "Template URL (read-only); models use built-in mapping.",
     connBaseHintReadonly: "Template URL (read-only).",
     connKeySaved: "Saved (leave blank to keep)",
-    modelsRefreshed: "Refreshed {n} models — check the ones to enable.",
-    modelsFetchFallback: "Could not fetch models; showing saved selection.",
     modelsFetchFail: "Fetch models failed: {err}",
     profileMissing: "Profile not found.",
     providerEmpty: "Provider name is required.",
     needModel: "Select at least one model for this provider.",
-    savedApplied: "Saved and applied.",
-    savedValidated: "Saved (upstream verified).",
-    savedUnvalidated: "Saved (upstream not verified; will re-check on activate).",
     saveConnFail: "Not saved: {err}",
     confirmDelete: "Delete profile \"{name}\"",
-    deleting: "Deleting…",
-    deletedWasActive: "Deleted active profile. Switch to another profile.",
-    deleted: "Deleted.",
     deleteFail: "Delete failed: {err}",
-    switched: "Switched to this profile.",
     switchRejected: "Verify failed; not switched.",
     switchFail: "Switch failed: {err}",
-    switchCommitted: "Switched to \"{name}\".",
-    switchConnSavedApplied: "Saved and applied new connection for \"{name}\".",
     switchUpstreamAuthEdit: "Upstream rejected ({code}). Check API key; connection not saved (still using previous connection).",
     switchUpstreamAuthSwitch: "Upstream rejected ({code}). Check API key; not switched (current profile unchanged).",
     switchUpstreamModelEdit: "Upstream rejected model ({code}); connection not saved. Try another model or check base_url.",
@@ -469,7 +366,6 @@ const I18N = {
     errPortReserved8765: "Port 8765 is reserved for the real Science instance and cannot be used.",
     errPortZero: "Port cannot be 0.",
     errPortSame: "Proxy port and sandbox port must differ.",
-    previewSwitched: "(Preview: switched to active)",
     errPortSandboxStopFailed: "Ports unchanged: could not stop sandbox on old port ({error}). Ports kept to avoid a broken chain. Stop sandbox manually or restart the app. (Real instance on 8765 unaffected.)",
     errStopSandboxFailed: "Proxy stopped; but {error} (real instance on 8765 unaffected).",
     errScratchNoPort: "Could not allocate a scratch port.",
@@ -477,29 +373,15 @@ const I18N = {
     errScratchSpawnFailed: "Failed to start scratch proxy: {detail}",
     errScratchNotReady: "Scratch proxy not ready (often invalid key/base_url or missing deps).",
     noActiveProfile: "No active profile. Create or select one, then Start Claude Science.",
-    oneClickReady: "Ready, opening panel…",
     oneClickFail: "Start failed: {err}",
-    msgOneClickReopenedReusedOpened: "Already running; reopened Science.",
-    msgOneClickReopenedReusedManual: "Already running. Ready — open manually: {url}",
-    msgOneClickReopenedRestartedOpened: "Proxy restarted with new settings; Science unchanged; reopened Science.",
-    msgOneClickReopenedRestartedManual: "Proxy restarted with new settings; Science unchanged. Ready — open manually: {url}",
-    msgOneClickStartedFreshOpened: "Started.",
-    msgOneClickStartedFreshManual: "Started. Ready — open manually: {url}",
-    msgOneClickStartedResumeOpened: "Sandbox restarted; keeping existing conversation.",
-    msgOneClickStartedResumeManual: "Sandbox restarted; keeping existing conversation. Ready — open manually: {url}",
-    stopping: "Stopping…",
-    stopped: "Proxy and sandbox stopped.",
     stopFail: "Stop failed: {err}",
     openCspFail: "Failed to open CSP.json: {err}",
-    previewMode: "Preview mode: UI only, no backend (real app uses Tauri).",
     tplName_deepseek: "DeepSeek",
     tplName_glm: "GLM",
     tplName_xiaomi: "MiMo",
-    tplName_siliconflow: "SiliconFlow",
     tplName_kimi: "Kimi (Moonshot)",
     tplName_minimax: "MiniMax",
     tplName_openrouter: "OpenRouter",
-    tplName_qwen: "Qwen",
     tplName_custom_openai: "Custom OpenAI",
     tplName_custom_openai_responses: "Custom OpenAI Responses",
     tplName_custom: "Custom Anthropic",
@@ -632,7 +514,7 @@ const MOCK_TEMPLATES = [
   { id: "custom", name: "Custom", api_format: "anthropic", adapter: "relay", base_url: "", base_url_editable: true, requires_model_override: true, builtin_models: [], icon: "custom", icon_color: "#6B7280" },
 ];
 const mockStore = { 
-  schema_version: 2,
+  schema_version: 4,
   active_id: "",
   proxy_port: 18991,
   sandbox_port: 8990,
@@ -684,7 +566,7 @@ function mockInvoke(cmd, args) {
       const p = mockStore.profiles.find((x) => x.id === args.id);
       if (!p) return Promise.reject("找不到 profile：" + args.id);
       mockStore.active_id = args.id;
-      return Promise.resolve({ committed: true, active_id: args.id, hint_key: "previewSwitched", hint_vars: {} });
+      return Promise.resolve({ committed: true, active_id: args.id });
     }
     case "fetch_models":
       return Promise.resolve({ models: [{ id: "glm-4.6", supports_tools: true }, { id: "glm-5", supports_tools: null }], source: "live", error_kind: null, upstream_status: 200 });
@@ -692,7 +574,7 @@ function mockInvoke(cmd, args) {
       if (args.cfg) { mockStore.proxy_port = args.cfg.proxy_port; mockStore.sandbox_port = args.cfg.sandbox_port; }
       return Promise.resolve(null);
     case "one_click_login":
-      return Promise.resolve({ url: "http://127.0.0.1:8990", msg: "（预览模式：假装已就绪）", action: "started" });
+      return Promise.resolve({ url: "http://127.0.0.1:8990", action: "started" });
     case "open_csp_json":
       return Promise.resolve("~/.csp/CSP.json");
     default:
@@ -704,7 +586,6 @@ const $ = (id) => document.getElementById(id);
 const els = {};
 let busy = false;
 let busyOp = null;
-let busyMsgTimers = [];
 // Current config snapshot (get_config result). Full keys never stored here—only masks.
 let configState = { profiles: [], templates: [], active_id: "", proxy_port: 18991, sandbox_port: 8990 };
 let pendingSkipActivateId = null;   // when set_active validation is ambiguous, allow switch via "skip verify"
@@ -717,7 +598,7 @@ function modelCapability(t) {
   if (!t) return CAP.FIXED;
   const caps = templateCaps(t);
   if (caps.model_discovery === "builtin_static" && caps.model_required === false) return CAP.NATIVE;
-  if (t.adapter === "deepseek" || t.adapter === "qwen") return CAP.NATIVE;
+  if (t.adapter === "deepseek") return CAP.NATIVE;
   return CAP.FIXED;
 }
 function modelRequired(t) {
@@ -800,20 +681,15 @@ function applyModelCapability(t, ui, profileOrModel) {
   return cap;
 }
 
-function setMsg(text, kind) {
+function setMsg(text) {
   // Feedback area shows errors only; success/progress/neutral messages take no space.
-  const t = kind === "err" && text && text !== T("ready") ? text : "";
+  const t = text ? String(text) : "";
   els.msg.textContent = t;
   els.msg.className = "msg" + (t ? " err" : "");
   els.msg.parentElement.hidden = !t;
   if (t && els.panel && els.panel.classList.contains("view-form")) {
     els.msg.scrollIntoView({ block: "nearest" });
   }
-}
-
-function clearBusyMsgTimers() {
-  busyMsgTimers.forEach((t) => clearTimeout(t));
-  busyMsgTimers = [];
 }
 
 function profileName(id) {
@@ -878,62 +754,9 @@ function syncProfileBusyState() {
   });
 }
 
-function scheduleBusyMsg(ms, op, text) {
-  const timer = setTimeout(() => {
-    if (busy && busyOp && busyOp.kind === op.kind && busyOp.id === op.id) setMsg(text);
-  }, ms);
-  busyMsgTimers.push(timer);
-}
-
-
-
-function startActivateFeedback(id, skipVerify) {
-  const name = profileName(id);
-  clearBusyMsgTimers();
-  if (skipVerify) {
-    setMsg(T("activateSkip", { name }));
-    scheduleBusyMsg(3500, { kind: "activate", id }, T("activateSkipWait"));
-    return;
-  }
-  setMsg(T("activateVerify", { name }));
-  scheduleBusyMsg(4500, { kind: "activate", id }, T("activateVerifyWait1"));
-  scheduleBusyMsg(18000, { kind: "activate", id }, T("activateVerifyWait2"));
-}
-
-function startSaveConnectionFeedback(id, active) {
-  clearBusyMsgTimers();
-  if (active) {
-    setMsg(T("saveConnActive"));
-    scheduleBusyMsg(4500, { kind: "saveConnection", id }, T("saveConnActiveWait1"));
-    scheduleBusyMsg(18000, { kind: "saveConnection", id }, T("saveConnActiveWait2"));
-    return;
-  }
-  setMsg(T("saveConnIdle"));
-  scheduleBusyMsg(4500, { kind: "saveConnection", id }, T("saveConnIdleWait"));
-}
-
-function startOneClickFeedback() {
-  clearBusyMsgTimers();
-  setMsg(T("oneClickStart"));
-  scheduleBusyMsg(3500, { kind: "oneClick" }, T("oneClickWait1"));
-  scheduleBusyMsg(9000, { kind: "oneClick" }, T("oneClickWait2"));
-}
-
-function startPortSaveFeedback(changed) {
-  clearBusyMsgTimers();
-  if (changed) {
-    setMsg(T("portSaveChanged"));
-    scheduleBusyMsg(3500, { kind: "ports" }, T("portSaveChangedWait"));
-    return;
-  }
-  setMsg(T("portSaving"));
-}
-
-
 function setBusy(on, op) {
   busy = on;
   busyOp = on ? (op || { kind: "global" }) : null;
-  if (!on) clearBusyMsgTimers();
   [
     els.oneClickBtn, els.stopBtn, els.newBtn, els.listhdMoreBtn,
     els.wizSaveBtn, els.wizCancelBtn,
@@ -970,7 +793,7 @@ function showView(v) {
   els.panel.classList.toggle("view-form", v !== "list");
   if (v === "list") hideSkip();
 }
-function cancelForm() { showView("list"); setMsg(T("ready")); }
+function cancelForm() { showView("list"); }
 
 function showSkip() { els.skipActivateBtn.hidden = false; }
 function hideSkip() { els.skipActivateBtn.hidden = true; pendingSkipActivateId = null; }
@@ -986,9 +809,9 @@ function confirmAction(token, promptText, fn) {
   if (pendingConfirm) clearTimeout(pendingConfirm.timer);
   pendingConfirm = {
     token,
-    timer: setTimeout(() => { pendingConfirm = null; setMsg(T("cancelled")); }, 4000),
+    timer: setTimeout(() => { pendingConfirm = null; }, 4000),
   };
-  setMsg(T("confirmRetry", { prompt: promptText }), "err");
+  setMsg(T("confirmRetry", { prompt: promptText }));
 }
 
 // ── Load config + render list ──
@@ -1004,10 +827,8 @@ async function loadConfig() {
     els.sandboxPort.value = configState.sandbox_port;
     renderList();
     showView("list");
-    // One-time migration notice (#9): backend clears after get_config read; appears only once.
-    if (cfg.pending_notice) setMsg(cfg.pending_notice, "ok");
   } catch (e) {
-    setMsg(T("loadConfigFail", { err: resolveBackendErr(e) }), "err");
+    setMsg(T("loadConfigFail", { err: resolveBackendErr(e) }));
   }
 }
 
@@ -1068,26 +889,18 @@ async function persistPorts() {
   if (busy) return; // don't change ports while busy (prevents race with in-flight ops; inputs also disabled—belt and suspenders). P1-c
   const p = parseInt(els.proxyPort.value, 10) || 18991;
   const s = parseInt(els.sandboxPort.value, 10) || 8990;
-  const changed = p !== configState.proxy_port || s !== configState.sandbox_port;
   // Keep busy for entire port submit: initial `if (busy) return` only blocks re-entry while already busy,
-  // not other ops (mode switch / one-click / connection edit) started while this call is in flight. Busy + disabled controls enforce order. GPT round-3 P2
+  // not other ops (profile activate / one-click / connection edit) started while this call is in flight. Busy + disabled controls enforce order. GPT round-3 P2
   setBusy(true, { kind: "ports" });
-  startPortSaveFeedback(changed);
   try {
     await call("set_settings", { cfg: { proxy_port: p, sandbox_port: s } });
     configState.proxy_port = p;
     configState.sandbox_port = s;
-    // Backend tears down old proxy/sandbox on port change (otherwise stale dead links reuse old ports); tell user to restart. P1-c
-    if (changed) {
-      setMsg(T("portSavedReset"), "ok");
-    } else {
-      setMsg(T("portUnchanged"), "ok");
-    }
   } catch (e) {
     // Error = ports not persisted (validation failed / stop old sandbox failed): reset inputs to effective values so UI doesn't show unsaved numbers.
     els.proxyPort.value = configState.proxy_port;
     els.sandboxPort.value = configState.sandbox_port;
-    setMsg(resolveBackendErr(e), "err");
+    setMsg(resolveBackendErr(e));
   } finally {
     setBusy(false);
   }
@@ -1125,7 +938,6 @@ function modelsToEnableOnCreate(discoveredIds, builtin) {
   return candidates.slice(0, MAX_AUTO_ENABLE_MODELS);
 }
 
-// fetch_models response → refresh checkbox pool (auto-fetch on edit page).
 function applyFetchToPick(r, pickUi, selected) {
   const models = (r && r.models) || [];
   const ids = models.map((m) => m.id).filter(Boolean);
@@ -1213,10 +1025,8 @@ function inferTemplateId(baseUrl) {
     if (tb && tb === norm) return t.id;
   }
   if (norm.includes("deepseek.com")) return "deepseek";
-  if (norm.includes("dashscope.aliyuncs.com")) return "qwen";
   if ((norm.includes("open.bigmodel.cn") || norm.includes("api.z.ai")) && norm.includes("/anthropic")) return "glm";
   if (norm.includes("xiaomimimo.com") || norm.includes("token-plan")) return "xiaomi";
-  if (norm.includes("siliconflow.cn") || norm.includes("siliconflow.com")) return "siliconflow";
   if (norm.includes("moonshot.cn") || norm.includes("moonshot.ai")) return "kimi";
   if (norm.includes("minimaxi.com") || norm.includes("minimax.io")) return "minimax";
   if (norm.includes("openrouter.ai")) return "openrouter";
@@ -1256,18 +1066,16 @@ async function wizSave() {
   const name = els.wizName.value.trim();
   const base = els.wizBase.value.trim();
   const key = els.wizKey.value.trim();
-  if (!name) { setMsg(S().fillProvider, "err"); return; }
-  if (!base) { setMsg(S().fillBaseUrl, "err"); return; }
-  if (!key) { setMsg(S().fillApiKey, "err"); return; }
+  if (!name) { setMsg(S().fillProvider); return; }
+  if (!base) { setMsg(S().fillBaseUrl); return; }
+  if (!key) { setMsg(S().fillApiKey); return; }
   const templateId = inferTemplateId(base);
   const t = tplById(templateId);
   const baseErr = openaiCustomAnthropicBaseMessage(t, base);
-  if (baseErr) { setMsg(baseErr, "err"); return; }
+  if (baseErr) { setMsg(baseErr); return; }
   setBusy(true);
-  setMsg(T("creating"));
   try {
     const id = await call("create_profile", { templateId, name, key, baseUrl: base, model: "" });
-    setMsg(T("fetchingModels"));
     const builtin = (t && t.builtin_models) || [];
     const discovered = await discoverModelIds({ templateId, baseUrl: base, key, builtin });
     const modelIds = modelsToEnableOnCreate(discovered, builtin);
@@ -1283,18 +1091,8 @@ async function wizSave() {
     }
     els.wizKey.value = "";
     await loadConfig();
-    if (modelIds.length) {
-      const total = discovered.length || modelIds.length;
-      if (total > modelIds.length) {
-        setMsg(T("createdMany", { name, total, enabled: modelIds.length }), "ok");
-      } else {
-        setMsg(T("createdSome", { name, enabled: modelIds.length }), "ok");
-      }
-    } else {
-      setMsg(T("createdNoModels", { name }), "ok");
-    }
   } catch (e) {
-    setMsg(T("createFail", { err: resolveBackendErr(e) }), "err");
+    setMsg(T("createFail", { err: resolveBackendErr(e) }));
   } finally {
     setBusy(false);
   }
@@ -1327,7 +1125,7 @@ function openConn(id) {
   els.connBase.placeholder = capSrc && (capSrc.api_format === "openai_chat" || capSrc.api_format === "openai_responses")
     ? "https://open.bigmodel.cn/api/paas/v4"
     : "https://your-relay/claude";
-  // native (deepseek/qwen): hide "fetch models" button—don't hint at a nonexistent action (#5).
+  // native (deepseek): hide "fetch models" button—don't hint at a nonexistent action (#5).
   els.connBaseHint.textContent = editable
     ? (t && t.base_url
         ? T("connBaseHintDefault")
@@ -1347,7 +1145,6 @@ function openConn(id) {
   els.connKey.placeholder = p.key ? T("connKeySaved") : "sk-...";
   showView("conn");
   refreshConnGate();
-  setMsg(active ? T("editConnHintActive") : T("editConnHint"));
   if (cap !== CAP.NATIVE) autoFetchConnModels();
 }
 
@@ -1374,15 +1171,13 @@ async function autoFetchConnModels() {
         profile_id: p.id,
       },
     });
-    const n = applyFetchToPick(r, {
+    applyFetchToPick(r, {
       pick: els.connModelPick,
       builtin: ((t && t.builtin_models) || []).slice(),
       onPickChange: refreshConnGate,
     }, profileModels(p));
-    if (n) setMsg(T("modelsRefreshed", { n }), "ok");
-    else setMsg(T("modelsFetchFallback"), "ok");
   } catch (e) {
-    setMsg(T("modelsFetchFail", { err: resolveBackendErr(e) }), "err");
+    setMsg(T("modelsFetchFail", { err: resolveBackendErr(e) }));
   } finally {
     setBusy(false);
     refreshConnGate();
@@ -1401,24 +1196,23 @@ function refreshConnGate() {
 
 async function connSave() {
   const p = currentConn();
-  if (!p) { setMsg(T("profileMissing"), "err"); return; }
+  if (!p) { setMsg(T("profileMissing")); return; }
   const name = els.connName.value.trim();
-  if (!name) { setMsg(T("providerEmpty"), "err"); return; }
+  if (!name) { setMsg(T("providerEmpty")); return; }
   const t = tplById(p.template_id);
   const capSrc = profileCapabilitySource(p, t);
   const req = p.capabilities ? modelRequired(p) : (t ? modelRequired(t) : true);
   const cap = capSrc ? modelCapability(capSrc) : CAP.FIXED;
   const resolved = resolvedConnectionModels(cap, els.connModelPick);
-  if (req && !resolved.models.length) { setMsg(T("needModel"), "err"); return; }
+  if (req && !resolved.models.length) { setMsg(T("needModel")); return; }
   const model = resolved.defaultModel || resolved.models[0] || "";
   const editable = t ? t.base_url_editable : true;
   const base = editable ? els.connBase.value.trim() : (t ? t.base_url : els.connBase.value.trim());
   // Editable-url templates are relay/custom endpoints and require base_url; saving empty yields unusable connection (activation fails).
   // Block before save (backend has matching guard; P2).
-  if (editable && !base) { setMsg(S().fillBaseUrl, "err"); return; }
+  if (editable && !base) { setMsg(S().fillBaseUrl); return; }
   const baseErr = openaiCustomAnthropicBaseMessage(t, base);
-  if (baseErr) { setMsg(baseErr, "err"); return; }
-  const active = p.id === configState.active_id;
+  if (baseErr) { setMsg(baseErr); return; }
   // empty key = unchanged (backend semantics); base_url/model sent as-is. api_format not edited here (keep template value).
   const args = {
     id: p.id,
@@ -1429,24 +1223,15 @@ async function connSave() {
     key: els.connKey.value.trim(),
   };
   setBusy(true, { kind: "saveConnection", id: p.id });
-  startSaveConnectionFeedback(p.id, active);
   try {
-    const r = await call("update_profile_connection", args);
+    await call("update_profile_connection", args);
     if (name !== p.name) {
       await call("update_profile_metadata", { id: p.id, name, notes: p.notes || "" });
     }
     els.connKey.value = "";
     await loadConfig();
-    // non-active: backend returns validated truthfully; saves even if unreachable/native but reports unvalidated (P2-d truthful-save).
-    if (active) {
-      setMsg(T("savedApplied"), "ok");
-    } else if (r && r.validated) {
-      setMsg(T("savedValidated"), "ok");
-    } else {
-      setMsg(T("savedUnvalidated"), "ok");
-    }
   } catch (e) {
-    setMsg(T("saveConnFail", { err: resolveBackendErr(e) }), "err");
+    setMsg(T("saveConnFail", { err: resolveBackendErr(e) }));
   } finally {
     setBusy(false);
   }
@@ -1458,15 +1243,12 @@ function del(id) {
   confirmAction("delete:" + id, T("confirmDelete", { name: nm }), () => doDelete(id));
 }
 async function doDelete(id) {
-  const wasActive = id === configState.active_id;
   setBusy(true);
-  setMsg(T("deleting"));
   try {
     await call("delete_profile", { id });
     await loadConfig();
-    setMsg(wasActive ? T("deletedWasActive") : T("deleted"), "ok");
   } catch (e) {
-    setMsg(T("deleteFail", { err: resolveBackendErr(e) }), "err");
+    setMsg(T("deleteFail", { err: resolveBackendErr(e) }));
   } finally {
     setBusy(false);
   }
@@ -1477,20 +1259,18 @@ async function doDelete(id) {
 async function activate(id, skipVerify) {
   hideSkip();
   setBusy(true, { kind: "activate", id });
-  startActivateFeedback(id, !!skipVerify);
   try {
     const r = await call("set_active_profile", { id, skipVerify: !!skipVerify });
     if (r && r.committed) {
       await loadConfig();
-      setMsg(resolveHint(r, "switched"), "ok");
     } else {
       await loadConfig();
-      setMsg(resolveHint(r, "switchRejected"), "err");
+      setMsg(resolveHint(r, "switchRejected"));
       if (r && r.can_skip) { pendingSkipActivateId = id; showSkip(); }
     }
   } catch (e) {
     await loadConfig();
-    setMsg(T("switchFail", { err: resolveBackendErr(e) }), "err");
+    setMsg(T("switchFail", { err: resolveBackendErr(e) }));
   } finally {
     setBusy(false);
   }
@@ -1499,19 +1279,14 @@ async function activate(id, skipVerify) {
 // ── Launch Claude Science: read active profile. If none active, prompt user to create/select first. ──
 async function oneClick() {
   if (!configState.active_id) {
-    setMsg(T("noActiveProfile"), "err");
+    setMsg(T("noActiveProfile"));
     return;
   }
   setBusy(true, { kind: "oneClick" });
-  startOneClickFeedback();
   try {
-    const r = await call("one_click_login");
-    const msg = r.msg_key
-      ? T(r.msg_key, resolveBackendVars(r.msg_vars))
-      : (r.msg || T("oneClickReady"));
-    setMsg(msg + "\n" + (r.url || ""), "ok");
+    await call("one_click_login");
   } catch (e) {
-    setMsg(T("oneClickFail", { err: resolveBackendErr(e) }), "err");
+    setMsg(T("oneClickFail", { err: resolveBackendErr(e) }));
   } finally {
     setBusy(false);
   }
@@ -1519,12 +1294,10 @@ async function oneClick() {
 
 async function stopAll() {
   setBusy(true);
-  setMsg(T("stopping"));
   try {
     await call("stop_all");
-    setMsg(T("stopped"), "ok");
   } catch (e) {
-    setMsg(T("stopFail", { err: resolveBackendErr(e) }), "err");
+    setMsg(T("stopFail", { err: resolveBackendErr(e) }));
   } finally {
     setBusy(false);
   }
@@ -1596,7 +1369,7 @@ function wire() {
     try {
       await call("open_csp_json");
     } catch (e) {
-      setMsg(T("openCspFail", { err: resolveBackendErr(e) }), "err");
+      setMsg(T("openCspFail", { err: resolveBackendErr(e) }));
     }
   });
   els.skipActivateBtn.addEventListener("click", () => {
@@ -1628,7 +1401,4 @@ window.addEventListener("DOMContentLoaded", async () => {
   window.addEventListener("focus", () => {
     if (!busy) loadConfig().catch(() => {});
   });
-  if (PREVIEW) {
-    setMsg(T("previewMode"));
-  }
 });

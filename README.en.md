@@ -15,7 +15,7 @@
 
 # Claude Science Proxy (CSP)
 
-Claude Science Proxy (CSP) is a local model switcher for Claude Science. It routes Science inference requests to your own third-party model API, so you can use DeepSeek, Qwen, Kimi, MiniMax, GLM, OpenRouter, relay providers, or custom compatible endpoints inside Science without a Claude subscription.
+Claude Science Proxy (CSP) is a local model switcher for Claude Science. It routes Science inference requests to your own third-party model API, so you can use DeepSeek, Kimi, MiniMax, GLM, OpenRouter, relay providers, or custom compatible endpoints inside Science without a Claude subscription.
 
 It is built for more than developers. You need Claude Science, a third-party API key, and the CSP desktop panel: create a profile, make it active, then click "一键开始" (Start).
 
@@ -53,7 +53,7 @@ In short: CSP is to Claude Science what CC Switch is to Claude Code, but Science
 ```text
 Claude Science sandbox
   -> CSP local proxy
-  -> DeepSeek / Qwen / Kimi / MiniMax / GLM / OpenRouter / custom endpoint
+  -> DeepSeek / Kimi / MiniMax / GLM / OpenRouter / custom endpoint
 ```
 
 ## What it can do
@@ -70,9 +70,8 @@ Claude Science sandbox
 
 - Supports native Anthropic-compatible endpoints, OpenAI Chat Completions-compatible endpoints, and OpenAI Responses-compatible endpoints.
 - Supports custom `base_url`, model names, and relay providers.
-- Native Anthropic endpoints such as DeepSeek, Kimi, and MiniMax are passed through when possible to preserve tool use, thinking, and streaming behavior.
-- Qwen and custom OpenAI endpoints are translated by the local proxy.
-- Multiple models per active profile (virtual registry), switchable in the Science model selector.
+Native Anthropic endpoints such as DeepSeek, Kimi, and MiniMax are passed through when possible to preserve tool use, thinking, and streaming behavior.
+Multiple models per active profile (virtual registry), switchable in the Science model selector.
 - Local config and logs make debugging and issue reports easier.
 
 ## Quick start
@@ -104,10 +103,8 @@ Science only recognizes model IDs starting with `claude-`. CSP includes a built-
 | Source | API path | Notes |
 |---|---|---|
 | DeepSeek | Native Anthropic endpoint | Default source; preserves thinking, tool use, and streaming as much as possible |
-| Qwen | OpenAI Chat Completions-compatible endpoint | CSP translates it into Anthropic format for Science |
 | GLM | Anthropic-compatible endpoint | Editable default URL; choose or type a model |
 | Xiaomi MiMo | Anthropic-compatible endpoint | Can be changed to plan-specific or regional endpoints |
-| SiliconFlow | Anthropic-compatible endpoint | Choose or type a model |
 | Kimi / Moonshot | Anthropic-compatible endpoint | Editable default URL; supports Kimi models |
 | MiniMax | Anthropic-compatible endpoint | Editable default URL; supports MiniMax models |
 | OpenRouter | Anthropic-compatible aggregation endpoint | Choose or type a model |
@@ -132,7 +129,7 @@ CSP's core boundary is simple: third-party model mode keeps credentials, data di
 - It does not copy, read, or modify real Claude login credentials, OAuth tokens, account state, or user data.
 - On first sandbox initialization, it may read-only clone Science runtime assets from the real `~/.claude-science` path, such as `bin`, `conda`, `runtime`, and `seed-assets`; these are not account credentials or conversation data.
 - The isolated Science instance uses its own HOME, ports, and data directory.
-- Third-party API keys are stored in `~/.csp/CSP.json` with `0600` file permissions (migrated automatically from the legacy `~/.csswitch/config.json` on first launch).
+- Third-party API keys are stored in `~/.csp/CSP.json` with `0600` file permissions.
 - Keys are passed to the local proxy through environment variables, not command-line arguments or logs.
 - The proxy only listens on `127.0.0.1` and validates requests with a path secret.
 - Incoming Science `Authorization` / `x-api-key` headers are stripped before CSP injects your configured third-party key.

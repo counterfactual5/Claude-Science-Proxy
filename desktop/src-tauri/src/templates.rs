@@ -9,7 +9,7 @@ pub struct Template {
     pub name: &'static str,
     pub category: &'static str,   // official | cn_official | custom
     pub api_format: &'static str, // anthropic | openai_chat | openai_responses | gemini_native
-    pub adapter: &'static str, // runtime → python proxy --provider: deepseek | qwen | relay | openai-custom | openai-responses
+    pub adapter: &'static str, // runtime → python proxy --provider: deepseek | relay | openai-custom | openai-responses
     pub base_url: &'static str, // default; empty = user must fill
     pub base_url_editable: bool,
     pub requires_model_override: bool,
@@ -42,10 +42,8 @@ pub fn thinking_policy_for(template_id: &str) -> &'static str {
 pub fn template_id_for_legacy_slot(slot: &str) -> &'static str {
     match slot {
         "deepseek" => "deepseek",
-        "qwen" => "qwen",
         "relay-glm" => "glm",
         "relay-xiaomi" => "xiaomi",
-        "relay-siliconflow" => "siliconflow",
         "relay-openrouter" => "openrouter",
         _ => "custom",
     }
@@ -98,26 +96,6 @@ static TEMPLATES: &[Template] = &[
         thinking_policy: "adaptive",
     },
     Template {
-        id: "siliconflow",
-        name: "SiliconFlow",
-        category: "cn_official",
-        api_format: "anthropic",
-        adapter: "relay",
-        base_url: "https://api.siliconflow.cn",
-        base_url_editable: true,
-        requires_model_override: true,
-        builtin_models: &[
-            "deepseek-ai/DeepSeek-V4-Pro",
-            "deepseek-ai/DeepSeek-V4-Flash",
-            "deepseek-ai/DeepSeek-V3.2",
-            "zai-org/GLM-5.2",
-        ], // vendor list 2026-07-04; verified api.siliconflow.cn/v1/messages returns Anthropic 200 with relay/anthropic config
-        website_url: "https://siliconflow.cn",
-        icon: "siliconflow",
-        icon_color: "#7C3AED",
-        thinking_policy: "adaptive",
-    },
-    Template {
         id: "kimi",
         name: "Kimi (Moonshot)",
         category: "cn_official",
@@ -165,21 +143,6 @@ static TEMPLATES: &[Template] = &[
         icon: "openrouter",
         icon_color: "#6467F2",
         thinking_policy: "adaptive",
-    },
-    Template {
-        id: "qwen",
-        name: "Qwen",
-        category: "cn_official",
-        api_format: "openai_chat",
-        adapter: "qwen",
-        base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1",
-        base_url_editable: false,
-        requires_model_override: false,
-        builtin_models: &["qwen-max", "qwen-plus", "qwen-turbo"],
-        website_url: "https://dashscope.aliyun.com",
-        icon: "qwen",
-        icon_color: "#615CED",
-        thinking_policy: "",
     },
     Template {
         id: "custom-openai",
@@ -260,7 +223,6 @@ fn match_base_url(url: &str) -> Option<&'static str> {
     [
         ("relay-glm", "https://open.bigmodel.cn/api/anthropic"),
         ("relay-xiaomi", "https://api.xiaomimimo.com/anthropic"),
-        ("relay-siliconflow", "https://api.siliconflow.cn"),
         ("relay-openrouter", "https://openrouter.ai/api"),
     ]
     .iter()
@@ -275,7 +237,7 @@ mod tests {
     use std::collections::BTreeMap;
 
     #[test]
-    fn table_has_eleven_templates() {
+    fn table_has_nine_templates() {
         let ids: Vec<&str> = all().iter().map(|t| t.id).collect();
         assert_eq!(
             ids,
@@ -283,11 +245,9 @@ mod tests {
                 "deepseek",
                 "glm",
                 "xiaomi",
-                "siliconflow",
                 "kimi",
                 "minimax",
                 "openrouter",
-                "qwen",
                 "custom-openai",
                 "custom-openai-responses",
                 "custom"
@@ -298,7 +258,6 @@ mod tests {
     #[test]
     fn adapter_mapping_is_correct() {
         assert_eq!(adapter_for("deepseek"), "deepseek");
-        assert_eq!(adapter_for("qwen"), "qwen");
         assert_eq!(adapter_for("glm"), "relay");
         assert_eq!(adapter_for("kimi"), "relay");
         assert_eq!(adapter_for("minimax"), "relay");
@@ -307,6 +266,9 @@ mod tests {
         assert_eq!(adapter_for("custom-openai-responses"), "openai-responses");
         assert_eq!(adapter_for("custom"), "relay");
         assert_eq!(adapter_for("unknown-xyz"), "relay"); // fallback
+                                                         // Legacy template_id removed from catalog → relay fallback (existing profiles may still reference it).
+        assert_eq!(adapter_for("qwen"), "relay");
+        assert_eq!(adapter_for("siliconflow"), "relay");
     }
 
     #[test]
@@ -315,7 +277,6 @@ mod tests {
         assert_eq!(by_id("glm").unwrap().api_format, "anthropic");
         assert_eq!(by_id("kimi").unwrap().api_format, "anthropic");
         assert_eq!(by_id("minimax").unwrap().api_format, "anthropic");
-        assert_eq!(by_id("qwen").unwrap().api_format, "openai_chat");
         assert_eq!(by_id("custom-openai").unwrap().api_format, "openai_chat");
         assert_eq!(
             by_id("custom-openai-responses").unwrap().api_format,
@@ -327,7 +288,6 @@ mod tests {
     #[test]
     fn requires_model_override_matches_capability() {
         assert!(by_id("xiaomi").unwrap().requires_model_override);
-        assert!(by_id("siliconflow").unwrap().requires_model_override);
         assert!(by_id("kimi").unwrap().requires_model_override);
         assert!(by_id("minimax").unwrap().requires_model_override);
         assert!(by_id("glm").unwrap().requires_model_override); // all relay templates force model override
@@ -351,29 +311,26 @@ mod tests {
     #[test]
     fn thinking_policy_per_provider() {
         // Verified §3.5: Kimi forces thinking.type=enabled; MiniMax and other relays use adaptive.
-        // Native (deepseek/qwen) skip relay thinking injection; policy is empty.
+        // Native deepseek skips relay thinking injection; policy is empty.
         assert_eq!(by_id("kimi").unwrap().thinking_policy, "enabled");
         assert_eq!(by_id("minimax").unwrap().thinking_policy, "adaptive");
         assert_eq!(by_id("glm").unwrap().thinking_policy, "adaptive");
         assert_eq!(by_id("custom").unwrap().thinking_policy, "adaptive");
         assert_eq!(by_id("deepseek").unwrap().thinking_policy, "");
-        assert_eq!(by_id("qwen").unwrap().thinking_policy, "");
     }
 
     #[test]
     fn legacy_slot_maps_to_template_id() {
         assert_eq!(template_id_for_legacy_slot("deepseek"), "deepseek");
-        assert_eq!(template_id_for_legacy_slot("qwen"), "qwen");
         assert_eq!(template_id_for_legacy_slot("relay-glm"), "glm");
         assert_eq!(template_id_for_legacy_slot("relay-xiaomi"), "xiaomi");
-        assert_eq!(
-            template_id_for_legacy_slot("relay-siliconflow"),
-            "siliconflow"
-        );
         assert_eq!(
             template_id_for_legacy_slot("relay-openrouter"),
             "openrouter"
         );
+        // Removed first-class templates: legacy slot ids fall back to custom.
+        assert_eq!(template_id_for_legacy_slot("qwen"), "custom");
+        assert_eq!(template_id_for_legacy_slot("relay-siliconflow"), "custom");
         assert_eq!(template_id_for_legacy_slot("relay-custom"), "custom");
         assert_eq!(template_id_for_legacy_slot("relay"), "custom"); // bare legacy relay fallback
         assert_eq!(template_id_for_legacy_slot("weird"), "custom");
@@ -394,7 +351,6 @@ mod tests {
         for id in [
             "glm",
             "xiaomi",
-            "siliconflow",
             "kimi",
             "minimax",
             "openrouter",
@@ -407,14 +363,12 @@ mod tests {
                 "{id} base_url should be editable"
             );
         }
-        // Native adapters (deepseek/qwen): upstream URL is hardcoded in the python proxy; runtime
+        // Native deepseek: upstream URL is hardcoded in the python proxy; runtime
         // ignores custom base_url, so keep read-only to avoid a misleading editable field.
-        for id in ["deepseek", "qwen"] {
-            assert!(
-                !by_id(id).unwrap().base_url_editable,
-                "{id} is a native adapter; base_url should be read-only"
-            );
-        }
+        assert!(
+            !by_id("deepseek").unwrap().base_url_editable,
+            "deepseek is a native adapter; base_url should be read-only"
+        );
     }
 
     fn slot(base_url: &str) -> ProviderCfgV1 {
