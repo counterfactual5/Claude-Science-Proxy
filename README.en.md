@@ -180,6 +180,8 @@ When reporting a problem, please include:
 
 Please remove API keys, tokens, email addresses, private URLs, and any sensitive data before submitting logs.
 
+- [Open an issue](https://github.com/counterfactual5/Claude-Science-Proxy/issues/new/choose)
+- [Submit a pull request](https://github.com/counterfactual5/Claude-Science-Proxy/pulls)
 - [Read the changelog](./CHANGELOG.md)
 
 ## Development

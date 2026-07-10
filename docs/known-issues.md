@@ -163,7 +163,7 @@
 - **deepseek** 是 `mode:"anthropic"` 原生透传、不翻译。
 - **Kimi / MiniMax 是 relay = `mode:"anthropic"`**，官方提供 `/anthropic` 兼容端点，走原生 Anthropic 透传（`_handle_anthropic`），**零翻译**。真机已证：两家 `/v1/messages` 直接透传 200（thinking 各自策略见 v0.3.2 实现：Kimi=enabled / MiniMax=adaptive）。
 
-## 11. 用户反馈 bug 清单（2026-07-04 批次，源 `~/Desktop/已知bug/已知bug.md`，12 条分诊）
+## 11. 用户反馈 bug 清单（2026-07-04 批次，外部用户清单 12 条分诊）
 
 > **本文件（`docs/known-issues.md`）即「你我都可改的共享追踪文档」**（git 跟踪，你我都能编辑）。以下把用户新清单 12 条映射到根因/已有条目，后续在此更新处置。
 
