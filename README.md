@@ -139,8 +139,6 @@ Science only accepts model IDs starting with `claude-`. CSP allocates **up to ei
 - **Not Apple-notarized** — manual approval on first open
 - Proxy still requires **`python3`** today
 
-Details: [docs/known-issues.md](./docs/known-issues.md)
-
 ---
 
 ## Contributing
@@ -164,7 +162,7 @@ Real-machine tests: [`test/REAL_MACHINE_TEST.md`](./test/REAL_MACHINE_TEST.md) �
 cd desktop && npm install && npm run tauri dev
 ```
 
-Further reading: [desktop/README.md](./desktop/README.md) · [architecture-boundaries.md](./docs/architecture-boundaries.md) · [provider-capability-matrix.md](./docs/provider-capability-matrix.md)
+Further reading: [desktop/README.md](./desktop/README.md) · [docs/DEVELOPMENT.md](./docs/DEVELOPMENT.md)
 
 ---
 

@@ -3,8 +3,6 @@
 让 Claude Science 的模型推理走第三方 API（DeepSeek、GLM、Kimi、MiniMax、小米 MiMo、OpenRouter，或任意 OpenAI / Anthropic 兼容端点），保留 Science 的 agent 科研体验，模型换成你自己的。
 
 > 本文件只留**铁律 + 架构 + 速查指针**。详细内容分散在：
-> 逆向与已验证事实 → [`docs/verified-facts.md`](docs/verified-facts.md)；
-> 已知问题/待修队列 → [`docs/known-issues.md`](docs/known-issues.md)；
 > 命令与构建 → [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) / [`desktop/README.md`](desktop/README.md)。
 
 ---
@@ -53,15 +51,12 @@ DeepSeek 原生 Anthropic 端点          --provider deepseek
 
 - **必知三条**：① `ANTHROPIC_BASE_URL` 无条件生效；② 手动填 API key 被 operon
   写死拒绝，**必须有 OAuth 门票**；③ 门票用本地伪造虚拟 OAuth 越过。
-  完整证据与格式 → `docs/verified-facts.md`。
 - **发布态 / 待办**：仓库
   [github.com/counterfactual5/Claude-Science-Proxy](https://github.com/counterfactual5/Claude-Science-Proxy)；
   欢迎 issue 与 PR。桌面 app 在 `desktop/`（Tauri 正常窗口进程管家）。
-  **当前 Latest 版本以 GitHub Releases / [`CHANGELOG.md`](CHANGELOG.md) 为准**；
-  **待办队列与排期** → [`docs/known-issues.md`](docs/known-issues.md)。
+  **当前 Latest 版本以 GitHub Releases / [`CHANGELOG.md`](CHANGELOG.md) 为准**。
 - **对外文案（脱敏）**：用户**可见**文案不露骨，别直说「越过 / 绕过登录」；
   主按钮用「一键开始」类中性说法。技术**内部**文档描述机制时可仍用「越过门票」。
-  详见 `docs/known-issues.md` 第 1 条。
 - **默认 provider**：DeepSeek（原生 Anthropic 透传）。模型映射与选择器 id 见
   `proxy/csp_proxy.py` 的 `PROVIDERS` 字典。
 - **每日维护巡检**：launchd 每天 09:00/21:00（Asia/Shanghai）跑受限 `claude -p`，

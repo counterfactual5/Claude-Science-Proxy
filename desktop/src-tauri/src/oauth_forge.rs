@@ -1,6 +1,6 @@
 //! Virtual OAuth forger (Rust-native). Writes **sandbox-only** fake login material so Claude Science
 //! can start without touching real `~/.claude-science`. Zero network, zero real credentials.
-//! Wire format matches `scripts/make-virtual-oauth.mjs` — see `docs/verified-facts.md`.
+//! Wire format matches `scripts/make-virtual-oauth.mjs`.
 //!
 //! Sandbox `auth_dir` layout (byte-compatible with the Node forger; tests lock the format):
 //!   - Token file: `<auth_dir>/.oauth-tokens/<sanitized account_uuid>.enc` (exactly one `.enc`)
