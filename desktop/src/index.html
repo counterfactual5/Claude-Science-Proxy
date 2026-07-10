@@ -76,13 +76,15 @@
       </div>
 
       <div class="panel-foot list-only">
-        <div class="sec ports-sec list-only" id="advSec">
-          <label class="sec-title" id="i18nPorts">端口管理</label>
-          <div class="ports">
-            <div class="fld"><label for="proxyPort" id="i18nProxyPort">代理</label><input id="proxyPort" inputmode="numeric" value="18991" /></div>
-            <div class="fld"><label for="sandboxPort" id="i18nSandboxPort">沙箱</label><input id="sandboxPort" inputmode="numeric" value="8990" /></div>
+        <details class="sec adv list-only" id="advSec">
+          <summary><span class="adv-label" id="i18nPorts">端口管理</span></summary>
+          <div class="adv-body">
+            <div class="ports">
+              <div class="fld"><label for="proxyPort" id="i18nProxyPort">代理</label><input id="proxyPort" inputmode="numeric" value="18991" /></div>
+              <div class="fld"><label for="sandboxPort" id="i18nSandboxPort">沙箱</label><input id="sandboxPort" inputmode="numeric" value="8990" /></div>
+            </div>
           </div>
-        </div>
+        </details>
 
         <div class="sec run-sec">
           <button class="hero" id="oneClickBtn">启动 Claude Science</button>
