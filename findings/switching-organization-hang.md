@@ -34,7 +34,7 @@
 
 ## 复现关键点（供回归 / 他人验证）
 
-- operon 认**小写** `https_proxy`（本机 profile 已导出 `https_proxy=127.0.0.1:7890`、大写 `HTTPS_PROXY=127.0.0.1:8001`），只改大写无效。
+- operon 认**小写** `https_proxy`；若大写 `HTTPS_PROXY` 与小写指向不同端口，只改大写可能无效。
 - `no_proxy=127.0.0.1,localhost,::1` 让推理仍走本地代理，只把外网 claude.ai 引去黑洞，精确模拟「claude.ai 不通、本地代理正常」。
 - 黑洞 = 一个 accept 后既不读也不写也不关的 TCP 监听端口。
 
@@ -50,7 +50,7 @@
 
 ## 实机验证与关键修正（2026-07-03，v0.1.4，403 → 401）
 
-**第一版（403）实机不通。** v0.1.4 首次实机整链（一键越过登录 → 起沙箱 8990）后，UI 仍卡「Switching organization / This is taking longer than expected」。抓 operon 自带日志 `~/.csswitch/sandbox/home/.claude-science/logs/server-*.log`：
+**第一版（403）实机不通。** v0.1.4 首次实机整链（一键开始 → 起沙箱 8990）后，UI 仍卡「Switching organization / This is taking longer than expected」。抓 operon 自带日志（隔离沙箱 `~/.csp/sandbox/home/.claude-science/logs/server-*.log`）：
 
 ```
 claudeAiFetch: /api/oauth/profile → 403        （反复出现，无 treating as logged-out）

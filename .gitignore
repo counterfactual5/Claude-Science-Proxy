@@ -42,5 +42,11 @@ scratchpad/
 # Local Claude Code session config.
 .claude/
 
+# Local agent / test / IDE caches (never publish)
+.playwright-cli/
+.pytest_cache/
+.ruff_cache/
+.workbuddy/
+
 # Local seed files.
 .seed

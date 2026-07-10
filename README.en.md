@@ -4,6 +4,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License">
+  <img src="https://img.shields.io/badge/status-early%20preview-orange.svg" alt="Early preview">
   <img src="https://img.shields.io/badge/platform-macOS%20Apple%20Silicon-1d1d1f.svg" alt="macOS Apple Silicon">
   <img src="https://img.shields.io/badge/built%20with-Tauri%202-C25A34.svg" alt="Tauri 2">
 </p>
@@ -19,6 +20,8 @@ Claude Science Proxy (CSP) is a local model switcher for Claude Science. It rout
 
 It is built for more than developers. You need Claude Science, a third-party API key, and the CSP desktop panel: create a profile, make it active, then click "一键开始" (Start).
 
+> **Early public preview**: source and releases are marked from `v0.1.0-public-preview`; the desktop app build line is around **0.3.x** and config formats may change. Please use [GitHub Issues](https://github.com/counterfactual5/Claude-Science-Proxy/issues). Pre-publish checklist: [`docs/PUBLIC_RELEASE_CHECKLIST.md`](./docs/PUBLIC_RELEASE_CHECKLIST.md).
+
 > The current app mainly targets macOS Apple Silicon. Because the app is not notarized yet, macOS may ask you to right-click and choose "Open" the first time.
 
 [Download latest release](../../releases/latest) · [Changelog](./CHANGELOG.md)
@@ -26,6 +29,7 @@ It is built for more than developers. You need Claude Science, a third-party API
 ## Contents
 
 - [Why CSP exists](#why-csp-exists)
+- [How CSP differs from CC Switch](#how-csp-differs-from-cc-switch)
 - [What it can do](#what-it-can-do)
 - [Quick start](#quick-start)
 - [Supported model sources](#supported-model-sources)
@@ -34,6 +38,8 @@ It is built for more than developers. You need Claude Science, a third-party API
 - [How it protects your real account](#how-it-protects-your-real-account)
 - [Current limitations](#current-limitations)
 - [Languages](#languages)
+- [Contributing](#contributing)
+- [Feedback and support](#feedback-and-support)
 - [Development](#development)
 - [Risk and disclaimer](#risk-and-disclaimer)
 
@@ -49,6 +55,19 @@ CSP acts as a local runtime control plane:
 - It translates between Anthropic Messages API and OpenAI-compatible APIs when needed.
 
 In short: CSP is to Claude Science what CC Switch is to Claude Code, but Science also needs a launch-ticket and sandbox layer.
+
+## How CSP differs from CC Switch
+
+The two projects are **independent** and not affiliated. Use this table to decide if you need CSP:
+
+| | [CC Switch](https://github.com/farion1231/cc-switch) | **CSP (this repo)** |
+|---|---|---|
+| Target app | Claude **Code** (CLI / IDE ecosystem) | Claude **Science** (research agent desktop app) |
+| Core job | Switch API / model for Claude Code | Launch ticket + sandbox + model relay for Science |
+| Virtual login | Usually not required | Required (local ticket; no copy of real Claude credentials) |
+| Isolation | Mostly env / config switching | Separate HOME, ports, `~/.csp/sandbox` |
+| Multi-model | Multiple profiles | Profiles + **virtual model registry** (8 shell IDs → real models) |
+| Platform | Cross-platform leaning | Currently **macOS Apple Silicon** first |
 
 ```text
 Claude Science sandbox
@@ -70,8 +89,8 @@ Claude Science sandbox
 
 - Supports native Anthropic-compatible endpoints, OpenAI Chat Completions-compatible endpoints, and OpenAI Responses-compatible endpoints.
 - Supports custom `base_url`, model names, and relay providers.
-Native Anthropic endpoints such as DeepSeek, Kimi, and MiniMax are passed through when possible to preserve tool use, thinking, and streaming behavior.
-Multiple models per active profile (virtual registry), switchable in the Science model selector.
+- Native Anthropic endpoints such as DeepSeek, Kimi, and MiniMax are passed through when possible to preserve tool use, thinking, and streaming behavior.
+- Multiple models per active profile (virtual registry), switchable in the Science model selector.
 - Local config and logs make debugging and issue reports easier.
 
 ## Quick start
