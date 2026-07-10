@@ -1,7 +1,7 @@
 # 沙箱卡在「Switching organization」的根因与修复方案
 
 **状态**：根因已确认（2026-07-03，隔离沙箱复现）+ **实机整链复现并验证修复**（2026-07-03，用户在场，独立沙箱端口 8990 / 独立 HOME，全程未碰真实 8765 / `~/.claude-science`）。**关键修正：fast-fail 必须回 401（未登录）而非 403（禁止）**，详见文末「实机验证」。隔离测试 `test/test_proxy_connect.py` 已更新为断言 401。
-**来源**：一位下游用户私信反馈「一键越过登录后，Science 卡在 `Switching organization` 进不去」。
+**来源**：外部用户反馈（渠道已匿名）——「一键开始后 Science 卡在 `Switching organization` 进不去」。
 
 ## 一句话根因
 
@@ -26,7 +26,7 @@
 
 关键结论：**决定「正常 vs 卡住」的唯一变量，是 claude.ai 请求「快速失败」还是「挂住」**。
 
-为什么开发机不卡：本机有 Clash 系统代理（`https_proxy=127.0.0.1:7890`）能到 claude.ai，profile 秒拿 401。反馈的用户大概率**没有能到 claude.ai 的代理/VPN**（国内直连被墙、SYN 被丢 → 挂住）。
+为什么开发机不卡：本机若配置了可达 claude.ai 的 HTTP(S) 代理，profile 请求会快速返回 401。无代理/VPN 的环境（国内直连被墙、SYN 被丢）更容易挂住。
 
 排除项：
 - H3（UI 资源走远程 CDN 被墙）→ 排除，UI 由本地 operon 自带。

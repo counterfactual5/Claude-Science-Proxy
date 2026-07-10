@@ -81,24 +81,6 @@
       "tests": [
         "test.test_provider_policy.ThinkingNormalization.test_relay_enabled_policy_drops_forced_tool_choice"
       ]
-    },
-    {
-      "id": "provider.dashscope.responses-tools-cap",
-      "scope": "provider",
-      "match": {
-        "api_format": "openai_responses",
-        "base_url_contains": "dashscope.aliyuncs.com",
-        "has_tools": true
-      },
-      "status": "limited",
-      "action": "degrade",
-      "reason": "DashScope Responses tool requests use a conservative max_output_tokens cap to avoid provider-side rejection.",
-      "evidence": [
-        "proxy/responses_compat.py:29"
-      ],
-      "tests": [
-        "test.test_proxy_units.ResponsesMapping.test_dashscope_responses_tool_requests_use_conservative_cap"
-      ]
     }
   ],
   "tool_rules": [
@@ -160,24 +142,6 @@
       ],
       "tests": [
         "test.test_provider_policy.ThinkingNormalization.test_deepseek_forced_tool_choice_disables_thinking"
-      ]
-    },
-    {
-      "id": "tool.dashscope.responses.web_search-drop",
-      "scope": "tool",
-      "match": {
-        "api_format": "openai_responses",
-        "base_url_contains": "dashscope.aliyuncs.com",
-        "tool_name": "web_search"
-      },
-      "status": "limited",
-      "action": "drop",
-      "reason": "DashScope Responses-compatible endpoints reject web_search in this path, so CSP drops that tool while preserving other function tools.",
-      "evidence": [
-        "proxy/responses_compat.py:58"
-      ],
-      "tests": [
-        "test.test_proxy_units.ResponsesMapping.test_dashscope_responses_drops_incompatible_web_search_tool"
       ]
     },
     {
@@ -421,7 +385,7 @@
       "reason": "Non-Anthropic CONNECT currently opens a direct TCP tunnel; external MCP access can fail on networks where direct egress is blocked.",
       "evidence": [
         "proxy/csp_proxy.py:554",
-        "https://github.com/SuperJJ007/Claude-Science-Proxy/issues/11"
+        "https://github.com/counterfactual5/Claude-Science-Proxy/issues/11"
       ],
       "tests": [
         "test.test_proxy_connect.ProxyConnect.test_connect_passthrough_tunnels_bytes"

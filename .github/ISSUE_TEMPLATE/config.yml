@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Contributing guide
+    url: https://github.com/counterfactual5/Claude-Science-Proxy#参与贡献
+    about: Read iron rules (CLAUDE.md) and run offline tests before opening a PR
+  - name: Security / sensitive data
+    url: https://github.com/counterfactual5/Claude-Science-Proxy#风险与免责声明
+    about: Do not attach keys, tokens, or real ~/.claude-science paths to public issues

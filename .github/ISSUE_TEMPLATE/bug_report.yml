@@ -1,0 +1,66 @@
+name: Bug report
+description: Report a problem with Claude Science Proxy (CSP)
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report an issue. Please **do not** paste API keys, OAuth tokens, or full `~/.csp/logs/` files.
+        See [README — Feedback](https://github.com/counterfactual5/Claude-Science-Proxy#反馈与社区) for what to include.
+
+  - type: input
+    id: version
+    attributes:
+      label: CSP version
+      description: App version or git tag / commit SHA
+      placeholder: e.g. 0.3.6 or main @ abc1234
+    validations:
+      required: true
+
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: macOS version and chip (Apple Silicon / Intel)
+      placeholder: e.g. macOS 15.5, arm64
+    validations:
+      required: true
+
+  - type: input
+    id: provider
+    attributes:
+      label: Provider and model
+      placeholder: e.g. GLM glm-5.2, DeepSeek, custom OpenAI
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: What you clicked / configured before the problem appeared
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs (redacted)
+      description: Paste only redacted excerpts from `~/.csp/logs/` — no keys or path secrets
+    validations:
+      required: false
