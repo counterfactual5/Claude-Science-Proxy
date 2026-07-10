@@ -59,7 +59,7 @@ if [[ ! -d "$DATA_DIR/bin" ]]; then
   echo "运行时就绪。"
 fi
 
-# During ~/.csswitch → ~/.csp migration, atomic_copy writes 0600 and drops +x; cp -Rc usually preserves source perms.
+# During atomic_copy, files may be written at 0600 and drop +x; cp -Rc usually preserves source perms.
 # Idempotently fix conda/bin and bin/claude-science on every start to avoid micromamba permission denied in Environments.
 if [[ -f "$DATA_DIR/bin/claude-science" ]]; then
   chmod +x "$DATA_DIR/bin/claude-science" 2>/dev/null || true

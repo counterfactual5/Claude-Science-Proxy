@@ -93,11 +93,6 @@ pub(crate) fn profile_capabilities(p: &config::Profile) -> serde_json::Value {
 /// Build get_config payload: profile keys are masked only; full keys never leave the backend.
 pub(crate) fn build_get_config(dir: &Path) -> Result<serde_json::Value, String> {
     let cfg = config::load_from(dir).map_err(|e| e.to_string())?;
-    // One-shot migration notice: clear after read so get_config does not repeat it.
-    let notice = cfg.pending_notice.clone();
-    if notice.is_some() {
-        config::update(dir, |c| c.pending_notice = None).map_err(|e| e.to_string())?;
-    }
     let profiles: Vec<serde_json::Value> = cfg
         .profiles
         .iter()
@@ -116,10 +111,9 @@ pub(crate) fn build_get_config(dir: &Path) -> Result<serde_json::Value, String> 
     Ok(json!({
         "schema_version": cfg.schema_version,
         "active_id": cfg.active_id,
-        "active_ids": cfg.active_ids,
         "profiles": profiles,
         "templates": build_list_templates(), "proxy_port": cfg.proxy_port,
-        "sandbox_port": cfg.sandbox_port, "pending_notice": notice,
+        "sandbox_port": cfg.sandbox_port,
     }))
 }
 
@@ -430,10 +424,9 @@ mod tests {
     };
     use crate::config;
 
-    /// Per-test isolated temp `.csswitch` dir (process id + thread id + random suffix), no cross-test interference.
+    /// Per-test isolated temp `.csp` dir (process id + thread id + random suffix), no cross-test interference.
     fn tmpdir_profile() -> std::path::PathBuf {
-        let base =
-            std::env::temp_dir().join(format!("csswitch-profile-test-{}", std::process::id()));
+        let base = std::env::temp_dir().join(format!("csp-profile-test-{}", std::process::id()));
         let d = base.join(format!(
             "{:?}-{}",
             std::thread::current().id(),
@@ -441,7 +434,7 @@ mod tests {
         ));
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(&d).unwrap();
-        d.join(".csswitch")
+        d.join(".csp")
     }
 
     // ---------- P2-d: non-active "save with honest label" verdict (explicit reject blocks; 200=verified; ambiguous/no response=save unverified) ----------
@@ -668,17 +661,20 @@ mod tests {
     }
 
     #[test]
-    fn list_templates_has_eleven() {
+    fn list_templates_has_nine() {
         let v = build_list_templates();
-        assert_eq!(v.len(), 11);
+        assert_eq!(v.len(), 9);
         assert!(v.iter().any(|t| t["id"] == "custom"));
         assert!(v.iter().any(|t| t["id"] == "custom-openai"));
         assert!(v.iter().any(|t| t["id"] == "custom-openai-responses"));
         assert!(v.iter().any(|t| t["id"] == "kimi"));
         assert!(v.iter().any(|t| t["id"] == "minimax"));
-        let qwen = v.iter().find(|t| t["id"] == "qwen").unwrap();
-        assert_eq!(qwen["capabilities"]["model_discovery"], "builtin_static");
-        assert_eq!(qwen["capabilities"]["supports_tools_hint"], "translated");
+        let deepseek = v.iter().find(|t| t["id"] == "deepseek").unwrap();
+        assert_eq!(
+            deepseek["capabilities"]["model_discovery"],
+            "builtin_static"
+        );
+        assert_eq!(deepseek["capabilities"]["supports_tools_hint"], "native");
         let custom = v.iter().find(|t| t["id"] == "custom-openai").unwrap();
         assert_eq!(
             custom["capabilities"]["model_discovery"],

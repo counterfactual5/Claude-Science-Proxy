@@ -65,9 +65,8 @@ fn chmod_executable_if_regular_file(path: &Path) {
     let _ = fs::set_permissions(path, fs::Permissions::from_mode(mode | 0o755));
 }
 
-/// `~/.csswitch` → `~/.csp` migration copies the sandbox tree with `0600` files,
-/// stripping `+x` from `micromamba` / `claude-science`. Fresh `cp -Rc` clones keep
-/// source modes; this helper is idempotent for both paths.
+/// Fresh sandbox clones may land with `0600` files stripping `+x` from `micromamba` / `claude-science`;
+/// this helper restores execute bits idempotently.
 pub(crate) fn ensure_sandbox_runtime_permissions(data_dir: &Path) {
     chmod_executable_if_regular_file(&data_dir.join("bin").join("claude-science"));
     let conda_bin = data_dir.join("conda").join("bin");

@@ -7,12 +7,12 @@
 | 文中常见旧称 | 当前（2026-07 起） |
 |---|---|
 | CSSwitch | **Claude Science Proxy（CSP）** |
-| `~/.csswitch/config.json` | **`~/.csp/CSP.json`**（首次启动一次性迁移） |
+| `~/.csswitch/config.json` | **`~/.csp/CSP.json`**（历史路径，2026-07 已移除自动迁移） |
 | `~/.csswitch/sandbox` | **`~/.csp/sandbox/home`** |
 | `com.csswitch.*` bundle / maintenance | **`com.csp.menubar`**；旧 maintenance label 安装时已卸载 |
 | 菜单栏 / 托盘 app | **正常窗口** Tauri app（已去托盘） |
 | `csswitch_proxy.py` | **`csp_proxy.py`** |
 
-**不要**根据 findings 里的路径或产品名去改运行时代码；代码内保留的 `LEGACY_*`、`~/.csswitch` 迁移逻辑见 [`../docs/DEVELOPMENT.md`](../docs/DEVELOPMENT.md)「遗留命名」。
+**不要**根据 findings 里的路径或产品名去改运行时代码；当前路径与命名以 [`../docs/DEVELOPMENT.md`](../docs/DEVELOPMENT.md) 为准。
 
 当前架构与 i18n 约定以 `docs/DEVELOPMENT.md`、`CHANGELOG.md` 为准。
