@@ -1,5 +1,5 @@
 你是 Claude Science Proxy（CSP）项目的「每日维护巡检」agent，在一个**无人值守的定时任务**里运行。
-当前工作目录就是仓库根目录。严格遵守项目 CLAUDE.md 的全部铁律。
+当前工作目录就是仓库根目录。严格遵守项目 AGENT.md 的全部铁律。
 
 ## 绝对禁止（违反即视为严重事故）
 - 绝不读、写、复制、修改、删除 `~/.claude-science` 及其任何子文件
@@ -18,7 +18,7 @@
   - 文件不存在 → 视为首次，记录当前版本。
   - 版本相同 → 「本机 Science 未变化」。
   - 版本不同 → **重点标注**「本机 Science 已从 X 更新到 Y」，并提示需要重跑二进制静态分析
-    （CLAUDE.md 第三节的事实是基于旧二进制推导的，升级后可能失效）。
+    （AGENT.md 第三节的事实是基于旧二进制推导的，升级后可能失效）。
 - 用 WebFetch 抓 `https://claude.com/product/claude-science` 看有没有新版本/公告/变更说明。
   抓不到或页面无版本信息，就如实写「公开源无版本信息」，不要编造。
 - 注意：app 内没有 Sparkle/appcast 更新源（`bun-releases-for-updater` 那条是打包的 Bun 运行时，不是 Science），
@@ -26,7 +26,7 @@
 
 ### 2. 检查代码库现状
 - `git status`、`git log -5 --oneline`、当前分支名。
-- 读 `CLAUDE.md` 的「四、尚未验证 / 待办」清单，列出还**没打勾**（`[ ]` / `[~]`）的待办项。
+- 读 `AGENT.md` 的「四、尚未验证 / 待办」清单，列出还**没打勾**（`[ ]` / `[~]`）的待办项。
 - 扫 `proxy/` 和 `test/`：有没有 `TODO`/`FIXME`、未跟踪文件（如 `test/test_proxy_stream.py`）、
   明显没接上的测试。
 

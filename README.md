@@ -143,7 +143,7 @@ Science only accepts model IDs starting with `claude-`. CSP allocates **up to ei
 
 ## Contributing
 
-Issues and PRs welcome. Please read [`CLAUDE.md`](./CLAUDE.md) (safety rules) and [`docs/DEVELOPMENT.md`](./docs/DEVELOPMENT.md) first.
+Issues and PRs welcome. Please read [`AGENT.md`](./AGENT.md) (safety rules) and [`docs/DEVELOPMENT.md`](./docs/DEVELOPMENT.md) first.
 
 ```bash
 bash test/run_all.sh

@@ -8,13 +8,13 @@ All developer and user-facing documentation in this repository is maintained in 
 
 - **For users**: Start with `README.md` (or `README.zh.md`).
 - **For contributors**: Read `README.md` and this `DEVELOPMENT.md` guide.
-- **For AI coding assistants**: Read `CLAUDE.md` at the root of the repository for code style and safety rules.
+- **For AI coding assistants**: Read `AGENT.md` at the root of the repository for code style and safety rules.
 
 ---
 
 ## Iron Rules (Highest Priority)
 
-Refer to the first section of `CLAUDE.md` for safety rules. Core constraints:
+Refer to the first section of `AGENT.md` for safety rules. Core constraints:
 1. **Never copy, read, modify, or delete real Claude login credentials**, OAuth tokens, account state, or user data (including `.oauth-tokens`, `encryption.key`, `active-org.json` under `~/.claude-science`).
 2. During the initial sandbox setup, you may clone runtime resources (`bin`, `conda`, `runtime`, `seed-assets`) in **read-only** mode from the real `~/.claude-science` directory, but never copy account credentials or conversation databases.
 3. **Never copy real OAuth tokens into the sandbox**; the sandbox must only use locally forged virtual OAuth tokens.
@@ -44,7 +44,7 @@ The following names are kept in historical logs or legacy code blocks and should
 All production code comments (Rust, Python, JS) must be in **English**. If you modify an older file with Chinese comments, please refactor them to English.
 
 - **Module Headers**: Document the module responsibilities, inputs/outputs, and invariants in English.
-- **Safety Guards**: Keep them explicitly commented in English with a link to `CLAUDE.md`.
+- **Safety Guards**: Keep them explicitly commented in English with a link to `AGENT.md`.
 - **Bug Fixes**: Avoid writing vague phrases like "Fix P1" or "Fix #9"; use descriptive text or link to the GitHub issue.
 
 ---

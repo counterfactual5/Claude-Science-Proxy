@@ -6,7 +6,7 @@
 #   try its hard-coded profile/account endpoints (api.anthropic.com). Those failures do not block use,
 #   so we do not claim absolute "zero Anthropic contact" (consistent with README disclaimer).
 #
-# Iron-rule safeguards (see CLAUDE.md):
+# Iron-rule safeguards (see AGENT.md):
 #   - Separate HOME + data-dir + port; never modify/delete real ~/.claude-science; never use port 8765
 #   - Read-only APFS clone of runtime assets from real ~/.claude-science (bin/conda/runtime/seed-assets); never copy real login credentials or user data
 #   - Sandbox gets [forged fake credentials] (make-virtual-oauth.mjs), unrelated to real OAuth

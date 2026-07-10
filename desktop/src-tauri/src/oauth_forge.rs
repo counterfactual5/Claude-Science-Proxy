@@ -12,7 +12,7 @@
 //!
 //! Iron rules: **never write the real credential tree** (`~/.claude-science`); fake email must use
 //! `localhost.invalid`; reject symlinks before write; O_EXCL temp file + rename + mode 0600.
-//! See `CLAUDE.md` for the full safety contract.
+//! See `AGENT.md` for the full safety contract.
 
 use std::collections::BTreeMap;
 use std::io::{Read, Write};
