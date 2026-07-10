@@ -79,7 +79,7 @@ class ProxyAuth(unittest.TestCase):
         cls.up_url, cls.hits, cls.stop_up = start_mock("json")
         port = 18970  # S0 globally unique port: ProxyAuth
         cls.base = f"http://127.0.0.1:{port}"
-        cls.logf = os.path.join(tempfile.gettempdir(), f"csswitch-auth-{port}.log")
+        cls.logf = os.path.join(tempfile.gettempdir(), f"csp-auth-{port}.log")
         open(cls.logf, "w").close()
         env = dict(os.environ, DEEPSEEK_API_KEY="fake-key",
                    CSP_UPSTREAM_URL=cls.up_url)
@@ -218,7 +218,7 @@ class ProxyUpstreamErrorPassthrough(unittest.TestCase):
         cls.up_url, cls.hits, cls.stop_up = start_mock("status:401")
         port = 18971  # S0 globally unique port: ProxyUpstreamErrorPassthrough
         cls.base = f"http://127.0.0.1:{port}"
-        cls.logf = os.path.join(tempfile.gettempdir(), f"csswitch-401-{port}.log")
+        cls.logf = os.path.join(tempfile.gettempdir(), f"csp-401-{port}.log")
         open(cls.logf, "w").close()
         env = dict(os.environ, DEEPSEEK_API_KEY="fake-key",
                    CSP_UPSTREAM_URL=cls.up_url)
@@ -256,7 +256,7 @@ class ProxyQwenUpstreamErrorPassthrough(unittest.TestCase):
         cls.up_url, cls.hits, cls.stop_up = start_mock("status:401")
         port = 18972  # S0 globally unique port: ProxyQwenUpstreamErrorPassthrough
         cls.base = f"http://127.0.0.1:{port}"
-        cls.logf = os.path.join(tempfile.gettempdir(), f"csswitch-qwen401-{port}.log")
+        cls.logf = os.path.join(tempfile.gettempdir(), f"csp-qwen401-{port}.log")
         open(cls.logf, "w").close()
         env = dict(os.environ, DASHSCOPE_API_KEY="fake-key",
                    CSP_UPSTREAM_URL=cls.up_url)
@@ -294,7 +294,7 @@ class ProxyRelayToolSchemaNormalization(unittest.TestCase):
         cls.up_base, cls.bodies, cls.stop_up = _start_capture_upstream()
         port = 18997  # S0 globally unique port: ProxyRelayToolSchemaNormalization
         cls.base = f"http://127.0.0.1:{port}"
-        cls.logf = os.path.join(tempfile.gettempdir(), f"csswitch-relay-tools-{port}.log")
+        cls.logf = os.path.join(tempfile.gettempdir(), f"csp-relay-tools-{port}.log")
         open(cls.logf, "w").close()
         env = dict(os.environ, CSP_RELAY_KEY="fake-relay-key",
                    CSP_RELAY_BASE_URL=cls.up_base,
@@ -347,7 +347,7 @@ class ProxyOpenAICustomModelsDiscovery(unittest.TestCase):
         cls.up_url, cls.hits, cls.stop_up = start_mock("openai_models")
         port = 18995
         cls.base = f"http://127.0.0.1:{port}"
-        cls.logf = os.path.join(tempfile.gettempdir(), f"csswitch-openai-models-{port}.log")
+        cls.logf = os.path.join(tempfile.gettempdir(), f"csp-openai-models-{port}.log")
         open(cls.logf, "w").close()
         env = dict(os.environ, CSP_OPENAI_KEY="fake-openai-key",
                    CSP_OPENAI_BASE_URL=cls.up_url)
@@ -388,7 +388,7 @@ class ProxyOpenAICustomForcedModelList(unittest.TestCase):
         cls.up_url, cls.hits, cls.stop_up = start_mock("openai_models")
         port = 18998
         cls.base = f"http://127.0.0.1:{port}"
-        cls.logf = os.path.join(tempfile.gettempdir(), f"csswitch-openai-forced-models-{port}.log")
+        cls.logf = os.path.join(tempfile.gettempdir(), f"csp-openai-forced-models-{port}.log")
         open(cls.logf, "w").close()
         env = dict(os.environ, CSP_OPENAI_KEY="fake-openai-key",
                    CSP_OPENAI_BASE_URL=cls.up_url,
@@ -440,7 +440,7 @@ class ProxyOpenAIResponses(unittest.TestCase):
         cls.up_url, cls.hits, cls.stop_up = start_mock("openai_responses")
         port = 18996
         cls.base = f"http://127.0.0.1:{port}"
-        cls.logf = os.path.join(tempfile.gettempdir(), f"csswitch-openai-responses-{port}.log")
+        cls.logf = os.path.join(tempfile.gettempdir(), f"csp-openai-responses-{port}.log")
         open(cls.logf, "w").close()
         env = dict(os.environ, CSP_OPENAI_KEY="fake-openai-key",
                    CSP_OPENAI_BASE_URL=cls.up_url,
