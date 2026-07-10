@@ -385,7 +385,7 @@
       "reason": "Non-Anthropic CONNECT currently opens a direct TCP tunnel; external MCP access can fail on networks where direct egress is blocked.",
       "evidence": [
         "proxy/csp_proxy.py:554",
-        "docs/known-issues.md#11",
+        "docs/known-issues.md#11"
       ],
       "tests": [
         "test.test_proxy_connect.ProxyConnect.test_connect_passthrough_tunnels_bytes"
