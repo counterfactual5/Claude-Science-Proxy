@@ -4,7 +4,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 
 use crate::runtime::i18n::i18n_err;
-use crate::runtime::provider::adapter_for_profile;
+use crate::runtime::provider::{adapter_for_profile, build_model_registry_json};
 use crate::{config, templates};
 
 const STATIC_CATALOG_JSON: &str = include_str!("../../../../catalog/capabilities.v1.json");
@@ -40,6 +40,7 @@ pub(crate) struct CatalogContext {
     model: String,
     thinking_policy: String,
     shim_mode: String,
+    uses_virtual_registry: bool,
 }
 
 impl CapabilityCatalog {
@@ -154,6 +155,7 @@ pub(crate) fn context_for_profile(p: &config::Profile, shim_mode: &str) -> Catal
         model: p.model.clone(),
         thinking_policy: templates::thinking_policy_for(&p.template_id).to_string(),
         shim_mode: shim_mode.to_string(),
+        uses_virtual_registry: build_model_registry_json(p).is_some(),
     }
 }
 
@@ -175,6 +177,15 @@ fn contains_match(fields: &BTreeMap<String, Value>, key: &str, actual: &str) -> 
 
 fn condition_match(fields: &BTreeMap<String, Value>, ctx: &CatalogContext) -> bool {
     match fields.get("condition").and_then(Value::as_str) {
+        Some("virtual_model_registry active") => ctx.uses_virtual_registry,
+        Some("relay_force_fallback") => {
+            !ctx.uses_virtual_registry
+                && !ctx.model.trim().is_empty()
+                && matches!(
+                    ctx.provider.as_str(),
+                    "relay" | "openai-custom" | "openai-responses"
+                )
+        }
         Some("relay_force_model present") => {
             ctx.provider == "relay" && !ctx.model.trim().is_empty()
         }
@@ -302,6 +313,10 @@ mod tests {
         assert!(catalog
             .providers
             .iter()
+            .any(|r| r.id == "provider.virtual-model-registry"));
+        assert!(catalog
+            .providers
+            .iter()
             .any(|r| r.id == "provider.relay.force-model-shell"));
     }
 
@@ -330,7 +345,8 @@ mod tests {
         };
         let v = diagnostics_for_profile(Some(&p), "off");
         let active = ids(&v, "active_rules");
-        assert!(active.contains(&"provider.relay.force-model-shell".to_string()));
+        assert!(active.contains(&"provider.virtual-model-registry".to_string()));
+        assert!(!active.contains(&"provider.relay.force-model-shell".to_string()));
         assert!(active.contains(&"provider.kimi.relay-thinking-enabled".to_string()));
         assert!(!active.contains(&"tool.kimi.web_search.server-tool-filter".to_string()));
         assert!(!active.contains(&"tool.relay.input-schema-normalize".to_string()));

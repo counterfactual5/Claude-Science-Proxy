@@ -3,6 +3,11 @@
 This module keeps /v1/models normalization independent from the HTTP handler
 and provider globals. It intentionally does not know about keys, secrets, or
 process state.
+
+``normalize_models_response`` is for app-side upstream discovery (scratch proxy);
+it must preserve raw upstream ids. Science-facing paths use
+``force_shell_response`` / ``static_models_response`` (and ``ModelRegistry``)
+which apply ``science_safe_display_name``.
 """
 
 import model_sort
@@ -23,11 +28,10 @@ def normalize_models_response(raw):
         # Capability bit: inferred from upstream supported_parameters only; never guessed (missing → None).
         sp = m.get("supported_parameters") if isinstance(m, dict) else None
         supports_tools = ("tools" in sp) if isinstance(sp, list) else None
-        raw_name = (m.get("display_name") if isinstance(m, dict) else None) or mid
         out.append({
             "type": "model",
             "id": mid,
-            "display_name": science_safe_display_name(raw_name),
+            "display_name": (m.get("display_name") if isinstance(m, dict) else None) or mid,
             "supports_tools": supports_tools,
             "created_at": CREATED_AT,
         })

@@ -77,7 +77,7 @@ v1 catalog 只登记已知事实：
 - DeepSeek：forced `tool_choice` 时禁用 thinking。
 - Kimi relay thinking：`thinking_policy=enabled` 时去掉 forced `tool_choice`，保留 tools。
 - DashScope/OpenAI Responses：drop `web_search`，带工具时使用 conservative output cap。
-- Science model selector：正式 force 模型时返回 `claude-opus-4-8` 壳，真实模型名放 `display_name`。
+- Science model selector：正式路径优先 `CSP_MODEL_REGISTRY`（最多 8 个壳 id，display_name 经 `science_safe_display_name` 消毒）；无 registry 时 force 回退返回单壳 `claude-opus-4-8` + 消毒后的 display_name。
 - Hosted MCP / Directory connectors：虚拟 OAuth 下是官方托管能力边界，只能诊断和提供本地替代方向。
 - Streamable HTTP MCP：外部 HTTP MCP 依赖 transport/upstream proxy 能力，当前标 `limited`。
 - Science `0.1.0-dev` / `0.1.15-dev`：记录 route/version 差异，尤其 auth nonce、conda/pypi remote、skills resync。

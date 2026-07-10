@@ -260,11 +260,12 @@ pub(crate) fn build_model_registry_json(p: &config::Profile) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        adapter_for_profile, assert_format_supported, gateway_kind_for_adapter,
-        key_env_for_adapter, key_fingerprint, normalize_shim_mode, parse_endpoint, proxy_args_for,
-        proxy_args_for_active_profiles, proxy_fingerprint, proxy_fingerprint_with_runtime,
-        reject_openai_custom_anthropic_base, relay_missing_base_url, relay_missing_profile_models,
-        should_scratch_candidate, upstream_endpoint, build_model_registry_json,
+        adapter_for_profile, assert_format_supported, build_model_registry_json,
+        gateway_kind_for_adapter, key_env_for_adapter, key_fingerprint, normalize_shim_mode,
+        parse_endpoint, proxy_args_for, proxy_args_for_active_profiles, proxy_fingerprint,
+        proxy_fingerprint_with_runtime, reject_openai_custom_anthropic_base,
+        relay_missing_base_url, relay_missing_profile_models, should_scratch_candidate,
+        upstream_endpoint,
     };
     use crate::config::Profile;
 
@@ -584,16 +585,12 @@ mod tests {
 
     #[test]
     fn build_model_registry_json_uses_flagship_default() {
-        let mut p = Profile {
+        let p = Profile {
             template_id: "custom-openai".into(),
             api_format: "openai_chat".into(),
             default_model: "glm-4.5".into(),
             model: "glm-4.5".into(),
-            active_models: vec![
-                "glm-4.5".into(),
-                "glm-5.2".into(),
-                "glm-4.7".into(),
-            ],
+            active_models: vec!["glm-4.5".into(), "glm-5.2".into(), "glm-4.7".into()],
             ..Default::default()
         };
         let json = build_model_registry_json(&p).expect("registry json");

@@ -19,18 +19,17 @@ class ModelDiscoveryTests(unittest.TestCase):
         _, body = md.force_shell_response("DeepSeek V4 Pro")
         self.assertEqual(body["data"][0]["display_name"], "DeepSeek V4 Pro")
 
-    def test_normalize_models_response_sanitizes_display_names(self):
+    def test_normalize_models_response_preserves_raw_upstream_names(self):
         raw = {
             "data": [
+                {"id": "claude-opus-4-8"},
                 {"id": "glm-5-turbo"},
-                {"id": "glm-5.2", "display_name": "glm-5.2"},
             ]
         }
         out, ids = md.normalize_models_response(raw)
         by_id = {m["id"]: m for m in out}
-        self.assertEqual(by_id["glm-5-turbo"]["display_name"], "glm-5.turbo")
-        self.assertEqual(by_id["glm-5.2"]["display_name"], "glm-5.2")
-        self.assertEqual(ids, ["glm-5.2", "glm-5-turbo"])
+        self.assertEqual(by_id["claude-opus-4-8"]["display_name"], "claude-opus-4-8")
+        self.assertEqual(by_id["glm-5-turbo"]["display_name"], "glm-5-turbo")
 
     def test_static_models_response_sanitizes_display_names(self):
         _, body = md.static_models_response([
