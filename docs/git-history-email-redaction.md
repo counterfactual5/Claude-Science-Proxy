@@ -75,7 +75,15 @@ git push origin :refs/tags/v0.3.0-beta.2   # 远程删旧 tag（若曾推送）
 
 ## 本机是否已执行？
 
-见仓库根目录 `.git/filter-repo/already_ran`（filter-repo 成功后会写入）。若你只看到本文档、未看到改写后的 `git log` 变化，说明**仅文档就绪，历史尚未改写**——由维护者在 push 前按上表决定。
+**是（2026-07-10）**：已在本地 `feat/multi-model-registry` 运行 `git filter-repo` 完成改写。当前 `git log --format='%ae' | sort -u` 仅含 GitHub noreply 地址。
+
+**尚未 force push**。远程仍保留旧历史；你确认后执行：
+
+```bash
+git push --force-with-lease origin feat/multi-model-registry
+```
+
+若远程已有 Release tag，需按上文「与 Release tag 的关系」重打。
 
 ## 不改写时的替代
 
