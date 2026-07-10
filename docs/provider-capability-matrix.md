@@ -53,4 +53,4 @@ It is not a live provider certification, real Claude account check, Science GUI 
 
 ## Relationship To Historical Provider Research
 
-[`docs/provider-support.md`](provider-support.md) is historical research and reference material. It is useful for candidate provider discovery and CC Switch comparison, but the matrix above is the current CSP support boundary for source, catalog, status, docs, and tests.
+[`docs/provider-support.md`](provider-support.md) is historical research and reference material. It is useful for candidate provider discovery, but the matrix above is the current CSP support boundary for source, catalog, status, docs, and tests.

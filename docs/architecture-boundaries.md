@@ -88,7 +88,7 @@ The static capability catalog and provider matrix should describe these facts, n
 
 ## Reference Projects
 
-CC Switch and CS Native are reference projects for control-plane and provider-switching ideas only. Do not vendor large blocks of code or assume their runtime model applies to Claude Science. CSP has a Science-specific virtual-login, sandbox, and transport boundary that those references do not remove.
+CSP targets **Claude Science only**: virtual login, sandbox isolation, and loopback proxy are not interchangeable with Claude Code tooling. Do not vendor large blocks of unrelated control-plane code or assume another product's runtime model applies here.
 
 ## Refactor Discipline
 
