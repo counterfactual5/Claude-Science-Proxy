@@ -425,7 +425,7 @@ mod tests {
     fn unique_temp_dir(name: &str) -> std::io::Result<std::path::PathBuf> {
         let mut p = std::env::temp_dir();
         p.push(format!(
-            "csswitch-{name}-{}-{}",
+            "csp-{name}-{}-{}",
             std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)

@@ -520,13 +520,13 @@ pub fn load_from(dir: &Path) -> io::Result<Config> {
                 })
                 .collect();
             let mut cfg = normalize_active(raw);
-            let models_normalized = cfg
-                .profiles
-                .iter()
-                .zip(before_models.iter())
-                .any(|(p, (am, dm, m))| {
-                    p.active_models != *am || p.default_model != *dm || p.model != *m
-                });
+            let models_normalized =
+                cfg.profiles
+                    .iter()
+                    .zip(before_models.iter())
+                    .any(|(p, (am, dm, m))| {
+                        p.active_models != *am || p.default_model != *dm || p.model != *m
+                    });
             validate_loaded_ports(&cfg)?;
             let folded_active = before_active_len > 1 && cfg.active_ids.len() <= 1;
             if mode_migrated || folded_active || models_normalized {
@@ -789,7 +789,7 @@ mod tests {
 
     #[test]
     fn migrate_v3_to_v4_populates_active_ids() {
-        let d = tmpdir().join(".csswitch-v3");
+        let d = tmpdir().join(".csp-v3");
         fs::create_dir_all(&d).unwrap();
         fs::write(
             config_path(&d),
@@ -849,7 +849,7 @@ mod tests {
             ("same_ports", 18991, 18991, "errPortSame"),
         ];
         for (name, proxy_port, sandbox_port, i18n_key) in cases {
-            let d = tmpdir().join(format!(".csswitch-{name}"));
+            let d = tmpdir().join(format!(".csp-{name}"));
             fs::create_dir_all(&d).unwrap();
             fs::write(
                 config_path(&d),
@@ -869,7 +869,7 @@ mod tests {
 
     #[test]
     fn load_rejects_legacy_invalid_ports_before_v2_save() {
-        let d = tmpdir().join(".csswitch-legacy-bad-port");
+        let d = tmpdir().join(".csp-legacy-bad-port");
         fs::create_dir_all(&d).unwrap();
         let legacy = r#"{
             "provider":"deepseek",
