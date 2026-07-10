@@ -171,7 +171,7 @@ pub(crate) fn create_profile_inner(
     reject_openai_custom_anthropic_base(adapter, &p.base_url)?;
     // Model optional at create time; profile_switch validates before activation.
     let mut p = p;
-    p.sync_model_fields();
+    p.normalize_model_selection();
     config::update(dir, |c| c.profiles.push(p)).map_err(|e| e.to_string())?;
     Ok(id)
 }
@@ -260,7 +260,7 @@ pub(crate) fn update_profile_connection_inner(
             if let Some(d) = default_model {
                 p.default_model = d.to_string();
             }
-            p.sync_model_fields();
+            p.normalize_model_selection();
             if let Some(k) = key {
                 if !k.is_empty() {
                     p.api_key = k.to_string(); // empty key = leave existing
@@ -342,7 +342,13 @@ impl ConnectionEdit {
             p.model = m.clone();
         }
         if let Some(models) = &self.active_models {
-            p.active_models = models.clone();
+            let mut sorted: Vec<String> = models
+                .iter()
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect();
+            model_sort::sort_model_ids(&mut sorted);
+            p.active_models = sorted;
         }
         if let Some(d) = &self.default_model {
             p.default_model = d.clone();
@@ -352,7 +358,7 @@ impl ConnectionEdit {
                 p.api_key = k.clone();
             }
         }
-        p.sync_model_fields();
+        p.normalize_model_selection();
     }
 }
 
