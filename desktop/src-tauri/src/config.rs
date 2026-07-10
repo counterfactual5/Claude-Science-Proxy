@@ -481,7 +481,7 @@ pub fn load_from(dir: &Path) -> io::Result<Config> {
                     i18n_err("errCspJsonParse", json!({ "detail": e.to_string() })),
                 )
             })?;
-            let mut cfg = migrate_v3_to_v4(normalize_active(cfg));
+            let cfg = migrate_v3_to_v4(normalize_active(cfg));
             validate_loaded_ports(&cfg)?;
             save_to(dir, &cfg)?;
             Ok(cfg)
@@ -506,7 +506,7 @@ pub fn load_from(dir: &Path) -> io::Result<Config> {
                     )
                 })
                 .collect();
-            let mut cfg = normalize_active(raw);
+            let cfg = normalize_active(raw);
             let models_normalized =
                 cfg.profiles
                     .iter()
