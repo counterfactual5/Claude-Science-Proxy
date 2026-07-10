@@ -244,8 +244,7 @@ registry = "sparse+https://rsproxy.cn/index/"
 # 1. 版本号 bump（5 处一致）：desktop/package.json + package-lock.json（根 + packages[""]）
 #    + src-tauri/Cargo.toml + Cargo.lock（desktop 包）+ tauri.conf.json
 # 2. CHANGELOG.md 加条目（已修问题从 known-issues「毕业」到这里）；README 若有能力面变化一并改
-# 3. gh/git 前先： export HTTPS_PROXY=http://127.0.0.1:7890 HTTP_PROXY=http://127.0.0.1:7890 ALL_PROXY=http://127.0.0.1:7890
-#    （大写默认 8001 是死的，gh 会误报 token invalid）
+# 3. 若本机 HTTP(S) 代理环境变量不一致，先统一 `HTTPS_PROXY`/`HTTP_PROXY`/`ALL_PROXY` 再跑 `gh`/`git`（见 `CLAUDE.md` 环境备忘）
 git push origin main
 # 4. 打包 dmg：cd desktop && npm run tauri build
 # 5. tag + Release
