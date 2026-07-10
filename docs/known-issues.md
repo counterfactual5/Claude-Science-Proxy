@@ -159,7 +159,7 @@
 
 > **结论（可直接回用户）**：**不需要翻译，已经做了。**
 
-- 「翻译」（Anthropic ↔ OpenAI 互转，`_handle_openai` + `anthropic_to_openai`）用于 **OpenAI 兼容出站**：面板 **`openai-custom` / `openai-responses`**；CLI 遗留 **`--provider qwen`**（DashScope）。**不是** Kimi / MiniMax / GLM 等 relay 透传路径。
+- 「翻译」（Anthropic ↔ OpenAI 互转，`_handle_openai` + `anthropic_to_openai`）用于 **OpenAI 兼容出站**：面板 **`openai-custom` / `openai-responses`**。**不是** Kimi / MiniMax / GLM 等 relay 透传路径。
 - **deepseek** 是 `mode:"anthropic"` 原生透传、不翻译。
 - **Kimi / MiniMax 是 relay = `mode:"anthropic"`**，官方提供 `/anthropic` 兼容端点，走原生 Anthropic 透传（`_handle_anthropic`），**零翻译**。真机已证：两家 `/v1/messages` 直接透传 200（thinking 各自策略见 v0.3.2 实现：Kimi=enabled / MiniMax=adaptive）。
 
