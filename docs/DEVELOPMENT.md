@@ -185,7 +185,8 @@ desktop/src-tauri/src/
 ```bash
 # 起代理（默认 DeepSeek）
 DEEPSEEK_API_KEY=... python3 proxy/csp_proxy.py --provider deepseek --port 18991
-# 切千问（仅 CLI 调试，面板无千问模板）：--provider qwen + DASHSCOPE_API_KEY；relay 家：--provider relay + CSP_RELAY_BASE_URL/KEY/MODEL
+# 自定义 OpenAI 兼容代理调试：CSP_OPENAI_KEY=... python3 proxy/csp_proxy.py --provider openai-custom --port 18991
+# 自定义 Relay 兼容代理调试：CSP_RELAY_KEY=... python3 proxy/csp_proxy.py --provider relay --port 18991
 # 也支持 --env-file
 
 # 编译 / 跑 / 打包（desktop/，需 node 装 @tauri-apps/cli；产物含 .app / .dmg）

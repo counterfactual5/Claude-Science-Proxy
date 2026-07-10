@@ -204,7 +204,7 @@
       "action": "diagnose",
       "reason": "External Streamable HTTP MCP servers depend on outbound network routing; current CONNECT tunneling is direct unless a future upstream proxy path is added.",
       "evidence": [
-        "https://github.com/counterfactual5/Claude-Science-Proxy/issues/11",
+        "docs/known-issues.md#11",
         "proxy/csp_proxy.py:532",
         "scripts/launch-virtual-sandbox.sh:112"
       ],
@@ -223,7 +223,7 @@
       "action": "document",
       "reason": "Local stdio bio connectors are the preferred fallback for hosted MCP boundaries, but installation, discovery, and restart persistence need explicit verification before support can be claimed.",
       "evidence": [
-        "https://github.com/counterfactual5/Claude-Science-Proxy/pull/10"
+        "findings/2026-07-08-issue-26-custom-selector-evidence.md"
       ],
       "tests": []
     },
@@ -321,7 +321,7 @@
       "action": "diagnose",
       "reason": "Issue #15 reports that this Science build may refresh OAuth via hardcoded api.anthropic.com/oauth/token outside ANTHROPIC_BASE_URL; virtual OAuth can then be treated as logged-out. CSP surfaces this as a version/auth boundary, not as real-account success.",
       "evidence": [
-        "https://github.com/counterfactual5/Claude-Science-Proxy/issues/15",
+        "docs/known-issues.md#2a",
         "docs/known-issues.md:37",
         "findings/switching-organization-hang.md:16"
       ],
@@ -385,7 +385,7 @@
       "reason": "Non-Anthropic CONNECT currently opens a direct TCP tunnel; external MCP access can fail on networks where direct egress is blocked.",
       "evidence": [
         "proxy/csp_proxy.py:554",
-        "https://github.com/counterfactual5/Claude-Science-Proxy/issues/11"
+        "docs/known-issues.md#11",
       ],
       "tests": [
         "test.test_proxy_connect.ProxyConnect.test_connect_passthrough_tunnels_bytes"
@@ -417,7 +417,7 @@
       "action": "document",
       "reason": "An upstream proxy path is the recommended future fix for external MCP egress, but it is not implemented in the current main branch.",
       "evidence": [
-        "https://github.com/counterfactual5/Claude-Science-Proxy/pull/14",
+        "docs/architecture-boundaries.md",
         "proxy/http_transport.py"
       ],
       "tests": []
