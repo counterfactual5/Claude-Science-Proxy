@@ -15,7 +15,7 @@
 
 # Claude Science Proxy (CSP)
 
-**Run [Claude Science](https://claude.com) on the model APIs you already pay for** — DeepSeek, GLM, Kimi, MiniMax, OpenRouter, or any Anthropic- / OpenAI-compatible endpoint — while keeping Science’s agent workflow: tool use, code execution, skills, and MCP (where supported).
+**Run [Claude Science](https://claude.com) on the model APIs you already pay for** — DeepSeek, GLM, Kimi, MiniMax, OpenRouter, or any Anthropic- / OpenAI-compatible endpoint — while keeping Science’s agent workflow: tool use, code execution, and skills (where supported).
 
 CSP is a **macOS desktop app** (Tauri) that:
 
@@ -134,7 +134,7 @@ Science only accepts model IDs starting with `claude-`. CSP allocates **up to ei
 
 ## Current limitations
 
-- **Anthropic-hosted MCP** (`*.mcp.claude.com`) and some cloud-only features are unavailable or fast-fail
+- **Anthropic-hosted cloud features** (remote MCP, directory connectors) and some cloud-only capabilities are unavailable or fast-fail
 - Provider quality varies for tools, long context, thinking, images, and streaming
 - **Not Apple-notarized** — manual approval on first open
 - Proxy still requires **`python3`** today

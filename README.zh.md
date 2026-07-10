@@ -120,7 +120,7 @@ OpenAI 兼容类 provider 请通过「自定义 OpenAI」/「自定义 OpenAI Re
 
 ## 状态诊断与能力 catalog
 
-CSP 内置了只读的 capability catalog，用来把 provider、工具调用、MCP/skill、Science 版本和 transport 的已知兼容性边界显式化。诊断会返回当前 profile 命中的 catalog 规则和固定边界规则，便于定位「当前配置为什么这样处理」以及「哪些能力只能诊断或降级」。
+CSP 内置了只读的 capability catalog，用来把 provider、工具调用、Science 版本和 transport 的已知兼容性边界显式化。诊断会返回当前 profile 命中的 catalog 规则和固定边界规则，便于定位「当前配置为什么这样处理」以及「哪些能力只能诊断或降级」。
 
 这个 catalog 是诊断与可观测性入口，不是 live provider、真实 Claude 账号态、Science GUI E2E、DMG 签名/公证或官方托管能力的验证结果。
 

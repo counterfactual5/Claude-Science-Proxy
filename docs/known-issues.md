@@ -12,8 +12,7 @@ Current **limitations and open problems** visible to end users. Fixed items are 
 
 These depend on a **real Anthropic / claude.ai account** and are **unavailable or fast-fail** under third-party models + local virtual login:
 
-- Anthropic-hosted remote MCP (`*.mcp.claude.com`)
-- Directory connectors, some remote plugins, and cloud-hosted skills
+- Anthropic-hosted remote services (`*.mcp.claude.com`, directory connectors, cloud-hosted skills)
 - Features that show session expired / unavailable on official hosted services
 
 See also README [Current limitations](../README.md#current-limitations).
