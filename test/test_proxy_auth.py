@@ -9,11 +9,11 @@ import unittest
 import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from mock_upstream import start_mock
+from _capability import loopback_available
 
 HERE = os.path.dirname(__file__)
 sys.path.insert(0, HERE)
-from mock_upstream import start_mock
-from _capability import loopback_available
 
 PROXY = os.path.join(HERE, "..", "proxy", "csp_proxy.py")
 SEC = "s3cr3t-test-token"
@@ -23,7 +23,7 @@ def _start_capture_upstream():
     bodies = []
 
     class Capture(BaseHTTPRequestHandler):
-        def log_message(self, *a):
+        def log_message(self, format, *args):
             pass
 
         def do_POST(self):
