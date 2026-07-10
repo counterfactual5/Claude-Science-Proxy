@@ -23,10 +23,6 @@
 - Anthropic 托管远程 MCP、部分云端能力不可用（架构边界，见 README）。
 - 代理仍依赖本机 `python3`（计划移入 Rust）。
 
-## 与 CC Switch
-
-CSP 面向 **Claude Science**（科研 Agent 桌面应用），CC Switch 面向 **Claude Code**（CLI）。两者独立，无从属关系。
-
 ## 许可
 
 MIT — 见仓库 [`LICENSE`](../LICENSE)。

@@ -45,8 +45,6 @@ Claude Science is Anthropic’s research-oriented agent app (literature review, 
 | Proxy | Forwards `/v1/messages` (and related) to your chosen provider |
 | Translation | Anthropic ↔ OpenAI Chat / Responses when the upstream is not native Anthropic |
 
-Think of it as **[CC Switch](https://github.com/farion1231/cc-switch) for Claude Code**, but for **Claude Science** — with the extra launch-ticket and sandbox complexity Science requires. The two projects are **independent** and not affiliated.
-
 ```text
 Claude Science (sandbox)
         │
@@ -145,18 +143,6 @@ Details: [docs/known-issues.md](./docs/known-issues.md)
 
 ---
 
-## Compare with CC Switch
-
-| | CC Switch | **CSP** |
-|---|-----------|---------|
-| Target | Claude **Code** | Claude **Science** |
-| Login ticket | Usually N/A | Local sandbox ticket |
-| Isolation | Config / env switching | Dedicated sandbox HOME + ports |
-| Multi-model | Profiles | Profiles + virtual registry |
-| Platform | Cross-platform focus | **macOS arm64** first |
-
----
-
 ## Contributing
 
 Issues and PRs welcome. Please read [`CLAUDE.md`](./CLAUDE.md) (safety rules) and [`docs/DEVELOPMENT.md`](./docs/DEVELOPMENT.md) first.
@@ -185,10 +171,6 @@ Further reading: [desktop/README.md](./desktop/README.md) · [architecture-bound
 ## Disclaimer
 
 For personal learning and research. **Not affiliated with Anthropic.** Inference goes to **your** third-party providers. The local launch ticket is not an Anthropic credential. Software is provided **as is**, without warranty. See full text in the [Chinese README](./README.zh.md#风险与免责声明) or project docs.
-
-## Acknowledgements
-
-Inspired by [CC Switch](https://github.com/farion1231/cc-switch). Independent project; no endorsement implied.
 
 ## License
 

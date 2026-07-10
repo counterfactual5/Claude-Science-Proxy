@@ -55,7 +55,7 @@ fn default_schema_version() -> u32 {
     CURRENT_SCHEMA_VERSION
 }
 
-/// Named connection profile (cc-switch calls these providers). Keys on disk in plaintext; API masks them.
+/// Named connection profile. Keys on disk in plaintext; API masks them.
 /// Runtime behavior comes from `template_id` via the templates registry (not from name/icon/base_url).
 #[derive(Serialize, Deserialize, Clone, Default, Debug, PartialEq)]
 pub struct Profile {

@@ -1,8 +1,6 @@
 # Claude Science Proxy (CSP)
 
-让 Claude Science 的模型推理走第三方 API（DeepSeek 原生 Anthropic 端 /
-任意 OpenAI 兼容端点 / 自定义 Anthropic 兼容端点），保留 Science 那套 AI agent
-科研体验，模型换成你自己的。类比 CC Switch 之于 Claude Code。
+让 Claude Science 的模型推理走第三方 API（DeepSeek、GLM、Kimi、MiniMax、小米 MiMo、OpenRouter，或任意 OpenAI / Anthropic 兼容端点），保留 Science 的 agent 科研体验，模型换成你自己的。
 
 > 本文件只留**铁律 + 架构 + 速查指针**。详细内容分散在：
 > 逆向与已验证事实 → [`docs/verified-facts.md`](docs/verified-facts.md)；
