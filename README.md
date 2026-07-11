@@ -145,7 +145,7 @@ Details: [`docs/known-issues.md`](./docs/known-issues.md)
 
 ## Contributing
 
-Issues and PRs welcome. Please read [`AGENT.md`](./AGENT.md) (safety rules) and [`docs/DEVELOPMENT.md`](./docs/DEVELOPMENT.md) first.
+Issues and PRs welcome. Start with [`CONTRIBUTING.md`](./CONTRIBUTING.md), then read [`AGENT.md`](./AGENT.md) (safety rules) and [`docs/DEVELOPMENT.md`](./docs/DEVELOPMENT.md). Security reports: [`SECURITY.md`](./SECURITY.md).
 
 ```bash
 bash test/run_all.sh
