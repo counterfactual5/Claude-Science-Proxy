@@ -159,7 +159,8 @@ impl SkillStore {
             .skills
             .iter()
             .filter(|(_, s)| {
-                let prev = fs::canonicalize(&s.source_path).unwrap_or_else(|_| s.source_path.clone());
+                let prev =
+                    fs::canonicalize(&s.source_path).unwrap_or_else(|_| s.source_path.clone());
                 prev == canonical_src
             })
             .map(|(id, _)| id.clone())
@@ -402,10 +403,7 @@ fn iso8601_from_epoch_secs(secs: i64) -> String {
     let rem = secs.rem_euclid(86_400);
     let (hh, mm, ss) = (rem / 3600, (rem % 3600) / 60, rem % 60);
     let (y, mo, d) = civil_from_days(days);
-    format!(
-        "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z",
-        y, mo, d, hh, mm, ss
-    )
+    format!("{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z", y, mo, d, hh, mm, ss)
 }
 
 /// Convert days since the Unix epoch (1970-01-01) to a `(year, month, day)`
@@ -546,9 +544,15 @@ mod tests {
     fn iso8601_formats_known_epochs() {
         assert_eq!(iso8601_from_epoch_secs(0), "1970-01-01T00:00:00Z");
         // Well-known timestamp: 1_700_000_000 = 2023-11-14T22:13:20Z.
-        assert_eq!(iso8601_from_epoch_secs(1_700_000_000), "2023-11-14T22:13:20Z");
+        assert_eq!(
+            iso8601_from_epoch_secs(1_700_000_000),
+            "2023-11-14T22:13:20Z"
+        );
         // End-of-year boundary to exercise the civil conversion.
-        assert_eq!(iso8601_from_epoch_secs(1_609_459_199), "2020-12-31T23:59:59Z");
+        assert_eq!(
+            iso8601_from_epoch_secs(1_609_459_199),
+            "2020-12-31T23:59:59Z"
+        );
     }
 
     #[test]
@@ -588,7 +592,10 @@ mod tests {
         detect_requirements(&src, &mut reqs);
         assert!(reqs.contains(&"python".to_string()));
         assert!(reqs.contains(&"rust".to_string()));
-        assert!(!reqs.contains(&"r".to_string()), "colors.txt must not imply R");
+        assert!(
+            !reqs.contains(&"r".to_string()),
+            "colors.txt must not imply R"
+        );
 
         let _ = fs::remove_dir_all(&src);
     }
