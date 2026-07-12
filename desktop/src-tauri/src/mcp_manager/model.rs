@@ -120,6 +120,28 @@ pub struct McpServerSummary {
     pub updated_at: String,
 }
 
+/// A local stdio MCP server discovered from another client config.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiscoveredMcpServer {
+    /// Connector name in the source client.
+    pub name: String,
+    /// Optional human-readable description.
+    pub description: String,
+    /// Executable command.
+    pub command: String,
+    /// Stdio command arguments.
+    pub args: Vec<String>,
+    /// Environment variable names only. Values stay backend-only until import.
+    pub env_keys: Vec<String>,
+    /// Human-readable origin label (e.g. `Zed ~/.config/zed/settings.json`).
+    pub source_label: String,
+    /// Absolute source config path.
+    pub source_path: String,
+    /// True when a CSP server with the same name already exists.
+    pub already_imported: bool,
+}
+
 /// Result of validating a proposed stdio MCP server (before create/update).
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

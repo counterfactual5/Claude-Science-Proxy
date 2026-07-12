@@ -638,6 +638,43 @@ function mockInvoke(cmd, args) {
     }
     case "list_mcp_servers":
       return Promise.resolve(mockStore.mcpServers.map((s) => ({ ...s })));
+    case "discover_mcp_servers":
+      return Promise.resolve([
+        {
+          name: "notion-mcp-v1",
+          description: "",
+          command: "/Users/me/.local/node/bin/notion-mcp",
+          args: ["--transport", "stdio"],
+          envKeys: ["NOTION_TOKEN"],
+          sourceLabel: "Cursor",
+          sourcePath: "/Users/me/.cursor/mcp.json",
+          alreadyImported: false,
+        },
+        {
+          name: "fs",
+          description: "",
+          command: "npx",
+          args: ["-y", "@modelcontextprotocol/server-filesystem", "/data"],
+          envKeys: [],
+          sourceLabel: "Codex",
+          sourcePath: "/Users/me/.codex/config.toml",
+          alreadyImported: false,
+        },
+      ]);
+    case "import_discovered_mcp_server": {
+      const found = {
+        name: args.input.name,
+        description: "",
+        command: "npx",
+        args: ["-y", "@modelcontextprotocol/server-filesystem", "/data"],
+        env: {},
+      };
+      const id = "mcp_" + Math.random().toString(16).slice(2, 18).padEnd(16, "0");
+      const now = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
+      const srv = { id, ...found, enabled: true, createdAt: now, updatedAt: now };
+      mockStore.mcpServers.push(srv);
+      return Promise.resolve({ ...srv });
+    }
     case "inspect_mcp_server": {
       const inp = args.input || {};
       const errors = [];
@@ -878,6 +915,7 @@ function setBusy(on, op) {
     // Skill / MCP manager actions: prevent concurrent mutations racing a running op.
     els.skillImportBtn, els.skillInspectBtn, els.skillImportConfirmBtn, els.skillImportCancelBtn,
     els.skillDiscoverBtn, els.skillDiscoverImportBtn, els.skillDiscoverCancelBtn,
+    els.mcpDiscoverBtn, els.mcpDiscoverImportBtn, els.mcpDiscoverCancelBtn,
     els.mcpAddBtn, els.mcpSaveBtn, els.mcpCancelBtn,
   ].forEach((b) => b && (b.disabled = on));
   syncProfileBusyState();
@@ -1436,6 +1474,8 @@ function wire() {
     "inspName", "inspDesc", "inspStats", "inspReqs", "inspWarnings", "inspErrors",
     "skillInspectBtn", "skillImportConfirmBtn", "skillImportCancelBtn",
     "tabMcp", "mcpPane", "mcpAddBtn", "mcpEmpty", "mcpList", "mcpMsg",
+    "mcpDiscoverBtn", "mcpDiscoverModal", "mcpDiscoverList",
+    "mcpDiscoverEmpty", "mcpDiscoverImportBtn", "mcpDiscoverCancelBtn",
     "mcpModal", "mcpModalTitle", "mcpName", "mcpDesc", "mcpCommand", "mcpArgs", "mcpEnv",
     "mcpInspection", "mcpWarnings", "mcpErrors", "mcpSaveBtn", "mcpCancelBtn",
   ].forEach((id) => (els[id] = $(id)));
@@ -1525,6 +1565,12 @@ function wire() {
   els.tabMcp.addEventListener("click", () => switchTab("mcp"));
 
   // MCP panel actions
+  els.mcpDiscoverBtn.addEventListener("click", openMcpDiscover);
+  els.mcpDiscoverCancelBtn.addEventListener("click", closeMcpDiscover);
+  els.mcpDiscoverImportBtn.addEventListener("click", importDiscoveredMcpServers);
+  els.mcpDiscoverList.addEventListener("change", (e) => {
+    if (e.target && e.target.type === "checkbox") refreshMcpDiscoverGate();
+  });
   els.mcpAddBtn.addEventListener("click", () => openMcpModal());
   els.mcpSaveBtn.addEventListener("click", saveMcpServer);
   els.mcpCancelBtn.addEventListener("click", closeMcpModal);
@@ -1865,6 +1911,84 @@ let mcpEditId = null;
 // Set once warnings have been shown for the current form state, so a second
 // "保存" click confirms past non-blocking warnings (errors always block).
 let mcpWarnAck = false;
+
+async function openMcpDiscover() {
+  if (busy) return;
+  els.mcpDiscoverList.innerHTML = "<p class=\"hint\">扫描中…</p>";
+  els.mcpDiscoverEmpty.hidden = true;
+  els.mcpDiscoverImportBtn.disabled = true;
+  els.mcpDiscoverModal.hidden = false;
+  try {
+    const found = (await call("discover_mcp_servers")) || [];
+    renderMcpDiscover(found);
+  } catch (e) {
+    els.mcpDiscoverList.innerHTML = "";
+    els.mcpDiscoverEmpty.hidden = false;
+    setMcpMsg(resolveBackendErr(e));
+  }
+}
+
+function closeMcpDiscover() {
+  els.mcpDiscoverModal.hidden = true;
+}
+
+function renderMcpDiscover(found) {
+  if (!found.length) {
+    els.mcpDiscoverList.innerHTML = "";
+    els.mcpDiscoverEmpty.hidden = false;
+    return;
+  }
+  els.mcpDiscoverEmpty.hidden = true;
+  els.mcpDiscoverList.innerHTML = found.map((d) => {
+    const disabled = d.alreadyImported ? " disabled" : "";
+    const badge = d.alreadyImported ? `<span class="skill-req-tag">已导入</span>` : "";
+    const env = (d.envKeys || []).length
+      ? `<span class="skill-meta"><span>env: ${escapeHtml((d.envKeys || []).join(", "))}</span></span>`
+      : "";
+    const args = (d.args || []).length ? ` ${escapeHtml((d.args || []).join(" "))}` : "";
+    return `
+      <label class="skill-discover-row${d.alreadyImported ? " disabled" : ""}">
+        <input type="checkbox" data-source-path="${escapeHtml(d.sourcePath)}" value="${escapeHtml(d.name)}"${disabled} />
+        <span class="skill-discover-main">
+          <span class="skill-name">${escapeHtml(d.name)} ${badge}</span>
+          ${d.description ? `<span class="skill-desc">${escapeHtml(d.description)}</span>` : ""}
+          <span class="mcp-cmd">${escapeHtml(d.command)}${args}</span>
+          ${env}
+          <span class="skill-meta"><span>${escapeHtml(d.sourceLabel)}</span></span>
+        </span>
+      </label>
+    `;
+  }).join("");
+  refreshMcpDiscoverGate();
+}
+
+function refreshMcpDiscoverGate() {
+  const checked = els.mcpDiscoverList.querySelectorAll("input[type=checkbox]:checked");
+  els.mcpDiscoverImportBtn.disabled = busy || checked.length === 0;
+}
+
+async function importDiscoveredMcpServers() {
+  const selected = Array.from(
+    els.mcpDiscoverList.querySelectorAll("input[type=checkbox]:checked")
+  ).map((el) => ({ sourcePath: el.dataset.sourcePath, name: el.value }));
+  if (!selected.length) return;
+  setBusy(true);
+  const failures = [];
+  try {
+    for (const item of selected) {
+      try {
+        await call("import_discovered_mcp_server", { input: item });
+      } catch (e) {
+        failures.push(`${item.name}: ${resolveBackendErr(e)}`);
+      }
+    }
+    closeMcpDiscover();
+    await loadMcp();
+    if (failures.length) setMcpMsg(`部分导入失败: ${failures.join("; ")}`);
+  } finally {
+    setBusy(false);
+  }
+}
 
 async function loadMcp() {
   try {
