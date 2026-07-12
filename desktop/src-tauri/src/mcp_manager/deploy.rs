@@ -159,6 +159,9 @@ pub(crate) fn deploy_enabled_mcp(
 /// - an existing **directory** → grant the directory itself;
 /// - an existing **file** → grant its parent directory;
 /// - a **non-existent** path → assume a file and grant its parent directory.
+/// - a **symlink** → also grant the canonical target; for global Node shims this
+///   includes the package root under `node_modules` so the script can load its
+///   adjacent modules.
 ///
 /// This avoids over-granting (e.g. an arg of `/Users/me/data` no longer opens up
 /// all of `/Users/me`).
@@ -181,9 +184,52 @@ fn collect_read_paths(servers: &[McpServer]) -> Vec<String> {
             if let Some(dir) = grant {
                 set.insert(dir.to_string_lossy().to_string());
             }
+            if let Ok(real) = fs::canonicalize(p) {
+                add_grant_for_path(&real, &mut set);
+                if let Some(pkg_root) = node_package_root(&real) {
+                    set.insert(pkg_root.to_string_lossy().to_string());
+                }
+            }
         }
     }
     set.into_iter().collect()
+}
+
+fn add_grant_for_path(p: &Path, set: &mut BTreeSet<String>) {
+    let grant = if p.is_dir() {
+        Some(p.to_path_buf())
+    } else {
+        p.parent()
+            .filter(|parent| !parent.as_os_str().is_empty())
+            .map(|parent| parent.to_path_buf())
+    };
+    if let Some(dir) = grant {
+        set.insert(dir.to_string_lossy().to_string());
+    }
+}
+
+/// Return the package root for paths inside `node_modules/<package>/...`,
+/// including scoped packages such as `node_modules/@notionhq/notion-mcp-server`.
+fn node_package_root(p: &Path) -> Option<std::path::PathBuf> {
+    let comps: Vec<_> = p.components().collect();
+    for (idx, comp) in comps.iter().enumerate() {
+        if comp.as_os_str() != "node_modules" {
+            continue;
+        }
+        let name_idx = idx + 1;
+        let first = comps.get(name_idx)?.as_os_str().to_string_lossy();
+        let root_end = if first.starts_with('@') {
+            name_idx + 2
+        } else {
+            name_idx + 1
+        };
+        let mut root = std::path::PathBuf::new();
+        for c in comps.iter().take(root_end) {
+            root.push(c.as_os_str());
+        }
+        return Some(root);
+    }
+    None
 }
 
 /// Read-modify-write `config.toml`, owning only `[sandbox].user_read_paths`.
@@ -465,6 +511,44 @@ mod tests {
         assert!(toml.contains(&data_sub.to_string_lossy().to_string()));
         assert!(!toml.contains(&format!("\"{}\"", data_root.to_string_lossy())));
         let _ = fs::remove_dir_all(&data_root);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlinked_node_command_grants_real_package_root() {
+        use std::os::unix::fs::symlink;
+
+        let f = fixture();
+        let tool_root = env::temp_dir().join(format!("csp-mcp-node-{}", uniq()));
+        let bin = tool_root.join("bin");
+        let pkg = tool_root.join("lib/node_modules/@notionhq/notion-mcp-server");
+        fs::create_dir_all(&bin).unwrap();
+        fs::create_dir_all(pkg.join("bin")).unwrap();
+        fs::write(pkg.join("package.json"), "{}").unwrap();
+        fs::write(pkg.join("bin/cli.mjs"), "#!/usr/bin/env node\n").unwrap();
+        symlink(
+            pkg.join("bin/cli.mjs"),
+            bin.join("notion-mcp-server"),
+        )
+        .unwrap();
+
+        let servers = vec![server(
+            "notion",
+            &bin.join("notion-mcp-server").to_string_lossy(),
+            vec![],
+        )];
+        deploy_enabled_mcp(&servers, &f.data_dir, &f.sandbox_root, &f.real_dir).unwrap();
+
+        let toml = fs::read_to_string(f.data_dir.join("config.toml")).unwrap();
+        assert!(
+            toml.contains(&bin.to_string_lossy().to_string()),
+            "the symlink directory itself remains granted"
+        );
+        assert!(
+            toml.contains(&pkg.to_string_lossy().to_string()),
+            "global Node shims also need the real package root granted"
+        );
+        let _ = fs::remove_dir_all(&tool_root);
     }
 
     #[test]
