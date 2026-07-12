@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use super::model::{InspectionResult, Skill, SkillId, SkillSummary};
+use super::model::{DiscoveredSkill, InspectionResult, Skill, SkillId, SkillSummary};
 
 const STORE_DIR: &str = "skills";
 const INVENTORY_FILE: &str = "inventory.json";
@@ -232,6 +232,77 @@ impl SkillStore {
         let inv = self.load_inventory()?;
         Ok(inv.skills.values().filter(|s| s.enabled).cloned().collect())
     }
+
+    /// Discover importable Skills under the given `(dir, label)` roots.
+    ///
+    /// Scans each root's immediate subdirectories for a `SKILL.md`, reads its
+    /// name/description, and flags whether the source is already imported (by
+    /// canonical path against the inventory). Missing roots are skipped silently.
+    /// Results are de-duplicated by canonical source path and sorted by name.
+    pub fn discover(&self, roots: &[(PathBuf, String)]) -> Result<Vec<DiscoveredSkill>, String> {
+        let inv = self.load_inventory()?;
+        // Canonical source paths already in the inventory.
+        let imported: std::collections::BTreeSet<PathBuf> = inv
+            .skills
+            .values()
+            .map(|s| fs::canonicalize(&s.source_path).unwrap_or_else(|_| s.source_path.clone()))
+            .collect();
+
+        let mut seen: std::collections::BTreeSet<PathBuf> = std::collections::BTreeSet::new();
+        let mut out: Vec<DiscoveredSkill> = Vec::new();
+        for (root, label) in roots {
+            let entries = match fs::read_dir(root) {
+                Ok(e) => e,
+                Err(_) => continue, // missing/unreadable root → skip
+            };
+            for entry in entries.flatten() {
+                let dir = entry.path();
+                if !dir.is_dir() || !dir.join(SKILL_FILE).is_file() {
+                    continue;
+                }
+                let canonical = fs::canonicalize(&dir).unwrap_or_else(|_| dir.clone());
+                if !seen.insert(canonical.clone()) {
+                    continue; // same dir reachable via two roots
+                }
+                let (name, description) = read_skill_meta(&dir);
+                out.push(DiscoveredSkill {
+                    name,
+                    description,
+                    source_path: dir.to_string_lossy().to_string(),
+                    source_label: label.clone(),
+                    already_imported: imported.contains(&canonical),
+                });
+            }
+        }
+        out.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        Ok(out)
+    }
+}
+
+/// Read a Skill's name/description from `SKILL.md` front-matter, falling back to
+/// the directory name when absent.
+fn read_skill_meta(dir: &Path) -> (String, String) {
+    let mut result = InspectionResult {
+        valid: false,
+        name: String::new(),
+        description: String::new(),
+        file_count: 0,
+        total_size_bytes: 0,
+        requirements: Vec::new(),
+        warnings: Vec::new(),
+        errors: Vec::new(),
+    };
+    if let Ok(content) = fs::read_to_string(dir.join(SKILL_FILE)) {
+        parse_skill_md(&content, &mut result);
+    }
+    if result.name.is_empty() {
+        result.name = dir
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("Untitled Skill")
+            .to_string();
+    }
+    (result.name, result.description)
 }
 
 /// Walk a directory tree, counting files and total size. Enforces limits.
@@ -627,6 +698,53 @@ mod tests {
         assert!(!dst.join("link.txt").exists(), "symlink not followed/copied");
 
         let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn discover_finds_and_marks_imported() {
+        let store = temp_store();
+        // Two roots, each with one SKILL.md dir; plus a non-skill dir to ignore.
+        let root_a = env::temp_dir().join(format!("csp-disc-a-{}", rand_u64()));
+        let root_b = env::temp_dir().join(format!("csp-disc-b-{}", rand_u64()));
+        let sk_a = root_a.join("alpha");
+        let sk_b = root_b.join("beta");
+        let junk = root_a.join("not-a-skill");
+        fs::create_dir_all(&sk_a).unwrap();
+        fs::create_dir_all(&sk_b).unwrap();
+        fs::create_dir_all(&junk).unwrap();
+        fs::write(sk_a.join("SKILL.md"), "---\nname: Alpha\ndescription: A\n---\n").unwrap();
+        fs::write(sk_b.join("SKILL.md"), "---\nname: Beta\n---\n").unwrap();
+        fs::write(junk.join("readme.txt"), "x").unwrap();
+
+        // Import alpha so it should be flagged already_imported.
+        store.import(&sk_a).unwrap();
+
+        let roots = vec![
+            (root_a.clone(), "~/a".to_string()),
+            (root_b.clone(), "~/b".to_string()),
+        ];
+        let found = store.discover(&roots).unwrap();
+        assert_eq!(found.len(), 2, "two SKILL.md dirs, junk ignored");
+        let alpha = found.iter().find(|d| d.name == "Alpha").unwrap();
+        let beta = found.iter().find(|d| d.name == "Beta").unwrap();
+        assert!(alpha.already_imported, "alpha was imported");
+        assert!(!beta.already_imported, "beta not imported");
+        assert_eq!(alpha.description, "A");
+
+        let _ = fs::remove_dir_all(&root_a);
+        let _ = fs::remove_dir_all(&root_b);
+        let _ = fs::remove_dir_all(&store.root);
+    }
+
+    #[test]
+    fn discover_skips_missing_roots() {
+        let store = temp_store();
+        let missing = env::temp_dir().join(format!("csp-disc-missing-{}", rand_u64()));
+        let found = store
+            .discover(&[(missing, "~/nope".to_string())])
+            .unwrap();
+        assert!(found.is_empty());
+        let _ = fs::remove_dir_all(&store.root);
     }
 
     #[test]

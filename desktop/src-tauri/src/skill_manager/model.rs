@@ -104,6 +104,22 @@ impl From<&Skill> for SkillSummary {
     }
 }
 
+/// A Skill discovered on disk under a known root, offered for import.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiscoveredSkill {
+    /// Display name (from `SKILL.md` front-matter, else the folder name).
+    pub name: String,
+    /// Optional description from `SKILL.md`.
+    pub description: String,
+    /// Absolute source directory containing `SKILL.md`.
+    pub source_path: String,
+    /// Human-readable origin label (e.g. `~/.codex/skills`).
+    pub source_label: String,
+    /// True when this source path is already in the CSP inventory.
+    pub already_imported: bool,
+}
+
 /// Result of a Skill source inspection (before import).
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

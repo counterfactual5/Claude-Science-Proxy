@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 
 use crate::run_blocking;
-use crate::skill_manager::model::{InspectionResult, Skill, SkillSummary};
+use crate::skill_manager::model::{DiscoveredSkill, InspectionResult, Skill, SkillSummary};
 use crate::skill_manager::store::SkillStore;
 use serde::Deserialize;
 
@@ -12,6 +12,32 @@ pub async fn list_skills() -> Result<Vec<SkillSummary>, String> {
     run_blocking(|| {
         let store = SkillStore::open()?;
         store.list()
+    })
+    .await
+}
+
+/// Known roots (relative to `$HOME`) where local agent Skills commonly live.
+/// The sandbox's own `~/.claude-science/skills` is deliberately excluded — those
+/// are Science's bundled skills and importing them would be meaningless/unsafe.
+const DISCOVERY_ROOTS: &[&str] = &[
+    ".agents/skills",
+    ".codex/skills",
+    ".claude/skills",
+    ".cursor/skills",
+];
+
+#[tauri::command]
+pub async fn discover_skills() -> Result<Vec<DiscoveredSkill>, String> {
+    run_blocking(|| {
+        let home = std::env::var_os("HOME")
+            .map(PathBuf::from)
+            .ok_or_else(|| "HOME is not set".to_string())?;
+        let roots: Vec<(PathBuf, String)> = DISCOVERY_ROOTS
+            .iter()
+            .map(|rel| (home.join(rel), format!("~/{rel}")))
+            .collect();
+        let store = SkillStore::open()?;
+        store.discover(&roots)
     })
     .await
 }

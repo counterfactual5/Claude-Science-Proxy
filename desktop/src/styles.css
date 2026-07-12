@@ -887,6 +887,38 @@ select:focus-visible {
   margin: 2px 0 10px;
 }
 
+.skill-discover-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 320px;
+  overflow-y: auto;
+  margin: 10px 0;
+}
+.skill-discover-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-secondary);
+  cursor: pointer;
+}
+.skill-discover-row.disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.skill-discover-row input[type="checkbox"] {
+  margin-top: 2px;
+}
+.skill-discover-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
 .skill-req-tag {
   font-size: 9px;
   font-weight: 600;

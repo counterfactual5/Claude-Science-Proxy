@@ -86,6 +86,7 @@
           <div class="skill-hd">
             <label class="sec-title">Skills 管理</label>
             <div class="skill-hd-acts">
+              <button class="btn small" id="skillDiscoverBtn">🔍 发现</button>
               <button class="btn small" id="skillImportBtn">➕ 导入</button>
             </div>
           </div>
@@ -165,6 +166,22 @@
           <div class="row modal-actions">
             <button class="btn small" id="mcpSaveBtn">保存</button>
             <button class="btn small" id="mcpCancelBtn">取消</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Skill discovery modal -->
+      <div class="modal" id="skillDiscoverModal" hidden role="dialog" aria-modal="true" aria-labelledby="skillDiscoverTitle">
+        <div class="modal-content">
+          <h3 id="skillDiscoverTitle">发现本地 Skill</h3>
+          <p class="hint">扫描 <code>~/.agents/skills</code>、<code>~/.codex/skills</code>、<code>~/.claude/skills</code>、<code>~/.cursor/skills</code>，勾选后复制到 <code>~/.csp/skills/</code>。沙箱自带的科学 Skill 不在此列。</p>
+          <div id="skillDiscoverList" class="skill-discover-list"></div>
+          <div id="skillDiscoverEmpty" class="skill-empty" hidden>
+            <p>没有发现可导入的 Skill。</p>
+          </div>
+          <div class="row modal-actions">
+            <button class="btn small" id="skillDiscoverImportBtn" disabled>导入所选</button>
+            <button class="btn small" id="skillDiscoverCancelBtn">取消</button>
           </div>
         </div>
       </div>

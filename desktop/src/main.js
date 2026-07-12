@@ -585,6 +585,12 @@ function mockInvoke(cmd, args) {
       return Promise.resolve("~/.csp/CSP.json");
     case "list_skills":
       return Promise.resolve(mockStore.skills.map((s) => ({ ...s })));
+    case "discover_skills":
+      return Promise.resolve([
+        { name: "crypto-data", description: "获取加密货币实时数据", sourcePath: "/Users/me/.agents/skills/crypto-data", sourceLabel: "~/.agents/skills", alreadyImported: false },
+        { name: "pdf", description: "读写 PDF", sourcePath: "/Users/me/.codex/skills/pdf", sourceLabel: "~/.codex/skills", alreadyImported: false },
+        { name: "playwright", description: "浏览器自动化", sourcePath: "/Users/me/.codex/skills/playwright", sourceLabel: "~/.codex/skills", alreadyImported: true },
+      ]);
     case "inspect_skill_source": {
       const path = (args.input && args.input.sourcePath) || "";
       const valid = path.length > 0;
@@ -871,6 +877,7 @@ function setBusy(on, op) {
     els.proxyPort, els.sandboxPort,
     // Skill / MCP manager actions: prevent concurrent mutations racing a running op.
     els.skillImportBtn, els.skillInspectBtn, els.skillImportConfirmBtn, els.skillImportCancelBtn,
+    els.skillDiscoverBtn, els.skillDiscoverImportBtn, els.skillDiscoverCancelBtn,
     els.mcpAddBtn, els.mcpSaveBtn, els.mcpCancelBtn,
   ].forEach((b) => b && (b.disabled = on));
   syncProfileBusyState();
@@ -1423,6 +1430,8 @@ function wire() {
     "connModelInfo", "connModelHint", "connModelPick", "connKey", "connSaveBtn", "connCancelBtn",
     "tabProfiles", "tabSkills", "skillPane",
     "skillImportBtn", "skillEmpty", "skillList", "skillMsg",
+    "skillDiscoverBtn", "skillDiscoverModal", "skillDiscoverList",
+    "skillDiscoverEmpty", "skillDiscoverImportBtn", "skillDiscoverCancelBtn",
     "skillImportModal", "skillSourcePath", "skillInspectionPreview",
     "inspName", "inspDesc", "inspStats", "inspReqs", "inspWarnings", "inspErrors",
     "skillInspectBtn", "skillImportConfirmBtn", "skillImportCancelBtn",
@@ -1544,6 +1553,12 @@ function wire() {
   els.skillInspectBtn.addEventListener("click", inspectSkillSource);
   els.skillImportConfirmBtn.addEventListener("click", importSkillConfirm);
   els.skillImportCancelBtn.addEventListener("click", closeSkillImport);
+  els.skillDiscoverBtn.addEventListener("click", openSkillDiscover);
+  els.skillDiscoverCancelBtn.addEventListener("click", closeSkillDiscover);
+  els.skillDiscoverImportBtn.addEventListener("click", importDiscoveredSkills);
+  els.skillDiscoverList.addEventListener("change", (e) => {
+    if (e.target && e.target.type === "checkbox") refreshDiscoverGate();
+  });
 
   // Skill list interactions
   els.skillList.addEventListener("click", (e) => {
@@ -1766,6 +1781,79 @@ async function importSkillConfirm() {
   } catch (e) {
     els.inspErrors.hidden = false;
     els.inspErrors.textContent = resolveBackendErr(e);
+  } finally {
+    setBusy(false);
+  }
+}
+
+// ── Skill Discovery Modal ──
+async function openSkillDiscover() {
+  if (busy) return;
+  els.skillDiscoverList.innerHTML = "<p class=\"hint\">扫描中…</p>";
+  els.skillDiscoverEmpty.hidden = true;
+  els.skillDiscoverImportBtn.disabled = true;
+  els.skillDiscoverModal.hidden = false;
+  try {
+    const found = (await call("discover_skills")) || [];
+    renderDiscover(found);
+  } catch (e) {
+    els.skillDiscoverList.innerHTML = "";
+    els.skillDiscoverEmpty.hidden = false;
+    setSkillMsg(resolveBackendErr(e));
+  }
+}
+
+function closeSkillDiscover() {
+  els.skillDiscoverModal.hidden = true;
+}
+
+function renderDiscover(found) {
+  if (!found.length) {
+    els.skillDiscoverList.innerHTML = "";
+    els.skillDiscoverEmpty.hidden = false;
+    return;
+  }
+  els.skillDiscoverEmpty.hidden = true;
+  els.skillDiscoverList.innerHTML = found.map((d) => {
+    const disabled = d.alreadyImported ? " disabled" : "";
+    const badge = d.alreadyImported ? `<span class="skill-req-tag">已导入</span>` : "";
+    return `
+      <label class="skill-discover-row${d.alreadyImported ? " disabled" : ""}">
+        <input type="checkbox" value="${escapeHtml(d.sourcePath)}"${disabled} />
+        <span class="skill-discover-main">
+          <span class="skill-name">${escapeHtml(d.name)} ${badge}</span>
+          ${d.description ? `<span class="skill-desc">${escapeHtml(d.description)}</span>` : ""}
+          <span class="skill-meta"><span>${escapeHtml(d.sourceLabel)}</span></span>
+        </span>
+      </label>
+    `;
+  }).join("");
+  refreshDiscoverGate();
+}
+
+function refreshDiscoverGate() {
+  const checked = els.skillDiscoverList.querySelectorAll("input[type=checkbox]:checked");
+  els.skillDiscoverImportBtn.disabled = busy || checked.length === 0;
+}
+
+async function importDiscoveredSkills() {
+  const paths = Array.from(
+    els.skillDiscoverList.querySelectorAll("input[type=checkbox]:checked")
+  ).map((el) => el.value);
+  if (!paths.length) return;
+  setBusy(true);
+  const failures = [];
+  try {
+    for (const p of paths) {
+      try {
+        await call("import_skill", { input: { sourcePath: p } });
+      } catch (e) {
+        failures.push(`${p}: ${resolveBackendErr(e)}`);
+      }
+    }
+    closeSkillDiscover();
+    await loadSkills();
+    if (failures.length) setSkillMsg(`部分导入失败: ${failures.join("; ")}`);
   } finally {
     setBusy(false);
   }

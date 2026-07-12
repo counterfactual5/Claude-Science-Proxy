@@ -101,6 +101,7 @@ pub fn run() {
             commands::runtime::stop_all,
             commands::runtime::one_click_login,
             commands::skills::list_skills,
+            commands::skills::discover_skills,
             commands::skills::inspect_skill_source,
             commands::skills::import_skill,
             commands::skills::set_skill_enabled,
