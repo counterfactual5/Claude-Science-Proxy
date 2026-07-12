@@ -658,7 +658,12 @@ function mockInvoke(cmd, args) {
       if (!s) return Promise.reject("MCP server not found");
       const inp = args.input.server || {};
       s.name = inp.name; s.description = inp.description || ""; s.command = inp.command; s.args = inp.args || [];
-      const env = {}; Object.entries(inp.env || {}).forEach(([k, v]) => (env[k] = mockMask(v)));
+      // Mirror backend env-merge: empty value keeps old, absent key deletes.
+      const env = {};
+      Object.entries(inp.env || {}).forEach(([k, v]) => {
+        if (v === "") { if (s.env && s.env[k] != null) env[k] = s.env[k]; }
+        else env[k] = mockMask(v);
+      });
       s.env = env; s.updatedAt = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
       return Promise.resolve(s);
     }
@@ -857,6 +862,9 @@ function setBusy(on, op) {
     els.skipActivateBtn,
     // Disable port inputs while busy: changing ports mid-operation races in-flight work (P1-c frontend).
     els.proxyPort, els.sandboxPort,
+    // Skill / MCP manager actions: prevent concurrent mutations racing a running op.
+    els.skillImportBtn, els.skillInspectBtn, els.skillImportConfirmBtn, els.skillImportCancelBtn,
+    els.mcpAddBtn, els.mcpSaveBtn, els.mcpCancelBtn,
   ].forEach((b) => b && (b.disabled = on));
   syncProfileBusyState();
   // On busy release, hand model-required save gating back to gates (avoid setBusy(false) overwriting gate).
@@ -1628,8 +1636,6 @@ function renderSkills(list) {
   }).join("");
 }
 
-// Backend now emits ISO 8601 (e.g. 2026-07-12T10:30:00Z). Older inventories may
-// still hold the legacy `epoch:<secs>` form, so handle both.
 // Backend now emits ISO 8601 (e.g. 2026-07-12T10:30:00Z). Older inventories may
 // still hold the legacy `epoch:<secs>` form, so handle both.
 function formatImportedAt(raw) {

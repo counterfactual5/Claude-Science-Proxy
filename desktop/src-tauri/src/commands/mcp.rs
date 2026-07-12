@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 
 use serde::Deserialize;
 
-use crate::mcp_manager::model::{McpInspection, McpServer, McpServerSummary};
+use crate::mcp_manager::model::{McpInspection, McpServerSummary};
 use crate::mcp_manager::store::{McpServerInput, McpStore};
 use crate::run_blocking;
 
@@ -48,7 +48,7 @@ pub async fn inspect_mcp_server(input: McpServerInputDto) -> Result<McpInspectio
 }
 
 #[tauri::command]
-pub async fn create_mcp_server(input: McpServerInputDto) -> Result<McpServer, String> {
+pub async fn create_mcp_server(input: McpServerInputDto) -> Result<McpServerSummary, String> {
     run_blocking(move || {
         let store = McpStore::open()?;
         store.create(input.into())
@@ -64,7 +64,7 @@ pub struct UpdateMcpServerInput {
 }
 
 #[tauri::command]
-pub async fn update_mcp_server(input: UpdateMcpServerInput) -> Result<McpServer, String> {
+pub async fn update_mcp_server(input: UpdateMcpServerInput) -> Result<McpServerSummary, String> {
     run_blocking(move || {
         let store = McpStore::open()?;
         store.update(&input.server_id, input.server.into())
@@ -80,7 +80,7 @@ pub struct SetMcpEnabledInput {
 }
 
 #[tauri::command]
-pub async fn set_mcp_server_enabled(input: SetMcpEnabledInput) -> Result<McpServer, String> {
+pub async fn set_mcp_server_enabled(input: SetMcpEnabledInput) -> Result<McpServerSummary, String> {
     run_blocking(move || {
         let store = McpStore::open()?;
         store.set_enabled(&input.server_id, input.enabled)

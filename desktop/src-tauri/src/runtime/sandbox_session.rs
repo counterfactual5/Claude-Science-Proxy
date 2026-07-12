@@ -45,23 +45,34 @@ pub(crate) fn one_click_login<R: Runtime>(
 
     if sandbox_running_ours(sport) {
         if oauth_forge::login_intact(&auth_dir, "virtual@localhost.invalid", &sbx_home) {
-            let url = sandbox_url(sport);
-            {
-                let mut st = lock(&state);
-                st.sandbox_port = sport;
-                st.sandbox_url = Some(url.clone());
+            // Refresh Skill/MCP deployment against the current inventory. Science
+            // only reads these at launch, so if anything actually changed we must
+            // restart the sandbox for the change to take effect — otherwise the
+            // user would silently keep running the old config. Deploys are
+            // idempotent, so an unchanged reopen stays fast.
+            let (_, skill_changed) = deploy_sandbox_skills(&auth_dir, &sbx_home);
+            let (_, mcp_changed) = deploy_sandbox_mcp(&auth_dir, &sbx_home);
+            if !skill_changed && !mcp_changed {
+                let url = sandbox_url(sport);
+                {
+                    let mut st = lock(&state);
+                    st.sandbox_port = sport;
+                    st.sandbox_url = Some(url.clone());
+                }
+                let _ = open_in_browser(&url);
+                trace.finish(format!(
+                    "ok action=reopened proxy_action={}",
+                    proxy_action.as_str()
+                ));
+                return Ok(json!({
+                    "url": url,
+                    "action": "reopened"
+                }));
             }
-            let _ = open_in_browser(&url);
-            trace.finish(format!(
-                "ok action=reopened proxy_action={}",
-                proxy_action.as_str()
-            ));
-            return Ok(json!({
-                "url": url,
-                "action": "reopened"
-            }));
-        }
-        {
+            // Config changed → tear down and fall through to a full relaunch.
+            let mut st = lock(&state);
+            let _ = stop_sandbox_state(&app, &mut st);
+        } else {
             let mut st = lock(&state);
             let _ = stop_sandbox_state(&app, &mut st);
         }
@@ -79,13 +90,13 @@ pub(crate) fn one_click_login<R: Runtime>(
     // deployer only manages folders it marks with `.csp_managed`, so Science's
     // bundled Skills are never removed, and it refuses to write outside the
     // sandbox or into the real `~/.claude-science`.
-    let skill_report = deploy_sandbox_skills(&auth_dir, &sbx_home);
+    let (skill_report, _) = deploy_sandbox_skills(&auth_dir, &sbx_home);
 
     // Deploy enabled local stdio MCP servers into the sandbox
     // (`<data-dir>/mcp/local-mcp.json` + `[sandbox] user_read_paths` in
     // `config.toml`, confirmed against a live sandbox). Same iron-rule guards as
     // Skills: only ever writes under the sandbox, never the real `~/.claude-science`.
-    let mcp_report = deploy_sandbox_mcp(&auth_dir, &sbx_home);
+    let (mcp_report, _) = deploy_sandbox_mcp(&auth_dir, &sbx_home);
 
     let launch = root.join("scripts/sandbox/launch-virtual-sandbox.sh");
     if !launch.is_file() {
@@ -173,7 +184,9 @@ pub(crate) fn one_click_login<R: Runtime>(
     // Built-in probe: once Science is up it scans `<data-dir>/skills/` and writes a
     // `.catalog_stamp` into each folder it recognizes. Log how many of our managed
     // Skills got stamped so a real launch self-verifies the deployment path.
-    if !skill_report.starts_with("skill deploy: deployed=[] skipped=[] removed=0") {
+    // `skill_report` is the wrapper's summary, e.g. `deploy: deployed=[...] ...`.
+    // Only probe when at least one Skill was actually deployed.
+    if !skill_report.starts_with("deploy: deployed=[]") {
         let verify = verify_sandbox_skills(&auth_dir);
         if let Ok(logf3) = open_log("sandbox.log") {
             use std::io::Write;
@@ -200,50 +213,58 @@ pub(crate) fn one_click_login<R: Runtime>(
     }))
 }
 
-/// Deploy enabled Skills into the sandbox and return a redaction-safe log summary.
-/// Never fails the launch: any error is reported and the sandbox still starts.
-fn deploy_sandbox_skills(auth_dir: &Path, sbx_home: &Path) -> String {
+/// Deploy enabled Skills into the sandbox. Returns a redaction-safe log summary
+/// and whether anything on disk changed (for restart decisions). Never fails the
+/// launch: any error is reported and the sandbox still starts.
+fn deploy_sandbox_skills(auth_dir: &Path, sbx_home: &Path) -> (String, bool) {
     let real_science = std::env::var_os("HOME")
         .map(|h| PathBuf::from(h).join(".claude-science"))
         .unwrap_or_else(|| PathBuf::from("/nonexistent/.claude-science"));
     let store = match crate::skill_manager::SkillStore::open() {
         Ok(s) => s,
-        Err(e) => return format!("deploy skipped: store open failed: {e}"),
+        Err(e) => return (format!("deploy skipped: store open failed: {e}"), false),
     };
     let enabled = match store.enabled_skills() {
         Ok(e) => e,
-        Err(e) => return format!("deploy skipped: list failed: {e}"),
+        Err(e) => return (format!("deploy skipped: list failed: {e}"), false),
     };
     match crate::skill_manager::deploy_enabled_skills(&enabled, auth_dir, sbx_home, &real_science) {
-        Ok(r) => format!(
-            "deploy: deployed={:?} skipped={:?} removed={}",
-            r.deployed, r.skipped, r.removed
+        Ok(r) => (
+            format!(
+                "deploy: deployed={:?} skipped={:?} removed={} changed={}",
+                r.deployed, r.skipped, r.removed, r.changed
+            ),
+            r.changed,
         ),
-        Err(e) => format!("deploy error (sandbox launch continues): {e}"),
+        Err(e) => (format!("deploy error (sandbox launch continues): {e}"), false),
     }
 }
 
-/// Deploy enabled local stdio MCP servers into the sandbox and return a
-/// redaction-safe log summary. Never fails the launch: any error is reported and
-/// the sandbox still starts.
-fn deploy_sandbox_mcp(auth_dir: &Path, sbx_home: &Path) -> String {
+/// Deploy enabled local stdio MCP servers into the sandbox. Returns a
+/// redaction-safe log summary and whether anything on disk changed (for restart
+/// decisions). Never fails the launch: any error is reported and the sandbox
+/// still starts.
+fn deploy_sandbox_mcp(auth_dir: &Path, sbx_home: &Path) -> (String, bool) {
     let real_science = std::env::var_os("HOME")
         .map(|h| PathBuf::from(h).join(".claude-science"))
         .unwrap_or_else(|| PathBuf::from("/nonexistent/.claude-science"));
     let store = match crate::mcp_manager::McpStore::open() {
         Ok(s) => s,
-        Err(e) => return format!("deploy skipped: store open failed: {e}"),
+        Err(e) => return (format!("deploy skipped: store open failed: {e}"), false),
     };
     let enabled = match store.enabled_servers() {
         Ok(e) => e,
-        Err(e) => return format!("deploy skipped: list failed: {e}"),
+        Err(e) => return (format!("deploy skipped: list failed: {e}"), false),
     };
     match crate::mcp_manager::deploy_enabled_mcp(&enabled, auth_dir, sbx_home, &real_science) {
-        Ok(r) => format!(
-            "deploy: servers={:?} granted_paths={} cleared={}",
-            r.deployed, r.granted_paths, r.cleared
+        Ok(r) => (
+            format!(
+                "deploy: servers={:?} granted_paths={} cleared={} changed={}",
+                r.deployed, r.granted_paths, r.cleared, r.changed
+            ),
+            r.changed,
         ),
-        Err(e) => format!("deploy error (sandbox launch continues): {e}"),
+        Err(e) => (format!("deploy error (sandbox launch continues): {e}"), false),
     }
 }
 

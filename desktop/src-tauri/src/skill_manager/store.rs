@@ -368,11 +368,19 @@ fn walk_entries(dir: &Path) -> Vec<std::fs::DirEntry> {
 }
 
 /// Recursively copy a directory tree.
+///
+/// Symlinks are **skipped** (both file and directory links): following them would
+/// let a crafted source directory pull arbitrary out-of-tree data into
+/// `~/.csp/skills/` or the sandbox. `file_type()` uses `symlink_metadata`, so it
+/// does not traverse links.
 pub(crate) fn copy_dir(src: &Path, dst: &Path) -> Result<(), String> {
     fs::create_dir_all(dst).map_err(|e| format!("create dest dir: {e}"))?;
     for entry in fs::read_dir(src).map_err(|e| format!("read src dir: {e}"))? {
         let entry = entry.map_err(|e| format!("read entry: {e}"))?;
         let file_type = entry.file_type().map_err(|e| format!("file type: {e}"))?;
+        if file_type.is_symlink() {
+            continue;
+        }
         let dest_path = dst.join(entry.file_name());
         if file_type.is_dir() {
             copy_dir(&entry.path(), &dest_path)?;
@@ -597,6 +605,28 @@ mod tests {
         );
 
         let _ = fs::remove_dir_all(&src);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn copy_dir_skips_symlinks() {
+        use std::os::unix::fs::symlink;
+        let base = env::temp_dir().join(format!("csp-symlink-{}", rand_u64()));
+        let src = base.join("src");
+        let outside = base.join("outside");
+        fs::create_dir_all(&src).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+        // A real file plus a symlink pointing outside the source tree.
+        fs::write(src.join("real.txt"), "ok").unwrap();
+        fs::write(outside.join("secret.txt"), "leak").unwrap();
+        symlink(outside.join("secret.txt"), src.join("link.txt")).unwrap();
+
+        let dst = base.join("dst");
+        copy_dir(&src, &dst).unwrap();
+        assert!(dst.join("real.txt").is_file(), "real file copied");
+        assert!(!dst.join("link.txt").exists(), "symlink not followed/copied");
+
+        let _ = fs::remove_dir_all(&base);
     }
 
     #[test]

@@ -875,6 +875,10 @@ select:focus-visible {
   white-space: nowrap;
 }
 
+.apply-hint {
+  margin: 2px 0 10px;
+}
+
 .skill-req-tag {
   font-size: 9px;
   font-weight: 600;

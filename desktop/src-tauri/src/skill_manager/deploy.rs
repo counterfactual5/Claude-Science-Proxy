@@ -22,15 +22,23 @@ use crate::oauth_forge::real_ancestor;
 /// folders containing this marker, so bundled Skills are never deleted.
 const MANAGED_MARKER: &str = ".csp_managed";
 
+/// Sidecar manifest (in the skills dir) recording the signature of the last
+/// deployment, so an unchanged redeploy can be a no-op.
+const MANIFEST_FILE: &str = ".csp_manifest";
+
 /// Summary of a deployment pass (used for launch-log observability).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct DeployReport {
     /// Skill names successfully deployed this pass.
     pub deployed: Vec<String>,
-    /// Skill names skipped due to collision with an unmanaged (bundled) folder.
+    /// Skill names skipped due to collision with an unmanaged (bundled) folder
+    /// or a sanitized-name clash with another enabled Skill.
     pub skipped: Vec<String>,
     /// Count of previously-managed folders removed before deploying.
     pub removed: usize,
+    /// Whether anything on disk actually changed this pass. Lets a caller decide
+    /// whether a running sandbox needs restarting for Science to re-read Skills.
+    pub changed: bool,
 }
 
 /// Deploy `enabled` Skills into `<data_dir>/skills/`.
@@ -65,6 +73,50 @@ pub fn deploy_enabled_skills(
     let skills_dir = data_dir.join("skills");
     let mut report = DeployReport::default();
 
+    // —— Build the deploy plan without touching disk: sanitize names, drop empty
+    // ones, de-dupe sanitized clashes, and skip collisions with unmanaged
+    // (bundled) folders. ——
+    let mut claimed: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    let mut plan: Vec<(String, &Skill)> = Vec::new();
+    for skill in enabled {
+        let folder = sanitize_folder(&skill.name);
+        if folder.is_empty() {
+            report.skipped.push(skill.name.clone());
+            continue;
+        }
+        if !claimed.insert(folder.clone()) {
+            // Another enabled Skill already took this sanitized folder name.
+            report.skipped.push(skill.name.clone());
+            continue;
+        }
+        let dest = skills_dir.join(&folder);
+        // Never clobber a bundled/unmanaged folder of the same name.
+        if dest.exists() && !dest.join(MANAGED_MARKER).is_file() {
+            report.skipped.push(skill.name.clone());
+            continue;
+        }
+        plan.push((folder, skill));
+    }
+
+    // Signature of the intended deployment + the set of folders it will occupy.
+    let signature = plan
+        .iter()
+        .map(|(folder, s)| format!("{}\t{}\t{}", folder, s.id, s.size_bytes))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let manifest_path = skills_dir.join(MANIFEST_FILE);
+    let planned_folders: std::collections::BTreeSet<String> =
+        plan.iter().map(|(f, _)| f.clone()).collect();
+
+    // Idempotency: if the manifest matches and exactly the planned managed folders
+    // are present, nothing changed — skip all destructive IO.
+    if manifest_matches(&manifest_path, &signature)
+        && managed_folders(&skills_dir) == planned_folders
+    {
+        report.deployed = plan.into_iter().map(|(_, s)| s.name.clone()).collect();
+        return Ok(report);
+    }
+
     // Remove only previously-managed deployments; leave bundled Skills untouched.
     if skills_dir.is_dir() {
         for entry in fs::read_dir(&skills_dir).map_err(|e| format!("read skills dir: {e}"))? {
@@ -79,24 +131,20 @@ pub fn deploy_enabled_skills(
             }
         }
     }
+    report.changed = report.removed > 0;
 
-    if enabled.is_empty() {
+    if plan.is_empty() {
+        // Nothing to deploy: drop a stale manifest so the dir is clean.
+        if manifest_path.exists() {
+            let _ = fs::remove_file(&manifest_path);
+            report.changed = true;
+        }
         return Ok(report);
     }
     fs::create_dir_all(&skills_dir).map_err(|e| format!("create skills dir: {e}"))?;
 
-    for skill in enabled {
-        let folder = sanitize_folder(&skill.name);
-        if folder.is_empty() {
-            report.skipped.push(skill.name.clone());
-            continue;
-        }
-        let dest = skills_dir.join(&folder);
-        // Never clobber a bundled/unmanaged folder of the same name.
-        if dest.exists() && !dest.join(MANAGED_MARKER).is_file() {
-            report.skipped.push(skill.name.clone());
-            continue;
-        }
+    for (folder, skill) in &plan {
+        let dest = skills_dir.join(folder);
         // Fresh copy each pass (managed dest may linger if cleanup missed it).
         if dest.exists() {
             fs::remove_dir_all(&dest).map_err(|e| format!("clear stale managed skill: {e}"))?;
@@ -106,8 +154,34 @@ pub fn deploy_enabled_skills(
             .map_err(|e| format!("write managed marker: {e}"))?;
         report.deployed.push(skill.name.clone());
     }
+    fs::write(&manifest_path, signature.as_bytes())
+        .map_err(|e| format!("write manifest: {e}"))?;
+    report.changed = true;
 
     Ok(report)
+}
+
+/// True when the manifest file exists and its contents equal `signature`.
+fn manifest_matches(manifest_path: &Path, signature: &str) -> bool {
+    fs::read_to_string(manifest_path)
+        .map(|s| s == signature)
+        .unwrap_or(false)
+}
+
+/// The set of directory names under `skills_dir` that carry our managed marker.
+fn managed_folders(skills_dir: &Path) -> std::collections::BTreeSet<String> {
+    let mut out = std::collections::BTreeSet::new();
+    if let Ok(entries) = fs::read_dir(skills_dir) {
+        for entry in entries.flatten() {
+            let p = entry.path();
+            if p.is_dir() && p.join(MANAGED_MARKER).is_file() {
+                if let Some(name) = p.file_name().and_then(|n| n.to_str()) {
+                    out.insert(name.to_string());
+                }
+            }
+        }
+    }
+    out
 }
 
 /// Sanitize a Skill name into a safe single path segment (no traversal, no separators).
@@ -268,6 +342,31 @@ mod tests {
         let r = deploy_enabled_skills(&skills, &outside, &f.sandbox_root, &f.real_dir);
         assert!(r.is_err());
         assert!(r.unwrap_err().contains("outside sandbox root"));
+    }
+
+    #[test]
+    fn dedupes_sanitized_name_clash() {
+        let f = fixture();
+        // Two distinct Skills whose names sanitize to the same folder ("My-Skill").
+        let skills = vec![
+            make_skill(&f.store_root, "My Skill"),
+            make_skill(&f.store_root, "My-Skill"),
+        ];
+        let r = deploy_enabled_skills(&skills, &f.data_dir, &f.sandbox_root, &f.real_dir).unwrap();
+        assert_eq!(r.deployed.len(), 1, "only the first claims the folder");
+        assert_eq!(r.skipped.len(), 1, "the clashing one is skipped");
+        assert!(f.data_dir.join("skills").join("My-Skill").is_dir());
+    }
+
+    #[test]
+    fn second_identical_deploy_reports_no_change() {
+        let f = fixture();
+        let skills = vec![make_skill(&f.store_root, "stable")];
+        let r1 = deploy_enabled_skills(&skills, &f.data_dir, &f.sandbox_root, &f.real_dir).unwrap();
+        assert!(r1.changed);
+        let r2 = deploy_enabled_skills(&skills, &f.data_dir, &f.sandbox_root, &f.real_dir).unwrap();
+        assert!(!r2.changed, "identical redeploy is a no-op");
+        assert_eq!(r2.removed, 0, "no destructive churn when unchanged");
     }
 
     #[test]

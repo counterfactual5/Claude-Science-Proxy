@@ -34,6 +34,9 @@ pub(crate) struct McpDeployReport {
     pub granted_paths: usize,
     /// Whether a stale `local-mcp.json` was removed (no enabled servers).
     pub cleared: bool,
+    /// Whether anything on disk actually changed this pass. Lets a caller decide
+    /// whether a running sandbox needs restarting for Science to re-read config.
+    pub changed: bool,
 }
 
 #[derive(Serialize)]
@@ -93,8 +96,10 @@ pub(crate) fn deploy_enabled_mcp(
         if mcp_json.exists() {
             fs::remove_file(&mcp_json).map_err(|e| format!("remove stale local-mcp.json: {e}"))?;
             report.cleared = true;
+            report.changed = true;
         }
-        set_user_read_paths(&config_toml, &[])?;
+        let paths_changed = set_user_read_paths(&config_toml, &[])?;
+        report.changed = report.changed || paths_changed;
         return Ok(report);
     }
 
@@ -114,21 +119,34 @@ pub(crate) fn deploy_enabled_mcp(
     };
     let json =
         serde_json::to_vec_pretty(&file).map_err(|e| format!("serialize local-mcp.json: {e}"))?;
-    let tmp = mcp_json.with_extension("json.tmp");
-    fs::write(&tmp, &json).map_err(|e| format!("write local-mcp.json tmp: {e}"))?;
-    fs::rename(&tmp, &mcp_json).map_err(|e| format!("rename local-mcp.json: {e}"))?;
+    // Idempotent write: only touch disk when the bytes actually differ, so a
+    // reopen of an unchanged config does not look like a change.
+    let current = fs::read(&mcp_json).ok();
+    if current.as_deref() != Some(json.as_slice()) {
+        let tmp = mcp_json.with_extension("json.tmp");
+        fs::write(&tmp, &json).map_err(|e| format!("write local-mcp.json tmp: {e}"))?;
+        fs::rename(&tmp, &mcp_json).map_err(|e| format!("rename local-mcp.json: {e}"))?;
+        report.changed = true;
+    }
     report.deployed = enabled.iter().map(|s| s.name.clone()).collect();
 
-    // Grant read access to the parent dir of every absolute path referenced.
+    // Grant read access for every absolute path referenced (least privilege).
     let read_paths = collect_read_paths(enabled);
     report.granted_paths = read_paths.len();
-    set_user_read_paths(&config_toml, &read_paths)?;
+    let paths_changed = set_user_read_paths(&config_toml, &read_paths)?;
+    report.changed = report.changed || paths_changed;
 
     Ok(report)
 }
 
-/// Gather parent directories of absolute paths referenced by servers (command +
-/// args). These are the paths Science's MCP child sandbox must be allowed to read.
+/// Gather the least-privilege set of read paths for absolute paths referenced by
+/// servers (command + args). Granularity:
+/// - an existing **directory** → grant the directory itself;
+/// - an existing **file** → grant its parent directory;
+/// - a **non-existent** path → assume a file and grant its parent directory.
+///
+/// This avoids over-granting (e.g. an arg of `/Users/me/data` no longer opens up
+/// all of `/Users/me`).
 fn collect_read_paths(servers: &[McpServer]) -> Vec<String> {
     let mut set: BTreeSet<String> = BTreeSet::new();
     for s in servers {
@@ -137,11 +155,16 @@ fn collect_read_paths(servers: &[McpServer]) -> Vec<String> {
             if !p.is_absolute() {
                 continue;
             }
-            // Grant the containing directory (least privilege: not the whole tree).
-            if let Some(parent) = p.parent() {
-                if !parent.as_os_str().is_empty() {
-                    set.insert(parent.to_string_lossy().to_string());
-                }
+            let grant = if p.is_dir() {
+                Some(p.to_path_buf())
+            } else {
+                // File (or missing → assume file): grant the containing directory.
+                p.parent()
+                    .filter(|parent| !parent.as_os_str().is_empty())
+                    .map(|parent| parent.to_path_buf())
+            };
+            if let Some(dir) = grant {
+                set.insert(dir.to_string_lossy().to_string());
             }
         }
     }
@@ -153,32 +176,32 @@ fn collect_read_paths(servers: &[McpServer]) -> Vec<String> {
 /// All other keys/tables are preserved. An empty `paths` removes the key (and the
 /// `[sandbox]` table if it becomes empty), and deletes `config.toml` entirely if
 /// nothing else remains — so a clean sandbox never keeps stale grants.
-fn set_user_read_paths(config_toml: &Path, paths: &[String]) -> Result<(), String> {
+///
+/// Returns `true` when the file on disk actually changed (idempotent otherwise).
+fn set_user_read_paths(config_toml: &Path, paths: &[String]) -> Result<bool, String> {
     use toml::Value;
 
-    let mut root: toml::Table = if config_toml.exists() {
-        let text = fs::read_to_string(config_toml).map_err(|e| format!("read config.toml: {e}"))?;
-        text.parse::<toml::Table>()
+    let root: toml::Table = if config_toml.exists() {
+        fs::read_to_string(config_toml)
+            .map_err(|e| format!("read config.toml: {e}"))?
+            .parse::<toml::Table>()
             .map_err(|e| format!("parse config.toml: {e}"))?
     } else {
         toml::Table::new()
     };
+    // Compare against the parsed (semantic) form, not raw bytes: a TOML round-trip
+    // reflows formatting/comments, so byte comparison would falsely report a
+    // change on every reopen and trigger needless sandbox restarts.
+    let before = root.clone();
+    let mut root = root;
 
     if paths.is_empty() {
-        // Strip our key; drop [sandbox] if empty; drop the file if empty.
+        // Strip our key; drop [sandbox] if it becomes empty.
         if let Some(Value::Table(sandbox)) = root.get_mut("sandbox") {
             sandbox.remove("user_read_paths");
-            let empty = sandbox.is_empty();
-            if empty {
+            if sandbox.is_empty() {
                 root.remove("sandbox");
             }
-        }
-        if root.is_empty() {
-            if config_toml.exists() {
-                fs::remove_file(config_toml)
-                    .map_err(|e| format!("remove empty config.toml: {e}"))?;
-            }
-            return Ok(());
         }
     } else {
         let arr: Vec<Value> = paths.iter().map(|p| Value::String(p.clone())).collect();
@@ -196,12 +219,25 @@ fn set_user_read_paths(config_toml: &Path, paths: &[String]) -> Result<(), Strin
         }
     }
 
+    if root == before {
+        // No semantic change: leave the file (and any comments) untouched.
+        return Ok(false);
+    }
+
+    if root.is_empty() {
+        // Our key was the only content: remove the file so nothing lingers.
+        if config_toml.exists() {
+            fs::remove_file(config_toml).map_err(|e| format!("remove empty config.toml: {e}"))?;
+        }
+        return Ok(true);
+    }
+
     let serialized =
         toml::to_string_pretty(&root).map_err(|e| format!("serialize config.toml: {e}"))?;
     let tmp = config_toml.with_extension("toml.tmp");
     fs::write(&tmp, serialized.as_bytes()).map_err(|e| format!("write config.toml tmp: {e}"))?;
     fs::rename(&tmp, config_toml).map_err(|e| format!("rename config.toml: {e}"))?;
-    Ok(())
+    Ok(true)
 }
 
 #[cfg(test)]
@@ -337,6 +373,58 @@ mod tests {
         deploy_enabled_mcp(&[], &f.data_dir, &f.sandbox_root, &f.real_dir).unwrap();
         // config.toml held only our key → removed entirely.
         assert!(!f.data_dir.join("config.toml").exists());
+    }
+
+    #[test]
+    fn second_identical_deploy_reports_no_change() {
+        let f = fixture();
+        let servers = vec![server("demo", "python3", vec!["/opt/x/server.py".into()])];
+        let r1 = deploy_enabled_mcp(&servers, &f.data_dir, &f.sandbox_root, &f.real_dir).unwrap();
+        assert!(r1.changed, "first deploy writes files");
+        let r2 = deploy_enabled_mcp(&servers, &f.data_dir, &f.sandbox_root, &f.real_dir).unwrap();
+        assert!(!r2.changed, "identical redeploy is a no-op");
+    }
+
+    #[test]
+    fn empty_deploy_leaves_unrelated_config_untouched_and_unchanged() {
+        let f = fixture();
+        // Sandbox has an unrelated config with a comment CSP doesn't own.
+        let original = "# keep me\n[verification]\nenabled = false\n";
+        fs::write(f.data_dir.join("config.toml"), original).unwrap();
+
+        // No enabled servers, twice: must be a no-op and preserve the file verbatim.
+        let r1 = deploy_enabled_mcp(&[], &f.data_dir, &f.sandbox_root, &f.real_dir).unwrap();
+        assert!(!r1.changed, "no MCP + unrelated config → no change");
+        let after = fs::read_to_string(f.data_dir.join("config.toml")).unwrap();
+        assert_eq!(after, original, "file (and comment) left byte-for-byte");
+    }
+
+    #[test]
+    fn repeated_reopen_with_config_reports_no_change() {
+        let f = fixture();
+        fs::write(f.data_dir.join("config.toml"), "[verification]\nenabled = true\n").unwrap();
+        let servers = vec![server("demo", "python3", vec!["/opt/x/server.py".into()])];
+        deploy_enabled_mcp(&servers, &f.data_dir, &f.sandbox_root, &f.real_dir).unwrap();
+        // Second identical pass over an existing config must not report a change.
+        let r = deploy_enabled_mcp(&servers, &f.data_dir, &f.sandbox_root, &f.real_dir).unwrap();
+        assert!(!r.changed);
+    }
+
+    #[test]
+    fn existing_directory_arg_grants_itself_not_parent() {
+        let f = fixture();
+        // Real directory referenced directly as an arg.
+        let data_root = env::temp_dir().join(format!("csp-mcp-datadir-{}", uniq()));
+        let data_sub = data_root.join("payload");
+        fs::create_dir_all(&data_sub).unwrap();
+        let servers = vec![server("demo", "python3", vec![data_sub.to_string_lossy().into()])];
+        deploy_enabled_mcp(&servers, &f.data_dir, &f.sandbox_root, &f.real_dir).unwrap();
+
+        let toml = fs::read_to_string(f.data_dir.join("config.toml")).unwrap();
+        // Grants the dir itself, NOT the broader parent.
+        assert!(toml.contains(&data_sub.to_string_lossy().to_string()));
+        assert!(!toml.contains(&format!("\"{}\"", data_root.to_string_lossy())));
+        let _ = fs::remove_dir_all(&data_root);
     }
 
     #[test]

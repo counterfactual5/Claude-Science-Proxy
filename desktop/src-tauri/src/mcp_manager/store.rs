@@ -120,6 +120,17 @@ impl McpStore {
             false
         };
 
+        // Relative script-like args almost never work: the MCP child sandbox has no
+        // configurable cwd and only absolute paths get `user_read_paths` grants.
+        for arg in &input.args {
+            if looks_like_relative_script(arg) {
+                warnings.push(format!(
+                    "'{arg}' looks like a relative path; the sandbox has no working directory \
+                     and only absolute paths are granted read access. Use an absolute path."
+                ));
+            }
+        }
+
         if input.env.keys().any(|k| k.trim().is_empty()) {
             errors.push("Environment variable names cannot be empty".to_string());
         }
@@ -133,7 +144,8 @@ impl McpStore {
     }
 
     /// Create a new server. Rejects duplicate names and invalid input.
-    pub fn create(&self, input: McpServerInput) -> Result<McpServer, String> {
+    /// Returns a masked summary (env values never leave the store in clear).
+    pub fn create(&self, input: McpServerInput) -> Result<McpServerSummary, String> {
         let inspection = Self::inspect(&input);
         if !inspection.valid {
             return Err(inspection.errors.join("; "));
@@ -149,6 +161,7 @@ impl McpStore {
 
         let now = current_iso8601();
         let id = McpServerId::new();
+        // On create there is no prior value, so empty env values are stored as-is.
         let server = McpServer {
             id: id.clone(),
             name,
@@ -160,13 +173,20 @@ impl McpStore {
             created_at: now.clone(),
             updated_at: now,
         };
-        inv.servers.insert(id.to_string(), server.clone());
+        let summary = server.to_summary();
+        inv.servers.insert(id.to_string(), server);
         self.save_inventory(&inv)?;
-        Ok(server)
+        Ok(summary)
     }
 
     /// Update an existing server's definition (name/command/args/env/description).
-    pub fn update(&self, id: &str, input: McpServerInput) -> Result<McpServer, String> {
+    ///
+    /// Env merge semantics (so the UI never has to round-trip masked secrets):
+    /// - a key present with a **non-empty** value → updated;
+    /// - a key present with an **empty** value → keep the previously stored value
+    ///   (or empty if it never existed);
+    /// - a key **absent** from the input → deleted.
+    pub fn update(&self, id: &str, input: McpServerInput) -> Result<McpServerSummary, String> {
         let inspection = Self::inspect(&input);
         if !inspection.valid {
             return Err(inspection.errors.join("; "));
@@ -185,19 +205,20 @@ impl McpStore {
             .servers
             .get_mut(id)
             .ok_or_else(|| format!("MCP server not found: {id}"))?;
+        let merged_env = merge_env(&server.env, &input.env);
         server.name = name;
         server.description = input.description.trim().to_string();
         server.command = input.command.trim().to_string();
         server.args = input.args;
-        server.env = input.env;
+        server.env = merged_env;
         server.updated_at = current_iso8601();
-        let updated = server.clone();
+        let summary = server.to_summary();
         self.save_inventory(&inv)?;
-        Ok(updated)
+        Ok(summary)
     }
 
-    /// Toggle enabled state.
-    pub fn set_enabled(&self, id: &str, enabled: bool) -> Result<McpServer, String> {
+    /// Toggle enabled state. Returns a masked summary.
+    pub fn set_enabled(&self, id: &str, enabled: bool) -> Result<McpServerSummary, String> {
         let mut inv = self.load_inventory()?;
         let server = inv
             .servers
@@ -205,9 +226,9 @@ impl McpStore {
             .ok_or_else(|| format!("MCP server not found: {id}"))?;
         server.enabled = enabled;
         server.updated_at = current_iso8601();
-        let updated = server.clone();
+        let summary = server.to_summary();
         self.save_inventory(&inv)?;
-        Ok(updated)
+        Ok(summary)
     }
 
     /// Remove a server.
@@ -235,6 +256,44 @@ impl McpStore {
 /// Current UTC time as RFC 3339 / ISO 8601. Reuses the skill store's helper.
 fn current_iso8601() -> String {
     crate::skill_manager::store::current_iso8601()
+}
+
+/// Merge submitted env against the previously stored env. See `update` docs for
+/// the semantics (empty value keeps old, absent key deletes).
+fn merge_env(
+    old: &BTreeMap<String, String>,
+    submitted: &BTreeMap<String, String>,
+) -> BTreeMap<String, String> {
+    let mut out = BTreeMap::new();
+    for (k, v) in submitted {
+        if v.is_empty() {
+            if let Some(prev) = old.get(k) {
+                out.insert(k.clone(), prev.clone());
+            } else {
+                out.insert(k.clone(), String::new());
+            }
+        } else {
+            out.insert(k.clone(), v.clone());
+        }
+    }
+    out
+}
+
+/// True when `arg` looks like a relative filesystem path to a script/resource,
+/// which the MCP child sandbox cannot resolve (no cwd, no read grant).
+fn looks_like_relative_script(arg: &str) -> bool {
+    let a = arg.trim();
+    if a.is_empty() || a.starts_with('/') || a.starts_with('-') {
+        return false; // absolute, or a flag like `--port`
+    }
+    // A path separator, or a common script/module extension.
+    if a.contains('/') {
+        return true;
+    }
+    const EXTS: &[&str] = &[
+        ".py", ".js", ".mjs", ".cjs", ".ts", ".rb", ".sh", ".jar", ".json",
+    ];
+    EXTS.iter().any(|e| a.ends_with(e))
 }
 
 #[cfg(test)]
@@ -359,5 +418,90 @@ mod tests {
         let sum = &store.list().unwrap()[0];
         assert_eq!(sum.env.get("TOKEN").unwrap(), "••••alue");
         let _ = fs::remove_dir_all(&store.root);
+    }
+
+    #[test]
+    fn create_and_update_return_masked_summary() {
+        let store = temp_store();
+        let mut inp = input("demo", "python3");
+        inp.env.insert("TOKEN".into(), "supersecretvalue".into());
+        let created = store.create(inp).unwrap();
+        assert_eq!(created.env.get("TOKEN").unwrap(), "••••alue");
+
+        let mut upd = input("demo", "python3");
+        upd.env.insert("TOKEN".into(), "".into()); // keep
+        let updated = store.update(&created.id, upd).unwrap();
+        assert_eq!(updated.env.get("TOKEN").unwrap(), "••••alue");
+        let _ = fs::remove_dir_all(&store.root);
+    }
+
+    #[test]
+    fn update_env_empty_value_keeps_old_secret() {
+        let store = temp_store();
+        let mut inp = input("demo", "python3");
+        inp.env.insert("TOKEN".into(), "keepme-123456".into());
+        let s = store.create(inp).unwrap();
+
+        // Submit blank value for TOKEN → old secret preserved.
+        let mut upd = input("demo", "python3");
+        upd.env.insert("TOKEN".into(), "".into());
+        store.update(&s.id, upd).unwrap();
+
+        // Verify the stored (unmasked) value survived by re-masking a known tail.
+        let sum = &store.list().unwrap()[0];
+        assert_eq!(sum.env.get("TOKEN").unwrap(), "••••3456");
+        let _ = fs::remove_dir_all(&store.root);
+    }
+
+    #[test]
+    fn update_env_absent_key_is_deleted() {
+        let store = temp_store();
+        let mut inp = input("demo", "python3");
+        inp.env.insert("A".into(), "aaaa1111".into());
+        inp.env.insert("B".into(), "bbbb2222".into());
+        let s = store.create(inp).unwrap();
+
+        // Only resubmit A (blank keep); B omitted → deleted.
+        let mut upd = input("demo", "python3");
+        upd.env.insert("A".into(), "".into());
+        store.update(&s.id, upd).unwrap();
+
+        let sum = &store.list().unwrap()[0];
+        assert!(sum.env.contains_key("A"));
+        assert!(!sum.env.contains_key("B"));
+        let _ = fs::remove_dir_all(&store.root);
+    }
+
+    #[test]
+    fn update_env_new_value_overwrites() {
+        let store = temp_store();
+        let mut inp = input("demo", "python3");
+        inp.env.insert("TOKEN".into(), "oldvalue-0000".into());
+        let s = store.create(inp).unwrap();
+
+        let mut upd = input("demo", "python3");
+        upd.env.insert("TOKEN".into(), "brandnew-9999".into());
+        store.update(&s.id, upd).unwrap();
+
+        let sum = &store.list().unwrap()[0];
+        assert_eq!(sum.env.get("TOKEN").unwrap(), "••••9999");
+        let _ = fs::remove_dir_all(&store.root);
+    }
+
+    #[test]
+    fn inspect_warns_on_relative_script_arg() {
+        let mut inp = input("demo", "python3");
+        inp.args = vec!["server.py".into()];
+        let r = McpStore::inspect(&inp);
+        assert!(r.valid); // still valid, just warned
+        assert!(r.warnings.iter().any(|w| w.contains("relative")));
+    }
+
+    #[test]
+    fn inspect_no_warn_on_absolute_arg_or_flag() {
+        let mut inp = input("demo", "python3");
+        inp.args = vec!["/abs/server.py".into(), "--port".into(), "8080".into()];
+        let r = McpStore::inspect(&inp);
+        assert!(!r.warnings.iter().any(|w| w.contains("relative")));
     }
 }

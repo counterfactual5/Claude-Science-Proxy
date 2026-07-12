@@ -10,15 +10,19 @@ pub struct SkillId(String);
 
 impl SkillId {
     pub fn new() -> Self {
+        use std::sync::atomic::{AtomicU64, Ordering};
         use std::time::{SystemTime, UNIX_EPOCH};
-        // Deterministic-uniqueness via epoch nanos: not cryptographic,
-        // but local-only (single user machine) - risk of collision is negligible.
+        // Local-only uniqueness via epoch nanos; not cryptographic. A process-wide
+        // atomic salt guards against two ids minted within the same nanosecond
+        // (e.g. importing several Skills in a tight loop).
+        static SALT: AtomicU64 = AtomicU64::new(0);
         let nanos = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_nanos())
+            .map(|d| d.as_nanos() as u64)
             .unwrap_or(0);
-        let suffix = format!("{:032x}", nanos);
-        Self(format!("sk_{}", suffix))
+        let salt = SALT.fetch_add(1, Ordering::Relaxed);
+        let mixed = nanos.wrapping_mul(1_000_003).wrapping_add(salt);
+        Self(format!("sk_{:016x}{:016x}", nanos, mixed))
     }
 
     #[allow(dead_code)]
