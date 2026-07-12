@@ -95,9 +95,7 @@ impl McpStore {
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.')
         {
-            errors.push(
-                "Name may only contain letters, digits, '-', '_' and '.'".to_string(),
-            );
+            errors.push("Name may only contain letters, digits, '-', '_' and '.'".to_string());
         }
 
         let command = input.command.trim();

@@ -695,7 +695,10 @@ mod tests {
         let dst = base.join("dst");
         copy_dir(&src, &dst).unwrap();
         assert!(dst.join("real.txt").is_file(), "real file copied");
-        assert!(!dst.join("link.txt").exists(), "symlink not followed/copied");
+        assert!(
+            !dst.join("link.txt").exists(),
+            "symlink not followed/copied"
+        );
 
         let _ = fs::remove_dir_all(&base);
     }
@@ -712,7 +715,11 @@ mod tests {
         fs::create_dir_all(&sk_a).unwrap();
         fs::create_dir_all(&sk_b).unwrap();
         fs::create_dir_all(&junk).unwrap();
-        fs::write(sk_a.join("SKILL.md"), "---\nname: Alpha\ndescription: A\n---\n").unwrap();
+        fs::write(
+            sk_a.join("SKILL.md"),
+            "---\nname: Alpha\ndescription: A\n---\n",
+        )
+        .unwrap();
         fs::write(sk_b.join("SKILL.md"), "---\nname: Beta\n---\n").unwrap();
         fs::write(junk.join("readme.txt"), "x").unwrap();
 
@@ -740,9 +747,7 @@ mod tests {
     fn discover_skips_missing_roots() {
         let store = temp_store();
         let missing = env::temp_dir().join(format!("csp-disc-missing-{}", rand_u64()));
-        let found = store
-            .discover(&[(missing, "~/nope".to_string())])
-            .unwrap();
+        let found = store.discover(&[(missing, "~/nope".to_string())]).unwrap();
         assert!(found.is_empty());
         let _ = fs::remove_dir_all(&store.root);
     }

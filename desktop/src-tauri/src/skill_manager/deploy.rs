@@ -1,9 +1,9 @@
 //! Deploy enabled Skills into the isolated Science sandbox.
 //!
-//! Claude Science discovers user Skills by scanning `<data-dir>/skills/<name>/SKILL.md`
-//! (confirmed against the installed app's real data-dir: no manifest/allowlist, pure
-//! disk scan, each scanned folder gets a `.catalog_stamp`). The sandbox data-dir is
-//! `$SANDBOX_HOME/.claude-science`, so enabled Skills are copied there before launch.
+//! Current Claude Science builds discover user Skills by scanning the active org's
+//! `<data-dir>/orgs/<org_uuid>/skills/<name>/SKILL.md` (pure disk scan; each
+//! recognized folder gets a `.catalog_stamp`). Callers pass that org data-dir, and
+//! enabled Skills are copied there before launch.
 //!
 //! Iron rules enforced here:
 //! - Only ever write under the sandbox root; never the real `~/.claude-science`.
@@ -43,8 +43,10 @@ pub(crate) struct DeployReport {
 
 /// Deploy `enabled` Skills into `<data_dir>/skills/`.
 ///
-/// `data_dir` is the sandbox Science data-dir; `sandbox_root` is `$SANDBOX_HOME`;
-/// `real_science_dir` is the real `~/.claude-science` used only for the guard check.
+/// `data_dir` is the active org data-dir (normally
+/// `$SANDBOX_HOME/.claude-science/orgs/<org_uuid>`); `sandbox_root` is
+/// `$SANDBOX_HOME`; `real_science_dir` is the real `~/.claude-science` used only
+/// for the guard check.
 pub fn deploy_enabled_skills(
     enabled: &[Skill],
     data_dir: &Path,
@@ -154,8 +156,7 @@ pub fn deploy_enabled_skills(
             .map_err(|e| format!("write managed marker: {e}"))?;
         report.deployed.push(skill.name.clone());
     }
-    fs::write(&manifest_path, signature.as_bytes())
-        .map_err(|e| format!("write manifest: {e}"))?;
+    fs::write(&manifest_path, signature.as_bytes()).map_err(|e| format!("write manifest: {e}"))?;
     report.changed = true;
 
     Ok(report)

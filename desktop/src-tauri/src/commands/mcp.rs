@@ -62,13 +62,21 @@ struct McpSource {
 }
 
 const MCP_SOURCES: &[McpSource] = &[
-    McpSource { rel_path: ".cursor/mcp.json", label: "Cursor", key: "mcpServers" },
+    McpSource {
+        rel_path: ".cursor/mcp.json",
+        label: "Cursor",
+        key: "mcpServers",
+    },
     McpSource {
         rel_path: "Library/Application Support/Claude/claude_desktop_config.json",
         label: "Claude Desktop",
         key: "mcpServers",
     },
-    McpSource { rel_path: ".claude.json", label: "Claude Code", key: "mcpServers" },
+    McpSource {
+        rel_path: ".claude.json",
+        label: "Claude Code",
+        key: "mcpServers",
+    },
     McpSource {
         rel_path: ".config/claude/claude_desktop_config.json",
         label: "Claude",
@@ -81,7 +89,11 @@ const MCP_SOURCES: &[McpSource] = &[
         label: "Devin Desktop",
         key: "mcpServers",
     },
-    McpSource { rel_path: ".vscode/mcp.json", label: "VS Code", key: "servers" },
+    McpSource {
+        rel_path: ".vscode/mcp.json",
+        label: "VS Code",
+        key: "servers",
+    },
     // Zed uses `context_servers` instead of `mcpServers`.
     McpSource {
         rel_path: ".config/zed/settings.json",
@@ -107,7 +119,14 @@ pub async fn discover_mcp_servers() -> Result<Vec<DiscoveredMcpServer>, String> 
             std::collections::BTreeSet::new();
         for source in MCP_SOURCES {
             let path = home.join(source.rel_path);
-            discover_source(&path, source.label, source.key, &existing, &mut seen, &mut found)?;
+            discover_source(
+                &path,
+                source.label,
+                source.key,
+                &existing,
+                &mut seen,
+                &mut found,
+            )?;
         }
         // Codex CLI stores MCP under `[mcp_servers.*]` in TOML, not JSON.
         let codex_config = home.join(".codex/config.toml");
@@ -547,7 +566,10 @@ mod tests {
         let input = parse_server("notion", &v).unwrap();
         assert_eq!(input.command, "/usr/bin/notion");
         assert_eq!(input.args, vec!["--transport", "stdio"]);
-        assert_eq!(input.env.get("NOTION_TOKEN").map(String::as_str), Some("secret"));
+        assert_eq!(
+            input.env.get("NOTION_TOKEN").map(String::as_str),
+            Some("secret")
+        );
     }
 
     #[test]

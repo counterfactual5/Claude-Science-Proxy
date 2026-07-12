@@ -328,7 +328,11 @@ mod tests {
     #[test]
     fn grants_read_path_for_absolute_arg() {
         let f = fixture();
-        let servers = vec![server("demo", "python3", vec!["/opt/tools/mcp/server.py".into()])];
+        let servers = vec![server(
+            "demo",
+            "python3",
+            vec!["/opt/tools/mcp/server.py".into()],
+        )];
         deploy_enabled_mcp(&servers, &f.data_dir, &f.sandbox_root, &f.real_dir).unwrap();
 
         let toml = fs::read_to_string(f.data_dir.join("config.toml")).unwrap();
@@ -430,7 +434,11 @@ mod tests {
     #[test]
     fn repeated_reopen_with_config_reports_no_change() {
         let f = fixture();
-        fs::write(f.data_dir.join("config.toml"), "[verification]\nenabled = true\n").unwrap();
+        fs::write(
+            f.data_dir.join("config.toml"),
+            "[verification]\nenabled = true\n",
+        )
+        .unwrap();
         let servers = vec![server("demo", "python3", vec!["/opt/x/server.py".into()])];
         deploy_enabled_mcp(&servers, &f.data_dir, &f.sandbox_root, &f.real_dir).unwrap();
         // Second identical pass over an existing config must not report a change.
@@ -445,7 +453,11 @@ mod tests {
         let data_root = env::temp_dir().join(format!("csp-mcp-datadir-{}", uniq()));
         let data_sub = data_root.join("payload");
         fs::create_dir_all(&data_sub).unwrap();
-        let servers = vec![server("demo", "python3", vec![data_sub.to_string_lossy().into()])];
+        let servers = vec![server(
+            "demo",
+            "python3",
+            vec![data_sub.to_string_lossy().into()],
+        )];
         deploy_enabled_mcp(&servers, &f.data_dir, &f.sandbox_root, &f.real_dir).unwrap();
 
         let toml = fs::read_to_string(f.data_dir.join("config.toml")).unwrap();

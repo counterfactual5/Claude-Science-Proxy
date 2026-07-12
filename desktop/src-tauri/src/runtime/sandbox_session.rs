@@ -50,7 +50,9 @@ pub(crate) fn one_click_login<R: Runtime>(
             // restart the sandbox for the change to take effect — otherwise the
             // user would silently keep running the old config. Deploys are
             // idempotent, so an unchanged reopen stays fast.
-            let (_, skill_changed) = deploy_sandbox_skills(&auth_dir, &sbx_home);
+            let org_uuid = read_sandbox_org_uuid(&auth_dir);
+            let (_, skill_changed) =
+                deploy_sandbox_skills(&auth_dir, &sbx_home, org_uuid.as_deref());
             let (_, mcp_changed) = deploy_sandbox_mcp(&auth_dir, &sbx_home);
             if !skill_changed && !mcp_changed {
                 let url = sandbox_url(sport);
@@ -85,12 +87,13 @@ pub(crate) fn one_click_login<R: Runtime>(
         oauth_forge::ensure_virtual_login(&auth_dir, "virtual@localhost.invalid", &sbx_home)
             .map_err(|e| i18n_err("errSandboxVirtualLoginFailed", json!({ "error": e })))?;
 
-    // Deploy enabled Skills into the sandbox Science skills dir
-    // (`<data-dir>/skills/<name>/`, confirmed against the installed app). The
-    // deployer only manages folders it marks with `.csp_managed`, so Science's
+    // Deploy enabled Skills into the sandbox org-scoped Science skills dir
+    // (`<data-dir>/orgs/<org_uuid>/skills/<name>/`). Current Science builds stamp
+    // and index org-scoped skills; root `<data-dir>/skills/` is not recognized.
+    // The deployer only manages folders it marks with `.csp_managed`, so Science's
     // bundled Skills are never removed, and it refuses to write outside the
     // sandbox or into the real `~/.claude-science`.
-    let (skill_report, _) = deploy_sandbox_skills(&auth_dir, &sbx_home);
+    let (skill_report, _) = deploy_sandbox_skills(&auth_dir, &sbx_home, Some(&forged.org_uuid));
 
     // Deploy enabled local stdio MCP servers into the sandbox
     // (`<data-dir>/mcp/local-mcp.json` + `[sandbox] user_read_paths` in
@@ -181,13 +184,13 @@ pub(crate) fn one_click_login<R: Runtime>(
         ));
     }
 
-    // Built-in probe: once Science is up it scans `<data-dir>/skills/` and writes a
-    // `.catalog_stamp` into each folder it recognizes. Log how many of our managed
-    // Skills got stamped so a real launch self-verifies the deployment path.
-    // `skill_report` is the wrapper's summary, e.g. `deploy: deployed=[...] ...`.
+    // Built-in probe: once Science is up it scans the org-scoped skills dir and
+    // writes a `.catalog_stamp` into each folder it recognizes. Log how many of our
+    // managed Skills got stamped so a real launch self-verifies the deployment path.
+    // `skill_report` is the wrapper's summary, e.g. `deploy: org=... deployed=[...] ...`.
     // Only probe when at least one Skill was actually deployed.
-    if !skill_report.starts_with("deploy: deployed=[]") {
-        let verify = verify_sandbox_skills(&auth_dir);
+    if !skill_report.contains("deployed=[]") {
+        let verify = verify_sandbox_skills(&auth_dir, Some(&forged.org_uuid));
         if let Ok(logf3) = open_log("sandbox.log") {
             use std::io::Write;
             let mut lw = &logf3;
@@ -216,7 +219,17 @@ pub(crate) fn one_click_login<R: Runtime>(
 /// Deploy enabled Skills into the sandbox. Returns a redaction-safe log summary
 /// and whether anything on disk changed (for restart decisions). Never fails the
 /// launch: any error is reported and the sandbox still starts.
-fn deploy_sandbox_skills(auth_dir: &Path, sbx_home: &Path) -> (String, bool) {
+fn deploy_sandbox_skills(
+    auth_dir: &Path,
+    sbx_home: &Path,
+    org_uuid: Option<&str>,
+) -> (String, bool) {
+    let Some(org_uuid) = org_uuid else {
+        return (
+            "deploy skipped: org uuid unavailable (active-org.json missing/invalid)".to_string(),
+            false,
+        );
+    };
     let real_science = std::env::var_os("HOME")
         .map(|h| PathBuf::from(h).join(".claude-science"))
         .unwrap_or_else(|| PathBuf::from("/nonexistent/.claude-science"));
@@ -228,15 +241,29 @@ fn deploy_sandbox_skills(auth_dir: &Path, sbx_home: &Path) -> (String, bool) {
         Ok(e) => e,
         Err(e) => return (format!("deploy skipped: list failed: {e}"), false),
     };
-    match crate::skill_manager::deploy_enabled_skills(&enabled, auth_dir, sbx_home, &real_science) {
+    let org_data_dir = auth_dir.join("orgs").join(org_uuid);
+    match crate::skill_manager::deploy_enabled_skills(
+        &enabled,
+        &org_data_dir,
+        sbx_home,
+        &real_science,
+    ) {
         Ok(r) => (
             format!(
-                "deploy: deployed={:?} skipped={:?} removed={} changed={}",
-                r.deployed, r.skipped, r.removed, r.changed
+                "deploy: org={} deployed={:?} skipped={:?} removed={} legacy_removed={} changed={}",
+                org_uuid,
+                r.deployed,
+                r.skipped,
+                r.removed,
+                cleanup_legacy_root_skills(auth_dir),
+                r.changed
             ),
             r.changed,
         ),
-        Err(e) => (format!("deploy error (sandbox launch continues): {e}"), false),
+        Err(e) => (
+            format!("deploy error (sandbox launch continues): {e}"),
+            false,
+        ),
     }
 }
 
@@ -264,15 +291,21 @@ fn deploy_sandbox_mcp(auth_dir: &Path, sbx_home: &Path) -> (String, bool) {
             ),
             r.changed,
         ),
-        Err(e) => (format!("deploy error (sandbox launch continues): {e}"), false),
+        Err(e) => (
+            format!("deploy error (sandbox launch continues): {e}"),
+            false,
+        ),
     }
 }
 
-/// Scan `<data-dir>/skills/` for our managed Skills and report how many Science
+/// Scan `<data-dir>/orgs/<org_uuid>/skills/` for our managed Skills and report how many Science
 /// recognized (folders carrying both our `.csp_managed` marker and Science's
 /// `.catalog_stamp`). Best-effort observability; not a launch gate.
-fn verify_sandbox_skills(auth_dir: &Path) -> String {
-    let skills_dir = auth_dir.join("skills");
+fn verify_sandbox_skills(auth_dir: &Path, org_uuid: Option<&str>) -> String {
+    let Some(org_uuid) = org_uuid else {
+        return "verify: org uuid unavailable".to_string();
+    };
+    let skills_dir = auth_dir.join("orgs").join(org_uuid).join("skills");
     let Ok(entries) = std::fs::read_dir(&skills_dir) else {
         return "verify: skills dir unreadable".to_string();
     };
@@ -286,5 +319,37 @@ fn verify_sandbox_skills(auth_dir: &Path) -> String {
             }
         }
     }
-    format!("verify: managed={managed} recognized_by_science={stamped}")
+    format!("verify: org={org_uuid} managed={managed} recognized_by_science={stamped}")
+}
+
+fn read_sandbox_org_uuid(auth_dir: &Path) -> Option<String> {
+    let v: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(auth_dir.join("active-org.json")).ok()?)
+            .ok()?;
+    let org = v.get("org_uuid")?.as_str()?;
+    if org.len() == 36 && org.chars().all(|c| c.is_ascii_hexdigit() || c == '-') {
+        Some(org.to_string())
+    } else {
+        None
+    }
+}
+
+/// Remove CSP-managed Skills from the legacy root-level path used by earlier
+/// builds. Current Science indexes org-scoped Skills, so these folders only cause
+/// confusion in diagnostics. Bundled/unmanaged folders are never touched.
+fn cleanup_legacy_root_skills(auth_dir: &Path) -> usize {
+    let root_skills = auth_dir.join("skills");
+    let Ok(entries) = std::fs::read_dir(&root_skills) else {
+        return 0;
+    };
+    let mut removed = 0;
+    for entry in entries.flatten() {
+        let p = entry.path();
+        if p.is_dir() && p.join(".csp_managed").is_file() {
+            if std::fs::remove_dir_all(&p).is_ok() {
+                removed += 1;
+            }
+        }
+    }
+    removed
 }
