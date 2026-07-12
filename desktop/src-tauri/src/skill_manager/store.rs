@@ -369,7 +369,7 @@ fn walk_entries(dir: &Path) -> Vec<std::fs::DirEntry> {
 }
 
 /// Recursively copy a directory tree.
-fn copy_dir(src: &Path, dst: &Path) -> Result<(), String> {
+pub(crate) fn copy_dir(src: &Path, dst: &Path) -> Result<(), String> {
     fs::create_dir_all(dst).map_err(|e| format!("create dest dir: {e}"))?;
     for entry in fs::read_dir(src).map_err(|e| format!("read src dir: {e}"))? {
         let entry = entry.map_err(|e| format!("read entry: {e}"))?;

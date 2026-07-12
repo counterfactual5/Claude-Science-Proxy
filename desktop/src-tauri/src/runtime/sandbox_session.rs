@@ -1,3 +1,4 @@
+use std::fs;
 use std::process::{Command, Stdio};
 use std::time::Duration;
 
@@ -72,6 +73,22 @@ pub(crate) fn one_click_login<R: Runtime>(
     let (forged, login_action) =
         oauth_forge::ensure_virtual_login(&auth_dir, "virtual@localhost.invalid", &sbx_home)
             .map_err(|e| i18n_err("errSandboxVirtualLoginFailed", json!({ "error": e })))?;
+
+    // Deploy enabled skills to sandbox customizations
+    if let Ok(store) = crate::skill_manager::SkillStore::open() {
+        if let Ok(enabled) = store.enabled_skills() {
+            let sandbox_skills_dir = auth_dir.join("customizations").join("skills");
+            let _ = fs::remove_dir_all(&sandbox_skills_dir);
+            if !enabled.is_empty() {
+                let _ = fs::create_dir_all(&sandbox_skills_dir);
+                for skill in enabled {
+                    let dest_skill_dir = sandbox_skills_dir.join(&skill.name);
+                    let _ =
+                        crate::skill_manager::store::copy_dir(&skill.store_path, &dest_skill_dir);
+                }
+            }
+        }
+    }
 
     let launch = root.join("scripts/sandbox/launch-virtual-sandbox.sh");
     if !launch.is_file() {
