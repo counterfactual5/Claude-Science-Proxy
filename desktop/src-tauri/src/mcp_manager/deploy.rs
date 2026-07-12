@@ -49,9 +49,9 @@ struct LocalMcpEntry<'a> {
     name: &'a str,
     #[serde(skip_serializing_if = "str::is_empty")]
     description: &'a str,
-    command: &'a str,
-    #[serde(skip_serializing_if = "<[String]>::is_empty")]
-    args: &'a [String],
+    command: String,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    args: Vec<String>,
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     env: BTreeMap<String, String>,
 }
@@ -69,13 +69,48 @@ const PROXY_ENV_KEYS: &[&str] = &[
     "all_proxy",
 ];
 
+/// macOS/BSD `env -u` unsets inherited proxy vars before exec; Science may ignore
+/// empty-string overrides in the JSON `env` block, so this is the reliable path.
+const ENV_BIN: &str = "/usr/bin/env";
+
+struct DeployCmd {
+    command: String,
+    args: Vec<String>,
+}
+
+fn user_set_proxy(server: &McpServer) -> bool {
+    PROXY_ENV_KEYS.iter().any(|k| server.env.contains_key(*k))
+}
+
+/// Wrap the connector command with `env -u …` so the child never inherits the
+/// sandbox's Anthropic fast-fail `https_proxy`. User-provided proxy env is left
+/// alone (no wrap).
+fn deploy_command(server: &McpServer) -> DeployCmd {
+    if user_set_proxy(server) {
+        return DeployCmd {
+            command: server.command.clone(),
+            args: server.args.clone(),
+        };
+    }
+    let mut args = Vec::new();
+    for key in PROXY_ENV_KEYS {
+        args.push("-u".to_string());
+        args.push((*key).to_string());
+    }
+    args.push(server.command.clone());
+    args.extend(server.args.iter().cloned());
+    DeployCmd {
+        command: ENV_BIN.to_string(),
+        args,
+    }
+}
+
 /// Build the effective env for a deployed connector: the user's own `env`, plus
 /// proxy-neutralizing entries so the inherited sandbox proxy does not hijack the
 /// child's own API calls. Any proxy var the user set explicitly is left intact.
 fn effective_env(server: &McpServer) -> BTreeMap<String, String> {
     let mut env = server.env.clone();
-    let user_set_proxy = PROXY_ENV_KEYS.iter().any(|k| env.contains_key(*k));
-    if !user_set_proxy {
+    if !user_set_proxy(server) {
         for key in PROXY_ENV_KEYS {
             env.insert((*key).to_string(), String::new());
         }
@@ -140,12 +175,15 @@ pub(crate) fn deploy_enabled_mcp(
     let file = LocalMcpFile {
         servers: enabled
             .iter()
-            .map(|s| LocalMcpEntry {
-                name: &s.name,
-                description: &s.description,
-                command: &s.command,
-                args: &s.args,
-                env: effective_env(s),
+            .map(|s| {
+                let cmd = deploy_command(s);
+                LocalMcpEntry {
+                    name: &s.name,
+                    description: &s.description,
+                    command: cmd.command,
+                    args: cmd.args,
+                    env: effective_env(s),
+                }
             })
             .collect(),
     };
@@ -396,8 +434,12 @@ mod tests {
         let json = fs::read_to_string(f.data_dir.join("mcp").join(LOCAL_MCP_FILE)).unwrap();
         let v: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert_eq!(v["servers"][0]["name"], "demo");
-        assert_eq!(v["servers"][0]["command"], "python3");
-        assert_eq!(v["servers"][0]["args"][0], "/opt/x/server.py");
+        assert_eq!(v["servers"][0]["command"], "/usr/bin/env");
+        let args = v["servers"][0]["args"].as_array().unwrap();
+        assert_eq!(args[0], "-u");
+        assert_eq!(args[1], "HTTP_PROXY");
+        assert_eq!(args[args.len() - 2], "python3");
+        assert_eq!(args[args.len() - 1], "/opt/x/server.py");
         // empty description must be omitted
         assert!(v["servers"][0].get("description").is_none());
         // env carries the proxy-neutralizing entries even when the user set none,
@@ -420,6 +462,7 @@ mod tests {
         assert_eq!(env["NOTION_TOKEN"], "ntn_secret", "user env preserved");
         assert_eq!(env["HTTPS_PROXY"], "", "inherited proxy blanked");
         assert_eq!(env["ALL_PROXY"], "");
+        assert_eq!(v["servers"][0]["command"], "/usr/bin/env", "env -u wrapper");
     }
 
     #[test]
@@ -437,6 +480,7 @@ mod tests {
             env["HTTPS_PROXY"], "http://corp-proxy:8080",
             "explicit user proxy must not be overridden"
         );
+        assert_eq!(v["servers"][0]["command"], "python3", "no env wrap");
         // We did not inject blanks/NO_PROXY when the user set a proxy themselves.
         assert!(env.get("NO_PROXY").is_none());
     }
