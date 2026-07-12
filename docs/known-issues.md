@@ -83,6 +83,14 @@ Directory connectors and official remote skills depend on claude.ai hosted servi
 
 ---
 
+<a id="skill-manager"></a>
+
+## Local Skill Manager (experimental)
+
+The **Skills** tab imports local Skill directories (folders containing a `SKILL.md`) into managed storage at `~/.csp/skills/`, where you can list, enable/disable, and remove them. This is a **staging/management layer only**: enabling a Skill records intent in the inventory but does **not yet deploy it into the Science sandbox**, so the sandboxed Science instance will not load or use it yet. Requirement detection (`python`, `node`, `rust`, `mcp`, …) is a filename/extension heuristic and may miss or over-report. Sandbox deployment of enabled Skills is planned (see Roadmap); until then, treat the feature as a local catalog. It never touches real `~/.claude-science` state.
+
+---
+
 <a id="local-mcp"></a>
 
 ## Local stdio MCP connectors
@@ -112,6 +120,7 @@ Idempotent virtual login prevents **new** chats from being orphaned. If you alre
 | Direction | Notes |
 |-----------|--------|
 | Proxy in Rust | Reduce `python3` runtime dependency |
+| Skill sandbox deployment | Deploy enabled local Skills into the Science sandbox (see [Local Skill Manager](#skill-manager)) |
 | Launch-and-stay-ready | Auto-prepare Science on app open (issue discussion) |
 | Intel / Universal build | Primary release is Apple Silicon today |
 | Apple notarization | Ad-hoc signed; first open via right-click → Open |
