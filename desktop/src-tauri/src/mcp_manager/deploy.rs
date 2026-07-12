@@ -49,9 +49,9 @@ struct LocalMcpEntry<'a> {
     name: &'a str,
     #[serde(skip_serializing_if = "str::is_empty")]
     description: &'a str,
-    command: &'a str,
-    #[serde(skip_serializing_if = "<[String]>::is_empty")]
-    args: &'a [String],
+    command: String,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    args: Vec<String>,
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     env: BTreeMap<String, String>,
 }
@@ -65,29 +65,65 @@ const PROXY_ENV_KEYS: &[&str] = &[
     "all_proxy",
 ];
 
-/// Merge the CSP loopback egress proxy into a connector's env.
+fn user_set_proxy(server: &McpServer) -> bool {
+    PROXY_ENV_KEYS.iter().any(|k| server.env.contains_key(*k))
+}
+
+struct DeployCmd {
+    command: String,
+    args: Vec<String>,
+}
+
+/// Wrap the connector so it clears Science's Operon sandbox proxy and points at
+/// the CSP loopback proxy instead.
 ///
-/// Science's nested MCP child sandbox often does **not** inherit the parent
-/// process `https_proxy`. Without it the child tries direct DNS and fails with
-/// `getaddrinfo ENOTFOUND`. Pointing `https_proxy` at the CSP proxy lets the
-/// child reach external APIs via CONNECT / absolute-form forward. A proxy the
-/// user set explicitly is left intact.
-fn effective_env(server: &McpServer, egress_proxy_url: Option<&str>) -> BTreeMap<String, String> {
-    let mut env = server.env.clone();
+/// Science injects `HTTPS_PROXY=http://localhost:<operon-port>` (and SOCKS
+/// `ALL_PROXY`) into every MCP child. That Operon HTTP proxy only speaks
+/// CONNECT; axios (used by `@notionhq/notion-mcp-server` and others) sends
+/// absolute-form `GET https://host/…` instead, which Operon tunnels as plain
+/// HTTP onto port 443 → Cloudflare `400 The plain HTTP request was sent to
+/// HTTPS port`. CSP's proxy implements absolute-form forward, so the wrapper
+/// unsets Operon's proxy vars at exec time (Science sets them before our
+/// command runs) and re-exports `https_proxy` to the CSP URL.
+fn deploy_command(server: &McpServer, egress_proxy_url: Option<&str>) -> DeployCmd {
     let Some(url) = egress_proxy_url.filter(|u| !u.is_empty()) else {
-        return env;
+        return DeployCmd {
+            command: server.command.clone(),
+            args: server.args.clone(),
+        };
     };
-    if PROXY_ENV_KEYS.iter().any(|k| env.contains_key(*k)) {
-        return env;
+    if user_set_proxy(server) {
+        return DeployCmd {
+            command: server.command.clone(),
+            args: server.args.clone(),
+        };
     }
-    env.insert("HTTPS_PROXY".to_string(), url.to_string());
-    env.insert("https_proxy".to_string(), url.to_string());
-    // Keep loopback direct so the child can reach the proxy itself.
-    env.entry("NO_PROXY".to_string())
-        .or_insert_with(|| "127.0.0.1,localhost,::1".to_string());
-    env.entry("no_proxy".to_string())
-        .or_insert_with(|| "127.0.0.1,localhost,::1".to_string());
-    env
+    // bash -c '…' name PROXY_URL REAL_CMD REAL_ARGS…
+    // $1 = proxy URL; after shift, "$@" is the real connector.
+    let script = "unset HTTP_PROXY HTTPS_PROXY http_proxy https_proxy \
+ALL_PROXY all_proxy FTP_PROXY ftp_proxy RSYNC_PROXY rsync_proxy; \
+export HTTPS_PROXY=\"$1\" https_proxy=\"$1\" \
+NO_PROXY=127.0.0.1,localhost,::1 no_proxy=127.0.0.1,localhost,::1; \
+shift; exec \"$@\"";
+    let mut args = vec![
+        "-c".to_string(),
+        script.to_string(),
+        "csp-mcp-egress".to_string(),
+        url.to_string(),
+        server.command.clone(),
+    ];
+    args.extend(server.args.iter().cloned());
+    DeployCmd {
+        command: "/bin/bash".to_string(),
+        args,
+    }
+}
+
+/// Keep the user's connector env as-is. Egress routing is handled by
+/// [`deploy_command`] (Science overwrites proxy env on spawn, so injecting
+/// `https_proxy` into local-mcp.json alone is not enough).
+fn effective_env(server: &McpServer, _egress_proxy_url: Option<&str>) -> BTreeMap<String, String> {
+    server.env.clone()
 }
 
 /// Deploy `enabled` stdio MCP servers into `<data_dir>/mcp/local-mcp.json` and
@@ -95,8 +131,10 @@ fn effective_env(server: &McpServer, egress_proxy_url: Option<&str>) -> BTreeMap
 ///
 /// `data_dir` is the sandbox Science data-dir; `sandbox_root` is `$SANDBOX_HOME`;
 /// `real_science_dir` is the real `~/.claude-science` used only for the guard.
-/// `egress_proxy_url` is the CSP loopback proxy (`http://127.0.0.1:<port>`)
-/// injected into each connector's env so MCP children can reach external APIs.
+/// `egress_proxy_url` is the CSP loopback proxy (`http://127.0.0.1:<port>`).
+/// When set, each connector is wrapped with a small bash preamble that clears
+/// Science's Operon sandbox proxy and points `https_proxy` at CSP (axios
+/// absolute-form requests need CSP's forward support; Operon only does CONNECT).
 pub(crate) fn deploy_enabled_mcp(
     enabled: &[McpServer],
     data_dir: &Path,
@@ -145,12 +183,15 @@ pub(crate) fn deploy_enabled_mcp(
     let file = LocalMcpFile {
         servers: enabled
             .iter()
-            .map(|s| LocalMcpEntry {
-                name: &s.name,
-                description: &s.description,
-                command: &s.command,
-                args: &s.args,
-                env: effective_env(s, egress_proxy_url),
+            .map(|s| {
+                let cmd = deploy_command(s, egress_proxy_url);
+                LocalMcpEntry {
+                    name: &s.name,
+                    description: &s.description,
+                    command: cmd.command,
+                    args: cmd.args,
+                    env: effective_env(s, egress_proxy_url),
+                }
             })
             .collect(),
     };
@@ -409,7 +450,7 @@ mod tests {
     }
 
     #[test]
-    fn injects_egress_proxy_into_env() {
+    fn wraps_command_to_reroute_operon_proxy_via_csp() {
         let f = fixture();
         let mut s = server("demo", "python3", vec!["/opt/x/server.py".into()]);
         s.env.insert("NOTION_TOKEN".into(), "ntn_secret".into());
@@ -424,15 +465,21 @@ mod tests {
 
         let json = fs::read_to_string(f.data_dir.join("mcp").join(LOCAL_MCP_FILE)).unwrap();
         let v: serde_json::Value = serde_json::from_str(&json).unwrap();
-        let env = &v["servers"][0]["env"];
-        assert_eq!(env["NOTION_TOKEN"], "ntn_secret");
-        assert_eq!(env["https_proxy"], "http://127.0.0.1:18991");
-        assert_eq!(env["HTTPS_PROXY"], "http://127.0.0.1:18991");
-        assert_eq!(env["no_proxy"], "127.0.0.1,localhost,::1");
+        assert_eq!(v["servers"][0]["command"], "/bin/bash");
+        let args = v["servers"][0]["args"].as_array().unwrap();
+        assert_eq!(args[0], "-c");
+        assert_eq!(args[2], "csp-mcp-egress");
+        assert_eq!(args[3], "http://127.0.0.1:18991");
+        assert_eq!(args[4], "python3");
+        assert_eq!(args[5], "/opt/x/server.py");
+        // User secrets stay in env; proxy routing is the wrapper, not env injection
+        // (Science overwrites proxy env on spawn).
+        assert_eq!(v["servers"][0]["env"]["NOTION_TOKEN"], "ntn_secret");
+        assert!(v["servers"][0]["env"].get("https_proxy").is_none());
     }
 
     #[test]
-    fn respects_user_proxy_over_egress_injection() {
+    fn respects_user_proxy_skips_wrapper() {
         let f = fixture();
         let mut s = server("demo", "python3", vec!["/opt/x/server.py".into()]);
         s.env
@@ -448,9 +495,9 @@ mod tests {
 
         let json = fs::read_to_string(f.data_dir.join("mcp").join(LOCAL_MCP_FILE)).unwrap();
         let v: serde_json::Value = serde_json::from_str(&json).unwrap();
-        let env = &v["servers"][0]["env"];
-        assert_eq!(env["HTTPS_PROXY"], "http://corp-proxy:8080");
-        assert!(env.get("https_proxy").is_none());
+        assert_eq!(v["servers"][0]["command"], "python3");
+        assert_eq!(v["servers"][0]["args"][0], "/opt/x/server.py");
+        assert_eq!(v["servers"][0]["env"]["HTTPS_PROXY"], "http://corp-proxy:8080");
     }
 
     #[test]
