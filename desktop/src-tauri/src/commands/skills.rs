@@ -26,7 +26,8 @@ const DISCOVERY_ROOTS: &[&str] = &[
     ".claude/skills",
     ".cursor/skills",
     // Domestic (China) agents / IDEs that also use the `SKILL.md` folder layout.
-    ".trae/skills",        // ByteDance Trae
+    ".trae/skills",        // ByteDance Trae (international)
+    ".trae-cn/skills",     // ByteDance Trae CN
     ".codebuddy/skills",   // Tencent CodeBuddy
 ];
 

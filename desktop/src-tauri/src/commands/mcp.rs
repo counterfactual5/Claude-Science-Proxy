@@ -81,7 +81,7 @@ const MCP_SOURCES: &[McpSource] = &[
     },
     McpSource {
         rel_path: ".config/claude/claude_desktop_config.json",
-        label: "Claude",
+        label: "Claude Desktop (Linux)",
         key: "mcpServers",
     },
     // Devin Desktop (the June 2026 rebrand of Windsurf, formerly Codeium). The
@@ -92,7 +92,7 @@ const MCP_SOURCES: &[McpSource] = &[
         key: "mcpServers",
     },
     McpSource {
-        rel_path: ".vscode/mcp.json",
+        rel_path: "Library/Application Support/Code/User/mcp.json",
         label: "VS Code",
         key: "servers",
     },
@@ -105,8 +105,14 @@ const MCP_SOURCES: &[McpSource] = &[
     // --- Domestic (China) agents / IDEs. All confirmed to use the `mcpServers`
     // key with the same `{ command, args, env }` stdio shape. Remote/SSE entries
     // (`type`/`url`, no `command`) are ignored by discover_source as usual. ---
-    // Alibaba Qoder / Tongyi Lingma family — global MCP under
+    // Alibaba Qoder / Tongyi Lingma family — CLI / IDE user scope uses
+    // `~/.qoder/settings.json`; IDE app data uses
     // `<app>/SharedClientCache/mcp.json`.
+    McpSource {
+        rel_path: ".qoder/settings.json",
+        label: "Qoder",
+        key: "mcpServers",
+    },
     McpSource {
         rel_path: "Library/Application Support/Qoder/SharedClientCache/mcp.json",
         label: "Qoder",
