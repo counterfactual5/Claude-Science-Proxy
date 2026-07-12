@@ -227,8 +227,7 @@ impl SkillStore {
         Ok(())
     }
 
-    /// Get the list of enabled Skill names (for sandbox deployment).
-    #[allow(dead_code)]
+    /// Get the list of enabled Skills (for sandbox deployment).
     pub fn enabled_skills(&self) -> Result<Vec<Skill>, String> {
         let inv = self.load_inventory()?;
         Ok(inv.skills.values().filter(|s| s.enabled).cloned().collect())

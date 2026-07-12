@@ -4,9 +4,12 @@
 //! Science sandbox. Skills are copied to managed storage and tracked separately
 //! from real Claude credentials.
 
+pub mod deploy;
 pub mod model;
 pub mod store;
 
+#[allow(unused_imports)]
+pub(crate) use deploy::deploy_enabled_skills;
 #[allow(unused_imports)]
 pub use model::{Skill, SkillId, SkillSummary};
 #[allow(unused_imports)]

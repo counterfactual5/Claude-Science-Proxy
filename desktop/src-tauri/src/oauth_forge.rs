@@ -153,7 +153,7 @@ pub fn decrypt_token_v2(body: &str, oauth_key_b64: &str) -> Result<Vec<u8>, Stri
 
 // ---------- Path guards & safe write ----------
 /// Walk up to the nearest existing ancestor and canonicalize (follow symlinks), then re-append missing tail segments.
-fn real_ancestor(p: &Path) -> PathBuf {
+pub(crate) fn real_ancestor(p: &Path) -> PathBuf {
     let mut cur = p.to_path_buf();
     let mut tail: Vec<std::ffi::OsString> = Vec::new();
     while !cur.exists() {

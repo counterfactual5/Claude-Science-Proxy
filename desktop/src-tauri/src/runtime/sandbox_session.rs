@@ -1,4 +1,4 @@
-use std::fs;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::Duration;
 
@@ -74,21 +74,12 @@ pub(crate) fn one_click_login<R: Runtime>(
         oauth_forge::ensure_virtual_login(&auth_dir, "virtual@localhost.invalid", &sbx_home)
             .map_err(|e| i18n_err("errSandboxVirtualLoginFailed", json!({ "error": e })))?;
 
-    // Deploy enabled skills to sandbox customizations
-    if let Ok(store) = crate::skill_manager::SkillStore::open() {
-        if let Ok(enabled) = store.enabled_skills() {
-            let sandbox_skills_dir = auth_dir.join("customizations").join("skills");
-            let _ = fs::remove_dir_all(&sandbox_skills_dir);
-            if !enabled.is_empty() {
-                let _ = fs::create_dir_all(&sandbox_skills_dir);
-                for skill in enabled {
-                    let dest_skill_dir = sandbox_skills_dir.join(&skill.name);
-                    let _ =
-                        crate::skill_manager::store::copy_dir(&skill.store_path, &dest_skill_dir);
-                }
-            }
-        }
-    }
+    // Deploy enabled Skills into the sandbox Science skills dir
+    // (`<data-dir>/skills/<name>/`, confirmed against the installed app). The
+    // deployer only manages folders it marks with `.csp_managed`, so Science's
+    // bundled Skills are never removed, and it refuses to write outside the
+    // sandbox or into the real `~/.claude-science`.
+    let skill_report = deploy_sandbox_skills(&auth_dir, &sbx_home);
 
     let launch = root.join("scripts/sandbox/launch-virtual-sandbox.sh");
     if !launch.is_file() {
@@ -110,6 +101,7 @@ pub(crate) fn one_click_login<R: Runtime>(
             forged.org_uuid,
             forged.enc_file.display()
         );
+        let _ = writeln!(lw, "[skill] {skill_report}");
     }
     let logf2 = logf.try_clone().map_err(|e| e.to_string())?;
     trace.stage(OperationStage::SandboxLaunch, format!("port={sport}"));
@@ -171,6 +163,18 @@ pub(crate) fn one_click_login<R: Runtime>(
         ));
     }
 
+    // Built-in probe: once Science is up it scans `<data-dir>/skills/` and writes a
+    // `.catalog_stamp` into each folder it recognizes. Log how many of our managed
+    // Skills got stamped so a real launch self-verifies the deployment path.
+    if !skill_report.starts_with("skill deploy: deployed=[] skipped=[] removed=0") {
+        let verify = verify_sandbox_skills(&auth_dir);
+        if let Ok(logf3) = open_log("sandbox.log") {
+            use std::io::Write;
+            let mut lw = &logf3;
+            let _ = writeln!(lw, "[skill] {verify}");
+        }
+    }
+
     let url = sandbox_url(sport);
     {
         let mut st = lock(&state);
@@ -187,4 +191,48 @@ pub(crate) fn one_click_login<R: Runtime>(
         "url": url,
         "action": "started"
     }))
+}
+
+/// Deploy enabled Skills into the sandbox and return a redaction-safe log summary.
+/// Never fails the launch: any error is reported and the sandbox still starts.
+fn deploy_sandbox_skills(auth_dir: &Path, sbx_home: &Path) -> String {
+    let real_science = std::env::var_os("HOME")
+        .map(|h| PathBuf::from(h).join(".claude-science"))
+        .unwrap_or_else(|| PathBuf::from("/nonexistent/.claude-science"));
+    let store = match crate::skill_manager::SkillStore::open() {
+        Ok(s) => s,
+        Err(e) => return format!("deploy skipped: store open failed: {e}"),
+    };
+    let enabled = match store.enabled_skills() {
+        Ok(e) => e,
+        Err(e) => return format!("deploy skipped: list failed: {e}"),
+    };
+    match crate::skill_manager::deploy_enabled_skills(&enabled, auth_dir, sbx_home, &real_science) {
+        Ok(r) => format!(
+            "deploy: deployed={:?} skipped={:?} removed={}",
+            r.deployed, r.skipped, r.removed
+        ),
+        Err(e) => format!("deploy error (sandbox launch continues): {e}"),
+    }
+}
+
+/// Scan `<data-dir>/skills/` for our managed Skills and report how many Science
+/// recognized (folders carrying both our `.csp_managed` marker and Science's
+/// `.catalog_stamp`). Best-effort observability; not a launch gate.
+fn verify_sandbox_skills(auth_dir: &Path) -> String {
+    let skills_dir = auth_dir.join("skills");
+    let Ok(entries) = std::fs::read_dir(&skills_dir) else {
+        return "verify: skills dir unreadable".to_string();
+    };
+    let (mut managed, mut stamped) = (0u32, 0u32);
+    for entry in entries.flatten() {
+        let p = entry.path();
+        if p.is_dir() && p.join(".csp_managed").is_file() {
+            managed += 1;
+            if p.join(".catalog_stamp").is_file() {
+                stamped += 1;
+            }
+        }
+    }
+    format!("verify: managed={managed} recognized_by_science={stamped}")
 }
