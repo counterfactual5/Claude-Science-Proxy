@@ -127,16 +127,6 @@ const MCP_SOURCES: &[McpSource] = &[
         label: "QoderWork CN",
         key: "mcpServers",
     },
-    McpSource {
-        rel_path: ".qoderwork/mcp.json",
-        label: "QoderWork",
-        key: "mcpServers",
-    },
-    McpSource {
-        rel_path: ".qoderworkcn/mcp.json",
-        label: "QoderWork CN",
-        key: "mcpServers",
-    },
     // ByteDance Trae family — global MCP under `<app>/User/mcp.json`.
     McpSource {
         rel_path: "Library/Application Support/Trae/User/mcp.json",
