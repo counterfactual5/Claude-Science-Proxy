@@ -53,7 +53,7 @@ pub(crate) fn one_click_login<R: Runtime>(
             let org_uuid = read_sandbox_org_uuid(&auth_dir);
             let (_, skill_changed) =
                 deploy_sandbox_skills(&auth_dir, &sbx_home, org_uuid.as_deref());
-            let (_, mcp_changed) = deploy_sandbox_mcp(&auth_dir, &sbx_home);
+            let (_, mcp_changed) = deploy_sandbox_mcp(&auth_dir, &sbx_home, pport);
             if !skill_changed && !mcp_changed {
                 let url = sandbox_url(sport);
                 {
@@ -99,7 +99,7 @@ pub(crate) fn one_click_login<R: Runtime>(
     // (`<data-dir>/mcp/local-mcp.json` + `[sandbox] user_read_paths` in
     // `config.toml`, confirmed against a live sandbox). Same iron-rule guards as
     // Skills: only ever writes under the sandbox, never the real `~/.claude-science`.
-    let (mcp_report, _) = deploy_sandbox_mcp(&auth_dir, &sbx_home);
+    let (mcp_report, _) = deploy_sandbox_mcp(&auth_dir, &sbx_home, pport);
 
     let launch = root.join("scripts/sandbox/launch-virtual-sandbox.sh");
     if !launch.is_file() {
@@ -271,7 +271,7 @@ fn deploy_sandbox_skills(
 /// redaction-safe log summary and whether anything on disk changed (for restart
 /// decisions). Never fails the launch: any error is reported and the sandbox
 /// still starts.
-fn deploy_sandbox_mcp(auth_dir: &Path, sbx_home: &Path) -> (String, bool) {
+fn deploy_sandbox_mcp(auth_dir: &Path, sbx_home: &Path, proxy_port: u16) -> (String, bool) {
     let real_science = std::env::var_os("HOME")
         .map(|h| PathBuf::from(h).join(".claude-science"))
         .unwrap_or_else(|| PathBuf::from("/nonexistent/.claude-science"));
@@ -283,7 +283,16 @@ fn deploy_sandbox_mcp(auth_dir: &Path, sbx_home: &Path) -> (String, bool) {
         Ok(e) => e,
         Err(e) => return (format!("deploy skipped: list failed: {e}"), false),
     };
-    match crate::mcp_manager::deploy_enabled_mcp(&enabled, auth_dir, sbx_home, &real_science) {
+    // MCP children often don't inherit the parent Science https_proxy; inject the
+    // CSP loopback proxy so they can reach external APIs (CONNECT + absolute-form).
+    let egress = format!("http://127.0.0.1:{proxy_port}");
+    match crate::mcp_manager::deploy_enabled_mcp(
+        &enabled,
+        auth_dir,
+        sbx_home,
+        &real_science,
+        Some(&egress),
+    ) {
         Ok(r) => (
             format!(
                 "deploy: servers={:?} granted_paths={} cleared={} changed={}",

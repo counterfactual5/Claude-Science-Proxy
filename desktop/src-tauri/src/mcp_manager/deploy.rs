@@ -53,7 +53,41 @@ struct LocalMcpEntry<'a> {
     #[serde(skip_serializing_if = "<[String]>::is_empty")]
     args: &'a [String],
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
-    env: &'a BTreeMap<String, String>,
+    env: BTreeMap<String, String>,
+}
+
+const PROXY_ENV_KEYS: &[&str] = &[
+    "HTTP_PROXY",
+    "http_proxy",
+    "HTTPS_PROXY",
+    "https_proxy",
+    "ALL_PROXY",
+    "all_proxy",
+];
+
+/// Merge the CSP loopback egress proxy into a connector's env.
+///
+/// Science's nested MCP child sandbox often does **not** inherit the parent
+/// process `https_proxy`. Without it the child tries direct DNS and fails with
+/// `getaddrinfo ENOTFOUND`. Pointing `https_proxy` at the CSP proxy lets the
+/// child reach external APIs via CONNECT / absolute-form forward. A proxy the
+/// user set explicitly is left intact.
+fn effective_env(server: &McpServer, egress_proxy_url: Option<&str>) -> BTreeMap<String, String> {
+    let mut env = server.env.clone();
+    let Some(url) = egress_proxy_url.filter(|u| !u.is_empty()) else {
+        return env;
+    };
+    if PROXY_ENV_KEYS.iter().any(|k| env.contains_key(*k)) {
+        return env;
+    }
+    env.insert("HTTPS_PROXY".to_string(), url.to_string());
+    env.insert("https_proxy".to_string(), url.to_string());
+    // Keep loopback direct so the child can reach the proxy itself.
+    env.entry("NO_PROXY".to_string())
+        .or_insert_with(|| "127.0.0.1,localhost,::1".to_string());
+    env.entry("no_proxy".to_string())
+        .or_insert_with(|| "127.0.0.1,localhost,::1".to_string());
+    env
 }
 
 /// Deploy `enabled` stdio MCP servers into `<data_dir>/mcp/local-mcp.json` and
@@ -61,11 +95,14 @@ struct LocalMcpEntry<'a> {
 ///
 /// `data_dir` is the sandbox Science data-dir; `sandbox_root` is `$SANDBOX_HOME`;
 /// `real_science_dir` is the real `~/.claude-science` used only for the guard.
+/// `egress_proxy_url` is the CSP loopback proxy (`http://127.0.0.1:<port>`)
+/// injected into each connector's env so MCP children can reach external APIs.
 pub(crate) fn deploy_enabled_mcp(
     enabled: &[McpServer],
     data_dir: &Path,
     sandbox_root: &Path,
     real_science_dir: &Path,
+    egress_proxy_url: Option<&str>,
 ) -> Result<McpDeployReport, String> {
     // —— Iron-rule guards: resolve to nearest real ancestor, then reject the real
     // Science tree and anything outside the sandbox root. ——
@@ -113,7 +150,7 @@ pub(crate) fn deploy_enabled_mcp(
                 description: &s.description,
                 command: &s.command,
                 args: &s.args,
-                env: &s.env,
+                env: effective_env(s, egress_proxy_url),
             })
             .collect(),
     };
@@ -358,7 +395,7 @@ mod tests {
     fn writes_local_mcp_json() {
         let f = fixture();
         let servers = vec![server("demo", "python3", vec!["/opt/x/server.py".into()])];
-        let r = deploy_enabled_mcp(&servers, &f.data_dir, &f.sandbox_root, &f.real_dir).unwrap();
+        let r = deploy_enabled_mcp(&servers, &f.data_dir, &f.sandbox_root, &f.real_dir, None).unwrap();
         assert_eq!(r.deployed, vec!["demo".to_string()]);
 
         let json = fs::read_to_string(f.data_dir.join("mcp").join(LOCAL_MCP_FILE)).unwrap();
@@ -372,6 +409,51 @@ mod tests {
     }
 
     #[test]
+    fn injects_egress_proxy_into_env() {
+        let f = fixture();
+        let mut s = server("demo", "python3", vec!["/opt/x/server.py".into()]);
+        s.env.insert("NOTION_TOKEN".into(), "ntn_secret".into());
+        deploy_enabled_mcp(
+            &[s],
+            &f.data_dir,
+            &f.sandbox_root,
+            &f.real_dir,
+            Some("http://127.0.0.1:18991"),
+        )
+        .unwrap();
+
+        let json = fs::read_to_string(f.data_dir.join("mcp").join(LOCAL_MCP_FILE)).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        let env = &v["servers"][0]["env"];
+        assert_eq!(env["NOTION_TOKEN"], "ntn_secret");
+        assert_eq!(env["https_proxy"], "http://127.0.0.1:18991");
+        assert_eq!(env["HTTPS_PROXY"], "http://127.0.0.1:18991");
+        assert_eq!(env["no_proxy"], "127.0.0.1,localhost,::1");
+    }
+
+    #[test]
+    fn respects_user_proxy_over_egress_injection() {
+        let f = fixture();
+        let mut s = server("demo", "python3", vec!["/opt/x/server.py".into()]);
+        s.env
+            .insert("HTTPS_PROXY".into(), "http://corp-proxy:8080".into());
+        deploy_enabled_mcp(
+            &[s],
+            &f.data_dir,
+            &f.sandbox_root,
+            &f.real_dir,
+            Some("http://127.0.0.1:18991"),
+        )
+        .unwrap();
+
+        let json = fs::read_to_string(f.data_dir.join("mcp").join(LOCAL_MCP_FILE)).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        let env = &v["servers"][0]["env"];
+        assert_eq!(env["HTTPS_PROXY"], "http://corp-proxy:8080");
+        assert!(env.get("https_proxy").is_none());
+    }
+
+    #[test]
     fn grants_read_path_for_absolute_arg() {
         let f = fixture();
         let servers = vec![server(
@@ -379,7 +461,7 @@ mod tests {
             "python3",
             vec!["/opt/tools/mcp/server.py".into()],
         )];
-        deploy_enabled_mcp(&servers, &f.data_dir, &f.sandbox_root, &f.real_dir).unwrap();
+        deploy_enabled_mcp(&servers, &f.data_dir, &f.sandbox_root, &f.real_dir, None).unwrap();
 
         let toml = fs::read_to_string(f.data_dir.join("config.toml")).unwrap();
         assert!(toml.contains("[sandbox]"));
@@ -397,7 +479,7 @@ mod tests {
         )
         .unwrap();
         let servers = vec![server("demo", "/usr/local/bin/mcp-server", vec![])];
-        deploy_enabled_mcp(&servers, &f.data_dir, &f.sandbox_root, &f.real_dir).unwrap();
+        deploy_enabled_mcp(&servers, &f.data_dir, &f.sandbox_root, &f.real_dir, None).unwrap();
 
         let text = fs::read_to_string(f.data_dir.join("config.toml")).unwrap();
         let parsed: toml::Table = text.parse().unwrap();
@@ -415,11 +497,11 @@ mod tests {
         )
         .unwrap();
         let servers = vec![server("demo", "python3", vec!["/opt/x/s.py".into()])];
-        deploy_enabled_mcp(&servers, &f.data_dir, &f.sandbox_root, &f.real_dir).unwrap();
+        deploy_enabled_mcp(&servers, &f.data_dir, &f.sandbox_root, &f.real_dir, None).unwrap();
         assert!(f.data_dir.join("mcp").join(LOCAL_MCP_FILE).exists());
 
         // Now disable all: json removed, our key gone, unrelated key preserved.
-        let r = deploy_enabled_mcp(&[], &f.data_dir, &f.sandbox_root, &f.real_dir).unwrap();
+        let r = deploy_enabled_mcp(&[], &f.data_dir, &f.sandbox_root, &f.real_dir, None).unwrap();
         assert!(r.cleared);
         assert!(!f.data_dir.join("mcp").join(LOCAL_MCP_FILE).exists());
         let text = fs::read_to_string(f.data_dir.join("config.toml")).unwrap();
@@ -432,10 +514,10 @@ mod tests {
     fn empty_enabled_removes_config_when_nothing_else() {
         let f = fixture();
         let servers = vec![server("demo", "python3", vec!["/opt/x/s.py".into()])];
-        deploy_enabled_mcp(&servers, &f.data_dir, &f.sandbox_root, &f.real_dir).unwrap();
+        deploy_enabled_mcp(&servers, &f.data_dir, &f.sandbox_root, &f.real_dir, None).unwrap();
         assert!(f.data_dir.join("config.toml").exists());
 
-        deploy_enabled_mcp(&[], &f.data_dir, &f.sandbox_root, &f.real_dir).unwrap();
+        deploy_enabled_mcp(&[], &f.data_dir, &f.sandbox_root, &f.real_dir, None).unwrap();
         // config.toml held only our key → removed entirely.
         assert!(!f.data_dir.join("config.toml").exists());
     }
@@ -444,9 +526,9 @@ mod tests {
     fn second_identical_deploy_reports_no_change() {
         let f = fixture();
         let servers = vec![server("demo", "python3", vec!["/opt/x/server.py".into()])];
-        let r1 = deploy_enabled_mcp(&servers, &f.data_dir, &f.sandbox_root, &f.real_dir).unwrap();
+        let r1 = deploy_enabled_mcp(&servers, &f.data_dir, &f.sandbox_root, &f.real_dir, None).unwrap();
         assert!(r1.changed, "first deploy writes files");
-        let r2 = deploy_enabled_mcp(&servers, &f.data_dir, &f.sandbox_root, &f.real_dir).unwrap();
+        let r2 = deploy_enabled_mcp(&servers, &f.data_dir, &f.sandbox_root, &f.real_dir, None).unwrap();
         assert!(!r2.changed, "identical redeploy is a no-op");
     }
 
@@ -457,7 +539,7 @@ mod tests {
         let f = fixture();
         let mut s = server("demo", "python3", vec!["/opt/x/server.py".into()]);
         s.env.insert("TOKEN".into(), "supersecret".into());
-        deploy_enabled_mcp(&[s], &f.data_dir, &f.sandbox_root, &f.real_dir).unwrap();
+        deploy_enabled_mcp(&[s], &f.data_dir, &f.sandbox_root, &f.real_dir, None).unwrap();
         let json = f.data_dir.join("mcp").join(LOCAL_MCP_FILE);
         let mode = fs::metadata(&json).unwrap().permissions().mode() & 0o777;
         assert_eq!(mode, 0o600, "secret-bearing local-mcp.json must be 0600");
@@ -471,7 +553,7 @@ mod tests {
         fs::write(f.data_dir.join("config.toml"), original).unwrap();
 
         // No enabled servers, twice: must be a no-op and preserve the file verbatim.
-        let r1 = deploy_enabled_mcp(&[], &f.data_dir, &f.sandbox_root, &f.real_dir).unwrap();
+        let r1 = deploy_enabled_mcp(&[], &f.data_dir, &f.sandbox_root, &f.real_dir, None).unwrap();
         assert!(!r1.changed, "no MCP + unrelated config → no change");
         let after = fs::read_to_string(f.data_dir.join("config.toml")).unwrap();
         assert_eq!(after, original, "file (and comment) left byte-for-byte");
@@ -486,9 +568,9 @@ mod tests {
         )
         .unwrap();
         let servers = vec![server("demo", "python3", vec!["/opt/x/server.py".into()])];
-        deploy_enabled_mcp(&servers, &f.data_dir, &f.sandbox_root, &f.real_dir).unwrap();
+        deploy_enabled_mcp(&servers, &f.data_dir, &f.sandbox_root, &f.real_dir, None).unwrap();
         // Second identical pass over an existing config must not report a change.
-        let r = deploy_enabled_mcp(&servers, &f.data_dir, &f.sandbox_root, &f.real_dir).unwrap();
+        let r = deploy_enabled_mcp(&servers, &f.data_dir, &f.sandbox_root, &f.real_dir, None).unwrap();
         assert!(!r.changed);
     }
 
@@ -504,7 +586,7 @@ mod tests {
             "python3",
             vec![data_sub.to_string_lossy().into()],
         )];
-        deploy_enabled_mcp(&servers, &f.data_dir, &f.sandbox_root, &f.real_dir).unwrap();
+        deploy_enabled_mcp(&servers, &f.data_dir, &f.sandbox_root, &f.real_dir, None).unwrap();
 
         let toml = fs::read_to_string(f.data_dir.join("config.toml")).unwrap();
         // Grants the dir itself, NOT the broader parent.
@@ -537,7 +619,7 @@ mod tests {
             &bin.join("notion-mcp-server").to_string_lossy(),
             vec![],
         )];
-        deploy_enabled_mcp(&servers, &f.data_dir, &f.sandbox_root, &f.real_dir).unwrap();
+        deploy_enabled_mcp(&servers, &f.data_dir, &f.sandbox_root, &f.real_dir, None).unwrap();
 
         let toml = fs::read_to_string(f.data_dir.join("config.toml")).unwrap();
         assert!(
@@ -555,7 +637,7 @@ mod tests {
     fn rejects_real_science_dir() {
         let f = fixture();
         let servers = vec![server("x", "python3", vec![])];
-        let r = deploy_enabled_mcp(&servers, &f.real_dir, &f.sandbox_root, &f.real_dir);
+        let r = deploy_enabled_mcp(&servers, &f.real_dir, &f.sandbox_root, &f.real_dir, None);
         assert!(r.is_err());
         assert!(r.unwrap_err().contains("real Science dir"));
     }
@@ -566,7 +648,7 @@ mod tests {
         let outside = env::temp_dir().join(format!("csp-mcp-outside-{}", uniq()));
         fs::create_dir_all(&outside).unwrap();
         let servers = vec![server("x", "python3", vec![])];
-        let r = deploy_enabled_mcp(&servers, &outside, &f.sandbox_root, &f.real_dir);
+        let r = deploy_enabled_mcp(&servers, &outside, &f.sandbox_root, &f.real_dir, None);
         assert!(r.is_err());
         assert!(r.unwrap_err().contains("outside sandbox root"));
     }
