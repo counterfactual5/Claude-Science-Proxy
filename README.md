@@ -4,7 +4,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License">
-  <img src="https://img.shields.io/badge/version-1.3.0-brightgreen.svg" alt="v1.3.0">
+  <img src="https://img.shields.io/badge/version-1.3.1-brightgreen.svg" alt="v1.3.1">
   <img src="https://img.shields.io/badge/platform-macOS%20Apple%20Silicon-1d1d1f.svg" alt="macOS Apple Silicon">
   <img src="https://img.shields.io/badge/built%20with-Tauri%202-C25A34.svg" alt="Tauri 2">
 </p>
@@ -24,7 +24,7 @@ CSP is a **macOS desktop app** (Tauri) that:
 3. Routes inference through a **local proxy** on `127.0.0.1`
 4. Verifies API keys **before** switching the active profile
 
-> **v1.3.0** — extends Skill/MCP scan-and-import to popular China-market tools, adds a quick MCP `JSON` editor, and fixes Node MCP connectors (e.g. Notion) reaching HTTPS APIs from inside the sandbox. Report issues on [GitHub](https://github.com/counterfactual5/Claude-Science-Proxy/issues).
+> **v1.3.1** — fixes npm-style Node MCP shims (e.g. `notion-mcp-server`) that use `#!/usr/bin/env node`, so they can launch inside Science's sandbox without relying on the host `PATH`. Report issues on [GitHub](https://github.com/counterfactual5/Claude-Science-Proxy/issues).
 
 > **Platform:** macOS **Apple Silicon** today. The app is **not notarized** yet; on first launch, right-click → **Open**.
 

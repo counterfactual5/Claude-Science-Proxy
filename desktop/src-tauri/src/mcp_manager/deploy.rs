@@ -93,6 +93,95 @@ struct DeployCmd {
     args: Vec<String>,
 }
 
+#[cfg(unix)]
+fn is_executable(path: &Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    fs::metadata(path)
+        .map(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
+        .unwrap_or(false)
+}
+
+#[cfg(not(unix))]
+fn is_executable(path: &Path) -> bool {
+    fs::metadata(path).map(|m| m.is_file()).unwrap_or(false)
+}
+
+/// True when the file starts with `#!/usr/bin/env node` (optional `-S` and flags).
+fn shebang_wants_env_node(path: &Path) -> bool {
+    let Ok(mut f) = fs::File::open(path) else {
+        return false;
+    };
+    use std::io::Read;
+    let mut buf = [0u8; 128];
+    let n = f.read(&mut buf).unwrap_or(0);
+    if n < 12 {
+        return false;
+    }
+    let line = String::from_utf8_lossy(&buf[..n]);
+    let first = line.lines().next().unwrap_or("");
+    first == "#!/usr/bin/env node"
+        || first.starts_with("#!/usr/bin/env -S node")
+        || first.starts_with("#!/usr/bin/env node ")
+}
+
+/// Locate a `node` binary for a script installed via npm-style layouts.
+fn find_node_for_script(command: &Path) -> Option<std::path::PathBuf> {
+    if let Some(parent) = command.parent() {
+        let sibling = parent.join("node");
+        if is_executable(&sibling) {
+            return Some(sibling);
+        }
+    }
+    let real = fs::canonicalize(command).ok()?;
+    let mut cur = real.parent();
+    while let Some(dir) = cur {
+        let same_dir = dir.join("node");
+        if is_executable(&same_dir) {
+            return Some(same_dir);
+        }
+        if let Some(parent) = dir.parent() {
+            let bin_node = parent.join("bin").join("node");
+            if is_executable(&bin_node) {
+                return Some(bin_node);
+            }
+        }
+        cur = dir.parent();
+    }
+    None
+}
+
+/// Rewrite `#!/usr/bin/env node` shims to an absolute `node <script>` invocation.
+///
+/// Science's MCP child sandbox does not inherit the host PATH, so `env node`
+/// fails with `No such file or directory` even when `user_read_paths` grants
+/// the script and its package tree (confirmed with global npm shims such as
+/// `notion-mcp-server`).
+fn resolve_node_shebang(command: &str, args: &[String]) -> (String, Vec<String>) {
+    let cmd_path = Path::new(command);
+    if !cmd_path.is_absolute() {
+        return (command.to_string(), args.to_vec());
+    }
+    let script = if shebang_wants_env_node(cmd_path) {
+        cmd_path.to_path_buf()
+    } else if let Ok(real) = fs::canonicalize(cmd_path) {
+        if shebang_wants_env_node(&real) {
+            real
+        } else {
+            return (command.to_string(), args.to_vec());
+        }
+    } else {
+        return (command.to_string(), args.to_vec());
+    };
+    let Some(node) = find_node_for_script(cmd_path) else {
+        return (command.to_string(), args.to_vec());
+    };
+    let node = fs::canonicalize(&node).unwrap_or(node);
+    let script = fs::canonicalize(&script).unwrap_or(script);
+    let mut out_args = vec![script.to_string_lossy().into_owned()];
+    out_args.extend(args.iter().cloned());
+    (node.to_string_lossy().into_owned(), out_args)
+}
+
 /// Wrap the connector so Node loads the HTTP-tunnel shim.
 ///
 /// Science strips `NODE_OPTIONS` from `local-mcp.json` env (confirmed live:
@@ -102,10 +191,11 @@ struct DeployCmd {
 /// user-set `NODE_OPTIONS` from the connector env (passed as `$1`). Non-Node
 /// commands ignore `NODE_OPTIONS`; Operon proxy env is left alone.
 fn deploy_command(server: &McpServer, shim_path: Option<&Path>) -> DeployCmd {
+    let (real_command, real_args) = resolve_node_shebang(&server.command, &server.args);
     let Some(shim) = shim_path else {
         return DeployCmd {
-            command: server.command.clone(),
-            args: server.args.clone(),
+            command: real_command,
+            args: real_args,
         };
     };
     // bash -c '…' name USER_NODE_OPTIONS REAL_CMD REAL_ARGS…
@@ -120,17 +210,17 @@ fn deploy_command(server: &McpServer, shim_path: Option<&Path>) -> DeployCmd {
         .get("NODE_OPTIONS")
         .cloned()
         .unwrap_or_default();
-    let mut args = vec![
+    let mut bash_args = vec![
         "-c".to_string(),
         script,
         "csp-mcp-shim".to_string(),
         user_node_options,
-        server.command.clone(),
+        real_command,
     ];
-    args.extend(server.args.iter().cloned());
+    bash_args.extend(real_args);
     DeployCmd {
         command: "/bin/bash".to_string(),
-        args,
+        args: bash_args,
     }
 }
 
@@ -272,31 +362,36 @@ pub(crate) fn deploy_enabled_mcp(
 fn collect_read_paths(servers: &[McpServer]) -> Vec<String> {
     let mut set: BTreeSet<String> = BTreeSet::new();
     for s in servers {
-        for candidate in std::iter::once(&s.command).chain(s.args.iter()) {
-            let p = Path::new(candidate);
-            if !p.is_absolute() {
-                continue;
-            }
-            let grant = if p.is_dir() {
-                Some(p.to_path_buf())
-            } else {
-                // File (or missing → assume file): grant the containing directory.
-                p.parent()
-                    .filter(|parent| !parent.as_os_str().is_empty())
-                    .map(|parent| parent.to_path_buf())
-            };
-            if let Some(dir) = grant {
-                set.insert(dir.to_string_lossy().to_string());
-            }
-            if let Ok(real) = fs::canonicalize(p) {
-                add_grant_for_path(&real, &mut set);
-                if let Some(pkg_root) = node_package_root(&real) {
-                    set.insert(pkg_root.to_string_lossy().to_string());
-                }
+        let (command, args) = resolve_node_shebang(&s.command, &s.args);
+        collect_read_paths_for(&command, &args, &mut set);
+    }
+    set.into_iter().collect()
+}
+
+fn collect_read_paths_for(command: &str, args: &[String], set: &mut BTreeSet<String>) {
+    for candidate in std::iter::once(command).chain(args.iter().map(String::as_str)) {
+        let p = Path::new(candidate);
+        if !p.is_absolute() {
+            continue;
+        }
+        let grant = if p.is_dir() {
+            Some(p.to_path_buf())
+        } else {
+            // File (or missing → assume file): grant the containing directory.
+            p.parent()
+                .filter(|parent| !parent.as_os_str().is_empty())
+                .map(|parent| parent.to_path_buf())
+        };
+        if let Some(dir) = grant {
+            set.insert(dir.to_string_lossy().to_string());
+        }
+        if let Ok(real) = fs::canonicalize(p) {
+            add_grant_for_path(&real, set);
+            if let Some(pkg_root) = node_package_root(&real) {
+                set.insert(pkg_root.to_string_lossy().to_string());
             }
         }
     }
-    set.into_iter().collect()
 }
 
 fn add_grant_for_path(p: &Path, set: &mut BTreeSet<String>) {
@@ -680,18 +775,35 @@ mod tests {
         fs::create_dir_all(pkg.join("bin")).unwrap();
         fs::write(pkg.join("package.json"), "{}").unwrap();
         fs::write(pkg.join("bin/cli.mjs"), "#!/usr/bin/env node\n").unwrap();
+        fs::write(bin.join("node"), b"").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(bin.join("node"), fs::Permissions::from_mode(0o755)).unwrap();
+        }
         symlink(
             pkg.join("bin/cli.mjs"),
             bin.join("notion-mcp-server"),
         )
         .unwrap();
 
-        let servers = vec![server(
-            "notion",
-            &bin.join("notion-mcp-server").to_string_lossy(),
-            vec![],
-        )];
+        let shim_cmd = bin.join("notion-mcp-server").to_string_lossy().to_string();
+        let servers = vec![server("notion", &shim_cmd, vec![])];
         deploy_enabled_mcp(&servers, &f.data_dir, &f.sandbox_root, &f.real_dir).unwrap();
+
+        let json = fs::read_to_string(f.data_dir.join("mcp").join(LOCAL_MCP_FILE)).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        let args = v["servers"][0]["args"].as_array().unwrap();
+        let node_arg = args[4].as_str().unwrap();
+        let script_arg = args[5].as_str().unwrap();
+        assert!(
+            node_arg.ends_with("/bin/node"),
+            "env-node shim must be rewritten to absolute node, got {node_arg}"
+        );
+        assert!(
+            script_arg.contains("cli.mjs"),
+            "script path must be canonical, got {script_arg}"
+        );
 
         let toml = fs::read_to_string(f.data_dir.join("config.toml")).unwrap();
         assert!(
