@@ -71,7 +71,7 @@ Some Science builds (e.g. `0.1.15-dev` family) may refresh OAuth via hardcoded `
 
 ## External MCP egress and CONNECT tunneling
 
-Non-Anthropic `CONNECT` opens a **direct TCP tunnel** today. External Streamable HTTP MCP servers need outbound network access; blocked egress can fail. The virtual sandbox does **not** set `http_proxy` by default because the CSP proxy does not implement ordinary absolute-form HTTP forwarding. Upstream proxy support for HTTP MCP is **not implemented** on `main` (`proxy/core/http_transport.py`).
+Non-Anthropic `CONNECT` opens a **direct TCP tunnel** today. The CSP proxy also **forwards absolute-form proxied requests** (e.g. `GET https://api.notion.com/…` sent in plain HTTP to the proxy) to non-Anthropic upstreams and relays the response. This matters because the sandbox blocks direct DNS/egress for MCP child processes, so a local stdio MCP server must reach its own API through the loopback proxy — and some HTTP clients (notably **axios**, used by `@notionhq/notion-mcp-server` and others) do **not** CONNECT-tunnel when `https_proxy` is set; they send the origin request to the proxy in absolute form. Anthropic domains still fast-fail (401) on this path, and the forward proxy never injects provider keys (the MCP's own auth headers pass through unchanged). See `do_CONNECT` / `_maybe_forward_absolute` in `proxy/core/csp_proxy.py`.
 
 ---
 

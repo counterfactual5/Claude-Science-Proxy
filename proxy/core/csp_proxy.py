@@ -26,16 +26,19 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 import argparse
+import http.client
 import json
 import os
 import re
 import select
 import socket
+import ssl
 import sys
 import time
 import urllib.error
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import urlsplit
 
 from proxy.dsml import dsml_shim
 from proxy.core import http_transport
@@ -187,6 +190,13 @@ def current_runtime():
 #   403 → permission/org problem → retries → stuck on "Switching organization".
 # Virtual login should look logged-out, so we return 401.
 _BLOCKED_SUFFIXES = ("anthropic.com", "claude.ai", "claude.com")
+
+# Hop-by-hop headers (RFC 7230 §6.1) plus proxy-connection; never forwarded when
+# CSP relays an absolute-form proxied request to an upstream and back.
+_HOP_BY_HOP = frozenset({
+    "connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
+    "te", "trailers", "transfer-encoding", "upgrade", "proxy-connection",
+})
 
 
 def _is_blocked_host(host):
@@ -437,7 +447,96 @@ class H(BaseHTTPRequestHandler):
             "type": "permission_error", "message": "forbidden"}})
         return False
 
+    def _maybe_forward_absolute(self):
+        """Handle an absolute-form proxied request (`GET https://host/path …`).
+
+        Some HTTP clients (notably axios, used by several stdio MCP servers) do
+        not CONNECT-tunnel when `https_proxy` is set — they send the origin
+        request in absolute form to the proxy and expect it to forward. The
+        sandbox routes MCP egress through this proxy (direct DNS is blocked), so
+        without forwarding those requests fail. We forward to non-Anthropic hosts
+        and relay the response, mirroring the openness of `do_CONNECT` (loopback
+        listener; we never inject provider keys here — the MCP's own auth headers
+        pass through unchanged). Returns True when the request was absolute-form
+        and has been fully handled.
+        """
+        low = self.path.lower()
+        if not (low.startswith("http://") or low.startswith("https://")):
+            return False
+        u = urlsplit(self.path)
+        host = (u.hostname or "").lower()
+        if not host:
+            self._send_json(400, {"type": "error", "error": {
+                "type": "invalid_request_error", "message": "absolute URL missing host"}})
+            return True
+        if _is_blocked_host(host):
+            # Mirror CONNECT fast-fail: Anthropic domains look logged-out, no tunnel.
+            log(f"FORWARD {self.command} {u.scheme}://{host} -> 401 fast-fail (Anthropic domain)")
+            self.close_connection = True
+            self._send_json(401, {"type": "error", "error": {
+                "type": "authentication_error", "message": "logged out"}})
+            return True
+        try:
+            n = int(self.headers.get("Content-Length") or 0)
+            if n < 0:
+                raise ValueError("negative length")
+        except (ValueError, TypeError):
+            self._send_json(400, {"type": "error", "error": {
+                "type": "invalid_request_error", "message": "invalid Content-Length"}})
+            return True
+        body = self.rfile.read(n) if n else None
+        target = u.path or "/"
+        if u.query:
+            target += "?" + u.query
+        out_headers = {k: v for k, v in self.headers.items()
+                       if k.lower() not in _HOP_BY_HOP}
+        out_headers["Host"] = u.netloc.rsplit("@", 1)[-1]
+        out_headers["Connection"] = "close"
+        port = u.port or (443 if u.scheme == "https" else 80)
+        conn = None
+        try:
+            if u.scheme == "https":
+                conn = http.client.HTTPSConnection(
+                    host, port, timeout=60, context=ssl.create_default_context())
+            else:
+                conn = http.client.HTTPConnection(host, port, timeout=60)
+            conn.request(self.command, target, body=body, headers=out_headers)
+            resp = conn.getresponse()
+            data = resp.read()
+        except Exception as e:
+            log(f"FORWARD {self.command} {u.scheme}://{host}{u.path} -> 502 {e}")
+            self.close_connection = True
+            self._send_json(502, {"type": "error", "error": {
+                "type": "api_error", "message": f"forward proxy: {e}"}})
+            if conn:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+            return True
+        log(f"FORWARD {self.command} {u.scheme}://{host}{u.path} -> {resp.status} ({len(data)}B)")
+        self.send_response(resp.status)
+        for k, v in resp.getheaders():
+            kl = k.lower()
+            if kl in _HOP_BY_HOP or kl == "content-length":
+                continue
+            self.send_header(k, v)
+        # Body is fully buffered; advertise the real length and close.
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Connection", "close")
+        self.close_connection = True
+        self.end_headers()
+        if self.command != "HEAD":
+            self.wfile.write(data)
+        try:
+            conn.close()
+        except Exception:
+            pass
+        return True
+
     def do_GET(self):
+        if self._maybe_forward_absolute():
+            return
         if not self._auth_ok():
             return
         runtime = current_runtime()
@@ -449,7 +548,29 @@ class H(BaseHTTPRequestHandler):
         else:
             self._send_json(404, {"type": "error", "error": {"type": "not_found_error", "message": self.path}})
 
+    def do_PUT(self):
+        if not self._maybe_forward_absolute():
+            self._send_json(405, {"type": "error", "error": {
+                "type": "invalid_request_error", "message": "method not allowed"}})
+
+    def do_PATCH(self):
+        if not self._maybe_forward_absolute():
+            self._send_json(405, {"type": "error", "error": {
+                "type": "invalid_request_error", "message": "method not allowed"}})
+
+    def do_DELETE(self):
+        if not self._maybe_forward_absolute():
+            self._send_json(405, {"type": "error", "error": {
+                "type": "invalid_request_error", "message": "method not allowed"}})
+
+    def do_HEAD(self):
+        if not self._maybe_forward_absolute():
+            self._send_json(405, {"type": "error", "error": {
+                "type": "invalid_request_error", "message": "method not allowed"}})
+
     def do_POST(self):
+        if self._maybe_forward_absolute():
+            return
         if not self._auth_ok():
             return
         # Parse Content-Length inside try so malformed values return 400, not empty response.
