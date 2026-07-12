@@ -23,6 +23,7 @@ CSP is a **macOS desktop app** (Tauri) that:
 2. Prepares a **local launch ticket** (no copy of your real Claude login)
 3. Routes inference through a **local proxy** on `127.0.0.1`
 4. Verifies API keys **before** switching the active profile
+5. Manages local **Skills** and **stdio MCP connectors**, deploying enabled ones into the sandbox on launch
 
 > **v1.3.1** — fixes npm-style Node MCP shims (e.g. `notion-mcp-server`) that use `#!/usr/bin/env node`, so they can launch inside Science's sandbox without relying on the host `PATH`. Report issues on [GitHub](https://github.com/counterfactual5/Claude-Science-Proxy/issues).
 
@@ -66,6 +67,8 @@ Claude Science (sandbox)
 - **One-click start** — launches proxy, prepares sandbox, opens Science
 - **Real model names** in Science’s selector (not a generic `claude` / `opus` label)
 - **Multi-model per profile** — virtual registry maps up to **8** `claude-*` shell IDs to real upstream models
+- **Local Skills manager** — import, enable/disable, and scan-and-import Skill folders (a `SKILL.md`); enabled Skills deploy into the sandbox on launch
+- **Local stdio MCP manager** — add/edit or scan-and-import local MCP connectors (e.g. Notion) from other AI clients; enabled ones deploy into the sandbox on launch
 
 ### For power users
 
@@ -73,7 +76,7 @@ Claude Science (sandbox)
 - **Custom Anthropic** relay URLs
 - **Custom OpenAI Chat** and **OpenAI Responses** base roots (proxy adds `/chat/completions`, `/responses`, `/models`)
 - Read-only **capability catalog** for known provider / Science version boundaries
-- Local config: `~/.csp/CSP.json` (`0600`); logs under `~/.csp/logs/`
+- Local config: `~/.csp/CSP.json` (`0600`); logs under `~/.csp/logs/`; MCP inventory at `~/.csp/mcp/inventory.json` (`0600`)
 
 ---
 
@@ -134,7 +137,7 @@ Science only accepts model IDs starting with `claude-`. CSP allocates **up to ei
 
 ## Current limitations
 
-- **Anthropic-hosted cloud features** (remote MCP, directory connectors) and some cloud-only capabilities are unavailable or fast-fail
+- **Anthropic-hosted cloud features** (remote/hosted MCP, directory connectors) and some cloud-only capabilities are unavailable or fast-fail — **local stdio MCP connectors are supported** via the MCP tab
 - Provider quality varies for tools, long context, thinking, images, and streaming
 - **Not Apple-notarized** — manual approval on first open
 - Proxy still requires **`python3`** today
