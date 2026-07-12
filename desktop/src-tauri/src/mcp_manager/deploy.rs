@@ -125,8 +125,23 @@ pub(crate) fn deploy_enabled_mcp(
     if current.as_deref() != Some(json.as_slice()) {
         let tmp = mcp_json.with_extension("json.tmp");
         fs::write(&tmp, &json).map_err(|e| format!("write local-mcp.json tmp: {e}"))?;
+        // `env` may hold plaintext secrets, so lock the file down (0600) to match
+        // the CSP inventory before it becomes visible under its final name.
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = fs::set_permissions(&tmp, fs::Permissions::from_mode(0o600));
+        }
         fs::rename(&tmp, &mcp_json).map_err(|e| format!("rename local-mcp.json: {e}"))?;
         report.changed = true;
+    } else {
+        // Even when content is unchanged, make sure perms are tight (e.g. a file
+        // written by an older build with a laxer umask).
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = fs::set_permissions(&mcp_json, fs::Permissions::from_mode(0o600));
+        }
     }
     report.deployed = enabled.iter().map(|s| s.name.clone()).collect();
 
@@ -383,6 +398,19 @@ mod tests {
         assert!(r1.changed, "first deploy writes files");
         let r2 = deploy_enabled_mcp(&servers, &f.data_dir, &f.sandbox_root, &f.real_dir).unwrap();
         assert!(!r2.changed, "identical redeploy is a no-op");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn local_mcp_json_is_locked_down() {
+        use std::os::unix::fs::PermissionsExt;
+        let f = fixture();
+        let mut s = server("demo", "python3", vec!["/opt/x/server.py".into()]);
+        s.env.insert("TOKEN".into(), "supersecret".into());
+        deploy_enabled_mcp(&[s], &f.data_dir, &f.sandbox_root, &f.real_dir).unwrap();
+        let json = f.data_dir.join("mcp").join(LOCAL_MCP_FILE);
+        let mode = fs::metadata(&json).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600, "secret-bearing local-mcp.json must be 0600");
     }
 
     #[test]

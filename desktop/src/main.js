@@ -641,6 +641,13 @@ function mockInvoke(cmd, args) {
       const commandOk = !!inp.command && (inp.command.startsWith("/") || known.includes(inp.command));
       const warnings = [];
       if (inp.command && !commandOk) warnings.push(`'${inp.command}' 不在受管运行时白名单，Science 可能拒绝。`);
+      const exts = [".py", ".js", ".mjs", ".cjs", ".ts", ".rb", ".sh", ".jar", ".json"];
+      (inp.args || []).forEach((a) => {
+        const t = String(a).trim();
+        if (t && !t.startsWith("/") && !t.startsWith("-") && (t.includes("/") || exts.some((e) => t.endsWith(e)))) {
+          warnings.push(`'${t}' 看起来是相对路径；沙箱无工作目录且仅授权绝对路径，请用绝对路径。`);
+        }
+      });
       return Promise.resolve({ valid: errors.length === 0, commandOk, warnings, errors });
     }
     case "create_mcp_server": {
@@ -1512,6 +1519,10 @@ function wire() {
   els.mcpAddBtn.addEventListener("click", () => openMcpModal());
   els.mcpSaveBtn.addEventListener("click", saveMcpServer);
   els.mcpCancelBtn.addEventListener("click", closeMcpModal);
+  // Editing any field invalidates a prior warning acknowledgement.
+  [els.mcpName, els.mcpDesc, els.mcpCommand, els.mcpArgs, els.mcpEnv].forEach((el) =>
+    el.addEventListener("input", () => { mcpWarnAck = false; })
+  );
   els.mcpList.addEventListener("click", (e) => {
     if (busy) return;
     const row = e.target.closest(".skill-row[data-id]");
@@ -1763,6 +1774,9 @@ async function importSkillConfirm() {
 // ── Local MCP Manager ──
 let mcpCache = [];
 let mcpEditId = null;
+// Set once warnings have been shown for the current form state, so a second
+// "保存" click confirms past non-blocking warnings (errors always block).
+let mcpWarnAck = false;
 
 async function loadMcp() {
   try {
@@ -1859,6 +1873,7 @@ function openMcpModal(id) {
   els.mcpInspection.hidden = true;
   els.mcpWarnings.hidden = true;
   els.mcpErrors.hidden = true;
+  mcpWarnAck = false;
   els.mcpModal.hidden = false;
   els.mcpName.focus();
 }
@@ -1866,6 +1881,7 @@ function openMcpModal(id) {
 function closeMcpModal() {
   els.mcpModal.hidden = true;
   mcpEditId = null;
+  mcpWarnAck = false;
 }
 
 function parseArgsLines(text) {
@@ -1899,18 +1915,25 @@ async function saveMcpServer() {
   els.mcpInspection.hidden = true;
   try {
     const insp = await call("inspect_mcp_server", { input });
-    if (insp && insp.warnings && insp.warnings.length) {
-      els.mcpWarnings.hidden = false;
-      els.mcpWarnings.textContent = `警告: ${insp.warnings.join("; ")}`;
-      els.mcpInspection.hidden = false;
-    }
     if (insp && !insp.valid) {
+      // Errors always block the save; reset any prior warning acknowledgement.
+      mcpWarnAck = false;
       els.mcpErrors.hidden = false;
       els.mcpErrors.textContent = `错误: ${(insp.errors || []).join("; ")}`;
       els.mcpInspection.hidden = false;
       return;
     }
+    const warnings = (insp && insp.warnings) || [];
+    if (warnings.length && !mcpWarnAck) {
+      // Surface warnings and require a second click to confirm past them.
+      mcpWarnAck = true;
+      els.mcpWarnings.hidden = false;
+      els.mcpWarnings.textContent = `警告: ${warnings.join("; ")}（如确认无误，请再次点击「保存」）`;
+      els.mcpInspection.hidden = false;
+      return;
+    }
   } catch (e) {
+    mcpWarnAck = false;
     els.mcpErrors.hidden = false;
     els.mcpErrors.textContent = resolveBackendErr(e);
     els.mcpInspection.hidden = false;
