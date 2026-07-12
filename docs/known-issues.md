@@ -87,7 +87,7 @@ Directory connectors and official remote skills depend on claude.ai hosted servi
 
 ## Local Skill Manager
 
-The **Skills** tab imports local Skill directories (folders containing a `SKILL.md`) into managed storage at `~/.csp/skills/`, where you can list, enable/disable, and remove them. We have implemented automatic sandbox deployment: when you launch the sandbox via the app, enabled Skills are automatically copied to the sandbox customizations folder at `$SANDBOX_HOME/.claude-science/customizations/skills/`. Requirement detection (`python`, `node`, `rust`, `mcp`, …) is a filename/extension heuristic and may miss or over-report. It never touches real `~/.claude-science` state.
+The **Skills** tab imports local Skill directories (folders containing a `SKILL.md`) into managed storage at `~/.csp/skills/`, where you can list, enable/disable, and remove them. On each **Start Claude Science**, enabled Skills are deployed into the sandbox at `$SANDBOX_HOME/.claude-science/skills/<name>/` — the directory Claude Science actually scans (confirmed against the installed app's data-dir: pure disk scan, no allowlist). The deployer only manages folders it marks with `.csp_managed`, so Science's bundled scientific Skills (alphafold2, boltz, …) are never removed, and a user Skill whose name collides with a bundled one is skipped (logged in `~/.csp/logs/sandbox.log`). After launch, CSP checks whether Science wrote a `.catalog_stamp` into each deployed folder and logs `recognized_by_science=<n>` as a self-verification. Requirement detection (`python`, `node`, `rust`, `mcp`, …) is a filename/extension heuristic and may miss or over-report. The feature is still experimental; it never reads or modifies real `~/.claude-science` state.
 
 ---
 

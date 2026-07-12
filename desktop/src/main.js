@@ -581,22 +581,22 @@ function mockInvoke(cmd, args) {
     case "open_csp_json":
       return Promise.resolve("~/.csp/CSP.json");
     case "list_skills":
-      return Promise.resolve({ ok: true, data: mockStore.skills.map((s) => ({ ...s })) });
+      return Promise.resolve(mockStore.skills.map((s) => ({ ...s })));
     case "inspect_skill_source": {
       const path = (args.input && args.input.sourcePath) || "";
       const valid = path.length > 0;
+      if (!valid) {
+        return Promise.reject("Invalid path supplied");
+      }
       return Promise.resolve({
-        ok: true,
-        data: {
-          valid,
-          name: "Local Skill",
-          description: "Inspected skill from path: " + path,
-          fileCount: 3,
-          totalSizeBytes: 89000,
-          requirements: ["python", "mcp"],
-          warnings: [],
-          errors: valid ? [] : ["Invalid path supplied"],
-        }
+        valid,
+        name: "Local Skill",
+        description: "Inspected skill from path: " + path,
+        fileCount: 3,
+        totalSizeBytes: 89000,
+        requirements: ["python", "mcp"],
+        warnings: [],
+        errors: [],
       });
     }
     case "import_skill": {
@@ -614,18 +614,18 @@ function mockInvoke(cmd, args) {
         requirements: ["python", "mcp"],
       };
       mockStore.skills.push(newSkill);
-      return Promise.resolve({ ok: true, data: newSkill });
+      return Promise.resolve(newSkill);
     }
     case "set_skill_enabled": {
       const input = args.input || {};
       const s = mockStore.skills.find((x) => x.id === input.skillId);
       if (s) s.enabled = !!input.enabled;
-      return Promise.resolve({ ok: true, data: s });
+      return Promise.resolve(s);
     }
     case "remove_skill": {
       const input = args.input || {};
       mockStore.skills = mockStore.skills.filter((x) => x.id !== input.skillId);
-      return Promise.resolve({ ok: true, data: null });
+      return Promise.resolve(null);
     }
     default:
       return Promise.resolve(null);
@@ -1517,12 +1517,8 @@ function switchTab(tab) {
 // ── Skill Manager ──
 async function loadSkills() {
   try {
-    const res = await call("list_skills");
-    if (res.ok) {
-      renderSkills(res.data || []);
-    } else {
-      setSkillMsg(res.error.message);
-    }
+    const list = await call("list_skills");
+    renderSkills(list || []);
   } catch (e) {
     setSkillMsg(resolveBackendErr(e));
   }
@@ -1569,6 +1565,8 @@ function renderSkills(list) {
 
 // Backend now emits ISO 8601 (e.g. 2026-07-12T10:30:00Z). Older inventories may
 // still hold the legacy `epoch:<secs>` form, so handle both.
+// Backend now emits ISO 8601 (e.g. 2026-07-12T10:30:00Z). Older inventories may
+// still hold the legacy `epoch:<secs>` form, so handle both.
 function formatImportedAt(raw) {
   if (!raw) return "";
   let d = null;
@@ -1593,12 +1591,8 @@ function formatBytes(bytes) {
 async function toggleSkill(id, enabled) {
   setBusy(true);
   try {
-    const res = await call("set_skill_enabled", { input: { skillId: id, enabled } });
-    if (res.ok) {
-      await loadSkills();
-    } else {
-      setSkillMsg(res.error.message);
-    }
+    await call("set_skill_enabled", { input: { skillId: id, enabled } });
+    await loadSkills();
   } catch (e) {
     setSkillMsg(resolveBackendErr(e));
   } finally {
@@ -1613,12 +1607,8 @@ function removeSkill(id, name) {
 async function doRemoveSkill(id) {
   setBusy(true);
   try {
-    const res = await call("remove_skill", { input: { skillId: id } });
-    if (res.ok) {
-      await loadSkills();
-    } else {
-      setSkillMsg(res.error.message);
-    }
+    await call("remove_skill", { input: { skillId: id } });
+    await loadSkills();
   } catch (e) {
     setSkillMsg(resolveBackendErr(e));
   } finally {
@@ -1626,6 +1616,7 @@ async function doRemoveSkill(id) {
   }
 }
 
+// ── Skill Import Modal ──
 // ── Skill Import Modal ──
 function openSkillImport() {
   if (busy) return;
@@ -1645,41 +1636,28 @@ async function inspectSkillSource() {
   if (!path) return;
   setBusy(true);
   try {
-    const res = await call("inspect_skill_source", { input: { sourcePath: path } });
-    if (res.ok) {
-      const data = res.data;
-      els.inspName.textContent = data.name || "未命名 Skill";
-      els.inspDesc.textContent = data.description || "无描述";
-      els.inspStats.textContent = `文件数: ${data.fileCount} · 大小: ${formatBytes(data.totalSizeBytes)}`;
-      els.inspReqs.textContent = `依赖环境: ${(data.requirements || []).join(", ") || "无"}`;
-      
-      if (data.warnings && data.warnings.length) {
-        els.inspWarnings.hidden = false;
-        els.inspWarnings.textContent = `警告: ${data.warnings.join("; ")}`;
-      } else {
-        els.inspWarnings.hidden = true;
-      }
-      
-      if (data.errors && data.errors.length) {
-        els.inspErrors.hidden = false;
-        els.inspErrors.textContent = `错误: ${data.errors.join("; ")}`;
-      } else {
-        els.inspErrors.hidden = true;
-      }
-
-      els.skillInspectionPreview.hidden = false;
-      els.skillImportConfirmBtn.disabled = !data.valid;
+    const data = await call("inspect_skill_source", { input: { sourcePath: path } });
+    els.inspName.textContent = data.name || "未命名 Skill";
+    els.inspDesc.textContent = data.description || "无描述";
+    els.inspStats.textContent = `文件数: ${data.fileCount} · 大小: ${formatBytes(data.totalSizeBytes)}`;
+    els.inspReqs.textContent = `依赖环境: ${(data.requirements || []).join(", ") || "无"}`;
+    
+    if (data.warnings && data.warnings.length) {
+      els.inspWarnings.hidden = false;
+      els.inspWarnings.textContent = `警告: ${data.warnings.join("; ")}`;
     } else {
-      els.inspName.textContent = "";
-      els.inspDesc.textContent = "";
-      els.inspStats.textContent = "";
-      els.inspReqs.textContent = "";
       els.inspWarnings.hidden = true;
-      els.inspErrors.hidden = false;
-      els.inspErrors.textContent = res.error.message;
-      els.skillInspectionPreview.hidden = false;
-      els.skillImportConfirmBtn.disabled = true;
     }
+    
+    if (data.errors && data.errors.length) {
+      els.inspErrors.hidden = false;
+      els.inspErrors.textContent = `错误: ${data.errors.join("; ")}`;
+    } else {
+      els.inspErrors.hidden = true;
+    }
+
+    els.skillInspectionPreview.hidden = false;
+    els.skillImportConfirmBtn.disabled = !data.valid;
   } catch (e) {
     els.inspName.textContent = "";
     els.inspDesc.textContent = "";
@@ -1700,14 +1678,9 @@ async function importSkillConfirm() {
   if (!path) return;
   setBusy(true);
   try {
-    const res = await call("import_skill", { input: { sourcePath: path } });
-    if (res.ok) {
-      closeSkillImport();
-      await loadSkills();
-    } else {
-      els.inspErrors.hidden = false;
-      els.inspErrors.textContent = res.error.message;
-    }
+    await call("import_skill", { input: { sourcePath: path } });
+    closeSkillImport();
+    await loadSkills();
   } catch (e) {
     els.inspErrors.hidden = false;
     els.inspErrors.textContent = resolveBackendErr(e);
