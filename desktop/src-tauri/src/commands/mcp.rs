@@ -2,6 +2,8 @@
 
 use std::collections::BTreeMap;
 use std::fs;
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
@@ -9,7 +11,7 @@ use serde_json::Value;
 
 use crate::mcp_manager::model::{DiscoveredMcpServer, McpInspection, McpServerSummary};
 use crate::mcp_manager::store::{McpServerInput, McpStore};
-use crate::run_blocking;
+use crate::{config, run_blocking};
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -41,6 +43,26 @@ pub async fn list_mcp_servers() -> Result<Vec<McpServerSummary>, String> {
     run_blocking(|| {
         let store = McpStore::open()?;
         store.list()
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn open_mcp_inventory_json() -> Result<String, String> {
+    run_blocking(|| {
+        let dir = config::default_dir().join("mcp");
+        fs::create_dir_all(&dir).map_err(|e| format!("create mcp store dir: {e}"))?;
+        let path = dir.join("inventory.json");
+        if !path.exists() {
+            fs::write(&path, b"{\n  \"servers\": {}\n}\n")
+                .map_err(|e| format!("write mcp inventory: {e}"))?;
+            #[cfg(unix)]
+            {
+                let _ = fs::set_permissions(&path, fs::Permissions::from_mode(0o600));
+            }
+        }
+        crate::runtime::system::open_path_in_default_app(&path)?;
+        Ok(path.display().to_string())
     })
     .await
 }

@@ -86,8 +86,13 @@
           <div class="skill-hd">
             <label class="sec-title">Skills 管理</label>
             <div class="skill-hd-acts">
-              <button class="btn small" id="skillDiscoverBtn">🔍 发现</button>
               <button class="btn small" id="skillImportBtn">➕ 导入</button>
+              <div class="listhd-more">
+                <button type="button" class="btn small listhd-more-btn" id="skillMoreBtn" aria-haspopup="true" aria-expanded="false" title="更多">⋯</button>
+                <div class="pmenu listhd-menu" id="skillMenu" hidden role="menu">
+                  <button type="button" class="pmenu-item" id="skillDiscoverBtn" role="menuitem">🔍 扫描导入</button>
+                </div>
+              </div>
             </div>
           </div>
           <p class="hint apply-hint">启用/停用的改动会在下次点击「启动 Claude Science」时生效；若沙箱正在运行，会自动重启以应用。</p>
@@ -111,8 +116,14 @@
           <div class="skill-hd">
             <label class="sec-title">本地 MCP 管理</label>
             <div class="skill-hd-acts">
-              <button class="btn small" id="mcpDiscoverBtn">🔍 发现</button>
               <button class="btn small" id="mcpAddBtn">➕ 新增</button>
+              <div class="listhd-more">
+                <button type="button" class="btn small listhd-more-btn" id="mcpMoreBtn" aria-haspopup="true" aria-expanded="false" title="更多">⋯</button>
+                <div class="pmenu listhd-menu" id="mcpMenu" hidden role="menu">
+                  <button type="button" class="pmenu-item" id="mcpDiscoverBtn" role="menuitem">🔍 扫描导入</button>
+                  <button type="button" class="pmenu-item" id="mcpJsonBtn" role="menuitem" title="编辑 ~/.csp/mcp/inventory.json">编辑 JSON</button>
+                </div>
+              </div>
             </div>
           </div>
           <p class="hint apply-hint">新增/编辑/启用的改动会在下次点击「启动 Claude Science」时生效；若沙箱正在运行，会自动重启以应用。</p>
@@ -133,11 +144,11 @@
       <!-- MCP discovery modal -->
       <div class="modal" id="mcpDiscoverModal" hidden role="dialog" aria-modal="true" aria-labelledby="mcpDiscoverTitle">
         <div class="modal-content">
-          <h3 id="mcpDiscoverTitle">发现本地 MCP</h3>
+          <h3 id="mcpDiscoverTitle">扫描本地 MCP</h3>
           <p class="hint">扫描常见 AI 客户端的 MCP 配置：Cursor、Claude Desktop、Claude Code、Codex（<code>~/.codex/config.toml</code>）、Devin Desktop（原 Windsurf）、VS Code（<code>~/Library/Application Support/Code/User/mcp.json</code>）、Zed，以及国产 Qoder / 通义灵码（阿里）、Trae / TRAE SOLO（字节）、CodeBuddy（腾讯）。识别 <code>mcpServers</code> / <code>servers</code> / <code>context_servers</code> 等键，勾选后导入为 CSP 本地 stdio MCP。仅识别本地 stdio（带 <code>command</code>）连接器；环境变量只显示 key，导入时由后端复制原值。</p>
           <div id="mcpDiscoverList" class="skill-discover-list"></div>
           <div id="mcpDiscoverEmpty" class="skill-empty" hidden>
-            <p>没有发现可导入的本地 stdio MCP。</p>
+            <p>没有扫描到可导入的本地 stdio MCP。</p>
           </div>
           <div class="row modal-actions">
             <button class="btn small" id="mcpDiscoverImportBtn" disabled>导入所选</button>
@@ -190,11 +201,11 @@
       <!-- Skill discovery modal -->
       <div class="modal" id="skillDiscoverModal" hidden role="dialog" aria-modal="true" aria-labelledby="skillDiscoverTitle">
         <div class="modal-content">
-          <h3 id="skillDiscoverTitle">发现本地 Skill</h3>
+          <h3 id="skillDiscoverTitle">扫描本地 Skill</h3>
           <p class="hint">扫描 <code>~/.agents/skills</code>、<code>~/.codex/skills</code>、<code>~/.claude/skills</code>、<code>~/.cursor/skills</code>，以及国产 <code>~/.trae/skills</code> / <code>~/.trae-cn/skills</code>（字节）、<code>~/.codebuddy/skills</code>（腾讯），勾选后复制到 <code>~/.csp/skills/</code>。沙箱自带的科学 Skill 不在此列。</p>
           <div id="skillDiscoverList" class="skill-discover-list"></div>
           <div id="skillDiscoverEmpty" class="skill-empty" hidden>
-            <p>没有发现可导入的 Skill。</p>
+            <p>没有扫描到可导入的 Skill。</p>
           </div>
           <div class="row modal-actions">
             <button class="btn small" id="skillDiscoverImportBtn" disabled>导入所选</button>

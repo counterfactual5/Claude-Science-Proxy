@@ -583,6 +583,8 @@ function mockInvoke(cmd, args) {
       return Promise.resolve({ url: "http://127.0.0.1:8990", action: "started" });
     case "open_csp_json":
       return Promise.resolve("~/.csp/CSP.json");
+    case "open_mcp_inventory_json":
+      return Promise.resolve("~/.csp/mcp/inventory.json");
     case "list_skills":
       return Promise.resolve(mockStore.skills.map((s) => ({ ...s })));
     case "discover_skills":
@@ -865,12 +867,36 @@ function closeListhdMenu() {
 function toggleListhdMenu() {
   if (!els.listhdMenu || !els.listhdMoreBtn) return;
   const wasOpen = !els.listhdMenu.hidden;
-  closeListhdMenu();
+  closeHeaderMenus();
   closeAllMenus();
   if (!wasOpen) {
     els.listhdMenu.hidden = false;
     els.listhdMoreBtn.setAttribute("aria-expanded", "true");
   }
+}
+
+// Generic ⋯ overflow menu (Skills / MCP headers): mirror the Profiles listhd menu.
+function closeMenu(menuEl, btnEl) {
+  if (menuEl) menuEl.hidden = true;
+  if (btnEl) btnEl.setAttribute("aria-expanded", "false");
+}
+
+function toggleMenu(menuEl, btnEl) {
+  if (!menuEl || !btnEl) return;
+  const wasOpen = !menuEl.hidden;
+  closeHeaderMenus();
+  closeAllMenus();
+  if (!wasOpen) {
+    menuEl.hidden = false;
+    btnEl.setAttribute("aria-expanded", "true");
+  }
+}
+
+// Close every header overflow menu (Profiles / Skills / MCP) in one call.
+function closeHeaderMenus() {
+  closeListhdMenu();
+  closeMenu(els.skillMenu, els.skillMoreBtn);
+  closeMenu(els.mcpMenu, els.mcpMoreBtn);
 }
 
 function positionProfileMenu(menu, btn) {
@@ -913,9 +939,9 @@ function setBusy(on, op) {
     // Disable port inputs while busy: changing ports mid-operation races in-flight work (P1-c frontend).
     els.proxyPort, els.sandboxPort,
     // Skill / MCP manager actions: prevent concurrent mutations racing a running op.
-    els.skillImportBtn, els.skillInspectBtn, els.skillImportConfirmBtn, els.skillImportCancelBtn,
+    els.skillImportBtn, els.skillMoreBtn, els.skillInspectBtn, els.skillImportConfirmBtn, els.skillImportCancelBtn,
     els.skillDiscoverBtn, els.skillDiscoverImportBtn, els.skillDiscoverCancelBtn,
-    els.mcpDiscoverBtn, els.mcpDiscoverImportBtn, els.mcpDiscoverCancelBtn,
+    els.mcpMoreBtn, els.mcpJsonBtn, els.mcpDiscoverBtn, els.mcpDiscoverImportBtn, els.mcpDiscoverCancelBtn,
     els.mcpAddBtn, els.mcpSaveBtn, els.mcpCancelBtn,
   ].forEach((b) => b && (b.disabled = on));
   syncProfileBusyState();
@@ -1467,14 +1493,14 @@ function wire() {
     "connSec", "connTitle", "connName", "connBase", "connBaseHint",
     "connModelInfo", "connModelHint", "connModelPick", "connKey", "connSaveBtn", "connCancelBtn",
     "tabProfiles", "tabSkills", "skillPane",
-    "skillImportBtn", "skillEmpty", "skillList", "skillMsg",
+    "skillImportBtn", "skillMoreBtn", "skillMenu", "skillEmpty", "skillList", "skillMsg",
     "skillDiscoverBtn", "skillDiscoverModal", "skillDiscoverList",
     "skillDiscoverEmpty", "skillDiscoverImportBtn", "skillDiscoverCancelBtn",
     "skillImportModal", "skillSourcePath", "skillInspectionPreview",
     "inspName", "inspDesc", "inspStats", "inspReqs", "inspWarnings", "inspErrors",
     "skillInspectBtn", "skillImportConfirmBtn", "skillImportCancelBtn",
-    "tabMcp", "mcpPane", "mcpAddBtn", "mcpEmpty", "mcpList", "mcpMsg",
-    "mcpDiscoverBtn", "mcpDiscoverModal", "mcpDiscoverList",
+    "tabMcp", "mcpPane", "mcpAddBtn", "mcpMoreBtn", "mcpMenu", "mcpEmpty", "mcpList", "mcpMsg",
+    "mcpJsonBtn", "mcpDiscoverBtn", "mcpDiscoverModal", "mcpDiscoverList",
     "mcpDiscoverEmpty", "mcpDiscoverImportBtn", "mcpDiscoverCancelBtn",
     "mcpModal", "mcpModalTitle", "mcpName", "mcpDesc", "mcpCommand", "mcpArgs", "mcpEnv",
     "mcpInspection", "mcpWarnings", "mcpErrors", "mcpSaveBtn", "mcpCancelBtn",
@@ -1519,7 +1545,7 @@ function wire() {
   });
   document.addEventListener("click", (e) => {
     if (!e.target.closest(".pmenu-wrap")) closeAllMenus();
-    if (!e.target.closest(".listhd-more")) closeListhdMenu();
+    if (!e.target.closest(".listhd-more")) closeHeaderMenus();
   });
 
   els.newBtn.addEventListener("click", openWizard);
@@ -1527,6 +1553,16 @@ function wire() {
     e.stopPropagation();
     if (busy) return;
     toggleListhdMenu();
+  });
+  els.skillMoreBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (busy) return;
+    toggleMenu(els.skillMenu, els.skillMoreBtn);
+  });
+  els.mcpMoreBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (busy) return;
+    toggleMenu(els.mcpMenu, els.mcpMoreBtn);
   });
   els.editCspJsonBtn.addEventListener("click", async () => {
     if (busy) return;
@@ -1565,6 +1601,15 @@ function wire() {
   els.tabMcp.addEventListener("click", () => switchTab("mcp"));
 
   // MCP panel actions
+  els.mcpJsonBtn.addEventListener("click", async () => {
+    closeMenu(els.mcpMenu, els.mcpMoreBtn);
+    if (busy) return;
+    try {
+      await call("open_mcp_inventory_json");
+    } catch (e) {
+      setMcpMsg(resolveBackendErr(e));
+    }
+  });
   els.mcpDiscoverBtn.addEventListener("click", openMcpDiscover);
   els.mcpDiscoverCancelBtn.addEventListener("click", closeMcpDiscover);
   els.mcpDiscoverImportBtn.addEventListener("click", importDiscoveredMcpServers);
@@ -1636,7 +1681,7 @@ function switchTab(tab) {
   if (busy) return;
   hideSkip();
   closeAllMenus();
-  closeListhdMenu();
+  closeHeaderMenus();
   setMsg("");
   setSkillMsg("");
   setMcpMsg("");
@@ -1834,6 +1879,7 @@ async function importSkillConfirm() {
 
 // ── Skill Discovery Modal ──
 async function openSkillDiscover() {
+  closeMenu(els.skillMenu, els.skillMoreBtn);
   if (busy) return;
   els.skillDiscoverList.innerHTML = "<p class=\"hint\">扫描中…</p>";
   els.skillDiscoverEmpty.hidden = true;
@@ -1913,6 +1959,7 @@ let mcpEditId = null;
 let mcpWarnAck = false;
 
 async function openMcpDiscover() {
+  closeMenu(els.mcpMenu, els.mcpMoreBtn);
   if (busy) return;
   els.mcpDiscoverList.innerHTML = "<p class=\"hint\">扫描中…</p>";
   els.mcpDiscoverEmpty.hidden = true;

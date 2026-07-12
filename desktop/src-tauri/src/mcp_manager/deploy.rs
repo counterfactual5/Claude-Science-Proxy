@@ -8,6 +8,24 @@
 //! so we also grant read access to the parent directory of every absolute path a
 //! server references (its command and any absolute-path args).
 //!
+//! Egress: Science injects `HTTPS_PROXY=http://localhost:<operon-port>` into
+//! every MCP child, and the child's OS-level sandbox network policy only
+//! permits outbound connections to that one loopback address — any other
+//! local port (including one CSP might run itself) is denied with `EPERM`.
+//! Operon's proxy supports a real CONNECT tunnel, but many bundled Node HTTP
+//! clients (axios via `follow-redirects`, used by e.g.
+//! `@notionhq/notion-mcp-server`) never issue one for HTTPS targets — they
+//! relay the request in absolute-form instead, which Operon then forwards as
+//! plain HTTP onto the origin's port 443 (`400 The plain HTTP request was
+//! sent to HTTPS port`). We fix this client-side: `mcp_http_tunnel_shim.cjs`
+//! is written into `<data-dir>/mcp/` and loaded into Node via
+//! `--require`. Live probe showed Science **strips `NODE_OPTIONS` from
+//! `local-mcp.json` env** (token env is kept; `NODE_OPTIONS` is absent on
+//! the running MCP process), so we wrap the connector with `/bin/bash` that
+//! re-exports `NODE_OPTIONS` immediately before `exec` — Operon's proxy env
+//! is left untouched. The shim then turns absolute-form requests into a
+//! real CONNECT+TLS tunnel to the already-permitted Operon address.
+//!
 //! Iron rules (mirror `skill_manager::deploy` / `oauth_forge`):
 //! - Only ever write under the sandbox root; never the real `~/.claude-science`.
 //! - CSP owns `local-mcp.json` and the `[sandbox].user_read_paths` key only;
@@ -24,6 +42,8 @@ use super::model::McpServer;
 use crate::oauth_forge::real_ancestor;
 
 const LOCAL_MCP_FILE: &str = "local-mcp.json";
+const SHIM_FILE: &str = "csp-http-tunnel-shim.cjs";
+const SHIM_SOURCE: &str = include_str!("mcp_http_tunnel_shim.cjs");
 
 /// Summary of a deployment pass (launch-log observability).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -56,17 +76,16 @@ struct LocalMcpEntry<'a> {
     env: BTreeMap<String, String>,
 }
 
-const PROXY_ENV_KEYS: &[&str] = &[
-    "HTTP_PROXY",
-    "http_proxy",
-    "HTTPS_PROXY",
-    "https_proxy",
-    "ALL_PROXY",
-    "all_proxy",
-];
-
-fn user_set_proxy(server: &McpServer) -> bool {
-    PROXY_ENV_KEYS.iter().any(|k| server.env.contains_key(*k))
+/// Idempotently write the bundled Node shim (see `mcp_http_tunnel_shim.cjs`)
+/// into `<data_dir>/mcp/` and return its path, or `None` on write failure
+/// (never fatal — deployment continues without the shim).
+fn write_shim(mcp_dir: &Path) -> Option<std::path::PathBuf> {
+    let path = mcp_dir.join(SHIM_FILE);
+    let current = fs::read_to_string(&path).ok();
+    if current.as_deref() != Some(SHIM_SOURCE) && fs::write(&path, SHIM_SOURCE).is_err() {
+        return None;
+    }
+    Some(path)
 }
 
 struct DeployCmd {
@@ -74,42 +93,38 @@ struct DeployCmd {
     args: Vec<String>,
 }
 
-/// Wrap the connector so it clears Science's Operon sandbox proxy and points at
-/// the CSP loopback proxy instead.
+/// Wrap the connector so Node loads the HTTP-tunnel shim.
 ///
-/// Science injects `HTTPS_PROXY=http://localhost:<operon-port>` (and SOCKS
-/// `ALL_PROXY`) into every MCP child. That Operon HTTP proxy only speaks
-/// CONNECT; axios (used by `@notionhq/notion-mcp-server` and others) sends
-/// absolute-form `GET https://host/…` instead, which Operon tunnels as plain
-/// HTTP onto port 443 → Cloudflare `400 The plain HTTP request was sent to
-/// HTTPS port`. CSP's proxy implements absolute-form forward, so the wrapper
-/// unsets Operon's proxy vars at exec time (Science sets them before our
-/// command runs) and re-exports `https_proxy` to the CSP URL.
-fn deploy_command(server: &McpServer, egress_proxy_url: Option<&str>) -> DeployCmd {
-    let Some(url) = egress_proxy_url.filter(|u| !u.is_empty()) else {
+/// Science strips `NODE_OPTIONS` from `local-mcp.json` env (confirmed live:
+/// `NOTION_TOKEN` reaches the MCP child, `NODE_OPTIONS` does not). Putting
+/// `--require` only in env therefore never loads the shim. Instead wrap with
+/// bash that re-exports `NODE_OPTIONS` right before `exec`, preserving any
+/// user-set `NODE_OPTIONS` from the connector env (passed as `$1`). Non-Node
+/// commands ignore `NODE_OPTIONS`; Operon proxy env is left alone.
+fn deploy_command(server: &McpServer, shim_path: Option<&Path>) -> DeployCmd {
+    let Some(shim) = shim_path else {
         return DeployCmd {
             command: server.command.clone(),
             args: server.args.clone(),
         };
     };
-    if user_set_proxy(server) {
-        return DeployCmd {
-            command: server.command.clone(),
-            args: server.args.clone(),
-        };
-    }
-    // bash -c '…' name PROXY_URL REAL_CMD REAL_ARGS…
-    // $1 = proxy URL; after shift, "$@" is the real connector.
-    let script = "unset HTTP_PROXY HTTPS_PROXY http_proxy https_proxy \
-ALL_PROXY all_proxy FTP_PROXY ftp_proxy RSYNC_PROXY rsync_proxy; \
-export HTTPS_PROXY=\"$1\" https_proxy=\"$1\" \
-NO_PROXY=127.0.0.1,localhost,::1 no_proxy=127.0.0.1,localhost,::1; \
-shift; exec \"$@\"";
+    // bash -c '…' name USER_NODE_OPTIONS REAL_CMD REAL_ARGS…
+    // $1 = optional user NODE_OPTIONS; after shift, "$@" is the real connector.
+    // Prepend our --require; append any user flags so theirs still apply.
+    let script = format!(
+        "export NODE_OPTIONS=\"--require {shim}${{1:+ $1}}\"; shift; exec \"$@\"",
+        shim = shim.display()
+    );
+    let user_node_options = server
+        .env
+        .get("NODE_OPTIONS")
+        .cloned()
+        .unwrap_or_default();
     let mut args = vec![
         "-c".to_string(),
-        script.to_string(),
-        "csp-mcp-egress".to_string(),
-        url.to_string(),
+        script,
+        "csp-mcp-shim".to_string(),
+        user_node_options,
         server.command.clone(),
     ];
     args.extend(server.args.iter().cloned());
@@ -119,11 +134,15 @@ shift; exec \"$@\"";
     }
 }
 
-/// Keep the user's connector env as-is. Egress routing is handled by
-/// [`deploy_command`] (Science overwrites proxy env on spawn, so injecting
-/// `https_proxy` into local-mcp.json alone is not enough).
-fn effective_env(server: &McpServer, _egress_proxy_url: Option<&str>) -> BTreeMap<String, String> {
-    server.env.clone()
+/// Keep the user's connector env as-is. Do **not** put `NODE_OPTIONS` here —
+/// Science strips that key from `local-mcp.json` env. Shim loading is done by
+/// [`deploy_command`]'s bash preamble instead.
+fn effective_env(server: &McpServer) -> BTreeMap<String, String> {
+    let mut env = server.env.clone();
+    // Avoid a misleading entry that Science would drop anyway; the bash
+    // wrapper already merges any user NODE_OPTIONS into the real process env.
+    env.remove("NODE_OPTIONS");
+    env
 }
 
 /// Deploy `enabled` stdio MCP servers into `<data_dir>/mcp/local-mcp.json` and
@@ -131,16 +150,14 @@ fn effective_env(server: &McpServer, _egress_proxy_url: Option<&str>) -> BTreeMa
 ///
 /// `data_dir` is the sandbox Science data-dir; `sandbox_root` is `$SANDBOX_HOME`;
 /// `real_science_dir` is the real `~/.claude-science` used only for the guard.
-/// `egress_proxy_url` is the CSP loopback proxy (`http://127.0.0.1:<port>`).
-/// When set, each connector is wrapped with a small bash preamble that clears
-/// Science's Operon sandbox proxy and points `https_proxy` at CSP (axios
-/// absolute-form requests need CSP's forward support; Operon only does CONNECT).
+/// Also writes the Node HTTP-tunnel shim (see module docs) into
+/// `<data_dir>/mcp/` and wraps each connector so bash re-exports `NODE_OPTIONS`
+/// before exec (Science strips that key from `local-mcp.json` env).
 pub(crate) fn deploy_enabled_mcp(
     enabled: &[McpServer],
     data_dir: &Path,
     sandbox_root: &Path,
     real_science_dir: &Path,
-    egress_proxy_url: Option<&str>,
 ) -> Result<McpDeployReport, String> {
     // —— Iron-rule guards: resolve to nearest real ancestor, then reject the real
     // Science tree and anything outside the sandbox root. ——
@@ -179,18 +196,19 @@ pub(crate) fn deploy_enabled_mcp(
     }
 
     fs::create_dir_all(&mcp_dir).map_err(|e| format!("create mcp dir: {e}"))?;
+    let shim_path = write_shim(&mcp_dir);
 
     let file = LocalMcpFile {
         servers: enabled
             .iter()
             .map(|s| {
-                let cmd = deploy_command(s, egress_proxy_url);
+                let cmd = deploy_command(s, shim_path.as_deref());
                 LocalMcpEntry {
                     name: &s.name,
                     description: &s.description,
                     command: cmd.command,
                     args: cmd.args,
-                    env: effective_env(s, egress_proxy_url),
+                    env: effective_env(s),
                 }
             })
             .collect(),
@@ -223,8 +241,16 @@ pub(crate) fn deploy_enabled_mcp(
     }
     report.deployed = enabled.iter().map(|s| s.name.clone()).collect();
 
-    // Grant read access for every absolute path referenced (least privilege).
-    let read_paths = collect_read_paths(enabled);
+    // Grant read access for every absolute path referenced (least privilege),
+    // plus the mcp dir itself so the sandboxed child can `--require` the shim.
+    let mut read_paths = collect_read_paths(enabled);
+    if shim_path.is_some() {
+        let mcp_dir_str = mcp_dir.to_string_lossy().to_string();
+        if !read_paths.iter().any(|p| p == &mcp_dir_str) {
+            read_paths.push(mcp_dir_str);
+            read_paths.sort();
+        }
+    }
     report.granted_paths = read_paths.len();
     let paths_changed = set_user_read_paths(&config_toml, &read_paths)?;
     report.changed = report.changed || paths_changed;
@@ -436,68 +462,67 @@ mod tests {
     fn writes_local_mcp_json() {
         let f = fixture();
         let servers = vec![server("demo", "python3", vec!["/opt/x/server.py".into()])];
-        let r = deploy_enabled_mcp(&servers, &f.data_dir, &f.sandbox_root, &f.real_dir, None).unwrap();
+        let r = deploy_enabled_mcp(&servers, &f.data_dir, &f.sandbox_root, &f.real_dir).unwrap();
         assert_eq!(r.deployed, vec!["demo".to_string()]);
 
         let json = fs::read_to_string(f.data_dir.join("mcp").join(LOCAL_MCP_FILE)).unwrap();
         let v: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert_eq!(v["servers"][0]["name"], "demo");
-        assert_eq!(v["servers"][0]["command"], "python3");
-        assert_eq!(v["servers"][0]["args"][0], "/opt/x/server.py");
-        // empty description/env must be omitted
+        // Command is wrapped with bash so NODE_OPTIONS survives Science's env strip.
+        assert_eq!(v["servers"][0]["command"], "/bin/bash");
+        assert_eq!(v["servers"][0]["args"][0], "-c");
+        assert_eq!(v["servers"][0]["args"][2], "csp-mcp-shim");
+        assert_eq!(v["servers"][0]["args"][4], "python3");
+        assert_eq!(v["servers"][0]["args"][5], "/opt/x/server.py");
+        // empty description/env omitted (shim is argv-side, not env)
         assert!(v["servers"][0].get("description").is_none());
         assert!(v["servers"][0].get("env").is_none());
     }
 
     #[test]
-    fn wraps_command_to_reroute_operon_proxy_via_csp() {
+    fn wraps_with_bash_to_export_node_options_shim() {
         let f = fixture();
-        let mut s = server("demo", "python3", vec!["/opt/x/server.py".into()]);
+        let mut s = server("demo", "node", vec!["/opt/x/server.js".into()]);
         s.env.insert("NOTION_TOKEN".into(), "ntn_secret".into());
-        deploy_enabled_mcp(
-            &[s],
-            &f.data_dir,
-            &f.sandbox_root,
-            &f.real_dir,
-            Some("http://127.0.0.1:18991"),
-        )
-        .unwrap();
+        deploy_enabled_mcp(&[s], &f.data_dir, &f.sandbox_root, &f.real_dir).unwrap();
 
         let json = fs::read_to_string(f.data_dir.join("mcp").join(LOCAL_MCP_FILE)).unwrap();
         let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        // Science strips NODE_OPTIONS from env — load shim via bash export instead.
         assert_eq!(v["servers"][0]["command"], "/bin/bash");
         let args = v["servers"][0]["args"].as_array().unwrap();
         assert_eq!(args[0], "-c");
-        assert_eq!(args[2], "csp-mcp-egress");
-        assert_eq!(args[3], "http://127.0.0.1:18991");
-        assert_eq!(args[4], "python3");
-        assert_eq!(args[5], "/opt/x/server.py");
-        // User secrets stay in env; proxy routing is the wrapper, not env injection
-        // (Science overwrites proxy env on spawn).
+        assert!(args[1].as_str().unwrap().contains("--require"));
+        assert!(args[1].as_str().unwrap().contains(SHIM_FILE));
+        assert_eq!(args[2], "csp-mcp-shim");
+        assert_eq!(args[3], ""); // no user NODE_OPTIONS
+        assert_eq!(args[4], "node");
+        assert_eq!(args[5], "/opt/x/server.js");
         assert_eq!(v["servers"][0]["env"]["NOTION_TOKEN"], "ntn_secret");
-        assert!(v["servers"][0]["env"].get("https_proxy").is_none());
+        assert!(v["servers"][0]["env"].get("NODE_OPTIONS").is_none());
+
+        let shim_path = f.data_dir.join("mcp").join(SHIM_FILE);
+        assert!(shim_path.exists(), "shim file must be written to disk");
+        let toml = fs::read_to_string(f.data_dir.join("config.toml")).unwrap();
+        assert!(
+            toml.contains(&f.data_dir.join("mcp").to_string_lossy().to_string()),
+            "mcp dir itself must be readable so the sandboxed child can require the shim"
+        );
     }
 
     #[test]
-    fn respects_user_proxy_skips_wrapper() {
+    fn preserves_existing_node_options_via_bash_arg() {
         let f = fixture();
-        let mut s = server("demo", "python3", vec!["/opt/x/server.py".into()]);
+        let mut s = server("demo", "node", vec!["/opt/x/server.js".into()]);
         s.env
-            .insert("HTTPS_PROXY".into(), "http://corp-proxy:8080".into());
-        deploy_enabled_mcp(
-            &[s],
-            &f.data_dir,
-            &f.sandbox_root,
-            &f.real_dir,
-            Some("http://127.0.0.1:18991"),
-        )
-        .unwrap();
+            .insert("NODE_OPTIONS".into(), "--max-old-space-size=256".into());
+        deploy_enabled_mcp(&[s], &f.data_dir, &f.sandbox_root, &f.real_dir).unwrap();
 
         let json = fs::read_to_string(f.data_dir.join("mcp").join(LOCAL_MCP_FILE)).unwrap();
         let v: serde_json::Value = serde_json::from_str(&json).unwrap();
-        assert_eq!(v["servers"][0]["command"], "python3");
-        assert_eq!(v["servers"][0]["args"][0], "/opt/x/server.py");
-        assert_eq!(v["servers"][0]["env"]["HTTPS_PROXY"], "http://corp-proxy:8080");
+        // User NODE_OPTIONS is passed as $1 to bash (not left in env JSON).
+        assert_eq!(v["servers"][0]["args"][3], "--max-old-space-size=256");
+        assert!(v["servers"][0]["env"].get("NODE_OPTIONS").is_none());
     }
 
     #[test]
@@ -508,7 +533,7 @@ mod tests {
             "python3",
             vec!["/opt/tools/mcp/server.py".into()],
         )];
-        deploy_enabled_mcp(&servers, &f.data_dir, &f.sandbox_root, &f.real_dir, None).unwrap();
+        deploy_enabled_mcp(&servers, &f.data_dir, &f.sandbox_root, &f.real_dir).unwrap();
 
         let toml = fs::read_to_string(f.data_dir.join("config.toml")).unwrap();
         assert!(toml.contains("[sandbox]"));
@@ -526,7 +551,7 @@ mod tests {
         )
         .unwrap();
         let servers = vec![server("demo", "/usr/local/bin/mcp-server", vec![])];
-        deploy_enabled_mcp(&servers, &f.data_dir, &f.sandbox_root, &f.real_dir, None).unwrap();
+        deploy_enabled_mcp(&servers, &f.data_dir, &f.sandbox_root, &f.real_dir).unwrap();
 
         let text = fs::read_to_string(f.data_dir.join("config.toml")).unwrap();
         let parsed: toml::Table = text.parse().unwrap();
@@ -544,11 +569,11 @@ mod tests {
         )
         .unwrap();
         let servers = vec![server("demo", "python3", vec!["/opt/x/s.py".into()])];
-        deploy_enabled_mcp(&servers, &f.data_dir, &f.sandbox_root, &f.real_dir, None).unwrap();
+        deploy_enabled_mcp(&servers, &f.data_dir, &f.sandbox_root, &f.real_dir).unwrap();
         assert!(f.data_dir.join("mcp").join(LOCAL_MCP_FILE).exists());
 
         // Now disable all: json removed, our key gone, unrelated key preserved.
-        let r = deploy_enabled_mcp(&[], &f.data_dir, &f.sandbox_root, &f.real_dir, None).unwrap();
+        let r = deploy_enabled_mcp(&[], &f.data_dir, &f.sandbox_root, &f.real_dir).unwrap();
         assert!(r.cleared);
         assert!(!f.data_dir.join("mcp").join(LOCAL_MCP_FILE).exists());
         let text = fs::read_to_string(f.data_dir.join("config.toml")).unwrap();
@@ -561,10 +586,10 @@ mod tests {
     fn empty_enabled_removes_config_when_nothing_else() {
         let f = fixture();
         let servers = vec![server("demo", "python3", vec!["/opt/x/s.py".into()])];
-        deploy_enabled_mcp(&servers, &f.data_dir, &f.sandbox_root, &f.real_dir, None).unwrap();
+        deploy_enabled_mcp(&servers, &f.data_dir, &f.sandbox_root, &f.real_dir).unwrap();
         assert!(f.data_dir.join("config.toml").exists());
 
-        deploy_enabled_mcp(&[], &f.data_dir, &f.sandbox_root, &f.real_dir, None).unwrap();
+        deploy_enabled_mcp(&[], &f.data_dir, &f.sandbox_root, &f.real_dir).unwrap();
         // config.toml held only our key → removed entirely.
         assert!(!f.data_dir.join("config.toml").exists());
     }
@@ -573,9 +598,9 @@ mod tests {
     fn second_identical_deploy_reports_no_change() {
         let f = fixture();
         let servers = vec![server("demo", "python3", vec!["/opt/x/server.py".into()])];
-        let r1 = deploy_enabled_mcp(&servers, &f.data_dir, &f.sandbox_root, &f.real_dir, None).unwrap();
+        let r1 = deploy_enabled_mcp(&servers, &f.data_dir, &f.sandbox_root, &f.real_dir).unwrap();
         assert!(r1.changed, "first deploy writes files");
-        let r2 = deploy_enabled_mcp(&servers, &f.data_dir, &f.sandbox_root, &f.real_dir, None).unwrap();
+        let r2 = deploy_enabled_mcp(&servers, &f.data_dir, &f.sandbox_root, &f.real_dir).unwrap();
         assert!(!r2.changed, "identical redeploy is a no-op");
     }
 
@@ -586,7 +611,7 @@ mod tests {
         let f = fixture();
         let mut s = server("demo", "python3", vec!["/opt/x/server.py".into()]);
         s.env.insert("TOKEN".into(), "supersecret".into());
-        deploy_enabled_mcp(&[s], &f.data_dir, &f.sandbox_root, &f.real_dir, None).unwrap();
+        deploy_enabled_mcp(&[s], &f.data_dir, &f.sandbox_root, &f.real_dir).unwrap();
         let json = f.data_dir.join("mcp").join(LOCAL_MCP_FILE);
         let mode = fs::metadata(&json).unwrap().permissions().mode() & 0o777;
         assert_eq!(mode, 0o600, "secret-bearing local-mcp.json must be 0600");
@@ -600,7 +625,7 @@ mod tests {
         fs::write(f.data_dir.join("config.toml"), original).unwrap();
 
         // No enabled servers, twice: must be a no-op and preserve the file verbatim.
-        let r1 = deploy_enabled_mcp(&[], &f.data_dir, &f.sandbox_root, &f.real_dir, None).unwrap();
+        let r1 = deploy_enabled_mcp(&[], &f.data_dir, &f.sandbox_root, &f.real_dir).unwrap();
         assert!(!r1.changed, "no MCP + unrelated config → no change");
         let after = fs::read_to_string(f.data_dir.join("config.toml")).unwrap();
         assert_eq!(after, original, "file (and comment) left byte-for-byte");
@@ -615,9 +640,9 @@ mod tests {
         )
         .unwrap();
         let servers = vec![server("demo", "python3", vec!["/opt/x/server.py".into()])];
-        deploy_enabled_mcp(&servers, &f.data_dir, &f.sandbox_root, &f.real_dir, None).unwrap();
+        deploy_enabled_mcp(&servers, &f.data_dir, &f.sandbox_root, &f.real_dir).unwrap();
         // Second identical pass over an existing config must not report a change.
-        let r = deploy_enabled_mcp(&servers, &f.data_dir, &f.sandbox_root, &f.real_dir, None).unwrap();
+        let r = deploy_enabled_mcp(&servers, &f.data_dir, &f.sandbox_root, &f.real_dir).unwrap();
         assert!(!r.changed);
     }
 
@@ -633,7 +658,7 @@ mod tests {
             "python3",
             vec![data_sub.to_string_lossy().into()],
         )];
-        deploy_enabled_mcp(&servers, &f.data_dir, &f.sandbox_root, &f.real_dir, None).unwrap();
+        deploy_enabled_mcp(&servers, &f.data_dir, &f.sandbox_root, &f.real_dir).unwrap();
 
         let toml = fs::read_to_string(f.data_dir.join("config.toml")).unwrap();
         // Grants the dir itself, NOT the broader parent.
@@ -666,7 +691,7 @@ mod tests {
             &bin.join("notion-mcp-server").to_string_lossy(),
             vec![],
         )];
-        deploy_enabled_mcp(&servers, &f.data_dir, &f.sandbox_root, &f.real_dir, None).unwrap();
+        deploy_enabled_mcp(&servers, &f.data_dir, &f.sandbox_root, &f.real_dir).unwrap();
 
         let toml = fs::read_to_string(f.data_dir.join("config.toml")).unwrap();
         assert!(
@@ -684,7 +709,7 @@ mod tests {
     fn rejects_real_science_dir() {
         let f = fixture();
         let servers = vec![server("x", "python3", vec![])];
-        let r = deploy_enabled_mcp(&servers, &f.real_dir, &f.sandbox_root, &f.real_dir, None);
+        let r = deploy_enabled_mcp(&servers, &f.real_dir, &f.sandbox_root, &f.real_dir);
         assert!(r.is_err());
         assert!(r.unwrap_err().contains("real Science dir"));
     }
@@ -695,7 +720,7 @@ mod tests {
         let outside = env::temp_dir().join(format!("csp-mcp-outside-{}", uniq()));
         fs::create_dir_all(&outside).unwrap();
         let servers = vec![server("x", "python3", vec![])];
-        let r = deploy_enabled_mcp(&servers, &outside, &f.sandbox_root, &f.real_dir, None);
+        let r = deploy_enabled_mcp(&servers, &outside, &f.sandbox_root, &f.real_dir);
         assert!(r.is_err());
         assert!(r.unwrap_err().contains("outside sandbox root"));
     }
