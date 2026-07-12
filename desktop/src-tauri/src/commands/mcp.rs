@@ -46,12 +46,14 @@ pub async fn list_mcp_servers() -> Result<Vec<McpServerSummary>, String> {
 }
 
 /// A JSON config file that may hold local stdio MCP definitions, plus the object
-/// key the servers live under. Two shapes are seen in the wild:
-/// - `mcpServers` — Cursor, Claude Desktop, Claude Code, Devin Desktop (Windsurf).
+/// key the servers live under. Three shapes are seen in the wild:
+/// - `mcpServers` — Cursor, Claude Desktop, Claude Code, Devin Desktop (Windsurf),
+///   and the domestic tools Qoder / 通义灵码 (Alibaba), Trae / TRAE SOLO
+///   (ByteDance), and CodeBuddy (Tencent).
 /// - `servers` — VS Code.
 /// - `context_servers` — Zed.
 /// Codex CLI is handled separately (TOML `[mcp_servers.*]`), not via this list.
-/// Both use the same per-server object `{ command, args, env, description? }`.
+/// All use the same per-server object `{ command, args, env, description? }`.
 struct McpSource {
     /// Path relative to `$HOME`.
     rel_path: &'static str,
@@ -99,6 +101,74 @@ const MCP_SOURCES: &[McpSource] = &[
         rel_path: ".config/zed/settings.json",
         label: "Zed",
         key: "context_servers",
+    },
+    // --- Domestic (China) agents / IDEs. All confirmed to use the `mcpServers`
+    // key with the same `{ command, args, env }` stdio shape. Remote/SSE entries
+    // (`type`/`url`, no `command`) are ignored by discover_source as usual. ---
+    // Alibaba Qoder / Tongyi Lingma family — global MCP under
+    // `<app>/SharedClientCache/mcp.json`.
+    McpSource {
+        rel_path: "Library/Application Support/Qoder/SharedClientCache/mcp.json",
+        label: "Qoder",
+        key: "mcpServers",
+    },
+    McpSource {
+        rel_path: "Library/Application Support/QoderCN/SharedClientCache/mcp.json",
+        label: "Qoder CN",
+        key: "mcpServers",
+    },
+    McpSource {
+        rel_path: "Library/Application Support/QoderWork/SharedClientCache/mcp.json",
+        label: "QoderWork",
+        key: "mcpServers",
+    },
+    McpSource {
+        rel_path: "Library/Application Support/QoderWork CN/SharedClientCache/mcp.json",
+        label: "QoderWork CN",
+        key: "mcpServers",
+    },
+    McpSource {
+        rel_path: ".qoderwork/mcp.json",
+        label: "QoderWork",
+        key: "mcpServers",
+    },
+    McpSource {
+        rel_path: ".qoderworkcn/mcp.json",
+        label: "QoderWork CN",
+        key: "mcpServers",
+    },
+    // ByteDance Trae family — global MCP under `<app>/User/mcp.json`.
+    McpSource {
+        rel_path: "Library/Application Support/Trae/User/mcp.json",
+        label: "Trae",
+        key: "mcpServers",
+    },
+    McpSource {
+        rel_path: "Library/Application Support/Trae CN/User/mcp.json",
+        label: "Trae CN",
+        key: "mcpServers",
+    },
+    McpSource {
+        rel_path: "Library/Application Support/TRAE SOLO/User/mcp.json",
+        label: "TRAE SOLO",
+        key: "mcpServers",
+    },
+    McpSource {
+        rel_path: "Library/Application Support/TRAE SOLO CN/User/mcp.json",
+        label: "TRAE SOLO CN",
+        key: "mcpServers",
+    },
+    // Tencent CodeBuddy — user-scope MCP under `~/.codebuddy/`. `.mcp.json` is the
+    // current recommended path; `mcp.json` is the deprecated fallback.
+    McpSource {
+        rel_path: ".codebuddy/.mcp.json",
+        label: "CodeBuddy",
+        key: "mcpServers",
+    },
+    McpSource {
+        rel_path: ".codebuddy/mcp.json",
+        label: "CodeBuddy",
+        key: "mcpServers",
     },
 ];
 

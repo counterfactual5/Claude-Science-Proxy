@@ -19,11 +19,15 @@ pub async fn list_skills() -> Result<Vec<SkillSummary>, String> {
 /// Known roots (relative to `$HOME`) where local agent Skills commonly live.
 /// The sandbox's own `~/.claude-science/skills` is deliberately excluded — those
 /// are Science's bundled skills and importing them would be meaningless/unsafe.
+/// Each entry is scanned for immediate subfolders containing a `SKILL.md`.
 const DISCOVERY_ROOTS: &[&str] = &[
     ".agents/skills",
     ".codex/skills",
     ".claude/skills",
     ".cursor/skills",
+    // Domestic (China) agents / IDEs that also use the `SKILL.md` folder layout.
+    ".trae/skills",        // ByteDance Trae
+    ".codebuddy/skills",   // Tencent CodeBuddy
 ];
 
 #[tauri::command]

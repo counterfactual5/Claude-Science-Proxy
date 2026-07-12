@@ -134,7 +134,7 @@
       <div class="modal" id="mcpDiscoverModal" hidden role="dialog" aria-modal="true" aria-labelledby="mcpDiscoverTitle">
         <div class="modal-content">
           <h3 id="mcpDiscoverTitle">发现本地 MCP</h3>
-          <p class="hint">扫描 Cursor、Claude Desktop、Claude Code、Codex、Devin Desktop（原 Windsurf）、VS Code、Zed 等常见 AI 客户端的 MCP 配置（JSON 的 <code>mcpServers</code> / <code>servers</code> / <code>context_servers</code>，或 Codex 的 <code>~/.codex/config.toml</code>），勾选后导入为 CSP 本地 stdio MCP。仅识别本地 stdio（带 <code>command</code>）连接器；环境变量只显示 key，导入时由后端复制原值。</p>
+          <p class="hint">扫描常见 AI 客户端的 MCP 配置：Cursor、Claude Desktop、Claude Code、Codex（<code>~/.codex/config.toml</code>）、Devin Desktop（原 Windsurf）、VS Code、Zed，以及国产 Qoder / 通义灵码（阿里）、Trae / TRAE SOLO（字节）、CodeBuddy（腾讯）。识别 <code>mcpServers</code> / <code>servers</code> / <code>context_servers</code> 等键，勾选后导入为 CSP 本地 stdio MCP。仅识别本地 stdio（带 <code>command</code>）连接器；环境变量只显示 key，导入时由后端复制原值。</p>
           <div id="mcpDiscoverList" class="skill-discover-list"></div>
           <div id="mcpDiscoverEmpty" class="skill-empty" hidden>
             <p>没有发现可导入的本地 stdio MCP。</p>
@@ -191,7 +191,7 @@
       <div class="modal" id="skillDiscoverModal" hidden role="dialog" aria-modal="true" aria-labelledby="skillDiscoverTitle">
         <div class="modal-content">
           <h3 id="skillDiscoverTitle">发现本地 Skill</h3>
-          <p class="hint">扫描 <code>~/.agents/skills</code>、<code>~/.codex/skills</code>、<code>~/.claude/skills</code>、<code>~/.cursor/skills</code>，勾选后复制到 <code>~/.csp/skills/</code>。沙箱自带的科学 Skill 不在此列。</p>
+          <p class="hint">扫描 <code>~/.agents/skills</code>、<code>~/.codex/skills</code>、<code>~/.claude/skills</code>、<code>~/.cursor/skills</code>，以及国产 <code>~/.trae/skills</code>（字节）、<code>~/.codebuddy/skills</code>（腾讯），勾选后复制到 <code>~/.csp/skills/</code>。沙箱自带的科学 Skill 不在此列。</p>
           <div id="skillDiscoverList" class="skill-discover-list"></div>
           <div id="skillDiscoverEmpty" class="skill-empty" hidden>
             <p>没有发现可导入的 Skill。</p>
