@@ -387,7 +387,7 @@ pub(crate) fn copy_dir(src: &Path, dst: &Path) -> Result<(), String> {
 ///
 /// Dependency-free: converts epoch seconds to a civil date with Howard Hinnant's
 /// `civil_from_days` algorithm, so the store stays free of a date crate.
-fn current_iso8601() -> String {
+pub(crate) fn current_iso8601() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
     let secs = SystemTime::now()
         .duration_since(UNIX_EPOCH)

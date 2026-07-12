@@ -524,6 +524,9 @@ const mockStore = {
   skills: [
     { id: "sk_1", name: "AlphaFold Database Fetch & Analyze", description: "Retrieve and analyze AlphaFold predicted structures for a protein.", enabled: true, sizeBytes: 12450, importedAt: "2026-07-12T02:30:00Z", requirements: ["python"] }
   ],
+  mcpServers: [
+    { id: "mcp_0000000000000001", name: "local-fs", description: "本地文件系统工具", command: "python3", args: ["/Users/me/mcp/fs_server.py"], env: { API_TOKEN: "••••1234" }, enabled: true, createdAt: "2026-07-12T02:30:00Z", updatedAt: "2026-07-12T02:30:00Z" }
+  ],
 };
 function mockMask(k) { return k ? "••••" + String(k).slice(-4) : ""; }
 function mockInvoke(cmd, args) {
@@ -627,6 +630,46 @@ function mockInvoke(cmd, args) {
       mockStore.skills = mockStore.skills.filter((x) => x.id !== input.skillId);
       return Promise.resolve(null);
     }
+    case "list_mcp_servers":
+      return Promise.resolve(mockStore.mcpServers.map((s) => ({ ...s })));
+    case "inspect_mcp_server": {
+      const inp = args.input || {};
+      const errors = [];
+      if (!inp.name) errors.push("Name is required");
+      if (!inp.command) errors.push("Command is required");
+      const known = ["node", "npm", "npx", "python", "python3", "pip", "pip3", "uv", "uvx", "deno", "bun", "bunx"];
+      const commandOk = !!inp.command && (inp.command.startsWith("/") || known.includes(inp.command));
+      const warnings = [];
+      if (inp.command && !commandOk) warnings.push(`'${inp.command}' 不在受管运行时白名单，Science 可能拒绝。`);
+      return Promise.resolve({ valid: errors.length === 0, commandOk, warnings, errors });
+    }
+    case "create_mcp_server": {
+      const inp = args.input || {};
+      const id = "mcp_" + Math.random().toString(16).slice(2, 18).padEnd(16, "0");
+      const now = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
+      const env = {};
+      Object.entries(inp.env || {}).forEach(([k, v]) => (env[k] = mockMask(v)));
+      const srv = { id, name: inp.name, description: inp.description || "", command: inp.command, args: inp.args || [], env, enabled: true, createdAt: now, updatedAt: now };
+      mockStore.mcpServers.push(srv);
+      return Promise.resolve(srv);
+    }
+    case "update_mcp_server": {
+      const s = mockStore.mcpServers.find((x) => x.id === args.input.serverId);
+      if (!s) return Promise.reject("MCP server not found");
+      const inp = args.input.server || {};
+      s.name = inp.name; s.description = inp.description || ""; s.command = inp.command; s.args = inp.args || [];
+      const env = {}; Object.entries(inp.env || {}).forEach(([k, v]) => (env[k] = mockMask(v)));
+      s.env = env; s.updatedAt = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
+      return Promise.resolve(s);
+    }
+    case "set_mcp_server_enabled": {
+      const s = mockStore.mcpServers.find((x) => x.id === args.input.serverId);
+      if (s) s.enabled = !!args.input.enabled;
+      return Promise.resolve(s);
+    }
+    case "remove_mcp_server":
+      mockStore.mcpServers = mockStore.mcpServers.filter((x) => x.id !== args.input.serverId);
+      return Promise.resolve(null);
     default:
       return Promise.resolve(null);
   }
@@ -1368,6 +1411,9 @@ function wire() {
     "skillImportModal", "skillSourcePath", "skillInspectionPreview",
     "inspName", "inspDesc", "inspStats", "inspReqs", "inspWarnings", "inspErrors",
     "skillInspectBtn", "skillImportConfirmBtn", "skillImportCancelBtn",
+    "tabMcp", "mcpPane", "mcpAddBtn", "mcpEmpty", "mcpList", "mcpMsg",
+    "mcpModal", "mcpModalTitle", "mcpName", "mcpDesc", "mcpCommand", "mcpArgs", "mcpEnv",
+    "mcpInspection", "mcpWarnings", "mcpErrors", "mcpSaveBtn", "mcpCancelBtn",
   ].forEach((id) => (els[id] = $(id)));
   els.panel = document.querySelector(".panel");
   els.panelBody = document.querySelector(".panel-body");
@@ -1452,6 +1498,27 @@ function wire() {
   // Tabs navigation
   els.tabProfiles.addEventListener("click", () => switchTab("profiles"));
   els.tabSkills.addEventListener("click", () => switchTab("skills"));
+  els.tabMcp.addEventListener("click", () => switchTab("mcp"));
+
+  // MCP panel actions
+  els.mcpAddBtn.addEventListener("click", () => openMcpModal());
+  els.mcpSaveBtn.addEventListener("click", saveMcpServer);
+  els.mcpCancelBtn.addEventListener("click", closeMcpModal);
+  els.mcpList.addEventListener("click", (e) => {
+    if (busy) return;
+    const row = e.target.closest(".skill-row[data-id]");
+    if (!row) return;
+    const id = row.getAttribute("data-id");
+    const name = row.getAttribute("data-name");
+    const btn = e.target.closest("[data-act]");
+    if (btn) {
+      const act = btn.getAttribute("data-act");
+      if (act === "delete") removeMcpServer(id, name);
+      else if (act === "edit") openMcpModal(id);
+    } else if (e.target.type === "checkbox") {
+      toggleMcpServer(id, e.target.checked);
+    }
+  });
 
   // Skills panel actions
   els.skillImportBtn.addEventListener("click", openSkillImport);
@@ -1492,26 +1559,24 @@ function switchTab(tab) {
   closeListhdMenu();
   setMsg("");
   setSkillMsg("");
+  setMcpMsg("");
 
-  if (tab === "profiles") {
-    els.tabProfiles.classList.add("active");
-    els.tabProfiles.setAttribute("aria-selected", "true");
-    els.tabSkills.classList.remove("active");
-    els.tabSkills.setAttribute("aria-selected", "false");
-    els.panelBody.hidden = false;
-    els.skillPane.hidden = true;
-    els.advSec.hidden = false;
-    showView("list");
-  } else if (tab === "skills") {
-    els.tabProfiles.classList.remove("active");
-    els.tabProfiles.setAttribute("aria-selected", "false");
-    els.tabSkills.classList.add("active");
-    els.tabSkills.setAttribute("aria-selected", "true");
-    els.panelBody.hidden = true;
-    els.skillPane.hidden = false;
-    els.advSec.hidden = true;
-    loadSkills();
+  const tabs = { profiles: els.tabProfiles, skills: els.tabSkills, mcp: els.tabMcp };
+  for (const [name, btn] of Object.entries(tabs)) {
+    const on = name === tab;
+    btn.classList.toggle("active", on);
+    btn.setAttribute("aria-selected", on ? "true" : "false");
   }
+
+  const isProfiles = tab === "profiles";
+  els.panelBody.hidden = !isProfiles;
+  els.skillPane.hidden = tab !== "skills";
+  els.mcpPane.hidden = tab !== "mcp";
+  els.advSec.hidden = !isProfiles;
+
+  if (isProfiles) showView("list");
+  else if (tab === "skills") loadSkills();
+  else if (tab === "mcp") loadMcp();
 }
 
 // ── Skill Manager ──
@@ -1689,6 +1754,181 @@ async function importSkillConfirm() {
   }
 }
 
+// ── Local MCP Manager ──
+let mcpCache = [];
+let mcpEditId = null;
+
+async function loadMcp() {
+  try {
+    const list = await call("list_mcp_servers");
+    mcpCache = list || [];
+    renderMcp(mcpCache);
+  } catch (e) {
+    setMcpMsg(resolveBackendErr(e));
+  }
+}
+
+function setMcpMsg(text) {
+  const t = text ? String(text) : "";
+  els.mcpMsg.textContent = t;
+  els.mcpMsg.className = "msg" + (t ? " err" : "");
+  els.mcpMsg.parentElement.hidden = !t;
+}
+
+function renderMcp(list) {
+  if (!list.length) {
+    els.mcpEmpty.hidden = false;
+    els.mcpList.innerHTML = "";
+    return;
+  }
+  els.mcpEmpty.hidden = true;
+  els.mcpList.innerHTML = list.map((s) => {
+    const enabledClass = s.enabled ? "" : " disabled";
+    const checked = s.enabled ? " checked" : "";
+    const cmdLine = escapeHtml([s.command, ...(s.args || [])].join(" "));
+    const envKeys = Object.keys(s.env || {});
+    const envTags = envKeys.map((k) => `<span class="skill-req-tag">${escapeHtml(k)}</span>`).join("");
+    return `
+      <div class="skill-row${enabledClass}" data-id="${escapeHtml(s.id)}" data-name="${escapeHtml(s.name)}">
+        <div class="skill-row-top">
+          <div class="skill-title-group">
+            <input type="checkbox"${checked} />
+            <span class="skill-name" title="${escapeHtml(s.name)}">${escapeHtml(s.name)}</span>
+          </div>
+          <div class="skill-hd-acts">
+            <button class="abtn pmenu-item small" data-act="edit" style="padding: 2px 6px;">编辑</button>
+            <button class="abtn pmenu-item danger small" data-act="delete" style="padding: 2px 6px;">${escapeHtml(S().delete || "删除")}</button>
+          </div>
+        </div>
+        ${s.description ? `<div class="skill-desc">${escapeHtml(s.description)}</div>` : ""}
+        <div class="skill-meta">
+          <span class="mcp-cmd" title="${cmdLine}">${cmdLine}</span>
+          ${envTags ? `· <div class="skill-reqs-list">${envTags}</div>` : ""}
+        </div>
+      </div>
+    `;
+  }).join("");
+}
+
+async function toggleMcpServer(id, enabled) {
+  setBusy(true);
+  try {
+    await call("set_mcp_server_enabled", { input: { serverId: id, enabled } });
+    await loadMcp();
+  } catch (e) {
+    setMcpMsg(resolveBackendErr(e));
+  } finally {
+    setBusy(false);
+  }
+}
+
+function removeMcpServer(id, name) {
+  confirmAction("remove-mcp:" + id, T("confirmDelete", { name }) || `将删除 MCP「${name}」`, () => doRemoveMcpServer(id));
+}
+
+async function doRemoveMcpServer(id) {
+  setBusy(true);
+  try {
+    await call("remove_mcp_server", { input: { serverId: id } });
+    await loadMcp();
+  } catch (e) {
+    setMcpMsg(resolveBackendErr(e));
+  } finally {
+    setBusy(false);
+  }
+}
+
+function openMcpModal(id) {
+  if (busy) return;
+  mcpEditId = id || null;
+  const s = id ? mcpCache.find((x) => x.id === id) : null;
+  els.mcpModalTitle.textContent = s ? "编辑本地 MCP" : "新增本地 MCP";
+  els.mcpName.value = s ? s.name : "";
+  els.mcpDesc.value = s ? (s.description || "") : "";
+  els.mcpCommand.value = s ? s.command : "";
+  els.mcpArgs.value = s ? (s.args || []).join("\n") : "";
+  // Env values are returned masked; on edit we show keys with blank values so the
+  // user re-enters secrets intentionally (never round-trip a masked value).
+  els.mcpEnv.value = s ? Object.keys(s.env || {}).map((k) => `${k}=`).join("\n") : "";
+  els.mcpInspection.hidden = true;
+  els.mcpWarnings.hidden = true;
+  els.mcpErrors.hidden = true;
+  els.mcpModal.hidden = false;
+  els.mcpName.focus();
+}
+
+function closeMcpModal() {
+  els.mcpModal.hidden = true;
+  mcpEditId = null;
+}
+
+function parseArgsLines(text) {
+  return text.split("\n").map((l) => l.trim()).filter((l) => l.length > 0);
+}
+
+function parseEnvLines(text) {
+  const env = {};
+  for (const raw of text.split("\n")) {
+    const line = raw.trim();
+    if (!line) continue;
+    const eq = line.indexOf("=");
+    if (eq <= 0) continue;
+    const k = line.slice(0, eq).trim();
+    const v = line.slice(eq + 1).trim();
+    if (k) env[k] = v;
+  }
+  return env;
+}
+
+async function saveMcpServer() {
+  const input = {
+    name: els.mcpName.value.trim(),
+    description: els.mcpDesc.value.trim(),
+    command: els.mcpCommand.value.trim(),
+    args: parseArgsLines(els.mcpArgs.value),
+    env: parseEnvLines(els.mcpEnv.value),
+  };
+  els.mcpWarnings.hidden = true;
+  els.mcpErrors.hidden = true;
+  els.mcpInspection.hidden = true;
+  try {
+    const insp = await call("inspect_mcp_server", { input });
+    if (insp && insp.warnings && insp.warnings.length) {
+      els.mcpWarnings.hidden = false;
+      els.mcpWarnings.textContent = `警告: ${insp.warnings.join("; ")}`;
+      els.mcpInspection.hidden = false;
+    }
+    if (insp && !insp.valid) {
+      els.mcpErrors.hidden = false;
+      els.mcpErrors.textContent = `错误: ${(insp.errors || []).join("; ")}`;
+      els.mcpInspection.hidden = false;
+      return;
+    }
+  } catch (e) {
+    els.mcpErrors.hidden = false;
+    els.mcpErrors.textContent = resolveBackendErr(e);
+    els.mcpInspection.hidden = false;
+    return;
+  }
+
+  setBusy(true);
+  try {
+    if (mcpEditId) {
+      await call("update_mcp_server", { input: { serverId: mcpEditId, server: input } });
+    } else {
+      await call("create_mcp_server", { input });
+    }
+    closeMcpModal();
+    await loadMcp();
+  } catch (e) {
+    els.mcpErrors.hidden = false;
+    els.mcpErrors.textContent = resolveBackendErr(e);
+    els.mcpInspection.hidden = false;
+  } finally {
+    setBusy(false);
+  }
+}
+
 window.addEventListener("DOMContentLoaded", async () => {
   wire();
   await loadConfig();
@@ -1696,6 +1936,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     if (!busy) {
       loadConfig().catch(() => {});
       if (!els.skillPane.hidden) loadSkills().catch(() => {});
+      if (!els.mcpPane.hidden) loadMcp().catch(() => {});
     }
   });
 });

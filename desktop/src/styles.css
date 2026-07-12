@@ -865,6 +865,16 @@ select:focus-visible {
   gap: 4px;
 }
 
+.mcp-cmd {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10px;
+  color: var(--text-muted);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .skill-req-tag {
   font-size: 9px;
   font-weight: 600;
@@ -1181,6 +1191,18 @@ select:focus-visible {
   background: var(--bg-secondary);
   color: var(--text-primary);
   font-size: 12px;
+}
+.form-group textarea {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px;
+  resize: vertical;
+  box-sizing: border-box;
 }
 .modal-actions {
   margin-top: 14px;

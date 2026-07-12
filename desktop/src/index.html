@@ -16,6 +16,7 @@
         <nav class="hd-tabs" role="tablist">
           <button type="button" class="hd-tab active" id="tabProfiles" role="tab" aria-selected="true" data-pane="profiles">配置</button>
           <button type="button" class="hd-tab" id="tabSkills" role="tab" aria-selected="false" data-pane="skills">Skills</button>
+          <button type="button" class="hd-tab" id="tabMcp" role="tab" aria-selected="false" data-pane="mcp">MCP</button>
         </nav>
       </div>
 
@@ -99,6 +100,69 @@
 
         <div class="sec feedback" hidden>
           <div class="msg" id="skillMsg" role="status" aria-live="polite"></div>
+        </div>
+      </div>
+
+      <!-- MCP panel (tab content) -->
+      <div class="panel-body skill-pane" id="mcpPane" hidden>
+        <div class="sec">
+          <div class="skill-hd">
+            <label class="sec-title">本地 MCP 管理</label>
+            <div class="skill-hd-acts">
+              <button class="btn small" id="mcpAddBtn">➕ 新增</button>
+            </div>
+          </div>
+
+          <div class="skill-empty" id="mcpEmpty" hidden>
+            <p>还没有本地 MCP。</p>
+            <p class="hint">点「新增」，配置一个本地 <code>stdio</code> 连接器（command + args + env）。启用后会在启动沙箱时写入 <code>&lt;data-dir&gt;/mcp/local-mcp.json</code>。</p>
+          </div>
+
+          <div id="mcpList" class="skill-list"></div>
+        </div>
+
+        <div class="sec feedback" hidden>
+          <div class="msg" id="mcpMsg" role="status" aria-live="polite"></div>
+        </div>
+      </div>
+
+      <!-- MCP add/edit modal -->
+      <div class="modal" id="mcpModal" hidden role="dialog" aria-modal="true" aria-labelledby="mcpModalTitle">
+        <div class="modal-content">
+          <h3 id="mcpModalTitle">新增本地 MCP</h3>
+          <div class="form-group">
+            <label for="mcpName">名称</label>
+            <input id="mcpName" type="text" placeholder="my-tools" autocomplete="off" spellcheck="false" />
+            <p class="hint">仅限字母、数字、<code>-</code> <code>_</code> <code>.</code>，作为连接器标识。</p>
+          </div>
+          <div class="form-group">
+            <label for="mcpDesc">描述（可选）</label>
+            <input id="mcpDesc" type="text" placeholder="本地数据分析工具" autocomplete="off" spellcheck="false" />
+          </div>
+          <div class="form-group">
+            <label for="mcpCommand">命令</label>
+            <input id="mcpCommand" type="text" placeholder="python3" autocomplete="off" spellcheck="false" />
+            <p class="hint">运行时命令（<code>python3</code> / <code>node</code> / <code>npx</code> …）或绝对路径。</p>
+          </div>
+          <div class="form-group">
+            <label for="mcpArgs">参数（每行一个）</label>
+            <textarea id="mcpArgs" rows="3" placeholder="/Users/me/mcp/server.py" autocomplete="off" spellcheck="false"></textarea>
+            <p class="hint">引用的绝对路径会自动加入沙箱读权限（<code>user_read_paths</code>）。</p>
+          </div>
+          <div class="form-group">
+            <label for="mcpEnv">环境变量（每行 KEY=VALUE）</label>
+            <textarea id="mcpEnv" rows="3" placeholder="API_TOKEN=sk-xxx" autocomplete="off" spellcheck="false"></textarea>
+          </div>
+
+          <div id="mcpInspection" class="inspection-preview" hidden>
+            <div class="insp-warnings" id="mcpWarnings" hidden></div>
+            <div class="insp-errors" id="mcpErrors" hidden></div>
+          </div>
+
+          <div class="row modal-actions">
+            <button class="btn small" id="mcpSaveBtn">保存</button>
+            <button class="btn small" id="mcpCancelBtn">取消</button>
+          </div>
         </div>
       </div>
 

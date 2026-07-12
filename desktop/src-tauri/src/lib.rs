@@ -15,6 +15,7 @@ mod commands;
 mod config;
 mod config_legacy;
 mod lifecycle;
+mod mcp_manager;
 mod oauth_forge;
 mod proc;
 mod runtime;
@@ -104,6 +105,12 @@ pub fn run() {
             commands::skills::import_skill,
             commands::skills::set_skill_enabled,
             commands::skills::remove_skill,
+            commands::mcp::list_mcp_servers,
+            commands::mcp::inspect_mcp_server,
+            commands::mcp::create_mcp_server,
+            commands::mcp::update_mcp_server,
+            commands::mcp::set_mcp_server_enabled,
+            commands::mcp::remove_mcp_server,
         ])
         .setup(|app| {
             // Normal desktop app: Dock icon, standard lifecycle. Window in tauri.conf.json has

@@ -95,7 +95,16 @@ The **Skills** tab imports local Skill directories (folders containing a `SKILL.
 
 ## Local stdio MCP connectors
 
-Local stdio bio connectors are the preferred fallback for hosted MCP boundaries, but installation, discovery, and restart persistence still need explicit verification before we claim support.
+The **MCP** tab manages local **stdio** MCP connectors (custom `command` + `args` + `env`) stored at `~/.csp/mcp/inventory.json`, where you can add, edit, enable/disable, and remove them. On each **Start Claude Science**, enabled connectors are written to the sandbox at `$SANDBOX_HOME/.claude-science/mcp/local-mcp.json` — the file Claude Science reads for user stdio connectors (confirmed against a live sandbox: they surface with `source: local-stdio`, `transport: stdio`). Because Science's restricted MCP child sandbox can only read paths granted via `config.toml`, CSP also merges the parent directory of every absolute path a connector references into `[sandbox] user_read_paths` (least privilege; only that key is owned, all other `config.toml` keys are preserved). Disabling all connectors removes `local-mcp.json` and CSP's read grants so nothing lingers.
+
+Scope and caveats:
+
+- **Local stdio only.** No remote HTTP/SSE or marketplace connectors — those depend on hosted Anthropic services (see [Directory connectors …](#directory-connectors)). Science's marketplace-plugin path explicitly rejects `stdio` (`only http/sse plugin servers are supported`), so it is not used here.
+- **No `cwd`.** Science's local stdio schema is `{ name, command, args, env, description? }` with no working-directory field, so CSP does not expose one — reference scripts by absolute path in `args`.
+- **Command whitelist.** Science's managed runtime resolves `node`/`npm`/`npx`/`python`/`python3`/`pip`/`pip3`/`uv`/`uvx`/`deno`/`bun`/`bunx` or an absolute path. Other commands are allowed but flagged with a warning; Science may reject them.
+- **Secrets.** `env` values are stored in the local 0600 inventory and only ever returned to the UI masked (`••••tail`); editing shows keys with blank values so you re-enter secrets intentionally.
+- Iron rules match the Skill deployer: writes only ever land under the sandbox root, never the real `~/.claude-science`. Deployment is logged to `~/.csp/logs/sandbox.log` as `[mcp] …`.
+- Still experimental: end-to-end tool invocation and restart persistence across sandbox relaunches should be spot-checked per environment.
 
 ---
 
@@ -121,6 +130,7 @@ Idempotent virtual login prevents **new** chats from being orphaned. If you alre
 |-----------|--------|
 | Proxy in Rust | Reduce `python3` runtime dependency |
 | Skill sandbox deployment | [Completed] Deploy enabled local Skills into the Science sandbox (see [Local Skill Manager](#skill-manager)) |
+| Local stdio MCP connectors | [Completed] Manage + deploy local stdio MCP servers into the Science sandbox (see [Local stdio MCP connectors](#local-mcp)) |
 | Launch-and-stay-ready | Auto-prepare Science on app open (issue discussion) |
 | Intel / Universal build | Primary release is Apple Silicon today |
 | Apple notarization | Ad-hoc signed; first open via right-click → Open |

@@ -81,6 +81,12 @@ pub(crate) fn one_click_login<R: Runtime>(
     // sandbox or into the real `~/.claude-science`.
     let skill_report = deploy_sandbox_skills(&auth_dir, &sbx_home);
 
+    // Deploy enabled local stdio MCP servers into the sandbox
+    // (`<data-dir>/mcp/local-mcp.json` + `[sandbox] user_read_paths` in
+    // `config.toml`, confirmed against a live sandbox). Same iron-rule guards as
+    // Skills: only ever writes under the sandbox, never the real `~/.claude-science`.
+    let mcp_report = deploy_sandbox_mcp(&auth_dir, &sbx_home);
+
     let launch = root.join("scripts/sandbox/launch-virtual-sandbox.sh");
     if !launch.is_file() {
         return Err(i18n_err("errSandboxScriptMissing", json!({})));
@@ -102,6 +108,7 @@ pub(crate) fn one_click_login<R: Runtime>(
             forged.enc_file.display()
         );
         let _ = writeln!(lw, "[skill] {skill_report}");
+        let _ = writeln!(lw, "[mcp] {mcp_report}");
     }
     let logf2 = logf.try_clone().map_err(|e| e.to_string())?;
     trace.stage(OperationStage::SandboxLaunch, format!("port={sport}"));
@@ -211,6 +218,30 @@ fn deploy_sandbox_skills(auth_dir: &Path, sbx_home: &Path) -> String {
         Ok(r) => format!(
             "deploy: deployed={:?} skipped={:?} removed={}",
             r.deployed, r.skipped, r.removed
+        ),
+        Err(e) => format!("deploy error (sandbox launch continues): {e}"),
+    }
+}
+
+/// Deploy enabled local stdio MCP servers into the sandbox and return a
+/// redaction-safe log summary. Never fails the launch: any error is reported and
+/// the sandbox still starts.
+fn deploy_sandbox_mcp(auth_dir: &Path, sbx_home: &Path) -> String {
+    let real_science = std::env::var_os("HOME")
+        .map(|h| PathBuf::from(h).join(".claude-science"))
+        .unwrap_or_else(|| PathBuf::from("/nonexistent/.claude-science"));
+    let store = match crate::mcp_manager::McpStore::open() {
+        Ok(s) => s,
+        Err(e) => return format!("deploy skipped: store open failed: {e}"),
+    };
+    let enabled = match store.enabled_servers() {
+        Ok(e) => e,
+        Err(e) => return format!("deploy skipped: list failed: {e}"),
+    };
+    match crate::mcp_manager::deploy_enabled_mcp(&enabled, auth_dir, sbx_home, &real_science) {
+        Ok(r) => format!(
+            "deploy: servers={:?} granted_paths={} cleared={}",
+            r.deployed, r.granted_paths, r.cleared
         ),
         Err(e) => format!("deploy error (sandbox launch continues): {e}"),
     }
