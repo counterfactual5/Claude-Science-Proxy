@@ -19,6 +19,7 @@ mod oauth_forge;
 mod proc;
 mod runtime;
 mod scratch;
+mod skill_manager;
 mod templates;
 
 use std::process::Child;
@@ -98,6 +99,11 @@ pub fn run() {
             commands::runtime::fetch_models,
             commands::runtime::stop_all,
             commands::runtime::one_click_login,
+            commands::skills::list_skills,
+            commands::skills::inspect_skill_source,
+            commands::skills::import_skill,
+            commands::skills::set_skill_enabled,
+            commands::skills::remove_skill,
         ])
         .setup(|app| {
             // Normal desktop app: Dock icon, standard lifecycle. Window in tauri.conf.json has

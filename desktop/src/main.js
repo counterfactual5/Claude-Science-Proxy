@@ -521,6 +521,9 @@ const mockStore = {
   profiles: [
     { id: "p-demo1", name: "GLM", template_id: "glm", api_format: "anthropic", base_url: "https://open.bigmodel.cn/api/anthropic", model: "glm-5.2", active_models: ["glm-5.2"], key: "••••••1234", icon: "glm", icon_color: "#2E6BE6", notes: "" },
   ],
+  skills: [
+    { id: "sk_1", name: "AlphaFold Database Fetch & Analyze", description: "Retrieve and analyze AlphaFold predicted structures for a protein.", enabled: true, sizeBytes: 12450, importedAt: "2026-07-12T02:30:00Z", requirements: ["python"] }
+  ],
 };
 function mockMask(k) { return k ? "••••" + String(k).slice(-4) : ""; }
 function mockInvoke(cmd, args) {
@@ -577,6 +580,53 @@ function mockInvoke(cmd, args) {
       return Promise.resolve({ url: "http://127.0.0.1:8990", action: "started" });
     case "open_csp_json":
       return Promise.resolve("~/.csp/CSP.json");
+    case "list_skills":
+      return Promise.resolve({ ok: true, data: mockStore.skills.map((s) => ({ ...s })) });
+    case "inspect_skill_source": {
+      const path = (args.input && args.input.sourcePath) || "";
+      const valid = path.length > 0;
+      return Promise.resolve({
+        ok: true,
+        data: {
+          valid,
+          name: "Local Skill",
+          description: "Inspected skill from path: " + path,
+          fileCount: 3,
+          totalSizeBytes: 89000,
+          requirements: ["python", "mcp"],
+          warnings: [],
+          errors: valid ? [] : ["Invalid path supplied"],
+        }
+      });
+    }
+    case "import_skill": {
+      const path = (args.input && args.input.sourcePath) || "";
+      const id = "sk_" + Math.random().toString(16).slice(2, 10);
+      const newSkill = {
+        id,
+        name: "Imported Skill",
+        description: "Skill imported from: " + path,
+        storePath: "/mock/store/" + id,
+        sourcePath: path,
+        enabled: true,
+        sizeBytes: 89000,
+        importedAt: new Date().toISOString().replace(/\.\d{3}Z$/, "Z"),
+        requirements: ["python", "mcp"],
+      };
+      mockStore.skills.push(newSkill);
+      return Promise.resolve({ ok: true, data: newSkill });
+    }
+    case "set_skill_enabled": {
+      const input = args.input || {};
+      const s = mockStore.skills.find((x) => x.id === input.skillId);
+      if (s) s.enabled = !!input.enabled;
+      return Promise.resolve({ ok: true, data: s });
+    }
+    case "remove_skill": {
+      const input = args.input || {};
+      mockStore.skills = mockStore.skills.filter((x) => x.id !== input.skillId);
+      return Promise.resolve({ ok: true, data: null });
+    }
     default:
       return Promise.resolve(null);
   }
@@ -1313,6 +1363,11 @@ function wire() {
     "wizSec", "wizName", "wizPreset", "wizBase", "wizKey", "wizSaveBtn", "wizCancelBtn",
     "connSec", "connTitle", "connName", "connBase", "connBaseHint",
     "connModelInfo", "connModelHint", "connModelPick", "connKey", "connSaveBtn", "connCancelBtn",
+    "tabProfiles", "tabSkills", "skillPane",
+    "skillImportBtn", "skillEmpty", "skillList", "skillMsg",
+    "skillImportModal", "skillSourcePath", "skillInspectionPreview",
+    "inspName", "inspDesc", "inspStats", "inspReqs", "inspWarnings", "inspErrors",
+    "skillInspectBtn", "skillImportConfirmBtn", "skillImportCancelBtn",
   ].forEach((id) => (els[id] = $(id)));
   els.panel = document.querySelector(".panel");
   els.panelBody = document.querySelector(".panel-body");
@@ -1393,12 +1448,549 @@ function wire() {
 
   els.oneClickBtn.addEventListener("click", oneClick);
   els.stopBtn.addEventListener("click", stopAll);
+
+  // Tabs navigation
+  els.tabProfiles.addEventListener("click", () => switchTab("profiles"));
+  els.tabSkills.addEventListener("click", () => switchTab("skills"));
+
+  // Skills panel actions
+  els.skillImportBtn.addEventListener("click", openSkillImport);
+  els.skillInspectBtn.addEventListener("click", inspectSkillSource);
+  els.skillImportConfirmBtn.addEventListener("click", importSkillConfirm);
+  els.skillImportCancelBtn.addEventListener("click", closeSkillImport);
+
+  // Skill list interactions
+  els.skillList.addEventListener("click", (e) => {
+    if (busy) return;
+    const btn = e.target.closest("[data-act]");
+    const row = e.target.closest(".skill-row[data-id]");
+    if (row) {
+      const id = row.getAttribute("data-id");
+      const name = row.getAttribute("data-name");
+      if (btn) {
+        const act = btn.getAttribute("data-act");
+        if (act === "delete") {
+          removeSkill(id, name);
+        }
+      } else if (e.target.type === "checkbox") {
+        toggleSkill(id, e.target.checked);
+      }
+    }
+  });
+
+  els.skillSourcePath.addEventListener("input", () => {
+    els.skillImportConfirmBtn.disabled = true;
+    els.skillInspectionPreview.hidden = true;
+  });
 }
+
+// ── Tabs Navigation ──
+function switchTab(tab) {
+  if (busy) return;
+  hideSkip();
+  closeAllMenus();
+  closeListhdMenu();
+  setMsg("");
+  setSkillMsg("");
+
+  if (tab === "profiles") {
+    els.tabProfiles.classList.add("active");
+    els.tabProfiles.setAttribute("aria-selected", "true");
+    els.tabSkills.classList.remove("active");
+    els.tabSkills.setAttribute("aria-selected", "false");
+    els.panelBody.hidden = false;
+    els.skillPane.hidden = true;
+    els.advSec.hidden = false;
+    showView("list");
+  } else if (tab === "skills") {
+    els.tabProfiles.classList.remove("active");
+    els.tabProfiles.setAttribute("aria-selected", "false");
+    els.tabSkills.classList.add("active");
+    els.tabSkills.setAttribute("aria-selected", "true");
+    els.panelBody.hidden = true;
+    els.skillPane.hidden = false;
+    els.advSec.hidden = true;
+    loadSkills();
+  }
+}
+
+// ── Skill Manager ──
+async function loadSkills() {
+  try {
+    const res = await call("list_skills");
+    if (res.ok) {
+      renderSkills(res.data || []);
+    } else {
+      setSkillMsg(res.error.message);
+    }
+  } catch (e) {
+    setSkillMsg(resolveBackendErr(e));
+  }
+}
+
+function setSkillMsg(text) {
+  const t = text ? String(text) : "";
+  els.skillMsg.textContent = t;
+  els.skillMsg.className = "msg" + (t ? " err" : "");
+  els.skillMsg.parentElement.hidden = !t;
+}
+
+function renderSkills(list) {
+  if (!list.length) {
+    els.skillEmpty.hidden = false;
+    els.skillList.innerHTML = "";
+    return;
+  }
+  els.skillEmpty.hidden = true;
+  els.skillList.innerHTML = list.map((s) => {
+    const enabledClass = s.enabled ? "" : " disabled";
+    const checked = s.enabled ? " checked" : "";
+    const reqTags = (s.requirements || []).map(r => `<span class="skill-req-tag">${escapeHtml(r)}</span>`).join("");
+    const dateText = formatImportedAt(s.importedAt);
+    return `
+      <div class="skill-row${enabledClass}" data-id="${escapeHtml(s.id)}" data-name="${escapeHtml(s.name)}">
+        <div class="skill-row-top">
+          <div class="skill-title-group">
+            <input type="checkbox"${checked} />
+            <span class="skill-name" title="${escapeHtml(s.name)}">${escapeHtml(s.name)}</span>
+          </div>
+          <button class="abtn pmenu-item danger small" data-act="delete" style="padding: 2px 6px;">${escapeHtml(S().delete || "删除")}</button>
+        </div>
+        ${s.description ? `<div class="skill-desc">${escapeHtml(s.description)}</div>` : ""}
+        <div class="skill-meta">
+          <span>大小: ${escapeHtml(formatBytes(s.sizeBytes))}</span>
+          ${dateText ? `· <span>导入: ${escapeHtml(dateText)}</span>` : ""}
+          ${reqTags ? `· <div class="skill-reqs-list">${reqTags}</div>` : ""}
+        </div>
+      </div>
+    `;
+  }).join("");
+}
+
+// Backend now emits ISO 8601 (e.g. 2026-07-12T10:30:00Z). Older inventories may
+// still hold the legacy `epoch:<secs>` form, so handle both.
+function formatImportedAt(raw) {
+  if (!raw) return "";
+  let d = null;
+  if (raw.startsWith("epoch:")) {
+    const secs = parseInt(raw.split(":")[1], 10);
+    if (!Number.isNaN(secs)) d = new Date(secs * 1000);
+  } else {
+    const parsed = new Date(raw);
+    if (!Number.isNaN(parsed.getTime())) d = parsed;
+  }
+  return d ? d.toLocaleDateString() : raw;
+}
+
+function formatBytes(bytes) {
+  if (bytes === 0) return "0 B";
+  const k = 1024;
+  const sizes = ["B", "KB", "MB", "GB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
+}
+
+async function toggleSkill(id, enabled) {
+  setBusy(true);
+  try {
+    const res = await call("set_skill_enabled", { input: { skillId: id, enabled } });
+    if (res.ok) {
+      await loadSkills();
+    } else {
+      setSkillMsg(res.error.message);
+    }
+  } catch (e) {
+    setSkillMsg(resolveBackendErr(e));
+  } finally {
+    setBusy(false);
+  }
+}
+
+function removeSkill(id, name) {
+  confirmAction("remove-skill:" + id, T("confirmDelete", { name }) || `将删除 Skill「${name}」`, () => doRemoveSkill(id));
+}
+
+async function doRemoveSkill(id) {
+  setBusy(true);
+  try {
+    const res = await call("remove_skill", { input: { skillId: id } });
+    if (res.ok) {
+      await loadSkills();
+    } else {
+      setSkillMsg(res.error.message);
+    }
+  } catch (e) {
+    setSkillMsg(resolveBackendErr(e));
+  } finally {
+    setBusy(false);
+  }
+}
+
+// ── Skill Import Modal ──
+function openSkillImport() {
+  if (busy) return;
+  els.skillSourcePath.value = "";
+  els.skillImportConfirmBtn.disabled = true;
+  els.skillInspectionPreview.hidden = true;
+  els.skillImportModal.hidden = false;
+  els.skillSourcePath.focus();
+}
+
+function closeSkillImport() {
+  els.skillImportModal.hidden = true;
+}
+
+async function inspectSkillSource() {
+  const path = els.skillSourcePath.value.trim();
+  if (!path) return;
+  setBusy(true);
+  try {
+    const res = await call("inspect_skill_source", { input: { sourcePath: path } });
+    if (res.ok) {
+      const data = res.data;
+      els.inspName.textContent = data.name || "未命名 Skill";
+      els.inspDesc.textContent = data.description || "无描述";
+      els.inspStats.textContent = `文件数: ${data.fileCount} · 大小: ${formatBytes(data.totalSizeBytes)}`;
+      els.inspReqs.textContent = `依赖环境: ${(data.requirements || []).join(", ") || "无"}`;
+      
+      if (data.warnings && data.warnings.length) {
+        els.inspWarnings.hidden = false;
+        els.inspWarnings.textContent = `警告: ${data.warnings.join("; ")}`;
+      } else {
+        els.inspWarnings.hidden = true;
+      }
+      
+      if (data.errors && data.errors.length) {
+        els.inspErrors.hidden = false;
+        els.inspErrors.textContent = `错误: ${data.errors.join("; ")}`;
+      } else {
+        els.inspErrors.hidden = true;
+      }
+
+      els.skillInspectionPreview.hidden = false;
+      els.skillImportConfirmBtn.disabled = !data.valid;
+    } else {
+      els.inspName.textContent = "";
+      els.inspDesc.textContent = "";
+      els.inspStats.textContent = "";
+      els.inspReqs.textContent = "";
+      els.inspWarnings.hidden = true;
+      els.inspErrors.hidden = false;
+      els.inspErrors.textContent = res.error.message;
+      els.skillInspectionPreview.hidden = false;
+      els.skillImportConfirmBtn.disabled = true;
+    }
+  } catch (e) {
+    els.inspName.textContent = "";
+    els.inspDesc.textContent = "";
+    els.inspStats.textContent = "";
+    els.inspReqs.textContent = "";
+    els.inspWarnings.hidden = true;
+    els.inspErrors.hidden = false;
+    els.inspErrors.textContent = resolveBackendErr(e);
+    els.skillInspectionPreview.hidden = false;
+    els.skillImportConfirmBtn.disabled = true;
+  } finally {
+    setBusy(false);
+  }
+}
+
+async function importSkillConfirm() {
+  const path = els.skillSourcePath.value.trim();
+  if (!path) return;
+  setBusy(true);
+  try {
+    const res = await call("import_skill", { input: { sourcePath: path } });
+    if (res.ok) {
+      closeSkillImport();
+      await loadSkills();
+    } else {
+      els.inspErrors.hidden = false;
+      els.inspErrors.textContent = res.error.message;
+    }
+  } catch (e) {
+    els.inspErrors.hidden = false;
+    els.inspErrors.textContent = resolveBackendErr(e);
+  } finally {
+    setBusy(false);
+  }
+}
+
+// ===========================
+// Skill Manager
+// ===========================
+
+async function loadSkills() {
+  try {
+    const res = await call('list_skills', {});
+    if (!res.ok) throw new Error(res.error?.message || 'list skills failed');
+    renderSkills(res.data || []);
+  } catch (e) {
+    console.error('[Skill] load failed', e);
+    els.skillList.innerHTML = '';
+    const div = document.createElement('div');
+    div.className = 'skill-empty';
+    div.innerHTML = '<p>加载技能失败</p><p><code>' + e.message + '</code></p>';
+    els.skillList.appendChild(div);
+  }
+}
+
+function renderSkills(list) {
+  els.skillList.innerHTML = '';
+  if (!list.length) {
+    const div = document.createElement('div');
+    div.className = 'skill-empty';
+    div.innerHTML = '<p>暂无已导入的 Skill</p><p>点击 <strong>导入 Skill</strong> 按钮选择包含 SKILL.md 的目录</p>';
+    els.skillList.appendChild(div);
+    return;
+  }
+  for (const s of list) {
+    const card = document.createElement('div');
+    card.className = 'skill-card';
+    card.dataset.skillId = s.id;
+    const badgeClass = s.enabled ? 'enabled' : 'disabled';
+    const badgeText = s.enabled ? '已启用' : '已禁用';
+    const metaParts = [];
+    if (s.size_bytes) metaParts.push('<span class="skill-card-meta-item"><span class="skill-card-meta-label">大小:</span>' + fmtBytes(s.size_bytes) + '</span>');
+    if (s.requirements && s.requirements.length) metaParts.push('<span class="skill-card-meta-item"><span class="skill-card-meta-label">依赖:</span>' + s.requirements.join(', ') + '</span>');
+    if (s.imported_at) metaParts.push('<span class="skill-card-meta-item"><span class="skill-card-meta-label">导入:</span>' + fmtEpoch(s.imported_at) + '</span>');
+    var descHtml = '';
+    if (s.description) descHtml = '<div class="skill-card-desc">' + escapeHtml(s.description) + '</div>';
+    var metaHtml = '';
+    if (metaParts.length) metaHtml = '<div class="skill-card-meta">' + metaParts.join('') + '</div>';
+    card.innerHTML = [
+      '<div class="skill-card-hd">',
+      '  <span class="skill-card-name" title="' + s.name + '">' + s.name + '</span>',
+      '  <span class="skill-badge ' + badgeClass + '">' + badgeText + '</span>',
+      '</div>',
+      descHtml,
+      metaHtml,
+      '<div class="skill-card-act">',
+      '  <button class="btn small skill-toggle">' + (s.enabled ? '禁用' : '启用') + '</button>',
+      '  <button class="btn small skill-remove">删除</button>',
+      '</div>'
+    ].join('\n');
+    card.querySelector('.skill-toggle').addEventListener('click', function() { toggleSkill(s.id, !s.enabled); });
+    card.querySelector('.skill-remove').addEventListener('click', function() { removeSkill(s.id, s.name); });
+    els.skillList.appendChild(card);
+  }
+}
+
+function fmtBytes(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+  return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+}
+
+function fmtEpoch(epoch) {
+  try {
+    var m = epoch.match(/epoch:(\d+)/);
+    if (m) return new Date(Number(m[1]) * 1000).toLocaleString();
+  } catch(e) {}
+  return epoch;
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+async function inspectSkillSource(path) {
+  setBusy(true);
+  try {
+    var res = await call('inspect_skill_source', { input: { sourcePath: path } });
+    if (!res.ok) throw new Error(res.error?.message || 'inspect failed');
+    showInspectionPreview(res.data);
+    els.importSkillBtn.disabled = !res.data.valid;
+    els.importSkillBtn.dataset.sourcePath = path;
+  } catch (e) {
+    showToast('检查技能源失败: ' + e.message, 'error');
+    els.inspPreview.hidden = true;
+    els.importSkillBtn.disabled = true;
+  } finally {
+    setBusy(false);
+  }
+}
+
+function showInspectionPreview(data) {
+  els.inspName.textContent = data.name || '(无名称)';
+  els.inspDesc.textContent = data.description || '(无描述)';
+  els.inspStats.textContent = '文件: ' + data.file_count + ' 个, 大小: ' + fmtBytes(data.total_size_bytes);
+  els.inspReqs.innerHTML = '';
+  if (data.requirements && data.requirements.length) {
+    for (var i = 0; i < data.requirements.length; i++) {
+      var tag = document.createElement('span');
+      tag.className = 'insp-req-tag';
+      tag.textContent = data.requirements[i];
+      els.inspReqs.appendChild(tag);
+    }
+  } else {
+    els.inspReqs.textContent = '(无特殊依赖)';
+  }
+  els.inspWarnings.innerHTML = '';
+  if (data.warnings && data.warnings.length) {
+    els.inspWarnings.hidden = false;
+    var ul = document.createElement('ul');
+    for (var i = 0; i < data.warnings.length; i++) {
+      var li = document.createElement('li');
+      li.textContent = data.warnings[i];
+      ul.appendChild(li);
+    }
+    els.inspWarnings.appendChild(ul);
+  } else {
+    els.inspWarnings.hidden = true;
+  }
+  els.inspErrors.innerHTML = '';
+  if (data.errors && data.errors.length) {
+    els.inspErrors.hidden = false;
+    var ul = document.createElement('ul');
+    for (var i = 0; i < data.errors.length; i++) {
+      var li = document.createElement('li');
+      li.textContent = data.errors[i];
+      ul.appendChild(li);
+    }
+    els.inspErrors.appendChild(ul);
+  } else {
+    els.inspErrors.hidden = true;
+  }
+  els.inspPreview.hidden = false;
+}
+
+async function importSkill(path) {
+  setBusy(true);
+  try {
+    var res = await call('import_skill', { input: { sourcePath: path } });
+    if (!res.ok) throw new Error(res.error?.message || 'import failed');
+    showToast('Skill 导入成功: ' + res.data.name);
+    closeImportModal();
+    await loadSkills();
+  } catch (e) {
+    showToast('导入失败: ' + e.message, 'error');
+  } finally {
+    setBusy(false);
+  }
+}
+
+async function toggleSkill(id, enabled) {
+  try {
+    var res = await call('set_skill_enabled', { input: { skillId: id, enabled: enabled } });
+    if (!res.ok) throw new Error(res.error?.message || 'toggle failed');
+    await loadSkills();
+  } catch (e) {
+    showToast((enabled ? '启用' : '禁用') + '失败: ' + e.message, 'error');
+  }
+}
+
+async function removeSkill(id, name) {
+  if (!confirm('确定删除 Skill "' + name + '" 吗？此操作不可撤销。')) return;
+  try {
+    var res = await call('remove_skill', { input: { skillId: id } });
+    if (!res.ok) throw new Error(res.error?.message || 'remove failed');
+    showToast('Skill 已删除');
+    await loadSkills();
+  } catch (e) {
+    showToast('删除失败: ' + e.message, 'error');
+  }
+}
+
+function openImportModal() {
+  var path = prompt('请输入 Skill 目录的完整路径\n(例如 /Users/xxx/skills/my-skill):');
+  if (!path) return;
+  els.importModal.hidden = false;
+  inspectSkillSource(path);
+}
+
+function closeImportModal() {
+  els.importModal.hidden = true;
+  els.inspPreview.hidden = true;
+  els.importSkillBtn.disabled = true;
+  delete els.importSkillBtn.dataset.sourcePath;
+}
+
+function switchTab(tab) {
+  if (tab === 'skills') {
+    els.tabProfiles.classList.remove('active');
+    els.tabProfiles.setAttribute('aria-selected', 'false');
+    els.tabSkills.classList.add('active');
+    els.tabSkills.setAttribute('aria-selected', 'true');
+    els.listSec.hidden = true;
+    els.wizSec.hidden = true;
+    els.connSec.hidden = true;
+    els.skillPane.hidden = false;
+    loadSkills().catch(function() {});
+  } else {
+    els.tabProfiles.classList.add('active');
+    els.tabProfiles.setAttribute('aria-selected', 'true');
+    els.tabSkills.classList.remove('active');
+    els.tabSkills.setAttribute('aria-selected', 'false');
+    els.skillPane.hidden = true;
+    els.listSec.hidden = false;
+    els.wizSec.hidden = true;
+    els.connSec.hidden = true;
+  }
+}
+
+// Add skill-related elements to els
+var _origWire = wire;
+wire = function() {
+  _origWire();
+  els.tabProfiles = $('#tabProfiles');
+  els.tabSkills = $('#tabSkills');
+  els.skillPane = $('#skillPane');
+  els.skillList = $('#skillList');
+  els.importSkillBtn = $('#importSkillBtn');
+  els.importModal = $('#skillImportModal');
+  els.inspPreview = $('#skillInspectionPreview');
+  els.inspName = $('#inspName');
+  els.inspDesc = $('#inspDesc');
+  els.inspStats = $('#inspStats');
+  els.inspReqs = $('#inspReqs');
+  els.inspWarnings = $('#inspWarnings');
+  els.inspErrors = $('#inspErrors');
+
+  if (els.tabProfiles) els.tabProfiles.addEventListener('click', function() { switchTab('profiles'); });
+  if (els.tabSkills) els.tabSkills.addEventListener('click', function() { switchTab('skills'); });
+  var importHeaderBtn = $('#skillImportBtnHeader');
+  if (importHeaderBtn) importHeaderBtn.addEventListener('click', openImportModal);
+  // Also the import button inside the modal
+  if (els.importSkillBtn) els.importSkillBtn.addEventListener('click', function() {
+    var path = els.importSkillBtn.dataset.sourcePath;
+    if (path) importSkill(path);
+  });
+  if (els.importModal) {
+    els.importModal.addEventListener('click', function(e) {
+      if (e.target === els.importModal) closeImportModal();
+    });
+  }
+  // Inspect button
+  var inspectBtn = $('#skillInspectBtn');
+  if (inspectBtn) inspectBtn.addEventListener('click', function() {
+    var path = $('#skillSourcePath').value;
+    if (path) inspectSkillSource(path);
+  });
+  // Confirm import button
+  var confirmBtn = $('#skillImportConfirmBtn');
+  if (confirmBtn) confirmBtn.addEventListener('click', function() {
+    var path = $('#skillImportConfirmBtn').dataset.sourcePath;
+    if (path) importSkill(path);
+  });
+  // Cancel button
+  var cancelBtn = $('#skillImportCancelBtn');
+  if (cancelBtn) cancelBtn.addEventListener('click', closeImportModal);
+  // Source path change
+  var sourcePath = $('#skillSourcePath');
+  if (sourcePath) sourcePath.addEventListener('input', function() {
+    els.inspPreview.hidden = true;
+    els.importSkillBtn.disabled = true;
+  });
+};
 
 window.addEventListener("DOMContentLoaded", async () => {
   wire();
   await loadConfig();
   window.addEventListener("focus", () => {
-    if (!busy) loadConfig().catch(() => {});
+    if (!busy) {
+      loadConfig().catch(() => {});
+      if (!els.skillPane.hidden) loadSkills().catch(() => {});
+    }
   });
 });

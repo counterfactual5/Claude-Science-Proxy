@@ -13,6 +13,10 @@
         <div class="brand" data-tauri-drag-region>
           <span class="brand-mark" aria-hidden="true" title="Claude Science Proxy">CSP</span>
         </div>
+        <nav class="hd-tabs" role="tablist">
+          <button type="button" class="hd-tab active" id="tabProfiles" role="tab" aria-selected="true" data-pane="profiles">配置</button>
+          <button type="button" class="hd-tab" id="tabSkills" role="tab" aria-selected="false" data-pane="skills">Skills</button>
+        </nav>
       </div>
 
       <div class="panel-body">
@@ -72,6 +76,57 @@
 
         <div class="sec feedback" hidden>
           <div class="msg" id="msg" role="status" aria-live="polite"></div>
+        </div>
+      </div>
+
+      <!-- Skills panel (tab content) -->
+      <div class="panel-body skill-pane" id="skillPane" hidden>
+        <div class="sec">
+          <div class="skill-hd">
+            <label class="sec-title">Skills 管理</label>
+            <div class="skill-hd-acts">
+              <button class="btn small" id="skillImportBtnHeader">➕ 导入</button>
+            </div>
+          </div>
+
+          <div class="skill-empty" id="skillEmpty" hidden>
+            <p>还没有 Skill。</p>
+            <p class="hint">点「导入」，选择一个含 <code>SKILL.md</code> 的目录。</p>
+          </div>
+
+          <div id="skillList" class="skill-list"></div>
+        </div>
+
+        <div class="sec feedback" hidden>
+          <div class="msg" id="skillMsg" role="status" aria-live="polite"></div>
+        </div>
+      </div>
+
+      <!-- Skill import modal -->
+      <div class="modal" id="skillImportModal" hidden role="dialog" aria-modal="true" aria-labelledby="skillImportTitle">
+        <div class="modal-content">
+          <h3 id="skillImportTitle">导入 Skill</h3>
+          <div class="form-group">
+            <label for="skillSourcePath">源目录路径</label>
+            <input id="skillSourcePath" type="text" placeholder="/path/to/skill-directory" autocomplete="off" spellcheck="false" />
+            <p class="hint">选择包含 <code>SKILL.md</code> 的目录，将被复制到 <code>~/.csp/skills/</code>。</p>
+          </div>
+
+          <div id="skillInspectionPreview" class="inspection-preview" hidden>
+            <h4>检查预览</h4>
+            <div class="insp-name"><strong id="inspName"></strong></div>
+            <div class="insp-desc" id="inspDesc"></div>
+            <div class="insp-stats" id="inspStats"></div>
+            <div class="insp-reqs" id="inspReqs"></div>
+            <div class="insp-warnings" id="inspWarnings" hidden></div>
+            <div class="insp-errors" id="inspErrors" hidden></div>
+          </div>
+
+          <div class="row modal-actions">
+            <button class="btn small" id="skillInspectBtn">检查</button>
+            <button class="btn small" id="skillImportConfirmBtn" disabled>导入</button>
+            <button class="btn small" id="skillImportCancelBtn">取消</button>
+          </div>
         </div>
       </div>
 
