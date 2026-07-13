@@ -93,6 +93,24 @@ The **Skills** tab imports local Skill directories (folders containing a `SKILL.
 
 ---
 
+<a id="env-conventions"></a>
+
+## Hosted vs CSP local environment conventions
+
+Claude Science running inside CSP is a **local sandbox**, not Anthropic's hosted Claude environment, so several habits carried over from the hosted product silently fail. The built-in **`csp-web-access`** Skill (see above) now bundles these as standing, per-session guidance; they are also documented here for operators.
+
+- **No `/mnt/data` (and no other `/mnt/...`).** The hosted environment exposes `/mnt/data` and `/mnt/user-data`; **these do not exist locally**, so writes there fail or vanish. Save outputs to the **current working directory** — the active Science workspace `orgs/<org_uuid>/workspaces/<workspace_uuid>/` — using **relative paths**. Use `/tmp` only for disposable scratch. To surface a **user-visible** file, write it in the workspace and then call **`save_artifacts([...])`** (writing the file alone does not expose it).
+- **CJK plotting fonts.** matplotlib's default `DejaVu Sans` cannot render Chinese/Japanese/Korean glyphs, so CJK labels render as tofu boxes (□□□). Before plotting non-Latin labels, set a CJK-capable font that exists on the macOS host, e.g. `plt.rcParams["font.sans-serif"] = ["Arial Unicode MS", "Songti SC", "STHeiti", "DejaVu Sans"]` and `plt.rcParams["axes.unicode_minus"] = False`. This is **guidance-only** (no font binary is bundled and CSP does not patch the sandbox matplotlib rc): the host already ships these fonts, so a two-line `rcParams` set is the low-risk fix. If you use the `figure-style` skill, pass it a CJK font the same way.
+- **Hosted `web_search` is unavailable.** Under CSP virtual login the hosted `web_search` tool fails with `Tool 'web_search' not found on agent`. Use the local **`web-search`** MCP (`search_literature` / `csp_web_search`, then `fetch_url`); egress is a scholarly allowlist (Crossref / arXiv / PubMed / OpenAlex / Semantic Scholar / Notion / PyPI reliable; general and paid search engines usually blocked). See [Built-in `web-search` connector](#local-mcp).
+- **`host.skills.publish()` / `host.skills.edit()` don't persist.** These hosted skill-management calls do not take effect under CSP virtual login. To install a durable skill, draft the files in the workspace and adopt them via **Skills tab → 从 Science 采纳 (adopt from Science)**; CSP then deploys them into the sandbox. See [Local Skill Manager](#skill-manager).
+- **Two Python environments.** The **analysis `python` env** carries the scientific stack (numpy / pandas / matplotlib / scipy, …) and is where computation and plotting should run. The **MCP Python env** (used by stdio MCP servers) may **not** have plotting or scientific packages, so don't assume they're importable from an MCP tool context.
+
+### Why a CSP-managed Skill can log `recognized_by_science=0`
+
+After launch CSP checks whether Science wrote a `.catalog_stamp` into each deployed folder and logs `recognized_by_science=<n>`. On current Science builds (audited on `0.1.17-dev`) this stamp is written **once, at the initial org catalog build** — every bundled Skill's `.catalog_stamp` shares one identical timestamp/value — and folders added **after** that build are **not** re-stamped on later launches. Consequently a CSP-managed Skill deployed into an **already-initialized** org (e.g. `crypto-data`, or `csp-web-access` on an existing install) can stay unstamped and log `recognized_by_science=0`. This is a **false negative of the stamp heuristic**, not proof Science can't load the Skill: Science's live catalog lives in `orgs/<org>/operon-cli.db` and on-disk Skills are searched by relevance regardless of the stamp. It is **not** a `SKILL.md` frontmatter/format problem (`crypto-data` has valid `name`/`description` frontmatter identical in shape to recognized bundled Skills, yet is unstamped) nor a directory-naming problem. On a **fresh** org, CSP deploys Skills *before* Science's first catalog build, so the built-in Skill is stamped and recognized normally. If an existing install shows `recognized_by_science=0` and you want the on-disk stamp to flip, start Science with a fresh org (new virtual login) so the catalog is rebuilt with the Skill already present.
+
+---
+
 <a id="local-mcp"></a>
 
 ## Local stdio MCP connectors

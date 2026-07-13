@@ -320,6 +320,19 @@ fn deploy_sandbox_mcp(auth_dir: &Path, sbx_home: &Path) -> (String, bool) {
 /// Scan `<data-dir>/orgs/<org_uuid>/skills/` for our managed Skills and report how many Science
 /// recognized (folders carrying both our `.csp_managed` marker and Science's
 /// `.catalog_stamp`). Best-effort observability; not a launch gate.
+///
+/// Caveat (audited on Science `0.1.17-dev`): the `.catalog_stamp` is written by
+/// Science **once**, during the initial org catalog build — every bundled Skill's
+/// stamp shares one identical timestamp/value — and later-added folders are **not**
+/// re-stamped on subsequent launches (a CSP-managed Skill deployed after that first
+/// build stays unstamped across relaunches). So `recognized_by_science=0` for a
+/// Skill added to an already-initialized org is a **false-negative of this stamp
+/// heuristic**, not proof Science can't load it: Science's live catalog is tracked
+/// in `orgs/<org>/operon-cli.db`, and disk Skills are read by relevance regardless
+/// of the stamp. It is NOT a SKILL.md frontmatter/format issue — `crypto-data` has
+/// valid `name`/`description` frontmatter (identical in shape to recognized bundled
+/// Skills) yet is unstamped. On a **fresh** org, CSP deploys before Science's first
+/// catalog build, so the built-in Skill is stamped and recognized normally.
 fn verify_sandbox_skills(auth_dir: &Path, org_uuid: Option<&str>) -> String {
     let Some(org_uuid) = org_uuid else {
         return "verify: org uuid unavailable".to_string();
