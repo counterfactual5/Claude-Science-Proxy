@@ -3,7 +3,9 @@
 //! CSP bundles a small multi-provider web-search + page-fetch MCP server
 //! (`web_search_server.py`) so Claude Science can do real web search/fetch even
 //! though Anthropic's hosted `web_search` tool is unavailable under CSP's
-//! virtual login. The server is:
+//! virtual login. Under CSP there is no real hosted `web_search`, so the local
+//! connector advertises `web_search` / `web_fetch` (plus aliases) in tools/list
+//! and model-native calls resolve here. The server is:
 //!
 //! - **Free and no-key out of the box** — it falls back across DuckDuckGo and
 //!   Wikipedia (plus arXiv/Crossref for papers) with no configuration.
@@ -39,7 +41,7 @@ const WEB_SEARCH_SOURCE: &str = include_str!("web_search_server.py");
 
 /// Description surfaced to Science (the model reads this to decide when to call
 /// the tools). English on purpose — it is the tool description, not chrome.
-pub const BUILTIN_WEB_SEARCH_DESCRIPTION: &str = "Local CSP web/literature search & page fetch (free, no API key). USE THIS instead of the hosted 'Web Search' tool, which is unavailable under CSP virtual login and fails with \"Tool 'web_search' not found on agent\". Tools: search_literature (primary; alias csp_web_search) and fetch_url. Inside Claude Science's sandbox, egress is limited to an allowlist of scientific sources, so search defaults to reliable no-key scholarly providers (Crossref, arXiv, PubMed; also OpenAlex / Semantic Scholar) with automatic fallback. General search engines (DuckDuckGo/Wikipedia) and paid providers (set BRAVE_SEARCH_API_KEY / SERPER_API_KEY / TAVILY_API_KEY) are selectable but usually blocked by the sandbox allowlist. fetch_url reads any allowlisted page as readable text.";
+pub const BUILTIN_WEB_SEARCH_DESCRIPTION: &str = "Local CSP web/literature search & page fetch (free, no API key). Under CSP virtual login there is no Anthropic-hosted web_search — this connector advertises web_search (local), search_literature, csp_web_search, fetch_url / web_fetch so model-native calls resolve here. Inside Claude Science's sandbox, egress is limited to an allowlist of scientific sources, so search defaults to reliable no-key scholarly providers (Crossref, arXiv, PubMed; also OpenAlex / Semantic Scholar) with automatic fallback. General search engines (DuckDuckGo/Wikipedia) and paid providers (set BRAVE_SEARCH_API_KEY / SERPER_API_KEY / TAVILY_API_KEY) are selectable but usually blocked by the sandbox allowlist. fetch_url / web_fetch read any allowlisted page as readable text.";
 
 /// Optional API-key env vars seeded (empty) so the MCP tab surfaces them as
 /// editable fields; empty values are treated as "unset" by the server.
@@ -135,13 +137,23 @@ mod tests {
         assert!(WEB_SEARCH_SOURCE.contains("\"pubmed\""));
         assert!(WEB_SEARCH_SOURCE.contains("\"duckduckgo\""));
         assert!(WEB_SEARCH_SOURCE.contains("BRAVE_SEARCH_API_KEY"));
-        // Advertised tools use planner-friendly names that do NOT collide with
-        // Anthropic's hosted `web_search` (which the planner would otherwise
-        // pick and fail on under CSP). `web_search` survives only as a hidden
-        // backward-compat dispatch alias, never in the advertised TOOLS list.
+        // Under CSP virtual login there is no hosted web_search, so the local
+        // connector advertises web_search / web_fetch (plus aliases) in TOOLS.
+        assert!(WEB_SEARCH_SOURCE.contains("\"web_search\""));
         assert!(WEB_SEARCH_SOURCE.contains("\"search_literature\""));
         assert!(WEB_SEARCH_SOURCE.contains("\"csp_web_search\""));
         assert!(WEB_SEARCH_SOURCE.contains("\"fetch_url\""));
+        assert!(WEB_SEARCH_SOURCE.contains("\"web_fetch\""));
+        // Confirm they appear in the advertised TOOLS list, not only dispatch.
+        let tools_idx = WEB_SEARCH_SOURCE
+            .find("TOOLS = [")
+            .expect("TOOLS list present");
+        let tools_block = &WEB_SEARCH_SOURCE[tools_idx..];
+        assert!(tools_block.contains("\"name\": \"web_search\""));
+        assert!(tools_block.contains("\"name\": \"web_fetch\""));
+        assert!(tools_block.contains("\"name\": \"search_literature\""));
+        assert!(tools_block.contains("\"name\": \"csp_web_search\""));
+        assert!(tools_block.contains("\"name\": \"fetch_url\""));
     }
 
     #[test]

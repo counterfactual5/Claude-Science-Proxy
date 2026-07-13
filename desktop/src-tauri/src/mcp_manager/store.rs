@@ -285,6 +285,29 @@ impl McpStore {
         }
         Ok(seeded)
     }
+
+    /// Refresh the description of an already-seeded built-in connector so app
+    /// upgrades propagate new guidance text. Only touches a connector still
+    /// present with `builtin == true` (so a user removal stays removed) and
+    /// leaves command/args/env/enabled untouched. No-op (returns `false`) if
+    /// the named built-in connector is absent.
+    pub fn refresh_builtin(&self, name: &str, description: &str) -> Result<bool, String> {
+        let mut inv = self.load_inventory()?;
+        let Some(server) = inv
+            .servers
+            .values_mut()
+            .find(|s| s.builtin && s.name == name)
+        else {
+            return Ok(false);
+        };
+        if server.description == description {
+            return Ok(true);
+        }
+        server.description = description.to_string();
+        server.updated_at = current_iso8601();
+        self.save_inventory(&inv)?;
+        Ok(true)
+    }
 }
 
 /// Current UTC time as RFC 3339 / ISO 8601. Reuses the skill store's helper.
@@ -570,6 +593,38 @@ mod tests {
             .unwrap();
         assert!(!seeded);
         assert_eq!(store.list().unwrap().len(), 1);
+        let _ = fs::remove_dir_all(&store.root);
+    }
+
+    #[test]
+    fn refresh_builtin_updates_description_and_preserves_enabled() {
+        let store = temp_store();
+        let mut server = builtin_server("web-search");
+        server.description = "old description".into();
+        server.enabled = false;
+        store
+            .seed_once(".seeded-web-search", server)
+            .unwrap();
+        assert!(store
+            .refresh_builtin("web-search", "new description")
+            .unwrap());
+        let list = store.list().unwrap();
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].description, "new description");
+        assert!(!list[0].enabled); // enabled state preserved
+        // Absent name → false, no error.
+        assert!(!store.refresh_builtin("nope", "x").unwrap());
+        let _ = fs::remove_dir_all(&store.root);
+    }
+
+    #[test]
+    fn refresh_builtin_skips_non_builtin() {
+        let store = temp_store();
+        store.create(input("web-search", "python3")).unwrap();
+        assert!(!store
+            .refresh_builtin("web-search", "should not apply")
+            .unwrap());
+        assert_eq!(store.list().unwrap()[0].description, "");
         let _ = fs::remove_dir_all(&store.root);
     }
 

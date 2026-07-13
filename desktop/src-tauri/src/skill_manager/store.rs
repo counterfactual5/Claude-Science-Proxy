@@ -213,6 +213,60 @@ impl SkillStore {
         Ok(skill)
     }
 
+    /// Author a brand-new Skill from a `SKILL.md` `content` string.
+    ///
+    /// The Skill's name/description come from the content's YAML front-matter —
+    /// the body is the single source of truth (the UI keeps the name/description
+    /// fields synced into the front-matter before calling this). Rejects an
+    /// empty name or a name already present in the store, then stages the content
+    /// into a temp dir and reuses [`import`](Self::import) so dedupe, inventory,
+    /// copy, and requirement-detection logic are all shared.
+    pub fn create_from_content(&self, content: &str) -> Result<Skill, String> {
+        let mut meta = InspectionResult {
+            valid: false,
+            name: String::new(),
+            description: String::new(),
+            file_count: 0,
+            total_size_bytes: 0,
+            requirements: Vec::new(),
+            warnings: Vec::new(),
+            errors: Vec::new(),
+        };
+        parse_skill_md(content, &mut meta);
+        let name = meta.name.trim().to_string();
+        // `parse_skill_md` falls back to "Untitled Skill" when neither a
+        // front-matter `name:` nor a `# heading` is present — treat that (and an
+        // empty name) as "no name given".
+        if name.is_empty() || name == "Untitled Skill" {
+            return Err("Skill 名称不能为空".to_string());
+        }
+
+        // Duplicate-name guard: unlike `import` (which dedupes by source path),
+        // an authored Skill has no stable source, so guard on the display name.
+        let inv = self.load_inventory()?;
+        if inv.skills.values().any(|s| s.name == name) {
+            return Err(format!("同名 Skill 已存在：{name}"));
+        }
+        drop(inv);
+
+        // Stage the SKILL.md into a throwaway dir, then import it. The staging
+        // dir name is sanitized purely for filesystem safety; the stored Skill
+        // name is re-derived from the front-matter by `import`, so the dir name
+        // never leaks into the inventory.
+        let staging = std::env::temp_dir().join(format!(
+            "csp-skill-new-{}",
+            SkillId::new().as_str().trim_start_matches("sk_")
+        ));
+        fs::create_dir_all(&staging).map_err(|e| format!("create staging dir: {e}"))?;
+        let write_result = fs::write(staging.join(SKILL_FILE), content.as_bytes())
+            .map_err(|e| format!("write staged SKILL.md: {e}"));
+        let result = write_result.and_then(|()| self.import(&staging));
+        // Best-effort cleanup: the import already copied the content into the
+        // managed store, so a leftover temp dir is harmless.
+        let _ = fs::remove_dir_all(&staging);
+        result
+    }
+
     /// Set the enabled state of a Skill.
     pub fn set_enabled(&self, id: &str, enabled: bool) -> Result<Skill, String> {
         let mut inv = self.load_inventory()?;
@@ -981,6 +1035,40 @@ mod tests {
         assert!(write_builtin_files(&dir, &[("../evil", "x")]).is_err());
         assert!(write_builtin_files(&dir, &[("/abs", "x")]).is_err());
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn create_from_content_writes_skill_and_lists() {
+        let store = temp_store();
+        let content = "---\nname: Authored Skill\ndescription: Made from scratch\n---\n\n# Authored Skill\n\nDo the thing.\n";
+        let skill = store.create_from_content(content).unwrap();
+        assert_eq!(skill.name, "Authored Skill");
+        assert_eq!(skill.description, "Made from scratch");
+        assert!(skill.enabled);
+        // SKILL.md landed in managed storage.
+        let md = fs::read_to_string(skill.store_path.join("SKILL.md")).unwrap();
+        assert!(md.contains("Do the thing."));
+
+        let list = store.list().unwrap();
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].name, "Authored Skill");
+
+        let _ = fs::remove_dir_all(&store.root);
+    }
+
+    #[test]
+    fn create_from_content_rejects_empty_and_duplicate_name() {
+        let store = temp_store();
+        // No name in front-matter and no heading → rejected.
+        assert!(store.create_from_content("---\n---\njust a body").is_err());
+
+        let content = "---\nname: Dup\n---\n# Dup\n";
+        store.create_from_content(content).unwrap();
+        // Second create with the same name is rejected.
+        assert!(store.create_from_content(content).is_err());
+        assert_eq!(store.list().unwrap().len(), 1);
+
+        let _ = fs::remove_dir_all(&store.root);
     }
 
     #[test]

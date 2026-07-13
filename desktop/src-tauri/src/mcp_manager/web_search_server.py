@@ -20,19 +20,18 @@ Design notes
   they reach the internet through operon without any extra work.
 * **Multi-provider with automatic fallback (OpenClaw-style).** One server hosts
   several search providers behind a single search implementation, exposed under
-  planner-friendly tool names (``search_literature`` / ``csp_web_search``).
+  several aliases (``web_search`` / ``search_literature`` / ``csp_web_search``).
   ``provider=auto`` (the default) tries key-based providers first *iff* their API
   key is present in the environment, then falls back to the free/no-key
   providers. Any single provider failure is captured as a warning and the next
   provider is tried; the call only fails if *every* candidate fails.
-* **Distinct tool names (avoid the hosted ``web_search`` name clash).** We do NOT
-  advertise a tool literally named ``web_search``: that collides with Anthropic's
-  hosted ``web_search`` tool, and Claude Science's planner would pick the hosted
-  one — which is unavailable under CSP virtual login and fails with
-  ``Tool 'web_search' not found on agent`` — instead of routing to this local
-  MCP. The advertised tools are ``search_literature`` (primary), its alias
-  ``csp_web_search``, and ``fetch_url``. ``web_search`` is kept only as a hidden,
-  un-advertised dispatch alias for backward compatibility.
+* **Advertise ``web_search`` locally (safe under CSP).** Under CSP virtual login
+  there is **no** Anthropic-hosted ``web_search`` tool — model-native calls to
+  that name previously failed with ``Tool 'web_search' not found on agent``.
+  This connector therefore advertises ``web_search`` (and ``web_fetch``) in
+  ``tools/list`` so reflexive model calls resolve to this local MCP. Aliases
+  ``search_literature``, ``csp_web_search``, and ``fetch_url`` remain advertised
+  too (belt-and-suspenders).
 
 Providers
 ---------
@@ -69,7 +68,7 @@ import urllib.parse
 import urllib.request
 
 SERVER_NAME = "web-search"
-SERVER_VERSION = "1.1.0"
+SERVER_VERSION = "1.2.0"
 DEFAULT_PROTOCOL = "2025-06-18"
 USER_AGENT = "csp-web-search/1.0 (+https://github.com/; Claude Science Proxy built-in)"
 HTTP_TIMEOUT = 15
@@ -598,7 +597,7 @@ def do_fetch_url(args, env):
 # --------------------------------------------------------------------------- #
 # MCP tool schemas                                                             #
 # --------------------------------------------------------------------------- #
-# Shared search input schema (both search aliases use it verbatim).
+# Shared search input schema (all search aliases use it verbatim).
 _SEARCH_INPUT_SCHEMA = {
     "type": "object",
     "properties": {
@@ -619,69 +618,88 @@ _SEARCH_INPUT_SCHEMA = {
     "required": ["query"],
 }
 
-# Planner guidance shared by the search tools. The leading sentence is
-# deliberately explicit so Claude Science's planner routes here instead of the
-# unavailable Anthropic-hosted ``web_search``.
+_FETCH_INPUT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "url": {"type": "string", "description": "Absolute http(s) URL."},
+        "max_chars": {
+            "type": "integer", "default": 8000, "minimum": 200,
+            "maximum": 50000,
+            "description": "Truncate the extracted text to this many chars.",
+        },
+    },
+    "required": ["url"],
+}
+
+# Planner guidance shared by the search tools. Under CSP virtual login there is
+# no Anthropic-hosted web_search — this local MCP *is* the correct target for
+# model-native ``web_search`` calls.
 _SEARCH_DESCRIPTION = (
-    "Local CSP web / literature search — USE THIS under Claude Science Proxy "
-    "(CSP) INSTEAD OF the hosted 'Web Search' tool. The Anthropic hosted "
-    "web_search tool is unavailable under CSP's virtual login and fails with "
-    "\"Tool 'web_search' not found on agent\"; do NOT call it. This local MCP "
-    "connector does the search for you. Returns titles, URLs and snippets. Free "
-    "with no API key: searches scholarly sources (Crossref, arXiv, PubMed, and "
-    "optionally OpenAlex / Semantic Scholar) with automatic fallback. "
-    "provider='auto' (default) tries configured key providers first, then the "
-    "no-key scholarly providers, capturing per-provider warnings. NOTE: inside "
-    "Claude Science's sandbox, network egress is restricted to an allowlist of "
-    "scientific sources, so general search engines (duckduckgo/wikipedia) and "
-    "paid providers (brave/serper/tavily) are typically unavailable there and "
-    "are best-effort only."
+    "Local CSP web / literature search (this MCP connector). Under Claude "
+    "Science Proxy (CSP) virtual login there is NO Anthropic-hosted web_search "
+    "tool — calling a hosted one fails with \"Tool 'web_search' not found on "
+    "agent\". This local ``web_search`` (and its aliases) is the correct tool "
+    "for web/literature search here; no Anthropic account is needed. Returns "
+    "titles, URLs and snippets. Free with no API key: searches scholarly "
+    "sources (Crossref, arXiv, PubMed, and optionally OpenAlex / Semantic "
+    "Scholar) with automatic fallback. provider='auto' (default) tries "
+    "configured key providers first, then the no-key scholarly providers, "
+    "capturing per-provider warnings. NOTE: inside Claude Science's sandbox, "
+    "network egress is restricted to an allowlist of scientific sources, so "
+    "general search engines (duckduckgo/wikipedia) and paid providers "
+    "(brave/serper/tavily) are typically unavailable there and are best-effort "
+    "only."
+)
+
+_FETCH_DESCRIPTION = (
+    "Fetch a web page (or text/JSON resource) and return its readable text "
+    "with HTML stripped. Useful to read a result found via web_search / "
+    "search_literature / csp_web_search. Part of the local CSP web-search MCP "
+    "connector (no Anthropic-hosted fetch required)."
 )
 
 TOOLS = [
     {
-        # Primary, planner-friendly name. Distinct from the hosted `web_search`.
-        "name": "search_literature",
-        "description": _SEARCH_DESCRIPTION + " Alias: csp_web_search.",
+        # Model-native name — safe to advertise under CSP (no hosted clash).
+        "name": "web_search",
+        "description": (
+            _SEARCH_DESCRIPTION
+            + " Aliases: search_literature, csp_web_search."
+        ),
         "inputSchema": _SEARCH_INPUT_SCHEMA,
     },
     {
-        # Explicit CSP-branded alias, identical behaviour.
+        "name": "search_literature",
+        "description": (
+            _SEARCH_DESCRIPTION + " Alias of web_search / csp_web_search."
+        ),
+        "inputSchema": _SEARCH_INPUT_SCHEMA,
+    },
+    {
         "name": "csp_web_search",
-        "description": _SEARCH_DESCRIPTION + " Alias of search_literature.",
+        "description": (
+            _SEARCH_DESCRIPTION + " Alias of web_search / search_literature."
+        ),
         "inputSchema": _SEARCH_INPUT_SCHEMA,
     },
     {
         "name": "fetch_url",
-        "description": (
-            "Fetch a web page (or text/JSON resource) and return its readable "
-            "text with HTML stripped. Useful to read a result found via "
-            "search_literature / csp_web_search. Part of the local CSP "
-            "web-search MCP connector."
-        ),
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "url": {"type": "string", "description": "Absolute http(s) URL."},
-                "max_chars": {
-                    "type": "integer", "default": 8000, "minimum": 200,
-                    "maximum": 50000,
-                    "description": "Truncate the extracted text to this many chars.",
-                },
-            },
-            "required": ["url"],
-        },
+        "description": _FETCH_DESCRIPTION + " Alias: web_fetch.",
+        "inputSchema": _FETCH_INPUT_SCHEMA,
+    },
+    {
+        "name": "web_fetch",
+        "description": _FETCH_DESCRIPTION + " Alias of fetch_url.",
+        "inputSchema": _FETCH_INPUT_SCHEMA,
     },
 ]
 
-# Dispatch includes the advertised names plus a hidden ``web_search`` alias kept
-# for backward compatibility. ``web_search`` is intentionally NOT in TOOLS so the
-# planner never sees a tool whose name collides with the hosted one.
 TOOL_DISPATCH = {
+    "web_search": do_web_search,
     "search_literature": do_web_search,
     "csp_web_search": do_web_search,
-    "web_search": do_web_search,
     "fetch_url": do_fetch_url,
+    "web_fetch": do_fetch_url,
 }
 
 

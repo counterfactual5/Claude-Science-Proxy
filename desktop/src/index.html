@@ -86,10 +86,11 @@
           <div class="skill-hd">
             <label class="sec-title">Skills 管理</label>
             <div class="skill-hd-acts">
-              <button class="btn small" id="skillImportBtn">➕ 导入</button>
+              <button class="btn small" id="skillCreateBtn">➕ 新建</button>
               <div class="listhd-more">
                 <button type="button" class="btn small listhd-more-btn" id="skillMoreBtn" aria-haspopup="true" aria-expanded="false" title="更多">⋯</button>
                 <div class="pmenu listhd-menu" id="skillMenu" hidden role="menu">
+                  <button type="button" class="pmenu-item" id="skillImportBtn" role="menuitem">📁 导入</button>
                   <button type="button" class="pmenu-item" id="skillDiscoverBtn" role="menuitem">🔍 扫描导入</button>
                   <button type="button" class="pmenu-item" id="skillAdoptBtn" role="menuitem">📥 从 Science 采纳</button>
                 </div>
@@ -100,7 +101,7 @@
 
           <div class="skill-empty" id="skillEmpty" hidden>
             <p>还没有 Skill。</p>
-            <p class="hint">点「导入」，选择一个含 <code>SKILL.md</code> 的目录。</p>
+            <p class="hint">点「新建」从零创建，或在「⋯」里选「导入」一个含 <code>SKILL.md</code> 的目录。</p>
           </div>
 
           <div id="skillList" class="skill-list"></div>
@@ -227,6 +228,36 @@
           <div class="row modal-actions">
             <button class="btn small" id="skillAdoptConfirmBtn" disabled>采纳所选</button>
             <button class="btn small" id="skillAdoptCancelBtn">取消</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Skill create (new from scratch) modal -->
+      <div class="modal" id="skillCreateModal" hidden role="dialog" aria-modal="true" aria-labelledby="skillCreateTitle">
+        <div class="modal-content">
+          <h3 id="skillCreateTitle">新建 Skill</h3>
+          <div class="form-group">
+            <label for="skillCreateName">名称</label>
+            <input id="skillCreateName" type="text" placeholder="my-skill" autocomplete="off" spellcheck="false" />
+            <p class="hint">作为 Skill 名称写入 <code>SKILL.md</code> 的 frontmatter。同名 Skill 不可重复。</p>
+          </div>
+          <div class="form-group">
+            <label for="skillCreateDesc">描述（可选）</label>
+            <input id="skillCreateDesc" type="text" placeholder="一句话说明这个 Skill 的用途" autocomplete="off" spellcheck="false" />
+          </div>
+          <div class="form-group">
+            <label for="skillCreateBody">SKILL.md 内容</label>
+            <textarea id="skillCreateBody" rows="12" autocomplete="off" spellcheck="false"></textarea>
+            <p class="hint">编辑上方名称/描述会自动同步到 frontmatter；手动改动正文后以此处内容为准。保存后写入 <code>~/.csp/skills/</code>。</p>
+          </div>
+
+          <div id="skillCreateInspection" class="inspection-preview" hidden>
+            <div class="insp-errors" id="skillCreateErrors" hidden></div>
+          </div>
+
+          <div class="row modal-actions">
+            <button class="btn small" id="skillCreateSaveBtn">保存</button>
+            <button class="btn small" id="skillCreateCancelBtn">取消</button>
           </div>
         </div>
       </div>

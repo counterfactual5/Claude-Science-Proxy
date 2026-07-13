@@ -104,6 +104,7 @@ pub fn run() {
             commands::skills::discover_skills,
             commands::skills::inspect_skill_source,
             commands::skills::import_skill,
+            commands::skills::create_skill,
             commands::skills::set_skill_enabled,
             commands::skills::remove_skill,
             commands::skills::discover_workspace_skills,

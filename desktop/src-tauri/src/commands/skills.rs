@@ -11,7 +11,7 @@ use crate::skill_manager::workspace_ingress::{
     self, AdoptWorkspaceSkillsResult, WorkspaceSkillCandidate,
 };
 use crate::{config, lock, SharedAppState};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use tauri::State;
 
 #[tauri::command]
@@ -80,6 +80,61 @@ pub async fn import_skill(input: ImportSkillInput) -> Result<Skill, String> {
     run_blocking(move || {
         let store = SkillStore::open()?;
         store.import(&source)
+    })
+    .await
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CreateSkillInput {
+    /// Full `SKILL.md` content authored in the UI (front-matter + body). The
+    /// name/description are parsed from its front-matter (single source of
+    /// truth), so no separate name/description fields are needed here.
+    pub content: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateSkillResult {
+    pub skill: SkillSummary,
+    /// Sandbox was stopped so the user can restart with the new Skill applied
+    /// (mirrors the adopt flow's `needs_restart`).
+    pub needs_restart: bool,
+}
+
+/// Author a brand-new Skill from scratch and persist it into `~/.csp/skills/`.
+///
+/// Reuses the shared import path (dedupe/inventory/copy), then follows the same
+/// redeploy/restart behavior as [`adopt_workspace_skills`]: if enabled Skills on
+/// disk changed and our sandbox is running, stop it and flag `needs_restart` so
+/// the frontend can offer a clean restart.
+#[tauri::command]
+pub async fn create_skill(
+    app: tauri::AppHandle,
+    state: State<'_, SharedAppState>,
+    input: CreateSkillInput,
+) -> Result<CreateSkillResult, String> {
+    let state = state.inner().clone();
+    run_blocking(move || {
+        let store = SkillStore::open()?;
+        let skill = store.create_from_content(&input.content)?;
+        let mut needs_restart = false;
+        if redeploy_sandbox_skills() {
+            let cfg = config::load_from(&config::default_dir()).map_err(|e| e.to_string())?;
+            if sandbox_running_ours(cfg.sandbox_port) {
+                let mut st = lock(&state);
+                let mut child = st.sandbox.take();
+                let mut url = st.sandbox_url.take();
+                stop_sandbox(&app, &mut child, &mut url)?;
+                st.sandbox = child;
+                st.sandbox_url = url;
+                needs_restart = true;
+            }
+        }
+        Ok(CreateSkillResult {
+            skill: SkillSummary::from(&skill),
+            needs_restart,
+        })
     })
     .await
 }

@@ -285,7 +285,9 @@ fn deploy_sandbox_mcp(auth_dir: &Path, sbx_home: &Path) -> (String, bool) {
     };
     // Built-in connectors (e.g. `web-search`) carry a bundled script that must
     // exist on disk, and their interpreter/script path are re-resolved here so
-    // the entry self-heals against the current sandbox Python layout.
+    // the entry self-heals against the current sandbox Python layout. Also
+    // force-refresh the built-in description so already-seeded inventories pick
+    // up upgraded tool-name guidance (command/args already rewritten here).
     if enabled.iter().any(|s| s.builtin) {
         use crate::mcp_manager::builtin;
         let mcp_dir = auth_dir.join("mcp");
@@ -296,6 +298,9 @@ fn deploy_sandbox_mcp(auth_dir: &Path, sbx_home: &Path) -> (String, bool) {
         let python = builtin::resolve_sandbox_python(sbx_home)
             .map(|p| p.to_string_lossy().into_owned());
         for s in enabled.iter_mut().filter(|s| s.builtin) {
+            if s.name == builtin::BUILTIN_WEB_SEARCH_NAME {
+                s.description = builtin::BUILTIN_WEB_SEARCH_DESCRIPTION.to_string();
+            }
             if let Some(py) = &python {
                 s.command = py.clone();
             }

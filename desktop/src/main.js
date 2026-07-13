@@ -66,6 +66,8 @@ const I18N = {
     fillApiKey: "请填写 API Key。",
     skipActivate: "校验没过，仍要启用这条",
     menuMore: "更多",
+    createSkill: "➕ 新建",
+    importSkill: "📁 导入",
     modelHintNative: "由 Science 选择器 + 内置映射自动选择（opus 深度 / haiku 快速）。",
     modelHintFixed: "勾选要在 Science 中启用的模型；列表第一个用于后台任务兜底。",
     metaManyModels: "{n} 个模型已启用",
@@ -251,6 +253,8 @@ const I18N = {
     fillApiKey: "Enter an API key.",
     skipActivate: "Activate anyway (skip verify)",
     menuMore: "More",
+    createSkill: "➕ New",
+    importSkill: "📁 Import",
     modelHintNative: "Auto-mapped via Science picker + built-in routing (opus for depth, haiku for speed).",
     modelHintFixed: "Check models to enable in Science; the first is the fallback for background tasks.",
     metaManyModels: "{n} models enabled",
@@ -502,6 +506,8 @@ function applyEditionUI() {
   if (els.editCspJsonBtn) els.editCspJsonBtn.textContent = t.editCspJson;
   if (els.skipActivateBtn) els.skipActivateBtn.textContent = t.skipActivate;
   if (els.listhdMoreBtn) els.listhdMoreBtn.title = t.menuMore;
+  if (els.skillCreateBtn) els.skillCreateBtn.textContent = t.createSkill;
+  if (els.skillImportBtn) els.skillImportBtn.textContent = t.importSkill;
   populateWizPresetSelect();
   refreshWizPlaceholders();
 }
@@ -982,6 +988,7 @@ function setBusy(on, op) {
     // Disable port inputs while busy: changing ports mid-operation races in-flight work (P1-c frontend).
     els.proxyPort, els.sandboxPort,
     // Skill / MCP manager actions: prevent concurrent mutations racing a running op.
+    els.skillCreateBtn, els.skillCreateSaveBtn, els.skillCreateCancelBtn,
     els.skillImportBtn, els.skillMoreBtn, els.skillInspectBtn, els.skillImportConfirmBtn, els.skillImportCancelBtn,
     els.skillDiscoverBtn, els.skillDiscoverImportBtn, els.skillDiscoverCancelBtn,
     els.skillAdoptBtn, els.skillAdoptConfirmBtn, els.skillAdoptCancelBtn,
@@ -1549,6 +1556,9 @@ function wire() {
     "connSec", "connTitle", "connName", "connBase", "connBaseHint",
     "connModelInfo", "connModelHint", "connModelPick", "connKey", "connSaveBtn", "connCancelBtn",
     "tabProfiles", "tabSkills", "skillPane",
+    "skillCreateBtn", "skillCreateModal", "skillCreateName", "skillCreateDesc",
+    "skillCreateBody", "skillCreateInspection", "skillCreateErrors",
+    "skillCreateSaveBtn", "skillCreateCancelBtn",
     "skillImportBtn", "skillMoreBtn", "skillMenu", "skillEmpty", "skillList", "skillMsg",
     "skillDiscoverBtn", "skillDiscoverModal", "skillDiscoverList",
     "skillDiscoverEmpty", "skillDiscoverImportBtn", "skillDiscoverCancelBtn",
@@ -1712,6 +1722,14 @@ function wire() {
   });
 
   // Skills panel actions
+  els.skillCreateBtn.addEventListener("click", openSkillCreate);
+  els.skillCreateSaveBtn.addEventListener("click", saveNewSkill);
+  els.skillCreateCancelBtn.addEventListener("click", closeSkillCreate);
+  // Keep the SKILL.md front-matter in sync with the name/description fields
+  // until the body is edited by hand (then the body wins — see openSkillCreate).
+  els.skillCreateName.addEventListener("input", syncSkillCreateBody);
+  els.skillCreateDesc.addEventListener("input", syncSkillCreateBody);
+  els.skillCreateBody.addEventListener("input", () => { skillBodyDirty = true; });
   els.skillImportBtn.addEventListener("click", openSkillImport);
   els.skillInspectBtn.addEventListener("click", inspectSkillSource);
   els.skillImportConfirmBtn.addEventListener("click", importSkillConfirm);
