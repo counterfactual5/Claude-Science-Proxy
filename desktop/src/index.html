@@ -91,6 +91,7 @@
                 <button type="button" class="btn small listhd-more-btn" id="skillMoreBtn" aria-haspopup="true" aria-expanded="false" title="更多">⋯</button>
                 <div class="pmenu listhd-menu" id="skillMenu" hidden role="menu">
                   <button type="button" class="pmenu-item" id="skillDiscoverBtn" role="menuitem">🔍 扫描导入</button>
+                  <button type="button" class="pmenu-item" id="skillAdoptBtn" role="menuitem">📥 从 Science 采纳</button>
                 </div>
               </div>
             </div>
@@ -210,6 +211,22 @@
           <div class="row modal-actions">
             <button class="btn small" id="skillDiscoverImportBtn" disabled>导入所选</button>
             <button class="btn small" id="skillDiscoverCancelBtn">取消</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Science workspace skill adopt modal -->
+      <div class="modal" id="skillAdoptModal" hidden role="dialog" aria-modal="true" aria-labelledby="skillAdoptTitle">
+        <div class="modal-content">
+          <h3 id="skillAdoptTitle">从 Science 工作区采纳</h3>
+          <p class="hint">扫描沙盒内 <code>workspaces/</code> 下的 Skill 草稿（<code>*.skill.md</code>、<code>*_SKILL.md</code> 或含 <code>SKILL.md</code> 的目录），连同 <code>kernel.py</code> 等伴随文件复制到 <code>~/.csp/skills/</code>。Science 无法直接发布技能时请用此功能。</p>
+          <div id="skillAdoptList" class="skill-discover-list"></div>
+          <div id="skillAdoptEmpty" class="skill-empty" hidden>
+            <p>没有扫描到可采纳的 Skill 草稿。</p>
+          </div>
+          <div class="row modal-actions">
+            <button class="btn small" id="skillAdoptConfirmBtn" disabled>采纳所选</button>
+            <button class="btn small" id="skillAdoptCancelBtn">取消</button>
           </div>
         </div>
       </div>

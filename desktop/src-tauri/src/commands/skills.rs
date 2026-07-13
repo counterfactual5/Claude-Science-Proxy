@@ -3,9 +3,16 @@
 use std::path::PathBuf;
 
 use crate::run_blocking;
+use crate::runtime::sandbox_session::redeploy_sandbox_skills;
+use crate::runtime::science::{sandbox_running_ours, stop_sandbox};
 use crate::skill_manager::model::{DiscoveredSkill, InspectionResult, Skill, SkillSummary};
 use crate::skill_manager::store::SkillStore;
+use crate::skill_manager::workspace_ingress::{
+    self, AdoptWorkspaceSkillsResult, WorkspaceSkillCandidate,
+};
+use crate::{config, lock, SharedAppState};
 use serde::Deserialize;
+use tauri::State;
 
 #[tauri::command]
 pub async fn list_skills() -> Result<Vec<SkillSummary>, String> {
@@ -104,6 +111,43 @@ pub async fn remove_skill(input: RemoveSkillInput) -> Result<(), String> {
     run_blocking(move || {
         let store = SkillStore::open()?;
         store.remove(&input.skill_id)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn discover_workspace_skills() -> Result<Vec<WorkspaceSkillCandidate>, String> {
+    run_blocking(workspace_ingress::discover_workspace_skills).await
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AdoptWorkspaceSkillsInput {
+    pub keys: Vec<String>,
+}
+
+#[tauri::command]
+pub async fn adopt_workspace_skills(
+    app: tauri::AppHandle,
+    state: State<'_, SharedAppState>,
+    input: AdoptWorkspaceSkillsInput,
+) -> Result<AdoptWorkspaceSkillsResult, String> {
+    let state = state.inner().clone();
+    run_blocking(move || {
+        let mut result = workspace_ingress::adopt_workspace_skills(&input.keys)?;
+        if !result.adopted.is_empty() && redeploy_sandbox_skills() {
+            let cfg = config::load_from(&config::default_dir()).map_err(|e| e.to_string())?;
+            if sandbox_running_ours(cfg.sandbox_port) {
+                let mut st = lock(&state);
+                let mut child = st.sandbox.take();
+                let mut url = st.sandbox_url.take();
+                stop_sandbox(&app, &mut child, &mut url)?;
+                st.sandbox = child;
+                st.sandbox_url = url;
+                result.needs_restart = true;
+            }
+        }
+        Ok(result)
     })
     .await
 }

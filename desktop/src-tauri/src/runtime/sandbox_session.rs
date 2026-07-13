@@ -219,7 +219,7 @@ pub(crate) fn one_click_login<R: Runtime>(
 /// Deploy enabled Skills into the sandbox. Returns a redaction-safe log summary
 /// and whether anything on disk changed (for restart decisions). Never fails the
 /// launch: any error is reported and the sandbox still starts.
-fn deploy_sandbox_skills(
+pub(crate) fn deploy_sandbox_skills(
     auth_dir: &Path,
     sbx_home: &Path,
     org_uuid: Option<&str>,
@@ -352,4 +352,13 @@ fn cleanup_legacy_root_skills(auth_dir: &Path) -> usize {
         }
     }
     removed
+}
+
+/// Redeploy enabled Skills into the sandbox data-dir. Returns whether disk changed.
+pub(crate) fn redeploy_sandbox_skills() -> bool {
+    let sbx_home = sandbox_home();
+    let auth_dir = sbx_home.join(".claude-science");
+    let org_uuid = read_sandbox_org_uuid(&auth_dir);
+    let (_, changed) = deploy_sandbox_skills(&auth_dir, &sbx_home, org_uuid.as_deref());
+    changed
 }

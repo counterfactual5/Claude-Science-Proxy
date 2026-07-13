@@ -593,6 +593,32 @@ function mockInvoke(cmd, args) {
         { name: "pdf", description: "读写 PDF", sourcePath: "/Users/me/.codex/skills/pdf", sourceLabel: "~/.codex/skills", alreadyImported: false },
         { name: "playwright", description: "浏览器自动化", sourcePath: "/Users/me/.codex/skills/playwright", sourceLabel: "~/.codex/skills", alreadyImported: true },
       ]);
+    case "discover_workspace_skills":
+      return Promise.resolve([
+        {
+          key: "workspace://org/ws1/file:crypto-data-v2_SKILL.md",
+          name: "crypto-data-v2",
+          description: "Enhanced crypto skill draft",
+          workspaceId: "ws1",
+          files: ["crypto-data-v2_SKILL.md → SKILL.md", "kernel.py"],
+          warnings: [],
+          alreadyImported: false,
+        },
+      ]);
+    case "adopt_workspace_skills": {
+      const keys = (args.input && args.input.keys) || [];
+      const adopted = keys.map((key, i) => ({
+        id: "sk_" + Math.random().toString(16).slice(2, 10) + i,
+        name: "Adopted Skill",
+        description: "From " + key,
+        enabled: true,
+        sizeBytes: 12000,
+        importedAt: new Date().toISOString().replace(/\.\d{3}Z$/, "Z"),
+        requirements: ["python"],
+      }));
+      adopted.forEach((s) => mockStore.skills.push(s));
+      return Promise.resolve({ adopted, failures: [], needsRestart: false });
+    }
     case "inspect_skill_source": {
       const path = (args.input && args.input.sourcePath) || "";
       const valid = path.length > 0;
@@ -941,6 +967,7 @@ function setBusy(on, op) {
     // Skill / MCP manager actions: prevent concurrent mutations racing a running op.
     els.skillImportBtn, els.skillMoreBtn, els.skillInspectBtn, els.skillImportConfirmBtn, els.skillImportCancelBtn,
     els.skillDiscoverBtn, els.skillDiscoverImportBtn, els.skillDiscoverCancelBtn,
+    els.skillAdoptBtn, els.skillAdoptConfirmBtn, els.skillAdoptCancelBtn,
     els.mcpMoreBtn, els.mcpJsonBtn, els.mcpDiscoverBtn, els.mcpDiscoverImportBtn, els.mcpDiscoverCancelBtn,
     els.mcpAddBtn, els.mcpSaveBtn, els.mcpCancelBtn,
   ].forEach((b) => b && (b.disabled = on));
@@ -1496,6 +1523,8 @@ function wire() {
     "skillImportBtn", "skillMoreBtn", "skillMenu", "skillEmpty", "skillList", "skillMsg",
     "skillDiscoverBtn", "skillDiscoverModal", "skillDiscoverList",
     "skillDiscoverEmpty", "skillDiscoverImportBtn", "skillDiscoverCancelBtn",
+    "skillAdoptBtn", "skillAdoptModal", "skillAdoptList",
+    "skillAdoptEmpty", "skillAdoptConfirmBtn", "skillAdoptCancelBtn",
     "skillImportModal", "skillSourcePath", "skillInspectionPreview",
     "inspName", "inspDesc", "inspStats", "inspReqs", "inspWarnings", "inspErrors",
     "skillInspectBtn", "skillImportConfirmBtn", "skillImportCancelBtn",
@@ -1647,8 +1676,14 @@ function wire() {
   els.skillDiscoverBtn.addEventListener("click", openSkillDiscover);
   els.skillDiscoverCancelBtn.addEventListener("click", closeSkillDiscover);
   els.skillDiscoverImportBtn.addEventListener("click", importDiscoveredSkills);
+  els.skillAdoptBtn.addEventListener("click", openSkillAdopt);
+  els.skillAdoptCancelBtn.addEventListener("click", closeSkillAdopt);
+  els.skillAdoptConfirmBtn.addEventListener("click", adoptWorkspaceSkills);
   els.skillDiscoverList.addEventListener("change", (e) => {
     if (e.target && e.target.type === "checkbox") refreshDiscoverGate();
+  });
+  els.skillAdoptList.addEventListener("change", (e) => {
+    if (e.target && e.target.type === "checkbox") refreshAdoptGate();
   });
 
   // Skill list interactions
@@ -1946,6 +1981,91 @@ async function importDiscoveredSkills() {
     closeSkillDiscover();
     await loadSkills();
     if (failures.length) setSkillMsg(`部分导入失败: ${failures.join("; ")}`);
+  } finally {
+    setBusy(false);
+  }
+}
+
+// ── Science Workspace Skill Adopt ──
+async function openSkillAdopt() {
+  closeMenu(els.skillMenu, els.skillMoreBtn);
+  if (busy) return;
+  els.skillAdoptList.innerHTML = "<p class=\"hint\">扫描中…</p>";
+  els.skillAdoptEmpty.hidden = true;
+  els.skillAdoptConfirmBtn.disabled = true;
+  els.skillAdoptModal.hidden = false;
+  try {
+    const found = (await call("discover_workspace_skills")) || [];
+    renderSkillAdopt(found);
+  } catch (e) {
+    els.skillAdoptList.innerHTML = "";
+    els.skillAdoptEmpty.hidden = false;
+    setSkillMsg(resolveBackendErr(e));
+  }
+}
+
+function closeSkillAdopt() {
+  els.skillAdoptModal.hidden = true;
+}
+
+function renderSkillAdopt(found) {
+  if (!found.length) {
+    els.skillAdoptList.innerHTML = "";
+    els.skillAdoptEmpty.hidden = false;
+    return;
+  }
+  els.skillAdoptEmpty.hidden = true;
+  els.skillAdoptList.innerHTML = found.map((d) => {
+    const files = (d.files || []).slice(0, 6).join(", ");
+    const more = (d.files || []).length > 6 ? ` +${d.files.length - 6}` : "";
+    const warn = (d.warnings || []).length
+      ? `<span class="skill-meta"><span>${escapeHtml(d.warnings[0])}</span></span>`
+      : "";
+    const badge = d.alreadyImported ? `<span class="skill-req-tag">已采纳</span>` : "";
+    return `
+      <label class="skill-discover-row">
+        <input type="checkbox" value="${escapeHtml(d.key)}" />
+        <span class="skill-discover-main">
+          <span class="skill-name">${escapeHtml(d.name)} ${badge}</span>
+          ${d.description ? `<span class="skill-desc">${escapeHtml(d.description)}</span>` : ""}
+          <span class="skill-meta"><span>workspace: ${escapeHtml(d.workspaceId || "")}</span></span>
+          ${files ? `<span class="skill-meta"><span>${escapeHtml(files)}${more}</span></span>` : ""}
+          ${warn}
+        </span>
+      </label>
+    `;
+  }).join("");
+  refreshAdoptGate();
+}
+
+function refreshAdoptGate() {
+  const checked = els.skillAdoptList.querySelectorAll("input[type=checkbox]:checked");
+  els.skillAdoptConfirmBtn.disabled = busy || checked.length === 0;
+}
+
+async function adoptWorkspaceSkills() {
+  const keys = Array.from(
+    els.skillAdoptList.querySelectorAll("input[type=checkbox]:checked")
+  ).map((el) => el.value);
+  if (!keys.length) return;
+  setBusy(true);
+  try {
+    const result = await call("adopt_workspace_skills", { input: { keys } });
+    closeSkillAdopt();
+    await loadSkills();
+    const failures = (result.failures || []).join("; ");
+    if (result.needsRestart) {
+      setSkillMsg("已采纳 Skill；沙箱已停止，正在重新启动…");
+      try {
+        await call("one_click_login");
+      } catch (e) {
+        setSkillMsg(`已采纳，但重新启动失败：${resolveBackendErr(e)}`);
+      }
+    } else if (failures) {
+      setSkillMsg(`部分采纳失败: ${failures}`);
+    }
+  } catch (e) {
+    setSkillMsg(resolveBackendErr(e));
   } finally {
     setBusy(false);
   }

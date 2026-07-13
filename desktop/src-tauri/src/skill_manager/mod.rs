@@ -7,6 +7,7 @@
 pub mod deploy;
 pub mod model;
 pub mod store;
+pub mod workspace_ingress;
 
 #[allow(unused_imports)]
 pub(crate) use deploy::deploy_enabled_skills;

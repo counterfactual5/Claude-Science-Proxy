@@ -142,6 +142,20 @@ impl SkillStore {
     /// Import a Skill from a source directory. Copies contents to managed
     /// storage and records metadata in the inventory.
     pub fn import(&self, source: &Path) -> Result<Skill, String> {
+        self.import_with_logical_source(source, None)
+    }
+
+    /// Import from `source`, recording `logical_source` in inventory when set.
+    ///
+    /// Workspace ingress uses keys like `workspace://<org>/<ws>/file:foo.skill.md`
+    /// so re-adopting the same Science draft updates the existing Skill instead
+    /// of appending duplicates (filesystem canonical paths are not stable for
+    /// ephemeral staging dirs).
+    pub fn import_with_logical_source(
+        &self,
+        source: &Path,
+        logical_source: Option<&str>,
+    ) -> Result<Skill, String> {
         let inspection = Self::inspect_source(source)?;
         if !inspection.valid {
             return Err(format!(
@@ -154,15 +168,14 @@ impl SkillStore {
 
         // De-dupe by source path: re-importing the same directory is treated as
         // an update — drop the previous copy so the inventory does not bloat.
-        let canonical_src = fs::canonicalize(source).unwrap_or_else(|_| source.to_path_buf());
+        let dedupe_key = logical_source
+            .map(PathBuf::from)
+            .or_else(|| fs::canonicalize(source).ok())
+            .unwrap_or_else(|| source.to_path_buf());
         let existing_ids: Vec<String> = inv
             .skills
             .iter()
-            .filter(|(_, s)| {
-                let prev =
-                    fs::canonicalize(&s.source_path).unwrap_or_else(|_| s.source_path.clone());
-                prev == canonical_src
-            })
+            .filter(|(_, s)| source_paths_equal(&s.source_path, &dedupe_key))
             .map(|(id, _)| id.clone())
             .collect();
         for old_id in existing_ids {
@@ -185,7 +198,7 @@ impl SkillStore {
             name: inspection.name,
             description: inspection.description,
             store_path: dest,
-            source_path: source.to_path_buf(),
+            source_path: dedupe_key,
             enabled: true,
             size_bytes: inspection.total_size_bytes,
             imported_at: current_iso8601(),
@@ -225,6 +238,23 @@ impl SkillStore {
         }
         self.save_inventory(&inv)?;
         Ok(())
+    }
+
+    /// Workspace ingress keys already present in the inventory.
+    pub fn workspace_source_keys(&self) -> Result<std::collections::BTreeSet<String>, String> {
+        let inv = self.load_inventory()?;
+        Ok(inv
+            .skills
+            .values()
+            .filter_map(|s| {
+                let p = s.source_path.to_string_lossy();
+                if p.starts_with("workspace://") {
+                    Some(p.into_owned())
+                } else {
+                    None
+                }
+            })
+            .collect())
     }
 
     /// Get the list of enabled Skills (for sandbox deployment).
@@ -349,7 +379,7 @@ fn walk_dir(
 }
 
 /// Parse SKILL.md to extract name and description from front-matter.
-fn parse_skill_md(content: &str, result: &mut InspectionResult) {
+pub(crate) fn parse_skill_md(content: &str, result: &mut InspectionResult) {
     // Look for YAML front-matter between --- markers
     if let Some(start) = content.find("---\n") {
         if let Some(end) = content[start + 4..].find("\n---") {
@@ -426,6 +456,17 @@ fn detect_requirements(source: &Path, requirements: &mut Vec<String>) {
     if source.join("mcp.json").exists() || source.join(".mcp").exists() {
         add("mcp", requirements);
     }
+}
+
+fn source_paths_equal(a: &Path, b: &Path) -> bool {
+    let a_str = a.to_string_lossy();
+    let b_str = b.to_string_lossy();
+    if a_str.starts_with("workspace://") || b_str.starts_with("workspace://") {
+        return a_str == b_str;
+    }
+    let a_canon = fs::canonicalize(a).unwrap_or_else(|_| a.to_path_buf());
+    let b_canon = fs::canonicalize(b).unwrap_or_else(|_| b.to_path_buf());
+    a_canon == b_canon
 }
 
 fn walk_entries(dir: &Path) -> Vec<std::fs::DirEntry> {
@@ -631,6 +672,27 @@ mod tests {
             iso8601_from_epoch_secs(1_609_459_199),
             "2020-12-31T23:59:59Z"
         );
+    }
+
+    #[test]
+    fn import_dedupes_same_logical_workspace_key() {
+        let store = temp_store();
+        let src = env::temp_dir().join(format!("csp-skill-ws-{}", rand_u64()));
+        fs::create_dir_all(&src).unwrap();
+        fs::write(src.join("SKILL.md"), "---\nname: Workspace\n---\n").unwrap();
+
+        let key = "workspace://org/ws/file:draft.skill.md";
+        let first = store.import_with_logical_source(&src, Some(key)).unwrap();
+        let second = store.import_with_logical_source(&src, Some(key)).unwrap();
+
+        assert_ne!(first.id.to_string(), second.id.to_string());
+        assert_eq!(store.list().unwrap().len(), 1);
+        assert!(!first.store_path.exists());
+        assert!(second.store_path.exists());
+        assert_eq!(second.source_path, PathBuf::from(key));
+
+        let _ = fs::remove_dir_all(&src);
+        let _ = fs::remove_dir_all(&store.root);
     }
 
     #[test]

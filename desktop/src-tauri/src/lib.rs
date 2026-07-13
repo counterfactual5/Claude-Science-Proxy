@@ -106,6 +106,8 @@ pub fn run() {
             commands::skills::import_skill,
             commands::skills::set_skill_enabled,
             commands::skills::remove_skill,
+            commands::skills::discover_workspace_skills,
+            commands::skills::adopt_workspace_skills,
             commands::mcp::list_mcp_servers,
             commands::mcp::open_mcp_inventory_json,
             commands::mcp::discover_mcp_servers,
