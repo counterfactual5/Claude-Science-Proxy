@@ -1,0 +1,768 @@
+#!/usr/bin/env python3
+"""csp-web-search: a free, no-API-key web search + page fetch MCP server.
+
+Bundled into Claude Science Proxy (CSP) and deployed as the built-in
+``web-search`` stdio connector so Claude Science can do real web search/fetch
+even though Anthropic's hosted ``web_search`` tool is unavailable under CSP's
+virtual login.
+
+Design notes
+------------
+* **Transport.** Newline-delimited JSON-RPC 2.0 over stdio (the MCP stdio
+  transport). Implemented by hand with the standard library only — no
+  dependency on the ``mcp`` SDK — so it runs on any Python 3.8+ interpreter the
+  sandbox happens to ship, and never needs a ``pip install``.
+* **Egress.** Claude Science runs every MCP child in an OS sandbox that denies
+  all outbound loopback egress except to its own "operon" proxy, injected as
+  ``HTTPS_PROXY``. Standard Python HTTP clients (``requests`` and, as a
+  fallback, ``urllib``) honour that env var and issue a proper ``CONNECT``
+  tunnel for HTTPS — unlike the Node/axios stacks that need CSP's shim — so
+  they reach the internet through operon without any extra work.
+* **Multi-provider with automatic fallback (OpenClaw-style).** One server hosts
+  several search providers behind a single search implementation, exposed under
+  planner-friendly tool names (``search_literature`` / ``csp_web_search``).
+  ``provider=auto`` (the default) tries key-based providers first *iff* their API
+  key is present in the environment, then falls back to the free/no-key
+  providers. Any single provider failure is captured as a warning and the next
+  provider is tried; the call only fails if *every* candidate fails.
+* **Distinct tool names (avoid the hosted ``web_search`` name clash).** We do NOT
+  advertise a tool literally named ``web_search``: that collides with Anthropic's
+  hosted ``web_search`` tool, and Claude Science's planner would pick the hosted
+  one — which is unavailable under CSP virtual login and fails with
+  ``Tool 'web_search' not found on agent`` — instead of routing to this local
+  MCP. The advertised tools are ``search_literature`` (primary), its alias
+  ``csp_web_search``, and ``fetch_url``. ``web_search`` is kept only as a hidden,
+  un-advertised dispatch alias for backward compatibility.
+
+Providers
+---------
+Free / no key, and reachable through the sandbox egress allowlist (these are
+the ``auto`` defaults — verified via operon: arXiv/Crossref/PubMed/OpenAlex/
+Semantic Scholar return 200/429, i.e. the CONNECT tunnel is permitted):
+  * ``crossref``        — Crossref works API (broad scholarly metadata).
+  * ``arxiv``           — arXiv Atom API (preprints).
+  * ``pubmed``          — NCBI E-utilities (biomedical literature).
+  * ``openalex``        — OpenAlex works (all fields; small metered budget).
+  * ``semanticscholar`` — Semantic Scholar graph (rate-limited without a key).
+Free general-web (work outside the sandbox; **blocked by the sandbox egress
+allowlist today**, so best-effort and not in ``auto``):
+  * ``duckduckgo``    — DuckDuckGo HTML endpoint (scraped, fragile).
+  * ``duckduckgo_ia`` — DuckDuckGo Instant Answer API (curated abstracts).
+  * ``wikipedia``     — MediaWiki search API.
+Key based (opt-in via MCP env — configure in CSP's MCP tab; also subject to the
+sandbox allowlist, which currently blocks their API domains):
+  * ``brave``  — Brave Search API    (env ``BRAVE_SEARCH_API_KEY``).
+  * ``serper`` — Serper.dev (Google) (env ``SERPER_API_KEY``).
+  * ``tavily`` — Tavily Search API   (env ``TAVILY_API_KEY``).
+
+Secrets are read only from the process environment (CSP injects them from its
+0600 inventory); nothing is ever hardcoded or logged.
+"""
+
+import json
+import os
+import re
+import sys
+import html as _html
+import urllib.error
+import urllib.parse
+import urllib.request
+
+SERVER_NAME = "web-search"
+SERVER_VERSION = "1.1.0"
+DEFAULT_PROTOCOL = "2025-06-18"
+USER_AGENT = "csp-web-search/1.0 (+https://github.com/; Claude Science Proxy built-in)"
+HTTP_TIMEOUT = 15
+
+
+def log(msg):
+    """Diagnostics go to stderr; stdout is reserved for JSON-RPC frames."""
+    try:
+        sys.stderr.write("[csp-web-search] " + str(msg) + "\n")
+        sys.stderr.flush()
+    except Exception:
+        pass
+
+
+# --------------------------------------------------------------------------- #
+# HTTP helper — prefers requests (robust proxy CONNECT + auth), falls back to  #
+# urllib. Both honour HTTPS_PROXY from the environment.                        #
+# --------------------------------------------------------------------------- #
+try:
+    import requests as _requests  # noqa: F401
+
+    _HAVE_REQUESTS = True
+except Exception:
+    _HAVE_REQUESTS = False
+
+
+class HttpError(Exception):
+    pass
+
+
+def http_request(method, url, headers=None, params=None, data=None, timeout=HTTP_TIMEOUT):
+    """Perform an HTTP(S) request and return (status, text).
+
+    ``params`` is a dict appended as a query string; ``data`` may be a dict
+    (form-encoded), bytes, or a str. Raises ``HttpError`` on transport failure.
+    """
+    headers = dict(headers or {})
+    headers.setdefault("User-Agent", USER_AGENT)
+    if params:
+        sep = "&" if ("?" in url) else "?"
+        url = url + sep + urllib.parse.urlencode(params)
+
+    body = data
+    if isinstance(data, dict):
+        body = urllib.parse.urlencode(data).encode("utf-8")
+        headers.setdefault("Content-Type", "application/x-www-form-urlencoded")
+    elif isinstance(data, str):
+        body = data.encode("utf-8")
+
+    if _HAVE_REQUESTS:
+        try:
+            resp = _requests.request(
+                method, url, headers=headers, data=body, timeout=timeout
+            )
+            return resp.status_code, resp.text
+        except Exception as exc:  # network/proxy/TLS error
+            raise HttpError(str(exc))
+
+    # urllib fallback — trust_env proxies are picked up automatically.
+    req = urllib.request.Request(url, data=body, headers=headers, method=method)
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as fp:
+            charset = fp.headers.get_content_charset() or "utf-8"
+            return fp.getcode(), fp.read().decode(charset, "replace")
+    except urllib.error.HTTPError as exc:
+        try:
+            text = exc.read().decode("utf-8", "replace")
+        except Exception:
+            text = ""
+        return exc.code, text
+    except Exception as exc:
+        raise HttpError(str(exc))
+
+
+def http_json(method, url, headers=None, params=None, data=None, timeout=HTTP_TIMEOUT):
+    status, text = http_request(method, url, headers=headers, params=params,
+                                data=data, timeout=timeout)
+    if status >= 400:
+        raise HttpError("HTTP %d: %s" % (status, (text or "")[:200]))
+    try:
+        return json.loads(text)
+    except Exception as exc:
+        raise HttpError("invalid JSON response: %s" % exc)
+
+
+# --------------------------------------------------------------------------- #
+# HTML helpers                                                                 #
+# --------------------------------------------------------------------------- #
+_TAG_RE = re.compile(r"<[^>]+>")
+_WS_RE = re.compile(r"[ \t\r\f\v]+")
+_MULTINL_RE = re.compile(r"\n{3,}")
+_SCRIPT_STYLE_RE = re.compile(
+    r"<(script|style|noscript|template)[^>]*>.*?</\1>", re.I | re.S
+)
+
+
+def strip_tags(fragment):
+    return _html.unescape(_TAG_RE.sub("", fragment or "")).strip()
+
+
+def html_to_text(document, max_chars):
+    doc = _SCRIPT_STYLE_RE.sub(" ", document or "")
+    doc = re.sub(r"<br\s*/?>", "\n", doc, flags=re.I)
+    doc = re.sub(r"</(p|div|li|h[1-6]|tr|table|section|article)>", "\n", doc, flags=re.I)
+    text = _html.unescape(_TAG_RE.sub("", doc))
+    text = _WS_RE.sub(" ", text)
+    text = _MULTINL_RE.sub("\n\n", text)
+    text = "\n".join(line.strip() for line in text.split("\n"))
+    text = text.strip()
+    if max_chars and len(text) > max_chars:
+        text = text[:max_chars].rstrip() + "\n…[truncated]"
+    return text
+
+
+def _ddg_unwrap(href):
+    """DuckDuckGo wraps result links in /l/?uddg=<encoded-real-url>."""
+    if not href:
+        return href
+    if href.startswith("//"):
+        href = "https:" + href
+    try:
+        parsed = urllib.parse.urlparse(href)
+        if parsed.path.endswith("/l/") or "uddg=" in (parsed.query or ""):
+            qs = urllib.parse.parse_qs(parsed.query)
+            if "uddg" in qs:
+                return qs["uddg"][0]
+    except Exception:
+        pass
+    return href
+
+
+# --------------------------------------------------------------------------- #
+# Providers. Each returns a list of {title, url, snippet, source, published?}. #
+# --------------------------------------------------------------------------- #
+def provider_duckduckgo(query, max_results, env):
+    # HTML endpoint gives titles + snippets; scraped and rate-limited.
+    status, text = http_request(
+        "POST", "https://html.duckduckgo.com/html/",
+        data={"q": query, "kl": "us-en"},
+    )
+    if status >= 400:
+        raise HttpError("duckduckgo HTTP %d" % status)
+    results = []
+    # Each result: an <a class="result__a" href="...">title</a> optionally
+    # followed by an <a class="result__snippet">snippet</a>.
+    blocks = re.split(r'class="result__a"', text)
+    for block in blocks[1:]:
+        m = re.search(r'href="([^"]+)"', block)
+        if not m:
+            continue
+        url = _ddg_unwrap(m.group(1))
+        tm = re.search(r'>(.*?)</a>', block, re.S)
+        title = strip_tags(tm.group(1)) if tm else url
+        sm = re.search(r'class="result__snippet"[^>]*>(.*?)</a>', block, re.S)
+        snippet = strip_tags(sm.group(1)) if sm else ""
+        if url.startswith("http"):
+            results.append({"title": title or url, "url": url,
+                            "snippet": snippet, "source": "duckduckgo"})
+        if len(results) >= max_results:
+            break
+    return results
+
+
+def provider_duckduckgo_ia(query, max_results, env):
+    # Instant Answer API: no key, reliable, but only returns curated
+    # abstracts/related topics for entity-like queries (empty for many general
+    # queries — callers should fall through to another provider then).
+    data = http_json(
+        "GET", "https://api.duckduckgo.com/",
+        params={"q": query, "format": "json", "no_html": 1, "no_redirect": 1,
+                "t": "csp-web-search"},
+    )
+    out = []
+    abstract = data.get("AbstractText") or data.get("Abstract")
+    if abstract:
+        out.append({
+            "title": data.get("Heading") or query,
+            "url": data.get("AbstractURL", ""),
+            "snippet": strip_tags(abstract),
+            "source": "duckduckgo_ia",
+        })
+
+    def _walk(topics):
+        for t in topics:
+            if len(out) >= max_results:
+                return
+            if isinstance(t, dict) and t.get("Topics"):
+                _walk(t["Topics"])
+            elif isinstance(t, dict) and t.get("FirstURL"):
+                text = strip_tags(t.get("Text", ""))
+                out.append({
+                    "title": text.split(" - ")[0] if text else t["FirstURL"],
+                    "url": t.get("FirstURL", ""),
+                    "snippet": text,
+                    "source": "duckduckgo_ia",
+                })
+
+    _walk(data.get("RelatedTopics", []) or [])
+    return out[:max_results]
+
+
+def provider_wikipedia(query, max_results, env):
+    data = http_json(
+        "GET", "https://en.wikipedia.org/w/api.php",
+        params={
+            "action": "query", "list": "search", "srsearch": query,
+            "srlimit": max_results, "format": "json", "srprop": "snippet",
+        },
+    )
+    out = []
+    for hit in (data.get("query", {}).get("search", []) or [])[:max_results]:
+        title = hit.get("title", "")
+        out.append({
+            "title": title,
+            "url": "https://en.wikipedia.org/wiki/" + urllib.parse.quote(title.replace(" ", "_")),
+            "snippet": strip_tags(hit.get("snippet", "")),
+            "source": "wikipedia",
+        })
+    return out
+
+
+def provider_arxiv(query, max_results, env):
+    status, text = http_request(
+        "GET", "https://export.arxiv.org/api/query",
+        params={"search_query": "all:" + query, "start": 0,
+                "max_results": max_results},
+    )
+    if status >= 400:
+        raise HttpError("arxiv HTTP %d" % status)
+    out = []
+    for entry in re.findall(r"<entry>(.*?)</entry>", text, re.S)[:max_results]:
+        tm = re.search(r"<title>(.*?)</title>", entry, re.S)
+        im = re.search(r"<id>(.*?)</id>", entry, re.S)
+        sm = re.search(r"<summary>(.*?)</summary>", entry, re.S)
+        pm = re.search(r"<published>(.*?)</published>", entry, re.S)
+        title = strip_tags(tm.group(1)) if tm else ""
+        url = (im.group(1).strip() if im else "")
+        out.append({
+            "title": title,
+            "url": url,
+            "snippet": strip_tags(sm.group(1)) if sm else "",
+            "source": "arxiv",
+            "published": pm.group(1).strip() if pm else None,
+        })
+    return out
+
+
+def provider_crossref(query, max_results, env):
+    data = http_json(
+        "GET", "https://api.crossref.org/works",
+        params={"query": query, "rows": max_results},
+    )
+    out = []
+    for item in (data.get("message", {}).get("items", []) or [])[:max_results]:
+        title = (item.get("title") or [""])[0]
+        url = item.get("URL", "")
+        container = (item.get("container-title") or [""])[0]
+        parts = (item.get("published", {}) or {}).get("date-parts", [[None]])
+        year = parts[0][0] if parts and parts[0] else None
+        out.append({
+            "title": strip_tags(title),
+            "url": url,
+            "snippet": strip_tags(item.get("abstract", "")) or container,
+            "source": "crossref",
+            "published": str(year) if year else None,
+        })
+    return out
+
+
+def provider_pubmed(query, max_results, env):
+    base = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
+    common = {"db": "pubmed", "retmode": "json"}
+    key = env.get("NCBI_API_KEY")
+    if key:
+        common["api_key"] = key
+    search = http_json("GET", base + "/esearch.fcgi",
+                       params=dict(common, term=query, retmax=max_results))
+    ids = (search.get("esearchresult", {}) or {}).get("idlist", []) or []
+    if not ids:
+        return []
+    summ = http_json("GET", base + "/esummary.fcgi",
+                     params=dict(common, id=",".join(ids)))
+    res = summ.get("result", {}) or {}
+    out = []
+    for pid in ids:
+        item = res.get(pid) or {}
+        date = item.get("pubdate", "")
+        source = item.get("source", "")
+        snippet = ". ".join(x for x in (source, date) if x)
+        out.append({
+            "title": strip_tags(item.get("title", "")),
+            "url": "https://pubmed.ncbi.nlm.nih.gov/%s/" % pid,
+            "snippet": snippet,
+            "source": "pubmed",
+            "published": date or None,
+        })
+    return out
+
+
+def _openalex_abstract(index):
+    if not index:
+        return ""
+    positioned = []
+    for word, spots in index.items():
+        for spot in spots:
+            positioned.append((spot, word))
+    positioned.sort()
+    return " ".join(word for _, word in positioned)
+
+
+def provider_openalex(query, max_results, env):
+    # Reliable + no key, but OpenAlex now meters a small per-IP daily budget;
+    # a contact email joins the "polite pool" and an API key lifts the budget.
+    params = {"search": query, "per-page": max_results}
+    mail = env.get("OPENALEX_MAILTO") or env.get("OPERON_CONTACT_EMAIL")
+    if mail:
+        params["mailto"] = mail
+    key = env.get("OPENALEX_API_KEY")
+    if key:
+        params["api_key"] = key
+    data = http_json("GET", "https://api.openalex.org/works", params=params)
+    out = []
+    for item in (data.get("results", []) or [])[:max_results]:
+        out.append({
+            "title": strip_tags(item.get("title") or ""),
+            "url": item.get("doi") or item.get("id") or "",
+            "snippet": _openalex_abstract(item.get("abstract_inverted_index"))[:500],
+            "source": "openalex",
+            "published": item.get("publication_date"),
+        })
+    return out
+
+
+def provider_semanticscholar(query, max_results, env):
+    headers = {}
+    key = env.get("SEMANTIC_SCHOLAR_API_KEY")
+    if key:
+        headers["x-api-key"] = key
+    data = http_json(
+        "GET", "https://api.semanticscholar.org/graph/v1/paper/search",
+        headers=headers,
+        params={"query": query, "limit": max_results,
+                "fields": "title,url,abstract,year,venue"},
+    )
+    out = []
+    for item in (data.get("data", []) or [])[:max_results]:
+        out.append({
+            "title": item.get("title", ""),
+            "url": item.get("url", ""),
+            "snippet": item.get("abstract") or item.get("venue") or "",
+            "source": "semanticscholar",
+            "published": str(item["year"]) if item.get("year") else None,
+        })
+    return out
+
+
+def provider_brave(query, max_results, env):
+    key = env.get("BRAVE_SEARCH_API_KEY") or env.get("BRAVE_API_KEY")
+    if not key:
+        raise HttpError("BRAVE_SEARCH_API_KEY not set")
+    data = http_json(
+        "GET", "https://api.search.brave.com/res/v1/web/search",
+        headers={"X-Subscription-Token": key, "Accept": "application/json"},
+        params={"q": query, "count": max_results},
+    )
+    out = []
+    for hit in (data.get("web", {}).get("results", []) or [])[:max_results]:
+        out.append({
+            "title": hit.get("title", ""),
+            "url": hit.get("url", ""),
+            "snippet": strip_tags(hit.get("description", "")),
+            "source": "brave",
+            "published": hit.get("age"),
+        })
+    return out
+
+
+def provider_serper(query, max_results, env):
+    key = env.get("SERPER_API_KEY")
+    if not key:
+        raise HttpError("SERPER_API_KEY not set")
+    data = http_json(
+        "POST", "https://google.serper.dev/search",
+        headers={"X-API-KEY": key, "Content-Type": "application/json"},
+        data=json.dumps({"q": query, "num": max_results}),
+    )
+    out = []
+    for hit in (data.get("organic", []) or [])[:max_results]:
+        out.append({
+            "title": hit.get("title", ""),
+            "url": hit.get("link", ""),
+            "snippet": hit.get("snippet", ""),
+            "source": "serper",
+            "published": hit.get("date"),
+        })
+    return out
+
+
+def provider_tavily(query, max_results, env):
+    key = env.get("TAVILY_API_KEY")
+    if not key:
+        raise HttpError("TAVILY_API_KEY not set")
+    data = http_json(
+        "POST", "https://api.tavily.com/search",
+        headers={"Content-Type": "application/json"},
+        data=json.dumps({
+            "api_key": key, "query": query,
+            "max_results": max_results, "search_depth": "basic",
+        }),
+    )
+    out = []
+    for hit in (data.get("results", []) or [])[:max_results]:
+        out.append({
+            "title": hit.get("title", ""),
+            "url": hit.get("url", ""),
+            "snippet": hit.get("content", ""),
+            "source": "tavily",
+            "published": hit.get("published_date"),
+        })
+    return out
+
+
+PROVIDERS = {
+    # Free, no key, and reachable through Claude Science's sandbox proxy
+    # allowlist (verified: arXiv/Crossref/PubMed/OpenAlex/Semantic Scholar).
+    "crossref": provider_crossref,
+    "arxiv": provider_arxiv,
+    "pubmed": provider_pubmed,
+    "openalex": provider_openalex,
+    "semanticscholar": provider_semanticscholar,
+    # Free general-web providers. These WORK when the server runs outside the
+    # sandbox, but Claude Science's operon egress allowlist currently blocks
+    # DuckDuckGo/Wikipedia (403), so in-sandbox they fail fast and fall through.
+    "duckduckgo": provider_duckduckgo,
+    "duckduckgo_ia": provider_duckduckgo_ia,
+    "wikipedia": provider_wikipedia,
+    # Key-based general search. Also subject to the sandbox allowlist (their API
+    # domains are blocked in-sandbox today); kept for out-of-sandbox use and in
+    # case the allowlist is widened.
+    "brave": provider_brave,
+    "serper": provider_serper,
+    "tavily": provider_tavily,
+}
+
+# Key-based providers and the env var that activates each.
+KEY_PROVIDERS = [
+    ("brave", ("BRAVE_SEARCH_API_KEY", "BRAVE_API_KEY")),
+    ("serper", ("SERPER_API_KEY",)),
+    ("tavily", ("TAVILY_API_KEY",)),
+]
+# Free fallbacks, in order, for auto mode. Ordered for the primary deployment
+# target — inside Claude Science's sandbox, where egress is limited to an
+# allowlist of scientific sources — so we lead with the reliable no-key
+# scholarly APIs. General-web/paid providers are omitted from auto (blocked
+# in-sandbox); they remain explicitly selectable via provider=<name>.
+FREE_FALLBACKS = ["crossref", "arxiv", "pubmed"]
+
+
+def auto_order(env):
+    """Key providers whose key is present first, then free fallbacks."""
+    order = []
+    for name, keys in KEY_PROVIDERS:
+        if any(env.get(k) for k in keys):
+            order.append(name)
+    order.extend(FREE_FALLBACKS)
+    return order
+
+
+def do_web_search(args, env):
+    query = (args.get("query") or "").strip()
+    if not query:
+        raise ValueError("query is required")
+    max_results = args.get("max_results", 5)
+    try:
+        max_results = max(1, min(20, int(max_results)))
+    except Exception:
+        max_results = 5
+    provider = (args.get("provider") or "auto").strip().lower()
+
+    if provider == "auto":
+        candidates = auto_order(env)
+    elif provider in PROVIDERS:
+        candidates = [provider]
+    else:
+        raise ValueError(
+            "unknown provider '%s' (available: auto, %s)"
+            % (provider, ", ".join(sorted(PROVIDERS)))
+        )
+
+    warnings = []
+    for name in candidates:
+        fn = PROVIDERS[name]
+        try:
+            results = fn(query, max_results, env)
+        except Exception as exc:
+            warnings.append("%s: %s" % (name, exc))
+            log("provider %s failed: %s" % (name, exc))
+            continue
+        if results:
+            return {"provider": name, "query": query,
+                    "results": results[:max_results], "warnings": warnings}
+        warnings.append("%s: no results" % name)
+
+    return {"provider": None, "query": query, "results": [],
+            "warnings": warnings or ["no providers available"]}
+
+
+def do_fetch_url(args, env):
+    url = (args.get("url") or "").strip()
+    if not url:
+        raise ValueError("url is required")
+    if not re.match(r"^https?://", url, re.I):
+        raise ValueError("url must be http(s)")
+    max_chars = args.get("max_chars", 8000)
+    try:
+        max_chars = max(200, min(50000, int(max_chars)))
+    except Exception:
+        max_chars = 8000
+    status, text = http_request("GET", url)
+    if status >= 400:
+        raise HttpError("HTTP %d fetching %s" % (status, url))
+    return {"url": url, "status": status,
+            "content": html_to_text(text, max_chars)}
+
+
+# --------------------------------------------------------------------------- #
+# MCP tool schemas                                                             #
+# --------------------------------------------------------------------------- #
+# Shared search input schema (both search aliases use it verbatim).
+_SEARCH_INPUT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "query": {"type": "string", "description": "Search query."},
+        "max_results": {
+            "type": "integer", "default": 5, "minimum": 1, "maximum": 20,
+            "description": "Maximum number of results (1-20).",
+        },
+        "provider": {
+            "type": "string",
+            "default": "auto",
+            "enum": ["auto", "crossref", "arxiv", "pubmed", "openalex",
+                     "semanticscholar", "duckduckgo", "duckduckgo_ia",
+                     "wikipedia", "brave", "serper", "tavily"],
+            "description": "Search backend; 'auto' picks the best available.",
+        },
+    },
+    "required": ["query"],
+}
+
+# Planner guidance shared by the search tools. The leading sentence is
+# deliberately explicit so Claude Science's planner routes here instead of the
+# unavailable Anthropic-hosted ``web_search``.
+_SEARCH_DESCRIPTION = (
+    "Local CSP web / literature search — USE THIS under Claude Science Proxy "
+    "(CSP) INSTEAD OF the hosted 'Web Search' tool. The Anthropic hosted "
+    "web_search tool is unavailable under CSP's virtual login and fails with "
+    "\"Tool 'web_search' not found on agent\"; do NOT call it. This local MCP "
+    "connector does the search for you. Returns titles, URLs and snippets. Free "
+    "with no API key: searches scholarly sources (Crossref, arXiv, PubMed, and "
+    "optionally OpenAlex / Semantic Scholar) with automatic fallback. "
+    "provider='auto' (default) tries configured key providers first, then the "
+    "no-key scholarly providers, capturing per-provider warnings. NOTE: inside "
+    "Claude Science's sandbox, network egress is restricted to an allowlist of "
+    "scientific sources, so general search engines (duckduckgo/wikipedia) and "
+    "paid providers (brave/serper/tavily) are typically unavailable there and "
+    "are best-effort only."
+)
+
+TOOLS = [
+    {
+        # Primary, planner-friendly name. Distinct from the hosted `web_search`.
+        "name": "search_literature",
+        "description": _SEARCH_DESCRIPTION + " Alias: csp_web_search.",
+        "inputSchema": _SEARCH_INPUT_SCHEMA,
+    },
+    {
+        # Explicit CSP-branded alias, identical behaviour.
+        "name": "csp_web_search",
+        "description": _SEARCH_DESCRIPTION + " Alias of search_literature.",
+        "inputSchema": _SEARCH_INPUT_SCHEMA,
+    },
+    {
+        "name": "fetch_url",
+        "description": (
+            "Fetch a web page (or text/JSON resource) and return its readable "
+            "text with HTML stripped. Useful to read a result found via "
+            "search_literature / csp_web_search. Part of the local CSP "
+            "web-search MCP connector."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "url": {"type": "string", "description": "Absolute http(s) URL."},
+                "max_chars": {
+                    "type": "integer", "default": 8000, "minimum": 200,
+                    "maximum": 50000,
+                    "description": "Truncate the extracted text to this many chars.",
+                },
+            },
+            "required": ["url"],
+        },
+    },
+]
+
+# Dispatch includes the advertised names plus a hidden ``web_search`` alias kept
+# for backward compatibility. ``web_search`` is intentionally NOT in TOOLS so the
+# planner never sees a tool whose name collides with the hosted one.
+TOOL_DISPATCH = {
+    "search_literature": do_web_search,
+    "csp_web_search": do_web_search,
+    "web_search": do_web_search,
+    "fetch_url": do_fetch_url,
+}
+
+
+# --------------------------------------------------------------------------- #
+# JSON-RPC / MCP stdio loop                                                    #
+# --------------------------------------------------------------------------- #
+def _result(msg_id, result):
+    return {"jsonrpc": "2.0", "id": msg_id, "result": result}
+
+
+def _error(msg_id, code, message):
+    return {"jsonrpc": "2.0", "id": msg_id,
+            "error": {"code": code, "message": message}}
+
+
+def handle(msg, env):
+    method = msg.get("method")
+    msg_id = msg.get("id")
+    # Notifications (no id) never get a response.
+    if msg_id is None and method and method.startswith("notifications/"):
+        return None
+
+    if method == "initialize":
+        params = msg.get("params") or {}
+        proto = params.get("protocolVersion") or DEFAULT_PROTOCOL
+        return _result(msg_id, {
+            "protocolVersion": proto,
+            "capabilities": {"tools": {"listChanged": False}},
+            "serverInfo": {"name": SERVER_NAME, "version": SERVER_VERSION},
+        })
+    if method == "ping":
+        return _result(msg_id, {})
+    if method == "tools/list":
+        return _result(msg_id, {"tools": TOOLS})
+    if method == "tools/call":
+        params = msg.get("params") or {}
+        name = params.get("name")
+        args = params.get("arguments") or {}
+        fn = TOOL_DISPATCH.get(name)
+        if fn is None:
+            return _error(msg_id, -32602, "unknown tool: %s" % name)
+        try:
+            payload = fn(args, env)
+            text = json.dumps(payload, ensure_ascii=False, indent=2)
+            return _result(msg_id, {
+                "content": [{"type": "text", "text": text}],
+                "isError": False,
+            })
+        except Exception as exc:
+            return _result(msg_id, {
+                "content": [{"type": "text",
+                             "text": "%s error: %s" % (name, exc)}],
+                "isError": True,
+            })
+    if msg_id is None:
+        return None  # unknown notification
+    return _error(msg_id, -32601, "method not found: %s" % method)
+
+
+def main():
+    env = os.environ
+    log("started (requests=%s, proxy=%s)" % (
+        _HAVE_REQUESTS, env.get("HTTPS_PROXY") or env.get("https_proxy") or "none"))
+    stdin = sys.stdin
+    for line in stdin:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            msg = json.loads(line)
+        except Exception:
+            continue
+        try:
+            resp = handle(msg, env)
+        except Exception as exc:  # never crash the loop
+            log("handler crashed: %s" % exc)
+            resp = _error(msg.get("id"), -32603, "internal error: %s" % exc)
+        if resp is not None:
+            sys.stdout.write(json.dumps(resp, ensure_ascii=False) + "\n")
+            sys.stdout.flush()
+
+
+if __name__ == "__main__":
+    main()

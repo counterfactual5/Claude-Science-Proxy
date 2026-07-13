@@ -128,6 +128,20 @@ pub fn run() {
             // dangling active normalized to empty. Migration merged into config::load_from (no separate relay_presets).
             let _ = config::load_from(&config::default_dir());
 
+            // Seed the built-in, no-key `web-search` MCP connector on first run so
+            // Claude Science has real web search/fetch out of the box (Anthropic's
+            // hosted web_search is unavailable under CSP virtual login). One-time,
+            // sentinel-guarded: a user who later disables/removes it is respected.
+            mcp_manager::seed_builtin_connectors();
+
+            // Seed the built-in `csp-web-access` standing-guidance Skill on first
+            // run (enabled by default) so Claude Science, in every session,
+            // prefers CSP's local `web-search` MCP for any web search and never
+            // wastes a turn on the hosted `web_search` tool (unavailable under
+            // CSP). Sentinel-guarded and self-healing, mirroring the MCP seed; a
+            // user who later disables/removes it is respected.
+            skill_manager::seed_builtin_skills();
+
             // Close window → quit: stop proxy, clear secret, keep sandbox running (spec §5.1).
             if let Some(win) = app.get_webview_window("main") {
                 let handle = app.handle().clone();

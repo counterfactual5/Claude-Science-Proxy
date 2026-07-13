@@ -203,6 +203,7 @@ impl SkillStore {
             size_bytes: inspection.total_size_bytes,
             imported_at: current_iso8601(),
             requirements: inspection.requirements,
+            builtin: false,
         };
 
         // Update inventory
@@ -261,6 +262,83 @@ impl SkillStore {
     pub fn enabled_skills(&self) -> Result<Vec<Skill>, String> {
         let inv = self.load_inventory()?;
         Ok(inv.skills.values().filter(|s| s.enabled).cloned().collect())
+    }
+
+    /// Seed a CSP-managed built-in Skill into the inventory exactly once, guarded
+    /// by a sentinel file so a user who later disables or removes it is never
+    /// resurrected on the next launch. The bundled `files` (relative path,
+    /// contents) are written into managed storage. No-op (returns `false`) if the
+    /// sentinel exists or a Skill with the same `name` is already present.
+    ///
+    /// `sentinel` is a dotfile name under the store root (e.g.
+    /// `.seeded-csp-web-access`). Mirrors `McpStore::seed_once`.
+    pub fn seed_once(
+        &self,
+        sentinel: &str,
+        name: &str,
+        description: &str,
+        files: &[(&str, &str)],
+        requirements: &[&str],
+    ) -> Result<bool, String> {
+        let marker = self.root.join(sentinel);
+        if marker.exists() {
+            return Ok(false);
+        }
+        let mut inv = self.load_inventory()?;
+        let seeded = if inv.skills.values().any(|s| s.name == name) {
+            false
+        } else {
+            let id = SkillId::new();
+            let dest = self.root.join(id.as_str());
+            let size_bytes = write_builtin_files(&dest, files)?;
+            let skill = Skill {
+                id: id.clone(),
+                name: name.to_string(),
+                description: description.to_string(),
+                store_path: dest,
+                source_path: PathBuf::from(format!("builtin://{name}")),
+                enabled: true,
+                size_bytes,
+                imported_at: current_iso8601(),
+                requirements: requirements.iter().map(|s| s.to_string()).collect(),
+                builtin: true,
+            };
+            inv.skills.insert(id.to_string(), skill);
+            self.save_inventory(&inv)?;
+            true
+        };
+        // Stamp the sentinel regardless, so a name collision does not make us
+        // retry (and resurrect) on every launch.
+        let _ = fs::write(&marker, b"1\n");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = fs::set_permissions(&marker, fs::Permissions::from_mode(0o600));
+        }
+        Ok(seeded)
+    }
+
+    /// Refresh the on-disk content of an already-seeded built-in Skill so app
+    /// upgrades propagate new bundled files. Only touches a Skill still present
+    /// in the inventory (so a user removal stays removed) and preserves its
+    /// `enabled` state. No-op (returns `false`) if the named built-in Skill is
+    /// absent.
+    pub fn refresh_builtin(
+        &self,
+        name: &str,
+        description: &str,
+        files: &[(&str, &str)],
+    ) -> Result<bool, String> {
+        let mut inv = self.load_inventory()?;
+        let Some(skill) = inv.skills.values_mut().find(|s| s.builtin && s.name == name) else {
+            return Ok(false);
+        };
+        let dest = skill.store_path.clone();
+        let size_bytes = write_builtin_files(&dest, files)?;
+        skill.description = description.to_string();
+        skill.size_bytes = size_bytes;
+        self.save_inventory(&inv)?;
+        Ok(true)
     }
 
     /// Discover importable Skills under the given `(dir, label)` roots.
@@ -501,6 +579,30 @@ pub(crate) fn copy_dir(src: &Path, dst: &Path) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+/// Write bundled built-in Skill files into `dest`, replacing any stale copy, and
+/// return the total bytes written. Rejects unsafe relative paths (traversal /
+/// absolute) so a bundled manifest can never escape the managed store dir.
+fn write_builtin_files(dest: &Path, files: &[(&str, &str)]) -> Result<u64, String> {
+    if dest.exists() {
+        fs::remove_dir_all(dest).map_err(|e| format!("clear builtin skill dir: {e}"))?;
+    }
+    fs::create_dir_all(dest).map_err(|e| format!("create builtin skill dir: {e}"))?;
+    let mut total = 0u64;
+    for (rel, contents) in files {
+        if rel.is_empty() || rel.contains("..") || rel.starts_with('/') || rel.starts_with('\\') {
+            return Err(format!("invalid builtin skill file path: {rel}"));
+        }
+        let path = dest.join(rel);
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).map_err(|e| format!("create builtin skill subdir: {e}"))?;
+        }
+        fs::write(&path, contents.as_bytes())
+            .map_err(|e| format!("write builtin skill file: {e}"))?;
+        total += contents.len() as u64;
+    }
+    Ok(total)
 }
 
 /// Current UTC time as an RFC 3339 / ISO 8601 string (e.g. `2026-07-12T10:30:00Z`).
@@ -812,6 +914,73 @@ mod tests {
         let found = store.discover(&[(missing, "~/nope".to_string())]).unwrap();
         assert!(found.is_empty());
         let _ = fs::remove_dir_all(&store.root);
+    }
+
+    #[test]
+    fn seed_once_seeds_then_is_sticky() {
+        let store = temp_store();
+        let files = [("SKILL.md", "---\nname: csp-web-access\n---\nguidance")];
+        // First seed: creates an enabled builtin skill + stamps the sentinel.
+        let seeded = store
+            .seed_once(".seeded-test", "csp-web-access", "desc", &files, &["mcp"])
+            .unwrap();
+        assert!(seeded);
+        let list = store.list().unwrap();
+        assert_eq!(list.len(), 1);
+        assert!(list[0].builtin);
+        assert!(list[0].enabled);
+        assert_eq!(list[0].name, "csp-web-access");
+
+        // User removes it → gone from inventory.
+        let id = list[0].id.clone();
+        store.remove(&id).unwrap();
+        assert!(store.list().unwrap().is_empty());
+
+        // Second seed is sticky: sentinel present → no resurrection.
+        let seeded2 = store
+            .seed_once(".seeded-test", "csp-web-access", "desc", &files, &["mcp"])
+            .unwrap();
+        assert!(!seeded2);
+        assert!(store.list().unwrap().is_empty());
+
+        let _ = fs::remove_dir_all(&store.root);
+    }
+
+    #[test]
+    fn refresh_builtin_updates_content_and_preserves_disabled() {
+        let store = temp_store();
+        let v1 = [("SKILL.md", "v1")];
+        store
+            .seed_once(".seeded-test", "csp-web-access", "d1", &v1, &["mcp"])
+            .unwrap();
+        let id = store.list().unwrap()[0].id.clone();
+        // User disables it.
+        store.set_enabled(&id, false).unwrap();
+
+        // Refresh with new content: rewrites files, keeps it disabled.
+        let v2 = [("SKILL.md", "v2-longer-content")];
+        let refreshed = store
+            .refresh_builtin("csp-web-access", "d2", &v2)
+            .unwrap();
+        assert!(refreshed);
+        let skill = store.get(&id).unwrap().unwrap();
+        assert!(!skill.enabled, "refresh must not re-enable a disabled skill");
+        assert_eq!(skill.description, "d2");
+        let md = fs::read_to_string(skill.store_path.join("SKILL.md")).unwrap();
+        assert_eq!(md, "v2-longer-content");
+
+        // Refreshing a non-existent builtin name is a no-op.
+        assert!(!store.refresh_builtin("nope", "x", &v2).unwrap());
+
+        let _ = fs::remove_dir_all(&store.root);
+    }
+
+    #[test]
+    fn write_builtin_files_rejects_traversal() {
+        let dir = env::temp_dir().join(format!("csp-builtin-{}", rand_u64()));
+        assert!(write_builtin_files(&dir, &[("../evil", "x")]).is_err());
+        assert!(write_builtin_files(&dir, &[("/abs", "x")]).is_err());
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]

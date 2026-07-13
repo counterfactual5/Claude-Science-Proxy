@@ -41,6 +41,7 @@ const I18N = {
     save: "保存",
     edit: "编辑",
     delete: "删除",
+    confirmDeleteShort: "确认删除？",
     openFolder: "打开文件夹",
     models: "启用模型",
     ports: "端口管理",
@@ -51,6 +52,9 @@ const I18N = {
     stopTitle: "停止本地代理与 Science 沙箱",
     editCspJson: "Edit CSP.json",
     activeBadge: "当前生效",
+    mcpBuiltinBadge: "内置",
+    mcpBuiltinHint: "CSP 内置的免费联网搜索（无需 API Key）。在 Claude Science 沙箱内出网被限制为科研数据源白名单，因此默认使用可用的免密钥学术检索源（Crossref、arXiv、PubMed，及 OpenAlex / Semantic Scholar）并自动回退；通用搜索引擎（DuckDuckGo/维基百科）与需密钥的 Brave/Serper/Tavily 通常被沙箱白名单拦截。可在 env 中填入 BRAVE_SEARCH_API_KEY / SERPER_API_KEY / TAVILY_API_KEY 尝试启用。",
+    skillBuiltinHint: "CSP 内置的常驻指引 Skill：让 Claude Science 在每个会话都优先使用本地 web-search MCP（search_literature / csp_web_search 搜索，fetch_url 读取网页），不要调用 CSP 下不可用的托管 web_search 工具。可像其他 Skill 一样停用或删除（会被记住）。",
     emptyTitle: "还没有模型配置",
     emptyHint: "点右上「＋ 新建」添加一条连接",
     noUrl: "（未填地址）",
@@ -69,7 +73,6 @@ const I18N = {
     metaBuiltinMap: "内置映射",
     metaNoModel: "未选模型",
     loadConfigFail: "读取配置失败：{err}",
-    confirmRetry: "{prompt} —— 再点一次同一按钮确认（4 秒内）。",
     createFail: "创建失败：{err}",
     anthropicBaseErr: "这个地址看起来是 Anthropic 兼容端点，请填写 OpenAI 兼容 base root（如 https://api.example.com/v1）。",
     editConnActive: "编辑（当前生效）",
@@ -223,6 +226,7 @@ const I18N = {
     save: "Save",
     edit: "Edit",
     delete: "Delete",
+    confirmDeleteShort: "Confirm delete?",
     openFolder: "Open folder",
     models: "Enabled models",
     ports: "Ports",
@@ -233,6 +237,9 @@ const I18N = {
     stopTitle: "Stop local proxy and Science sandbox",
     editCspJson: "Edit CSP.json",
     activeBadge: "Active",
+    mcpBuiltinBadge: "Built-in",
+    mcpBuiltinHint: "CSP's bundled free web search (no API key). Inside the Claude Science sandbox, egress is limited to an allowlist of scientific sources, so it defaults to reliable no-key scholarly providers (Crossref, arXiv, PubMed; also OpenAlex / Semantic Scholar) with automatic fallback. General engines (DuckDuckGo/Wikipedia) and paid providers (Brave/Serper/Tavily) are usually blocked by the allowlist; add BRAVE_SEARCH_API_KEY / SERPER_API_KEY / TAVILY_API_KEY to env to try them.",
+    skillBuiltinHint: "CSP's built-in standing-guidance Skill: it makes Claude Science prefer the local web-search MCP (search_literature / csp_web_search to search, fetch_url to read pages) in every session, and never call the hosted web_search tool (unavailable under CSP). You can disable or remove it like any Skill (the choice is remembered).",
     emptyTitle: "No profiles yet",
     emptyHint: "Tap + New to add a connection",
     noUrl: "(no URL)",
@@ -251,7 +258,6 @@ const I18N = {
     metaBuiltinMap: "built-in mapping",
     metaNoModel: "no model selected",
     loadConfigFail: "Failed to load config: {err}",
-    confirmRetry: "{prompt} — click the same button again to confirm (within 4s).",
     createFail: "Create failed: {err}",
     anthropicBaseErr: "This URL looks Anthropic-compatible. Use an OpenAI-compatible base root (e.g. https://api.example.com/v1).",
     editConnActive: "Edit (active)",
@@ -527,7 +533,8 @@ const mockStore = {
     { id: "sk_1", name: "AlphaFold Database Fetch & Analyze", description: "Retrieve and analyze AlphaFold predicted structures for a protein.", enabled: true, sizeBytes: 12450, importedAt: "2026-07-12T02:30:00Z", requirements: ["python"] }
   ],
   mcpServers: [
-    { id: "mcp_0000000000000001", name: "local-fs", description: "本地文件系统工具", command: "python3", args: ["/Users/me/mcp/fs_server.py"], env: { API_TOKEN: "••••1234" }, enabled: true, createdAt: "2026-07-12T02:30:00Z", updatedAt: "2026-07-12T02:30:00Z" }
+    { id: "mcp_0000000000000000", name: "web-search", description: "Free web search & page fetch (no API key). Defaults to no-key scholarly providers (Crossref, arXiv, PubMed) with automatic fallback; general/paid providers are usually blocked by the sandbox allowlist. Set BRAVE_SEARCH_API_KEY / SERPER_API_KEY / TAVILY_API_KEY to try them.", command: "python3", args: ["/Users/me/.csp/sandbox/home/.claude-science/mcp/csp-web-search-server.py"], env: { BRAVE_SEARCH_API_KEY: "", SERPER_API_KEY: "", TAVILY_API_KEY: "" }, enabled: true, builtin: true, createdAt: "2026-07-12T02:30:00Z", updatedAt: "2026-07-12T02:30:00Z" },
+    { id: "mcp_0000000000000001", name: "local-fs", description: "本地文件系统工具", command: "python3", args: ["/Users/me/mcp/fs_server.py"], env: { API_TOKEN: "••••1234" }, enabled: true, builtin: false, createdAt: "2026-07-12T02:30:00Z", updatedAt: "2026-07-12T02:30:00Z" }
   ],
 };
 function mockMask(k) { return k ? "••••" + String(k).slice(-4) : ""; }
@@ -770,7 +777,6 @@ let busyOp = null;
 // Current config snapshot (get_config result). Full keys never stored here—only masks.
 let configState = { profiles: [], templates: [], active_id: "", proxy_port: 18991, sandbox_port: 8990 };
 let pendingSkipActivateId = null;   // when set_active validation is ambiguous, allow switch via "skip verify"
-let pendingConfirm = null;          // dangerous ops (clear key / delete): "click again to confirm" state
 
 // ── Model capability: native builtin mapping / relay multi-select fixed models ──
 const CAP = { NATIVE: "native", FIXED: "fixed" };
@@ -873,12 +879,8 @@ function setMsg(text) {
   }
 }
 
-function profileName(id) {
-  const p = (configState.profiles || []).find((x) => x.id === id);
-  return p ? p.name : id;
-}
-
 function closeAllMenus() {
+  resetAllMenuConfirms();
   [els.profileList, els.skillList, els.mcpList].forEach((listEl) => {
     if (!listEl) return;
     listEl.querySelectorAll(".pmenu").forEach((m) => {
@@ -1020,19 +1022,36 @@ function showSkip() { els.skipActivateBtn.hidden = false; }
 function hideSkip() { els.skipActivateBtn.hidden = true; pendingSkipActivateId = null; }
 
 // Dangerous ops "click again to confirm" (avoid window.confirm; unreliable in Tauri webview).
-function confirmAction(token, promptText, fn) {
-  if (pendingConfirm && pendingConfirm.token === token) {
-    clearTimeout(pendingConfirm.timer);
-    pendingConfirm = null;
+// Two-step delete for overflow-menu items: the first click relabels the button
+// in place to "确认删除？" and keeps the menu open; the second click within the
+// window runs `fn`. Auto-resets after 4s or when any menu closes so a stale
+// confirm label never persists.
+function menuConfirmDelete(btn, fn) {
+  if (!btn) { fn(); return; }
+  if (btn.dataset.confirming === "1") {
+    resetMenuConfirm(btn);
+    closeAllMenus();
     fn();
     return;
   }
-  if (pendingConfirm) clearTimeout(pendingConfirm.timer);
-  pendingConfirm = {
-    token,
-    timer: setTimeout(() => { pendingConfirm = null; }, 4000),
-  };
-  setMsg(T("confirmRetry", { prompt: promptText }));
+  btn.dataset.origLabel = btn.textContent;
+  btn.dataset.confirming = "1";
+  btn.textContent = S().confirmDeleteShort || "确认删除？";
+  btn.classList.add("confirming");
+  btn._confirmTimer = setTimeout(() => resetMenuConfirm(btn), 4000);
+}
+
+function resetMenuConfirm(btn) {
+  if (!btn || btn.dataset.confirming !== "1") return;
+  if (btn._confirmTimer) { clearTimeout(btn._confirmTimer); btn._confirmTimer = null; }
+  if (btn.dataset.origLabel != null) btn.textContent = btn.dataset.origLabel;
+  btn.classList.remove("confirming");
+  delete btn.dataset.confirming;
+  delete btn.dataset.origLabel;
+}
+
+function resetAllMenuConfirms() {
+  document.querySelectorAll('.pmenu-item[data-confirming="1"]').forEach(resetMenuConfirm);
 }
 
 // ── Load config + render list ──
@@ -1458,11 +1477,6 @@ async function connSave() {
   }
 }
 
-function del(id) {
-  const p = (configState.profiles || []).find((x) => x.id === id);
-  const nm = p ? p.name : id;
-  confirmAction("delete:" + id, T("confirmDelete", { name: nm }), () => doDelete(id));
-}
 async function doDelete(id) {
   setBusy(true);
   try {
@@ -1577,9 +1591,9 @@ function wire() {
         }
         return;
       }
+      if (act === "delete") { menuConfirmDelete(btn, () => doDelete(id)); return; }
       closeAllMenus();
       if (act === "editconn") openConn(id);
-      else if (act === "delete") del(id);
       return;
     }
     if (row && !e.target.closest(".pmenu-wrap")) {
@@ -1689,9 +1703,9 @@ function wire() {
         }
         return;
       }
+      if (act === "delete") { menuConfirmDelete(btn, () => doRemoveMcpServer(id)); return; }
       closeAllMenus();
-      if (act === "delete") removeMcpServer(id, name);
-      else if (act === "edit") openMcpModal(id);
+      if (act === "edit") openMcpModal(id);
     } else if (e.target.type === "checkbox") {
       toggleMcpServer(id, e.target.checked);
     }
@@ -1738,9 +1752,9 @@ function wire() {
         }
         return;
       }
+      if (act === "delete") { menuConfirmDelete(btn, () => doRemoveSkill(id)); return; }
       closeAllMenus();
-      if (act === "delete") removeSkill(id, name);
-      else if (act === "edit") openSkillFile(id, name);
+      if (act === "edit") openSkillFile(id, name);
       else if (act === "openfolder") openSkillFolder(id, name);
     } else if (e.target.type === "checkbox") {
       toggleSkill(id, e.target.checked);
@@ -1791,10 +1805,11 @@ async function loadSkills() {
   }
 }
 
-function setSkillMsg(text) {
+function setSkillMsg(text, kind = "err") {
   const t = text ? String(text) : "";
+  const cls = kind === "err" ? "err" : "ok";
   els.skillMsg.textContent = t;
-  els.skillMsg.className = "msg" + (t ? " err" : "");
+  els.skillMsg.className = "msg" + (t ? " " + cls : "");
   els.skillMsg.parentElement.hidden = !t;
 }
 
@@ -1816,6 +1831,7 @@ function renderSkills(list) {
           <div class="skill-title-group">
             <input type="checkbox"${checked} />
             <span class="skill-name" title="${escapeHtml(s.name)}">${escapeHtml(s.name)}</span>
+            ${s.builtin ? `<span class="badge on" title="${escapeHtml(S().skillBuiltinHint)}">${escapeHtml(S().mcpBuiltinBadge)}</span>` : ""}
           </div>
           <div class="pmenu-wrap">
             <button type="button" class="abtn pmenu-btn" data-act="menu" aria-haspopup="true" aria-expanded="false" title="${escapeHtml(S().menuMore)}">⋯</button>
@@ -1870,10 +1886,6 @@ async function toggleSkill(id, enabled) {
   } finally {
     setBusy(false);
   }
-}
-
-function removeSkill(id, name) {
-  confirmAction("remove-skill:" + id, T("confirmDelete", { name }) || `将删除 Skill「${name}」`, () => doRemoveSkill(id));
 }
 
 async function openSkillFile(id) {
@@ -2126,9 +2138,10 @@ async function adoptWorkspaceSkills() {
     await loadSkills();
     const failures = (result.failures || []).join("; ");
     if (result.needsRestart) {
-      setSkillMsg("已采纳 Skill；沙箱已停止，正在重新启动…");
+      setSkillMsg("已采纳 Skill；沙箱已停止，正在重新启动…", "info");
       try {
         await call("one_click_login");
+        setSkillMsg("已采纳并重启完成", "info");
       } catch (e) {
         setSkillMsg(`已采纳，但重新启动失败：${resolveBackendErr(e)}`);
       }
@@ -2264,6 +2277,7 @@ function renderMcp(list) {
           <div class="skill-title-group">
             <input type="checkbox"${checked} />
             <span class="skill-name" title="${escapeHtml(s.name)}">${escapeHtml(s.name)}</span>
+            ${s.builtin ? `<span class="badge on" title="${escapeHtml(S().mcpBuiltinHint)}">${escapeHtml(S().mcpBuiltinBadge)}</span>` : ""}
           </div>
           <div class="pmenu-wrap">
             <button type="button" class="abtn pmenu-btn" data-act="menu" aria-haspopup="true" aria-expanded="false" title="${escapeHtml(S().menuMore)}">⋯</button>
@@ -2293,10 +2307,6 @@ async function toggleMcpServer(id, enabled) {
   } finally {
     setBusy(false);
   }
-}
-
-function removeMcpServer(id, name) {
-  confirmAction("remove-mcp:" + id, T("confirmDelete", { name }) || `将删除 MCP「${name}」`, () => doRemoveMcpServer(id));
 }
 
 async function doRemoveMcpServer(id) {

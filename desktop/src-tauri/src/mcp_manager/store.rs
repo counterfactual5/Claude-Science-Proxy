@@ -168,6 +168,7 @@ impl McpStore {
             args: input.args,
             env: input.env,
             enabled: true,
+            builtin: false,
             created_at: now.clone(),
             updated_at: now,
         };
@@ -248,6 +249,41 @@ impl McpStore {
             .filter(|s| s.enabled)
             .cloned()
             .collect())
+    }
+
+    /// Seed a CSP-managed connector into the inventory exactly once, guarded by
+    /// a sentinel file so a user who later disables or removes it is never
+    /// overridden on the next launch. No-op (returns `false`) if the sentinel
+    /// exists or a server with the same name is already present.
+    ///
+    /// `sentinel` is a dotfile name under the store root (e.g.
+    /// `.seeded-web-search`). Timestamps are stamped here so callers only need
+    /// to supply the connector's identity and command.
+    pub fn seed_once(&self, sentinel: &str, mut server: McpServer) -> Result<bool, String> {
+        let marker = self.root.join(sentinel);
+        if marker.exists() {
+            return Ok(false);
+        }
+        let mut inv = self.load_inventory()?;
+        let seeded = if inv.servers.values().any(|s| s.name == server.name) {
+            false
+        } else {
+            let now = current_iso8601();
+            server.created_at = now.clone();
+            server.updated_at = now;
+            inv.servers.insert(server.id.to_string(), server);
+            self.save_inventory(&inv)?;
+            true
+        };
+        // Stamp the sentinel regardless, so a name collision does not make us
+        // retry (and resurrect) on every launch.
+        let _ = fs::write(&marker, b"1\n");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = fs::set_permissions(&marker, fs::Permissions::from_mode(0o600));
+        }
+        Ok(seeded)
     }
 }
 
@@ -483,6 +519,57 @@ mod tests {
 
         let sum = &store.list().unwrap()[0];
         assert_eq!(sum.env.get("TOKEN").unwrap(), "••••9999");
+        let _ = fs::remove_dir_all(&store.root);
+    }
+
+    fn builtin_server(name: &str) -> McpServer {
+        McpServer {
+            id: McpServerId::new(),
+            name: name.to_string(),
+            description: "built-in".into(),
+            command: "python3".into(),
+            args: vec!["/x/server.py".into()],
+            env: BTreeMap::new(),
+            enabled: true,
+            builtin: true,
+            created_at: String::new(),
+            updated_at: String::new(),
+        }
+    }
+
+    #[test]
+    fn seed_once_seeds_then_is_guarded_by_sentinel() {
+        let store = temp_store();
+        // First seed inserts and enables the connector.
+        let seeded = store
+            .seed_once(".seeded-web-search", builtin_server("web-search"))
+            .unwrap();
+        assert!(seeded);
+        let list = store.list().unwrap();
+        assert_eq!(list.len(), 1);
+        assert!(list[0].builtin);
+        assert!(list[0].enabled);
+
+        // Simulate the user removing it, then relaunch: sentinel present → no resurrection.
+        store.remove(&list[0].id).unwrap();
+        let seeded_again = store
+            .seed_once(".seeded-web-search", builtin_server("web-search"))
+            .unwrap();
+        assert!(!seeded_again);
+        assert!(store.list().unwrap().is_empty());
+        let _ = fs::remove_dir_all(&store.root);
+    }
+
+    #[test]
+    fn seed_once_skips_when_name_collides() {
+        let store = temp_store();
+        store.create(input("web-search", "python3")).unwrap();
+        // A user connector already owns the name → don't duplicate, but stamp sentinel.
+        let seeded = store
+            .seed_once(".seeded-web-search", builtin_server("web-search"))
+            .unwrap();
+        assert!(!seeded);
+        assert_eq!(store.list().unwrap().len(), 1);
         let _ = fs::remove_dir_all(&store.root);
     }
 

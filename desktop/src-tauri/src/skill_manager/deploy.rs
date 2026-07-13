@@ -234,6 +234,7 @@ mod tests {
             size_bytes: 0,
             imported_at: String::new(),
             requirements: vec![],
+            builtin: false,
         }
     }
 

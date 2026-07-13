@@ -78,6 +78,12 @@ pub struct McpServer {
     #[serde(default)]
     pub env: BTreeMap<String, String>,
     pub enabled: bool,
+    /// True for connectors CSP seeds and manages itself (e.g. the bundled
+    /// `web-search` server). The command/args of a built-in are re-resolved at
+    /// deploy time (interpreter + bundled script path) so they self-heal, and
+    /// the UI labels them as built-in.
+    #[serde(default)]
+    pub builtin: bool,
     /// ISO 8601 timestamps.
     pub created_at: String,
     pub updated_at: String,
@@ -99,6 +105,7 @@ impl McpServer {
             args: self.args.clone(),
             env,
             enabled: self.enabled,
+            builtin: self.builtin,
             created_at: self.created_at.clone(),
             updated_at: self.updated_at.clone(),
         }
@@ -116,6 +123,8 @@ pub struct McpServerSummary {
     pub args: Vec<String>,
     pub env: BTreeMap<String, String>,
     pub enabled: bool,
+    #[serde(default)]
+    pub builtin: bool,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -193,6 +202,7 @@ mod tests {
             args: vec![],
             env,
             enabled: true,
+            builtin: false,
             created_at: String::new(),
             updated_at: String::new(),
         };

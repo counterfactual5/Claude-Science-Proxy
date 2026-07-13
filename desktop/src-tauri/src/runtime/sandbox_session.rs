@@ -279,10 +279,29 @@ fn deploy_sandbox_mcp(auth_dir: &Path, sbx_home: &Path) -> (String, bool) {
         Ok(s) => s,
         Err(e) => return (format!("deploy skipped: store open failed: {e}"), false),
     };
-    let enabled = match store.enabled_servers() {
+    let mut enabled = match store.enabled_servers() {
         Ok(e) => e,
         Err(e) => return (format!("deploy skipped: list failed: {e}"), false),
     };
+    // Built-in connectors (e.g. `web-search`) carry a bundled script that must
+    // exist on disk, and their interpreter/script path are re-resolved here so
+    // the entry self-heals against the current sandbox Python layout.
+    if enabled.iter().any(|s| s.builtin) {
+        use crate::mcp_manager::builtin;
+        let mcp_dir = auth_dir.join("mcp");
+        let _ = std::fs::create_dir_all(&mcp_dir);
+        let script = builtin::write_web_search_server(&mcp_dir)
+            .unwrap_or_else(|| builtin::web_search_script_path(sbx_home));
+        let script_str = script.to_string_lossy().into_owned();
+        let python = builtin::resolve_sandbox_python(sbx_home)
+            .map(|p| p.to_string_lossy().into_owned());
+        for s in enabled.iter_mut().filter(|s| s.builtin) {
+            if let Some(py) = &python {
+                s.command = py.clone();
+            }
+            s.args = vec![script_str.clone()];
+        }
+    }
     match crate::mcp_manager::deploy_enabled_mcp(&enabled, auth_dir, sbx_home, &real_science) {
         Ok(r) => (
             format!(

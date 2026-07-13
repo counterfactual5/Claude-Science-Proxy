@@ -75,6 +75,10 @@ pub struct Skill {
     /// Detected requirements (e.g. "python", "network", "mcp")
     #[serde(default)]
     pub requirements: Vec<String>,
+    /// True for CSP-managed built-in skills (seeded by CSP, shown with a badge).
+    /// `#[serde(default)]` so older inventories without the field deserialize.
+    #[serde(default)]
+    pub builtin: bool,
 }
 
 /// A summary of a Skill for UI listing.
@@ -88,6 +92,8 @@ pub struct SkillSummary {
     pub size_bytes: u64,
     pub imported_at: String,
     pub requirements: Vec<String>,
+    #[serde(default)]
+    pub builtin: bool,
 }
 
 impl From<&Skill> for SkillSummary {
@@ -100,6 +106,7 @@ impl From<&Skill> for SkillSummary {
             size_bytes: s.size_bytes,
             imported_at: s.imported_at.clone(),
             requirements: s.requirements.clone(),
+            builtin: s.builtin,
         }
     }
 }
