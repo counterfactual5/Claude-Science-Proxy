@@ -4,7 +4,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License">
-  <img src="https://img.shields.io/badge/version-1.4.0-brightgreen.svg" alt="v1.4.0">
+  <img src="https://img.shields.io/badge/version-1.4.1-brightgreen.svg" alt="v1.4.1">
   <img src="https://img.shields.io/badge/platform-macOS%20Apple%20Silicon-1d1d1f.svg" alt="macOS Apple Silicon">
   <img src="https://img.shields.io/badge/built%20with-Tauri%202-C25A34.svg" alt="Tauri 2">
 </p>
@@ -25,7 +25,7 @@ CSP is a **macOS desktop app** (Tauri) that:
 4. Verifies API keys **before** switching the active profile
 5. Manages local **Skills** and **stdio MCP connectors**, deploying enabled ones into the sandbox on launch
 
-> **v1.4.0** — **从 Science 采纳**: import Skill drafts Science writes under its workspace (`SKILL.md` folders, `kernel.py`, …) into `~/.csp/skills/` when virtual login blocks `host.skills` publish. Report issues on [GitHub](https://github.com/counterfactual5/Claude-Science-Proxy/issues).
+> **v1.4.1** — Skill rows now use a compact `⋯` menu (edit / open folder / delete). Builds on **v1.4.0**'s **从 Science 采纳**: import Skill drafts Science writes under its workspace (`SKILL.md` folders, `kernel.py`, …) into `~/.csp/skills/` when virtual login blocks `host.skills` publish. Report issues on [GitHub](https://github.com/counterfactual5/Claude-Science-Proxy/issues).
 
 > **Platform:** macOS **Apple Silicon** today. The app is **not notarized** yet; on first launch, right-click → **Open**.
 

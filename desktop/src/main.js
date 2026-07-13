@@ -41,6 +41,7 @@ const I18N = {
     save: "保存",
     edit: "编辑",
     delete: "删除",
+    openFolder: "打开文件夹",
     models: "启用模型",
     ports: "端口管理",
     proxyPort: "代理",
@@ -222,6 +223,7 @@ const I18N = {
     save: "Save",
     edit: "Edit",
     delete: "Delete",
+    openFolder: "Open folder",
     models: "Enabled models",
     ports: "Ports",
     proxyPort: "Proxy",
@@ -664,6 +666,9 @@ function mockInvoke(cmd, args) {
       mockStore.skills = mockStore.skills.filter((x) => x.id !== input.skillId);
       return Promise.resolve(null);
     }
+    case "open_skill_file":
+    case "open_skill_folder":
+      return Promise.resolve("/preview/skills/" + ((args.input && args.input.skillId) || ""));
     case "list_mcp_servers":
       return Promise.resolve(mockStore.mcpServers.map((s) => ({ ...s })));
     case "discover_mcp_servers":
@@ -874,13 +879,15 @@ function profileName(id) {
 }
 
 function closeAllMenus() {
-  if (!els.profileList) return;
-  els.profileList.querySelectorAll(".pmenu").forEach((m) => {
-    m.hidden = true;
-    m.classList.remove("pmenu-up");
-  });
-  els.profileList.querySelectorAll(".pmenu-btn").forEach((b) => {
-    b.setAttribute("aria-expanded", "false");
+  [els.profileList, els.skillList, els.mcpList].forEach((listEl) => {
+    if (!listEl) return;
+    listEl.querySelectorAll(".pmenu").forEach((m) => {
+      m.hidden = true;
+      m.classList.remove("pmenu-up");
+    });
+    listEl.querySelectorAll(".pmenu-btn").forEach((b) => {
+      b.setAttribute("aria-expanded", "false");
+    });
   });
 }
 
@@ -928,7 +935,15 @@ function closeHeaderMenus() {
 function positionProfileMenu(menu, btn) {
   menu.classList.remove("pmenu-up");
   menu.hidden = false;
-  const scrollEl = els.panelBody || els.profileList;
+  // Resolve the actual scroll container the button lives in. Skill/MCP rows
+  // scroll inside `.skill-list`; Profile rows scroll inside `.panel-body`.
+  // Using a stale `els.panelBody` (the hidden Profiles pane) yielded a zero-height
+  // rect on other tabs, forcing the menu to wrongly flip up and hide under the header.
+  const scrollEl =
+    btn.closest(".skill-list") ||
+    btn.closest(".panel-body") ||
+    els.panelBody ||
+    els.profileList;
   const containerRect = scrollEl.getBoundingClientRect();
   const btnRect = btn.getBoundingClientRect();
   const menuHeight = menu.offsetHeight;
@@ -1661,6 +1676,20 @@ function wire() {
     const btn = e.target.closest("[data-act]");
     if (btn) {
       const act = btn.getAttribute("data-act");
+      if (act === "menu") {
+        const wrap = btn.closest(".pmenu-wrap");
+        const menu = wrap && wrap.querySelector(".pmenu");
+        if (!menu) return;
+        const wasOpen = !menu.hidden;
+        closeHeaderMenus();
+        closeAllMenus();
+        if (!wasOpen) {
+          positionProfileMenu(menu, btn);
+          btn.setAttribute("aria-expanded", "true");
+        }
+        return;
+      }
+      closeAllMenus();
       if (act === "delete") removeMcpServer(id, name);
       else if (act === "edit") openMcpModal(id);
     } else if (e.target.type === "checkbox") {
@@ -1691,17 +1720,30 @@ function wire() {
     if (busy) return;
     const btn = e.target.closest("[data-act]");
     const row = e.target.closest(".skill-row[data-id]");
-    if (row) {
-      const id = row.getAttribute("data-id");
-      const name = row.getAttribute("data-name");
-      if (btn) {
-        const act = btn.getAttribute("data-act");
-        if (act === "delete") {
-          removeSkill(id, name);
+    if (!row) return;
+    const id = row.getAttribute("data-id");
+    const name = row.getAttribute("data-name");
+    if (btn) {
+      const act = btn.getAttribute("data-act");
+      if (act === "menu") {
+        const wrap = btn.closest(".pmenu-wrap");
+        const menu = wrap && wrap.querySelector(".pmenu");
+        if (!menu) return;
+        const wasOpen = !menu.hidden;
+        closeHeaderMenus();
+        closeAllMenus();
+        if (!wasOpen) {
+          positionProfileMenu(menu, btn);
+          btn.setAttribute("aria-expanded", "true");
         }
-      } else if (e.target.type === "checkbox") {
-        toggleSkill(id, e.target.checked);
+        return;
       }
+      closeAllMenus();
+      if (act === "delete") removeSkill(id, name);
+      else if (act === "edit") openSkillFile(id, name);
+      else if (act === "openfolder") openSkillFolder(id, name);
+    } else if (e.target.type === "checkbox") {
+      toggleSkill(id, e.target.checked);
     }
   });
 
@@ -1775,7 +1817,14 @@ function renderSkills(list) {
             <input type="checkbox"${checked} />
             <span class="skill-name" title="${escapeHtml(s.name)}">${escapeHtml(s.name)}</span>
           </div>
-          <button class="abtn pmenu-item danger small" data-act="delete" style="padding: 2px 6px;">${escapeHtml(S().delete || "删除")}</button>
+          <div class="pmenu-wrap">
+            <button type="button" class="abtn pmenu-btn" data-act="menu" aria-haspopup="true" aria-expanded="false" title="${escapeHtml(S().menuMore)}">⋯</button>
+            <div class="pmenu" hidden role="menu">
+              <button type="button" class="pmenu-item" data-act="edit" role="menuitem">${escapeHtml(S().edit)}</button>
+              <button type="button" class="pmenu-item" data-act="openfolder" role="menuitem">${escapeHtml(S().openFolder)}</button>
+              <button type="button" class="pmenu-item danger" data-act="delete" role="menuitem">${escapeHtml(S().delete)}</button>
+            </div>
+          </div>
         </div>
         ${s.description ? `<div class="skill-desc">${escapeHtml(s.description)}</div>` : ""}
         <div class="skill-meta">
@@ -1825,6 +1874,28 @@ async function toggleSkill(id, enabled) {
 
 function removeSkill(id, name) {
   confirmAction("remove-skill:" + id, T("confirmDelete", { name }) || `将删除 Skill「${name}」`, () => doRemoveSkill(id));
+}
+
+async function openSkillFile(id) {
+  setBusy(true);
+  try {
+    await call("open_skill_file", { input: { skillId: id } });
+  } catch (e) {
+    setSkillMsg(resolveBackendErr(e));
+  } finally {
+    setBusy(false);
+  }
+}
+
+async function openSkillFolder(id) {
+  setBusy(true);
+  try {
+    await call("open_skill_folder", { input: { skillId: id } });
+  } catch (e) {
+    setSkillMsg(resolveBackendErr(e));
+  } finally {
+    setBusy(false);
+  }
 }
 
 async function doRemoveSkill(id) {
@@ -2194,9 +2265,12 @@ function renderMcp(list) {
             <input type="checkbox"${checked} />
             <span class="skill-name" title="${escapeHtml(s.name)}">${escapeHtml(s.name)}</span>
           </div>
-          <div class="skill-hd-acts">
-            <button class="abtn pmenu-item small" data-act="edit" style="padding: 2px 6px;">编辑</button>
-            <button class="abtn pmenu-item danger small" data-act="delete" style="padding: 2px 6px;">${escapeHtml(S().delete || "删除")}</button>
+          <div class="pmenu-wrap">
+            <button type="button" class="abtn pmenu-btn" data-act="menu" aria-haspopup="true" aria-expanded="false" title="${escapeHtml(S().menuMore)}">⋯</button>
+            <div class="pmenu" hidden role="menu">
+              <button type="button" class="pmenu-item" data-act="edit" role="menuitem">${escapeHtml(S().edit)}</button>
+              <button type="button" class="pmenu-item danger" data-act="delete" role="menuitem">${escapeHtml(S().delete)}</button>
+            </div>
           </div>
         </div>
         ${s.description ? `<div class="skill-desc">${escapeHtml(s.description)}</div>` : ""}

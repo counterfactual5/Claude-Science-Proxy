@@ -115,6 +115,42 @@ pub async fn remove_skill(input: RemoveSkillInput) -> Result<(), String> {
     .await
 }
 
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct OpenSkillInput {
+    pub skill_id: String,
+}
+
+/// Reveal a Skill's managed folder in Finder.
+#[tauri::command]
+pub async fn open_skill_folder(input: OpenSkillInput) -> Result<String, String> {
+    run_blocking(move || {
+        let store = SkillStore::open()?;
+        let skill = store
+            .get(&input.skill_id)?
+            .ok_or_else(|| "skill not found".to_string())?;
+        crate::runtime::system::open_path_in_default_app(&skill.store_path)?;
+        Ok(skill.store_path.display().to_string())
+    })
+    .await
+}
+
+/// Open a Skill's `SKILL.md` in the default editor (falls back to the folder).
+#[tauri::command]
+pub async fn open_skill_file(input: OpenSkillInput) -> Result<String, String> {
+    run_blocking(move || {
+        let store = SkillStore::open()?;
+        let skill = store
+            .get(&input.skill_id)?
+            .ok_or_else(|| "skill not found".to_string())?;
+        let md = skill.store_path.join("SKILL.md");
+        let target = if md.is_file() { md } else { skill.store_path.clone() };
+        crate::runtime::system::open_path_in_default_app(&target)?;
+        Ok(target.display().to_string())
+    })
+    .await
+}
+
 #[tauri::command]
 pub async fn discover_workspace_skills() -> Result<Vec<WorkspaceSkillCandidate>, String> {
     run_blocking(workspace_ingress::discover_workspace_skills).await

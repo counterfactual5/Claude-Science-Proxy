@@ -3,6 +3,14 @@
 All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.4.1] — 2026-07-13
+
+### Changed
+- **Row actions menus**: Skill and MCP rows now use a compact `⋯` menu instead of inline buttons, matching the Profiles row layout. Skill rows offer **编辑 / 打开文件夹 / 删除** (open `SKILL.md` in the default editor, reveal the managed folder in Finder, remove); MCP rows offer **编辑 / 删除**.
+
+### Fixed
+- **Version metadata**: `Cargo.toml` is bumped in lockstep so the binary's internal version string matches the bundle version.
+
 ## [1.4.0] — 2026-07-13
 
 ### Added
