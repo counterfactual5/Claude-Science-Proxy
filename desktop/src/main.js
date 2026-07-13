@@ -668,6 +668,32 @@ function mockInvoke(cmd, args) {
       mockStore.skills.push(newSkill);
       return Promise.resolve(newSkill);
     }
+    case "create_skill": {
+      const content = (args.input && args.input.content) || "";
+      // Parse name/description from front-matter, mirroring the backend.
+      const nameMatch = content.match(/^name:\s*(.*)$/m);
+      const descMatch = content.match(/^description:\s*(.*)$/m);
+      const name = (nameMatch ? nameMatch[1] : "").trim();
+      const description = (descMatch ? descMatch[1] : "").trim();
+      if (!name || name === "Untitled Skill") {
+        return Promise.reject("Skill 名称不能为空");
+      }
+      if (mockStore.skills.some((s) => s.name === name)) {
+        return Promise.reject("同名 Skill 已存在：" + name);
+      }
+      const id = "sk_" + Math.random().toString(16).slice(2, 10);
+      const skill = {
+        id,
+        name,
+        description,
+        enabled: true,
+        sizeBytes: content.length,
+        importedAt: new Date().toISOString().replace(/\.\d{3}Z$/, "Z"),
+        requirements: [],
+      };
+      mockStore.skills.push(skill);
+      return Promise.resolve({ skill, needsRestart: false });
+    }
     case "set_skill_enabled": {
       const input = args.input || {};
       const s = mockStore.skills.find((x) => x.id === input.skillId);
@@ -1940,9 +1966,85 @@ async function doRemoveSkill(id) {
   }
 }
 
-// ── Skill Import Modal ──
+// ── Skill Create (new from scratch) Modal ──
+// Tracks whether the user hand-edited the SKILL.md body. While false, the body
+// is regenerated from the name/description fields so front-matter stays in sync;
+// once true, the body textarea is authoritative (single source of truth on save).
+let skillBodyDirty = false;
+
+function skillCreateTemplate(name, desc) {
+  const n = name || "";
+  const d = desc || "";
+  return `---
+name: ${n}
+description: ${d}
+---
+
+# ${n}
+
+<在此填写这个 Skill 的使用说明与触发条件…>
+`;
+}
+
+function syncSkillCreateBody() {
+  if (skillBodyDirty) return;
+  els.skillCreateBody.value = skillCreateTemplate(
+    els.skillCreateName.value.trim(),
+    els.skillCreateDesc.value.trim()
+  );
+}
+
+function openSkillCreate() {
+  closeMenu(els.skillMenu, els.skillMoreBtn);
+  if (busy) return;
+  els.skillCreateName.value = "";
+  els.skillCreateDesc.value = "";
+  skillBodyDirty = false;
+  els.skillCreateBody.value = skillCreateTemplate("", "");
+  els.skillCreateInspection.hidden = true;
+  els.skillCreateErrors.hidden = true;
+  els.skillCreateModal.hidden = false;
+  els.skillCreateName.focus();
+}
+
+function closeSkillCreate() {
+  els.skillCreateModal.hidden = true;
+}
+
+async function saveNewSkill() {
+  // The body textarea is authoritative: name/description are parsed from its
+  // front-matter by the backend, so the fields and front-matter never diverge.
+  const content = els.skillCreateBody.value;
+  els.skillCreateInspection.hidden = true;
+  els.skillCreateErrors.hidden = true;
+  setBusy(true);
+  try {
+    const result = await call("create_skill", { input: { content } });
+    closeSkillCreate();
+    await loadSkills();
+    if (result && result.needsRestart) {
+      setSkillMsg("已新建 Skill；沙箱已停止，正在重新启动…", "info");
+      try {
+        await call("one_click_login");
+        setSkillMsg("已新建并重启完成", "info");
+      } catch (e) {
+        setSkillMsg(`已新建，但重新启动失败：${resolveBackendErr(e)}`);
+      }
+    } else {
+      setSkillMsg("已新建 Skill", "info");
+    }
+  } catch (e) {
+    els.skillCreateInspection.hidden = false;
+    els.skillCreateErrors.hidden = false;
+    els.skillCreateErrors.textContent = resolveBackendErr(e);
+  } finally {
+    setBusy(false);
+  }
+}
+
 // ── Skill Import Modal ──
 function openSkillImport() {
+  closeMenu(els.skillMenu, els.skillMoreBtn);
   if (busy) return;
   els.skillSourcePath.value = "";
   els.skillImportConfirmBtn.disabled = true;
