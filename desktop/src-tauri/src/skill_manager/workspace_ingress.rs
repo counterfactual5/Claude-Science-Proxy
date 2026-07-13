@@ -276,7 +276,9 @@ fn push_dir_candidate(
     let content = read_bounded_file(&skill_md, MAX_SKILL_MD_SIZE)?;
     let (name, description) = skill_meta_from_bytes(&content);
     let key = workspace_key(org_uuid, workspace_id, &CandidateKind::Dir { rel: rel.to_string() });
-    let mut files = vec![SKILL_FILE.to_string()];
+    // `collect_relative_files` already includes SKILL.md (it walks the whole
+    // directory), so do not pre-seed it or the UI list shows SKILL.md twice.
+    let mut files = Vec::new();
     collect_relative_files(&source, &source, &mut files)?;
     let warnings = companion_warnings_for_files(&files);
     out.push(WorkspaceSkillCandidate {

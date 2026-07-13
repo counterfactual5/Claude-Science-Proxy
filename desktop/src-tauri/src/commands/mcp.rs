@@ -74,6 +74,7 @@ pub async fn open_mcp_inventory_json() -> Result<String, String> {
 ///   (ByteDance), and CodeBuddy (Tencent).
 /// - `servers` — VS Code.
 /// - `context_servers` — Zed.
+///
 /// Codex CLI is handled separately (TOML `[mcp_servers.*]`), not via this list.
 /// All use the same per-server object `{ command, args, env, description? }`.
 struct McpSource {

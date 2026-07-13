@@ -345,10 +345,11 @@ fn cleanup_legacy_root_skills(auth_dir: &Path) -> usize {
     let mut removed = 0;
     for entry in entries.flatten() {
         let p = entry.path();
-        if p.is_dir() && p.join(".csp_managed").is_file() {
-            if std::fs::remove_dir_all(&p).is_ok() {
-                removed += 1;
-            }
+        if p.is_dir()
+            && p.join(".csp_managed").is_file()
+            && std::fs::remove_dir_all(&p).is_ok()
+        {
+            removed += 1;
         }
     }
     removed
