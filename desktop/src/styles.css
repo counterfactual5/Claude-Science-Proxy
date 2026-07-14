@@ -619,6 +619,11 @@ select:focus {
   z-index: 1;
 }
 
+/* Lift the open row menu above neighbouring cards (same stacking as Profiles). */
+.pmenu-wrap:has(.pmenu:not([hidden])) {
+  z-index: 40;
+}
+
 .pmenu {
   position: absolute;
   right: 0;
@@ -916,7 +921,9 @@ select:focus-visible {
   gap: 6px;
   min-width: 0;
   max-width: 100%;
-  overflow-x: hidden;
+  /* Must stay visible: overflow-x:hidden creates a clip/stacking context that
+     buries the row ⋯ menu (编辑 / 删除) under the next card. */
+  overflow: visible;
   transition: border-color 0.15s, opacity 0.15s;
 }
 

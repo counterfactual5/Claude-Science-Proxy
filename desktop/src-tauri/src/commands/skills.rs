@@ -191,6 +191,18 @@ pub async fn open_skill_folder(input: OpenSkillInput) -> Result<String, String> 
     .await
 }
 
+/// Reveal the Skills inventory root (`~/.csp/skills/`) in Finder.
+#[tauri::command]
+pub async fn open_skills_root() -> Result<String, String> {
+    run_blocking(|| {
+        let store = SkillStore::open()?;
+        let root = store.root_dir();
+        crate::runtime::system::open_path_in_default_app(root)?;
+        Ok(root.display().to_string())
+    })
+    .await
+}
+
 /// Open a Skill's `SKILL.md` in the default editor (falls back to the folder).
 #[tauri::command]
 pub async fn open_skill_file(input: OpenSkillInput) -> Result<String, String> {

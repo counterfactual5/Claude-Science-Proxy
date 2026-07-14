@@ -3,6 +3,15 @@
 All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.6.12] — 2026-07-14
+
+### Changed
+- **Skill/MCP meta layout**: Size/path (or MCP command) stays on one row; requirement/env tags move to their own row — no orphan `·` separators when tags wrap.
+- **Skills header “打开文件夹”**: Moved from the per-skill row menu into the list-header `⋯` menu; opens `~/.csp/skills/` via new `open_skills_root` command (`SkillStore::root_dir`).
+
+### Fixed
+- **Skill/MCP card ⋯ menus buried under the next card**: Row cards no longer use `overflow-x: hidden` (that clipping + stacking context hid menus); open `.pmenu-wrap` lifts to `z-index: 40`, matching Profiles.
+
 ## [1.6.11] — 2026-07-14
 
 ### Changed
