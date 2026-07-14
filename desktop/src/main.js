@@ -28,7 +28,7 @@ const EDITION = detectEdition();
 const I18N = {
   cn: {
     myConfigs: "我的配置",
-    newBtn: "＋ 新建",
+    newBtn: "+ 新建",
     presetPicker: "选择预设",
     presetTitle: "快速填入名称与地址",
     wizNamePlaceholder: "点右侧 ▾ 选预设，或直接输入名称",
@@ -89,7 +89,7 @@ const I18N = {
     mcpBuiltinHint: "CSP 内置联网搜索（无需 API Key）。通用公共方法名：csp_web_search（auto → 可选密钥引擎 → DuckDuckGo Instant Answer → DuckDuckGo Lite → 维基百科）；学术：search_literature → 维基百科/Crossref/arXiv/PubMed。CSP 启动时会预授权检索域名。Brave/Serper/Tavily 密钥可选，用于提高可靠性，不是必需。切勿调用 Anthropic 原生 web_search。",
     skillBuiltinHint: "CSP 内置环境手册 Skill（csp-environment）：常驻指引本地与托管 Claude 的差异——双车道联网搜索、search_skills 必须带 query/prefix、禁止 /mnt/data、save_artifacts、CJK 字体、Skills 采纳与 network-allowlist。可像其他 Skill 一样停用或删除（会被记住）。",
     emptyTitle: "还没有模型配置",
-    emptyHint: "点右上「＋ 新建」添加一条连接",
+    emptyHint: "点右上「+ 新建」添加一条连接",
     noUrl: "（未填地址）",
     keyLabel: "Key",
     keySep: "：",
@@ -101,8 +101,32 @@ const I18N = {
     menuMore: "更多",
     descExpand: "更多",
     descCollapse: "收起",
-    createSkill: "➕ 新建",
-    importSkill: "导入",
+    createSkill: "+ 新建",
+    addMcp: "+ 新建",
+    scanImport: "扫描导入",
+    adoptFromScience: "从 Science 采纳",
+    skillsManageTitle: "Skills 管理",
+    skillApplyHint: "启用/停用的改动会在下次点击「启动 Claude Science」时生效；若沙箱正在运行，会自动重启以应用。",
+    skillEmptyTitle: "还没有 Skill。",
+    skillEmptyHint: "点「新建」从零创建，或在「⋯」里选「扫描导入」从本机常见 Skill 目录勾选导入。",
+    skillDiscoverTitle: "扫描本地 Skill",
+    skillDiscoverHintHtml: "扫描 <code>~/.agents/skills</code>、<code>~/.codex/skills</code>、<code>~/.claude/skills</code>、<code>~/.cursor/skills</code>、<code>~/.cursor/skills-cursor</code>，以及国产 <code>~/.trae/skills</code> / <code>~/.trae-cn/skills</code>（字节）、<code>~/.codebuddy/skills</code>（腾讯），勾选后复制到 <code>~/.csp/skills/</code>。沙箱自带的科学 Skill 不在此列；Science 工作区草稿请用「从 Science 采纳」。",
+    skillDiscoverEmpty: "没有扫描到可导入的 Skill。",
+    skillDiscoverImport: "导入所选",
+    skillPathAdvSummary: "手动路径导入（高级）",
+    skillPathLabel: "源目录路径",
+    skillPathHintHtml: "含 <code>SKILL.md</code> 的目录；检查通过后复制到 <code>~/.csp/skills/</code>。",
+    skillInspPreviewTitle: "检查预览",
+    skillInspect: "检查",
+    skillImportPath: "导入",
+    skillAlreadyImported: "已导入",
+    skillScanning: "扫描中…",
+    skillAdoptTitle: "从 Science 工作区采纳",
+    skillAdoptHintHtml: "扫描沙盒内 <code>workspaces/</code> 下的 Skill 草稿（<code>*.skill.md</code>、<code>*_SKILL.md</code> 或含 <code>SKILL.md</code> 的目录），连同 <code>kernel.py</code> 等伴随文件复制到 <code>~/.csp/skills/</code>。Science 无法直接发布技能时请用此功能。",
+    skillAdoptEmpty: "没有扫描到可采纳的 Skill 草稿。",
+    skillAdoptConfirm: "采纳所选",
+    skillAdoptedBadge: "已采纳",
+    mcpDiscoverBtn: "扫描导入",
     modelHintNative: "由 Science 选择器 + 内置映射自动选择（opus 深度 / haiku 快速）。",
     modelHintFixed: "勾选要在 Science 中启用的模型；列表第一个用于后台任务兜底。",
     metaManyModels: "{n} 个模型已启用",
@@ -232,7 +256,7 @@ const I18N = {
     errScratchNoSecret: "无法生成 secret",
     errScratchSpawnFailed: "起临时代理失败：{detail}",
     errScratchNotReady: "临时代理未就绪（多为 key/base_url 无效或依赖缺失）",
-    noActiveProfile: "还没有「当前生效」的配置。请先「＋ 新建」或点击一条配置切换，再点「启动 Claude Science」。",
+    noActiveProfile: "还没有「当前生效」的配置。请先「+ 新建」或点击一条配置切换，再点「启动 Claude Science」。",
     oneClickFail: "启动失败：{err}",
     stopFail: "停止失败：{err}",
     openCspFail: "打开 CSP.json 失败：{err}",
@@ -321,8 +345,32 @@ const I18N = {
     menuMore: "More",
     descExpand: "More",
     descCollapse: "Less",
-    createSkill: "➕ New",
-    importSkill: "Import",
+    createSkill: "+ New",
+    addMcp: "+ New",
+    scanImport: "Scan & import",
+    adoptFromScience: "Adopt from Science",
+    skillsManageTitle: "Skills",
+    skillApplyHint: "Enable/disable takes effect the next time you Start Claude Science; a running sandbox restarts automatically.",
+    skillEmptyTitle: "No Skills yet.",
+    skillEmptyHint: "Tap New to author one, or use ⋯ → Scan & import to pick from common local Skill folders.",
+    skillDiscoverTitle: "Scan local Skills",
+    skillDiscoverHintHtml: "Scans <code>~/.agents/skills</code>, <code>~/.codex/skills</code>, <code>~/.claude/skills</code>, <code>~/.cursor/skills</code>, <code>~/.cursor/skills-cursor</code>, plus domestic <code>~/.trae/skills</code> / <code>~/.trae-cn/skills</code> (ByteDance) and <code>~/.codebuddy/skills</code> (Tencent). Checked items copy into <code>~/.csp/skills/</code>. Science-bundled sandbox Skills are excluded; use Adopt from Science for workspace drafts.",
+    skillDiscoverEmpty: "No importable Skills found.",
+    skillDiscoverImport: "Import selected",
+    skillPathAdvSummary: "Manual path import (advanced)",
+    skillPathLabel: "Source directory",
+    skillPathHintHtml: "A folder containing <code>SKILL.md</code>; after inspect passes, it is copied to <code>~/.csp/skills/</code>.",
+    skillInspPreviewTitle: "Inspect preview",
+    skillInspect: "Inspect",
+    skillImportPath: "Import",
+    skillAlreadyImported: "Imported",
+    skillScanning: "Scanning…",
+    skillAdoptTitle: "Adopt from Science workspace",
+    skillAdoptHintHtml: "Scans sandbox <code>workspaces/</code> for Skill drafts (<code>*.skill.md</code>, <code>*_SKILL.md</code>, or folders with <code>SKILL.md</code>) and copies them with companion files like <code>kernel.py</code> into <code>~/.csp/skills/</code>. Use this when Science cannot publish skills directly.",
+    skillAdoptEmpty: "No adoptable Skill drafts found.",
+    skillAdoptConfirm: "Adopt selected",
+    skillAdoptedBadge: "Adopted",
+    mcpDiscoverBtn: "Scan & import",
     modelHintNative: "Auto-mapped via Science picker + built-in routing (opus for depth, haiku for speed).",
     modelHintFixed: "Check models to enable in Science; the first is the fallback for background tasks.",
     metaManyModels: "{n} models enabled",
@@ -592,7 +640,33 @@ function applyEditionUI() {
   if (els.skipActivateBtn) els.skipActivateBtn.textContent = t.skipActivate;
   if (els.listhdMoreBtn) els.listhdMoreBtn.title = t.menuMore;
   if (els.skillCreateBtn) els.skillCreateBtn.textContent = t.createSkill;
-  if (els.skillImportBtn) els.skillImportBtn.textContent = t.importSkill;
+  if (els.mcpAddBtn) els.mcpAddBtn.textContent = t.addMcp;
+  if (els.skillDiscoverBtn) els.skillDiscoverBtn.textContent = t.scanImport;
+  if (els.skillAdoptBtn) els.skillAdoptBtn.textContent = t.adoptFromScience;
+  if (els.mcpDiscoverBtn) els.mcpDiscoverBtn.textContent = t.mcpDiscoverBtn;
+  if (els.skillMoreBtn) els.skillMoreBtn.title = t.menuMore;
+  if (els.mcpMoreBtn) els.mcpMoreBtn.title = t.menuMore;
+  const skillsTitle = document.querySelector("#skillListSec > .skill-hd > .sec-title");
+  if (skillsTitle) skillsTitle.textContent = t.skillsManageTitle;
+  if (els.skillApplyHint) els.skillApplyHint.textContent = t.skillApplyHint;
+  if (els.skillEmptyTitle) els.skillEmptyTitle.textContent = t.skillEmptyTitle;
+  if (els.skillEmptyHint) els.skillEmptyHint.textContent = t.skillEmptyHint;
+  if (els.skillDiscoverTitle) els.skillDiscoverTitle.textContent = t.skillDiscoverTitle;
+  if (els.skillDiscoverHint) els.skillDiscoverHint.innerHTML = t.skillDiscoverHintHtml;
+  if (els.skillDiscoverEmptyText) els.skillDiscoverEmptyText.textContent = t.skillDiscoverEmpty;
+  if (els.skillDiscoverImportBtn) els.skillDiscoverImportBtn.textContent = t.skillDiscoverImport;
+  if (els.skillDiscoverCancelBtn) els.skillDiscoverCancelBtn.textContent = t.cancel;
+  if (els.skillPathAdvSummary) els.skillPathAdvSummary.textContent = t.skillPathAdvSummary;
+  if (els.skillPathLabel) els.skillPathLabel.textContent = t.skillPathLabel;
+  if (els.skillPathHint) els.skillPathHint.innerHTML = t.skillPathHintHtml;
+  if (els.skillInspPreviewTitle) els.skillInspPreviewTitle.textContent = t.skillInspPreviewTitle;
+  if (els.skillInspectBtn) els.skillInspectBtn.textContent = t.skillInspect;
+  if (els.skillImportConfirmBtn) els.skillImportConfirmBtn.textContent = t.skillImportPath;
+  if (els.skillAdoptTitle) els.skillAdoptTitle.textContent = t.skillAdoptTitle;
+  if (els.skillAdoptHint) els.skillAdoptHint.innerHTML = t.skillAdoptHintHtml;
+  if (els.skillAdoptEmptyText) els.skillAdoptEmptyText.textContent = t.skillAdoptEmpty;
+  if (els.skillAdoptConfirmBtn) els.skillAdoptConfirmBtn.textContent = t.skillAdoptConfirm;
+  if (els.skillAdoptCancelBtn) els.skillAdoptCancelBtn.textContent = t.cancel;
   populateWizPresetMenu();
   refreshWizPlaceholders();
 }
@@ -1106,7 +1180,7 @@ function setBusy(on, op) {
     els.proxyPort, els.sandboxPort,
     // Skill / MCP manager actions: prevent concurrent mutations racing a running op.
     els.skillCreateBtn, els.skillCreateSaveBtn, els.skillCreateCancelBtn,
-    els.skillImportBtn, els.skillMoreBtn, els.skillInspectBtn, els.skillImportConfirmBtn, els.skillImportCancelBtn,
+    els.skillMoreBtn, els.skillInspectBtn, els.skillImportConfirmBtn,
     els.skillDiscoverBtn, els.skillDiscoverImportBtn, els.skillDiscoverCancelBtn,
     els.skillAdoptBtn, els.skillAdoptConfirmBtn, els.skillAdoptCancelBtn,
     els.mcpMoreBtn, els.mcpJsonBtn, els.mcpNetworkAllowlistBtn, els.mcpDiscoverBtn, els.mcpDiscoverImportBtn, els.mcpDiscoverCancelBtn,
@@ -1202,12 +1276,11 @@ function showView(v) {
 }
 function cancelForm() { showView("list"); }
 
-// Skill tab: list / create / import / discover / adopt (full-page panels, same chrome as config wizard).
+// Skill tab: list / create / discover / adopt (full-page panels, same chrome as config wizard).
 function showSkillView(v) {
   const list = v === "list";
   if (els.skillListSec) els.skillListSec.hidden = !list;
   if (els.skillCreateSec) els.skillCreateSec.hidden = v !== "create";
-  if (els.skillImportSec) els.skillImportSec.hidden = v !== "import";
   if (els.skillDiscoverSec) els.skillDiscoverSec.hidden = v !== "discover";
   if (els.skillAdoptSec) els.skillAdoptSec.hidden = v !== "adopt";
   if (els.skillPane) {
@@ -1820,14 +1893,18 @@ function wire() {
     "skillCreateBtn", "skillCreateSec", "skillCreateName", "skillCreateDesc",
     "skillCreateBody", "skillCreateInspection", "skillCreateErrors",
     "skillCreateSaveBtn", "skillCreateCancelBtn",
-    "skillImportBtn", "skillMoreBtn", "skillMenu", "skillEmpty", "skillList", "skillMsg",
-    "skillDiscoverBtn", "skillDiscoverSec", "skillDiscoverList",
-    "skillDiscoverEmpty", "skillDiscoverImportBtn", "skillDiscoverCancelBtn",
-    "skillAdoptBtn", "skillAdoptSec", "skillAdoptList",
-    "skillAdoptEmpty", "skillAdoptConfirmBtn", "skillAdoptCancelBtn",
-    "skillImportSec", "skillSourcePath", "skillInspectionPreview",
+    "skillMoreBtn", "skillMenu", "skillEmpty", "skillEmptyTitle", "skillEmptyHint",
+    "skillApplyHint", "skillList", "skillMsg",
+    "skillDiscoverBtn", "skillDiscoverSec", "skillDiscoverTitle", "skillDiscoverHint",
+    "skillDiscoverList", "skillDiscoverEmpty", "skillDiscoverEmptyText",
+    "skillDiscoverImportBtn", "skillDiscoverCancelBtn",
+    "skillPathAdv", "skillPathAdvSummary", "skillPathLabel", "skillPathHint",
+    "skillSourcePath", "skillInspectionPreview", "skillInspPreviewTitle",
     "inspName", "inspDesc", "inspStats", "inspReqs", "inspWarnings", "inspErrors",
-    "skillInspectBtn", "skillImportConfirmBtn", "skillImportCancelBtn",
+    "skillInspectBtn", "skillImportConfirmBtn",
+    "skillAdoptBtn", "skillAdoptSec", "skillAdoptTitle", "skillAdoptHint",
+    "skillAdoptList", "skillAdoptEmpty", "skillAdoptEmptyText",
+    "skillAdoptConfirmBtn", "skillAdoptCancelBtn",
     "tabMcp", "mcpPane", "mcpListSec", "mcpAddBtn", "mcpMoreBtn", "mcpMenu", "mcpEmpty", "mcpList", "mcpMsg",
     "mcpJsonBtn", "mcpNetworkAllowlistBtn", "mcpDiscoverBtn", "mcpDiscoverSec", "mcpDiscoverList",
     "mcpDiscoverEmpty", "mcpDiscoverImportBtn", "mcpDiscoverCancelBtn",
@@ -2013,10 +2090,8 @@ function wire() {
   els.skillCreateName.addEventListener("input", syncSkillCreateBody);
   els.skillCreateDesc.addEventListener("input", syncSkillCreateBody);
   els.skillCreateBody.addEventListener("input", () => { skillBodyDirty = true; });
-  els.skillImportBtn.addEventListener("click", openSkillImport);
   els.skillInspectBtn.addEventListener("click", inspectSkillSource);
   els.skillImportConfirmBtn.addEventListener("click", importSkillConfirm);
-  els.skillImportCancelBtn.addEventListener("click", closeSkillImport);
   els.skillDiscoverBtn.addEventListener("click", openSkillDiscover);
   els.skillDiscoverCancelBtn.addEventListener("click", closeSkillDiscover);
   els.skillDiscoverImportBtn.addEventListener("click", importDiscoveredSkills);
@@ -2028,6 +2103,10 @@ function wire() {
   });
   els.skillAdoptList.addEventListener("change", (e) => {
     if (e.target && e.target.type === "checkbox") refreshAdoptGate();
+  });
+  els.skillSourcePath.addEventListener("input", () => {
+    els.skillImportConfirmBtn.disabled = true;
+    els.skillInspectionPreview.hidden = true;
   });
 
   // Skill list interactions
@@ -2061,11 +2140,6 @@ function wire() {
     } else if (e.target.type === "checkbox") {
       toggleSkill(id, e.target.checked);
     }
-  });
-
-  els.skillSourcePath.addEventListener("input", () => {
-    els.skillImportConfirmBtn.disabled = true;
-    els.skillInspectionPreview.hidden = true;
   });
 }
 
@@ -2140,7 +2214,7 @@ function renderSkills(list) {
   els.skillList.innerHTML = list.map((s) => {
     const enabledClass = s.enabled ? "" : " disabled";
     const checked = s.enabled ? " checked" : "";
-    const reqTags = (s.requirements || []).map(r => `<span class="skill-req-tag">${escapeHtml(r)}</span>`).join("");
+    const reqTags = (s.requirements || []).map(r => `<span class="skill-req-tag" title="${escapeHtml(r)}">${escapeHtml(r)}</span>`).join("");
     const dateText = formatImportedAt(s.importedAt);
     return `
       <div class="skill-row${enabledClass}" data-id="${escapeHtml(s.id)}" data-name="${escapeHtml(s.name)}">
@@ -2386,19 +2460,12 @@ async function saveNewSkill() {
   }
 }
 
-// ── Skill Import Modal ──
-function openSkillImport() {
-  closeMenu(els.skillMenu, els.skillMoreBtn);
-  if (busy) return;
-  els.skillSourcePath.value = "";
-  els.skillImportConfirmBtn.disabled = true;
-  els.skillInspectionPreview.hidden = true;
-  showSkillView("import");
-  els.skillSourcePath.focus();
-}
-
-function closeSkillImport() {
-  showSkillView("list");
+// ── Skill path import (advanced, nested under scan page) ──
+function resetSkillPathImport() {
+  if (els.skillPathAdv) els.skillPathAdv.open = false;
+  if (els.skillSourcePath) els.skillSourcePath.value = "";
+  if (els.skillImportConfirmBtn) els.skillImportConfirmBtn.disabled = true;
+  if (els.skillInspectionPreview) els.skillInspectionPreview.hidden = true;
 }
 
 async function inspectSkillSource() {
@@ -2449,21 +2516,23 @@ async function importSkillConfirm() {
   setBusy(true);
   try {
     await call("import_skill", { input: { sourcePath: path } });
-    closeSkillImport();
+    closeSkillDiscover();
     await loadSkills();
   } catch (e) {
     els.inspErrors.hidden = false;
     els.inspErrors.textContent = resolveBackendErr(e);
+    els.skillInspectionPreview.hidden = false;
   } finally {
     setBusy(false);
   }
 }
 
-// ── Skill Discovery Modal ──
+// ── Skill Discovery (scan → pick → import; same pattern as MCP) ──
 async function openSkillDiscover() {
   closeMenu(els.skillMenu, els.skillMoreBtn);
   if (busy) return;
-  els.skillDiscoverList.innerHTML = "<p class=\"hint\">扫描中…</p>";
+  resetSkillPathImport();
+  els.skillDiscoverList.innerHTML = `<p class="hint">${escapeHtml(S().skillScanning)}</p>`;
   els.skillDiscoverEmpty.hidden = true;
   els.skillDiscoverImportBtn.disabled = true;
   showSkillView("discover");
@@ -2478,6 +2547,7 @@ async function openSkillDiscover() {
 }
 
 function closeSkillDiscover() {
+  resetSkillPathImport();
   showSkillView("list");
 }
 
@@ -2488,9 +2558,10 @@ function renderDiscover(found) {
     return;
   }
   els.skillDiscoverEmpty.hidden = true;
+  const importedBadge = S().skillAlreadyImported;
   els.skillDiscoverList.innerHTML = found.map((d) => {
     const disabled = d.alreadyImported ? " disabled" : "";
-    const badge = d.alreadyImported ? `<span class="skill-req-tag">已导入</span>` : "";
+    const badge = d.alreadyImported ? `<span class="skill-req-tag">${escapeHtml(importedBadge)}</span>` : "";
     return `
       <label class="skill-discover-row${d.alreadyImported ? " disabled" : ""}">
         <input type="checkbox" value="${escapeHtml(d.sourcePath)}"${disabled} />
@@ -2537,7 +2608,7 @@ async function importDiscoveredSkills() {
 async function openSkillAdopt() {
   closeMenu(els.skillMenu, els.skillMoreBtn);
   if (busy) return;
-  els.skillAdoptList.innerHTML = "<p class=\"hint\">扫描中…</p>";
+  els.skillAdoptList.innerHTML = `<p class="hint">${escapeHtml(S().skillScanning)}</p>`;
   els.skillAdoptEmpty.hidden = true;
   els.skillAdoptConfirmBtn.disabled = true;
   showSkillView("adopt");
@@ -2562,13 +2633,14 @@ function renderSkillAdopt(found) {
     return;
   }
   els.skillAdoptEmpty.hidden = true;
+  const adoptedBadge = S().skillAdoptedBadge;
   els.skillAdoptList.innerHTML = found.map((d) => {
     const files = (d.files || []).slice(0, 6).join(", ");
     const more = (d.files || []).length > 6 ? ` +${d.files.length - 6}` : "";
     const warn = (d.warnings || []).length
       ? `<span class="skill-meta"><span>${escapeHtml(d.warnings[0])}</span></span>`
       : "";
-    const badge = d.alreadyImported ? `<span class="skill-req-tag">已采纳</span>` : "";
+    const badge = d.alreadyImported ? `<span class="skill-req-tag">${escapeHtml(adoptedBadge)}</span>` : "";
     return `
       <label class="skill-discover-row">
         <input type="checkbox" value="${escapeHtml(d.key)}" />
@@ -2734,7 +2806,7 @@ function renderMcp(list) {
     const checked = s.enabled ? " checked" : "";
     const cmdLine = escapeHtml([s.command, ...(s.args || [])].join(" "));
     const envKeys = Object.keys(s.env || {});
-    const envTags = envKeys.map((k) => `<span class="skill-req-tag">${escapeHtml(k)}</span>`).join("");
+    const envTags = envKeys.map((k) => `<span class="skill-req-tag" title="${escapeHtml(k)}">${escapeHtml(k)}</span>`).join("");
     return `
       <div class="skill-row${enabledClass}" data-id="${escapeHtml(s.id)}" data-name="${escapeHtml(s.name)}">
         <div class="skill-row-top">

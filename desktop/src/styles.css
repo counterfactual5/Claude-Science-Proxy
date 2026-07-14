@@ -831,6 +831,8 @@ select:focus-visible {
   display: flex;
   flex-direction: column;
   height: 100%;
+  min-width: 0;
+  overflow-x: hidden;
   background: var(--bg);
 }
 
@@ -853,6 +855,7 @@ select:focus-visible {
 .skill-pane > .list-only {
   flex: 1 1 0;
   min-height: 0;
+  min-width: 0;
   display: flex;
   flex-direction: column;
 }
@@ -866,13 +869,18 @@ select:focus-visible {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 12px;
+  gap: 8px;
+  margin-bottom: 2px;
   flex-shrink: 0;
 }
+
+.skill-hd .sec-title { margin: 0; }
 
 .skill-hd-acts {
   display: flex;
   gap: 6px;
+  align-items: center;
+  flex-shrink: 0;
 }
 
 .skill-empty {
@@ -888,6 +896,8 @@ select:focus-visible {
 
 .skill-list {
   flex: 1 1 0;
+  min-width: 0;
+  overflow-x: hidden;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
@@ -904,6 +914,9 @@ select:focus-visible {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: hidden;
   transition: border-color 0.15s, opacity 0.15s;
 }
 
@@ -1006,11 +1019,16 @@ select:focus-visible {
   align-items: center;
   flex-wrap: wrap;
   gap: 6px;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .skill-reqs-list {
   display: flex;
+  flex-wrap: wrap;
   gap: 4px;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .mcp-cmd {
@@ -1070,6 +1088,10 @@ select:focus-visible {
   min-width: 0;
 }
 
+.skill-path-adv {
+  margin-top: 14px;
+}
+
 .skill-req-tag {
   font-size: 9px;
   font-weight: 600;
@@ -1079,6 +1101,10 @@ select:focus-visible {
   border-radius: 4px;
   color: var(--text-muted);
   text-transform: uppercase;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* ── Full-page form panels (Skills / MCP; same chrome as config wizard) ── */
@@ -1172,6 +1198,12 @@ select:focus-visible {
   overflow-y: auto;
 }
 
+/* Same display trap: `display: flex` above beats bare `[hidden]`, leaving an
+   empty bordered box on Skill/MCP create forms until inspection content exists. */
+.inspection-preview[hidden] {
+  display: none !important;
+}
+
 .inspection-preview h4 {
   margin: 0 0 2px 0;
   font-size: 11px;
@@ -1240,17 +1272,23 @@ select:focus-visible {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  min-width: 0;
+  overflow-x: hidden;
 }
 
 .skill-hd {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 4px 0 10px;
+  gap: 8px;
+  margin-bottom: 2px;
+  padding: 0;
 }
 .skill-hd-acts {
   display: flex;
-  gap: 4px;
+  gap: 6px;
+  align-items: center;
+  flex-shrink: 0;
 }
 
 .skill-empty {
@@ -1271,9 +1309,11 @@ select:focus-visible {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  overflow-x: hidden;
   overflow-y: auto;
   flex: 1;
   min-height: 0;
+  min-width: 0;
   padding-right: 2px;
 }
 

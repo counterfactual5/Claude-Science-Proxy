@@ -32,6 +32,7 @@ const DISCOVERY_ROOTS: &[&str] = &[
     ".codex/skills",
     ".claude/skills",
     ".cursor/skills",
+    ".cursor/skills-cursor", // Cursor-managed / synced Skills
     // Domestic (China) agents / IDEs that also use the `SKILL.md` folder layout.
     ".trae/skills",        // ByteDance Trae (international)
     ".trae-cn/skills",     // ByteDance Trae CN

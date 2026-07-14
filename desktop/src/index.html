@@ -26,7 +26,7 @@
             <label class="sec-title" id="i18nMyConfigs">我的配置</label>
             <div class="listhd-acts">
               <div class="listhd-acts-cluster">
-                <button class="btn small" id="newBtn">＋ 新建</button>
+                <button type="button" class="btn small" id="newBtn">+ 新建</button>
                 <div class="listhd-more">
                   <button type="button" class="btn small listhd-more-btn" id="listhdMoreBtn" aria-haspopup="true" aria-expanded="false" title="更多">⋯</button>
                   <div class="pmenu listhd-menu" id="listhdMenu" hidden role="menu">
@@ -87,22 +87,23 @@
           <div class="skill-hd">
             <label class="sec-title">Skills 管理</label>
             <div class="skill-hd-acts">
-              <button class="btn small" id="skillCreateBtn">➕ 新建</button>
-              <div class="listhd-more">
-                <button type="button" class="btn small listhd-more-btn" id="skillMoreBtn" aria-haspopup="true" aria-expanded="false" title="更多">⋯</button>
-                <div class="pmenu listhd-menu" id="skillMenu" hidden role="menu">
-                  <button type="button" class="pmenu-item" id="skillImportBtn" role="menuitem">导入</button>
-                  <button type="button" class="pmenu-item" id="skillDiscoverBtn" role="menuitem">扫描导入</button>
-                  <button type="button" class="pmenu-item" id="skillAdoptBtn" role="menuitem">从 Science 采纳</button>
+              <div class="listhd-acts-cluster">
+                <button type="button" class="btn small" id="skillCreateBtn">+ 新建</button>
+                <div class="listhd-more">
+                  <button type="button" class="btn small listhd-more-btn" id="skillMoreBtn" aria-haspopup="true" aria-expanded="false" title="更多">⋯</button>
+                  <div class="pmenu listhd-menu" id="skillMenu" hidden role="menu">
+                    <button type="button" class="pmenu-item" id="skillDiscoverBtn" role="menuitem">扫描导入</button>
+                    <button type="button" class="pmenu-item" id="skillAdoptBtn" role="menuitem">从 Science 采纳</button>
+                  </div>
                 </div>
               </div>
             </div>
           </div>
-          <p class="hint apply-hint">启用/停用的改动会在下次点击「启动 Claude Science」时生效；若沙箱正在运行，会自动重启以应用。</p>
+          <p class="hint apply-hint" id="skillApplyHint">启用/停用的改动会在下次点击「启动 Claude Science」时生效；若沙箱正在运行，会自动重启以应用。</p>
 
           <div class="skill-empty" id="skillEmpty" hidden>
-            <p>还没有 Skill。</p>
-            <p class="hint">点「新建」从零创建，或在「⋯」里选「导入」一个含 <code>SKILL.md</code> 的目录。</p>
+            <p id="skillEmptyTitle">还没有 Skill。</p>
+            <p class="hint" id="skillEmptyHint">点「新建」从零创建，或在「⋯」里选「扫描导入」从本机常见 Skill 目录勾选导入。</p>
           </div>
 
           <div id="skillList" class="skill-list"></div>
@@ -133,48 +134,48 @@
           </div>
         </div>
 
-        <div class="sec form-sec" id="skillImportSec" hidden>
-          <label id="skillImportTitle">导入 Skill</label>
-          <div class="form-group">
-            <label for="skillSourcePath">源目录路径</label>
-            <input id="skillSourcePath" type="text" placeholder="/path/to/skill-directory" autocomplete="off" spellcheck="false" />
-            <p class="hint">选择包含 <code>SKILL.md</code> 的目录，将被复制到 <code>~/.csp/skills/</code>。</p>
-          </div>
-          <div id="skillInspectionPreview" class="inspection-preview" hidden>
-            <h4>检查预览</h4>
-            <div class="insp-name"><strong id="inspName"></strong></div>
-            <div class="insp-desc" id="inspDesc"></div>
-            <div class="insp-stats" id="inspStats"></div>
-            <div class="insp-reqs" id="inspReqs"></div>
-            <div class="insp-warnings" id="inspWarnings" hidden></div>
-            <div class="insp-errors" id="inspErrors" hidden></div>
-          </div>
-          <div class="row form-actions">
-            <button class="btn small" id="skillInspectBtn">检查</button>
-            <button class="btn small" id="skillImportConfirmBtn" disabled>导入</button>
-            <button class="btn small" id="skillImportCancelBtn">取消</button>
-          </div>
-        </div>
-
         <div class="sec form-sec" id="skillDiscoverSec" hidden>
           <label id="skillDiscoverTitle">扫描本地 Skill</label>
-          <p class="hint">扫描 <code>~/.agents/skills</code>、<code>~/.codex/skills</code>、<code>~/.claude/skills</code>、<code>~/.cursor/skills</code>，以及国产 <code>~/.trae/skills</code> / <code>~/.trae-cn/skills</code>（字节）、<code>~/.codebuddy/skills</code>（腾讯），勾选后复制到 <code>~/.csp/skills/</code>。沙箱自带的科学 Skill 不在此列。</p>
+          <p class="hint" id="skillDiscoverHint">扫描 <code>~/.agents/skills</code>、<code>~/.codex/skills</code>、<code>~/.claude/skills</code>、<code>~/.cursor/skills</code>、<code>~/.cursor/skills-cursor</code>，以及国产 <code>~/.trae/skills</code> / <code>~/.trae-cn/skills</code>（字节）、<code>~/.codebuddy/skills</code>（腾讯），勾选后复制到 <code>~/.csp/skills/</code>。沙箱自带的科学 Skill 不在此列；Science 工作区草稿请用「从 Science 采纳」。</p>
           <div id="skillDiscoverList" class="skill-discover-list"></div>
           <div id="skillDiscoverEmpty" class="skill-empty" hidden>
-            <p>没有扫描到可导入的 Skill。</p>
+            <p id="skillDiscoverEmptyText">没有扫描到可导入的 Skill。</p>
           </div>
           <div class="row form-actions">
             <button class="btn small" id="skillDiscoverImportBtn" disabled>导入所选</button>
             <button class="btn small" id="skillDiscoverCancelBtn">取消</button>
           </div>
+          <details class="adv skill-path-adv" id="skillPathAdv">
+            <summary id="skillPathAdvSummary">手动路径导入（高级）</summary>
+            <div class="adv-body">
+              <div class="form-group">
+                <label for="skillSourcePath" id="skillPathLabel">源目录路径</label>
+                <input id="skillSourcePath" type="text" placeholder="/path/to/skill-directory" autocomplete="off" spellcheck="false" />
+                <p class="hint" id="skillPathHint">含 <code>SKILL.md</code> 的目录；检查通过后复制到 <code>~/.csp/skills/</code>。</p>
+              </div>
+              <div id="skillInspectionPreview" class="inspection-preview" hidden>
+                <h4 id="skillInspPreviewTitle">检查预览</h4>
+                <div class="insp-name"><strong id="inspName"></strong></div>
+                <div class="insp-desc" id="inspDesc"></div>
+                <div class="insp-stats" id="inspStats"></div>
+                <div class="insp-reqs" id="inspReqs"></div>
+                <div class="insp-warnings" id="inspWarnings" hidden></div>
+                <div class="insp-errors" id="inspErrors" hidden></div>
+              </div>
+              <div class="row form-actions">
+                <button class="btn small" id="skillInspectBtn">检查</button>
+                <button class="btn small" id="skillImportConfirmBtn" disabled>导入</button>
+              </div>
+            </div>
+          </details>
         </div>
 
         <div class="sec form-sec" id="skillAdoptSec" hidden>
           <label id="skillAdoptTitle">从 Science 工作区采纳</label>
-          <p class="hint">扫描沙盒内 <code>workspaces/</code> 下的 Skill 草稿（<code>*.skill.md</code>、<code>*_SKILL.md</code> 或含 <code>SKILL.md</code> 的目录），连同 <code>kernel.py</code> 等伴随文件复制到 <code>~/.csp/skills/</code>。Science 无法直接发布技能时请用此功能。</p>
+          <p class="hint" id="skillAdoptHint">扫描沙盒内 <code>workspaces/</code> 下的 Skill 草稿（<code>*.skill.md</code>、<code>*_SKILL.md</code> 或含 <code>SKILL.md</code> 的目录），连同 <code>kernel.py</code> 等伴随文件复制到 <code>~/.csp/skills/</code>。Science 无法直接发布技能时请用此功能。</p>
           <div id="skillAdoptList" class="skill-discover-list"></div>
           <div id="skillAdoptEmpty" class="skill-empty" hidden>
-            <p>没有扫描到可采纳的 Skill 草稿。</p>
+            <p id="skillAdoptEmptyText">没有扫描到可采纳的 Skill 草稿。</p>
           </div>
           <div class="row form-actions">
             <button class="btn small" id="skillAdoptConfirmBtn" disabled>采纳所选</button>
@@ -193,13 +194,15 @@
           <div class="skill-hd">
             <label class="sec-title">本地 MCP 管理</label>
             <div class="skill-hd-acts">
-              <button class="btn small" id="mcpAddBtn">➕ 新增</button>
-              <div class="listhd-more">
-                <button type="button" class="btn small listhd-more-btn" id="mcpMoreBtn" aria-haspopup="true" aria-expanded="false" title="更多">⋯</button>
-                <div class="pmenu listhd-menu" id="mcpMenu" hidden role="menu">
-                  <button type="button" class="pmenu-item" id="mcpDiscoverBtn" role="menuitem">扫描导入</button>
-                  <button type="button" class="pmenu-item" id="mcpNetworkAllowlistBtn" role="menuitem">网络授权配置</button>
-                  <button type="button" class="pmenu-item" id="mcpJsonBtn" role="menuitem" title="编辑 ~/.csp/mcp/inventory.json">编辑 JSON</button>
+              <div class="listhd-acts-cluster">
+                <button type="button" class="btn small" id="mcpAddBtn">+ 新建</button>
+                <div class="listhd-more">
+                  <button type="button" class="btn small listhd-more-btn" id="mcpMoreBtn" aria-haspopup="true" aria-expanded="false" title="更多">⋯</button>
+                  <div class="pmenu listhd-menu" id="mcpMenu" hidden role="menu">
+                    <button type="button" class="pmenu-item" id="mcpDiscoverBtn" role="menuitem">扫描导入</button>
+                    <button type="button" class="pmenu-item" id="mcpNetworkAllowlistBtn" role="menuitem">网络授权配置</button>
+                    <button type="button" class="pmenu-item" id="mcpJsonBtn" role="menuitem" title="编辑 ~/.csp/mcp/inventory.json">编辑 JSON</button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -208,7 +211,7 @@
 
           <div class="skill-empty" id="mcpEmpty" hidden>
             <p>还没有本地 MCP。</p>
-            <p class="hint">点「新增」，配置一个本地 <code>stdio</code> 连接器（command + args + env）。启用后会在启动沙箱时写入 <code>&lt;data-dir&gt;/mcp/local-mcp.json</code>。</p>
+            <p class="hint">点「新建」，配置一个本地 <code>stdio</code> 连接器（command + args + env）。启用后会在启动沙箱时写入 <code>&lt;data-dir&gt;/mcp/local-mcp.json</code>。</p>
           </div>
 
           <div id="mcpList" class="skill-list"></div>

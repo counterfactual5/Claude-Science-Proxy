@@ -3,6 +3,16 @@
 All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.6.11] — 2026-07-14
+
+### Changed
+- **Unified `+ 新建` chrome**: Config / Skills / MCP list headers use the same `+ 新建` primary + `⋯` cluster (MCP “新增” → “新建”); emoji plus signs dropped.
+- **Skill import aligned with MCP scan-import**: Top-level “导入” folder flow removed; **扫描导入** is the primary path (common local Skill roots, including `~/.cursor/skills-cursor`). Manual path + inspect lives under **手动路径导入（高级）** on the discover page.
+
+### Fixed
+- **Inspection preview `[hidden]`**: `.inspection-preview` used `display: flex`, so bare `[hidden]` left an empty bordered box on Skill/MCP create forms until content existed — force `display: none !important` when hidden.
+- **Skill/MCP requirement tags**: Wrap/ellipsis under narrow panes (`min-width: 0`, overflow-x hidden) so long env/req chips no longer blow out the list layout.
+
 ## [1.6.10] — 2026-07-14
 
 ### Added
