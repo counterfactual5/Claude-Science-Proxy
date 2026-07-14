@@ -3,6 +3,11 @@
 All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.6.9] — 2026-07-14
+
+### Fixed
+- **Stale sandbox MCP after app rebuild**: Rebuilding the `.app` does **not** reload a CSP process that was already running. An old desktop binary keeps embedding the previous `web_search_server.py` and a later **Start** can rewrite Wikipedia back onto GENERAL auto — matching reports of `duckduckgo_lite anti-bot` warnings followed by Wikipedia hits. Opening the desktop app now refreshes `~/.csp/sandbox/.../mcp/csp-web-search-server.py` immediately (same bytes as Start); after any rebuild you must **quit and reopen CSP**, then **Stop→Start** Science.
+
 ## [1.6.8] — 2026-07-14
 
 ### Fixed

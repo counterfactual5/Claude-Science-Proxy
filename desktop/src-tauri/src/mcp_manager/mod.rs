@@ -26,6 +26,15 @@ pub use store::McpStore;
 /// simply isn't seeded).
 pub fn seed_builtin_connectors() {
     let sbx_home = crate::runtime::science::sandbox_home();
+    // Refresh the bundled Python server onto disk as soon as the desktop app
+    // opens — not only on Start. Otherwise a rebuilt CSP binary can sit in the
+    // Dock while Science keeps the previous script (and a later Start from an
+    // *old* still-running process can even rewrite Wikipedia back into
+    // GENERAL). Start still restarts the sandbox when bytes change.
+    let mcp_dir = sbx_home.join(".claude-science").join("mcp");
+    let _ = std::fs::create_dir_all(&mcp_dir);
+    let _ = builtin::write_web_search_server(&mcp_dir);
+
     let python = builtin::resolve_sandbox_python(&sbx_home)
         .map(|p| p.to_string_lossy().into_owned())
         .unwrap_or_else(|| "python3".to_string());
