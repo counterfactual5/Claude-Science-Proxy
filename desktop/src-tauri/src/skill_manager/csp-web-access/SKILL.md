@@ -44,6 +44,23 @@ The `web-search` connector is already connected and enabled. It exposes:
 Typical flow: call `search_literature` (or `csp_web_search`) to find sources,
 then `fetch_url` to read the most relevant ones.
 
+**Return shape (critical).** `host.mcp` parses the JSON tool result into a
+Python **dict**, not a bare list:
+
+```python
+data = host.mcp("web-search", "search_literature", query="...", max_results=5)
+hits = data["results"]  # list of {title, url, snippet, source, ...}
+for r in hits:
+    print(r.get("title"), r.get("url"), r.get("snippet"))
+# or: print(data)
+page = host.mcp("web-search", "fetch_url", url=hits[0]["url"])
+print(page["content"])  # dict: url, status, content
+```
+
+Do **not** write `for r in data:` / `enumerate(data)` on the search return —
+that iterates dict **keys** (strings) and raises
+`AttributeError: 'str' object has no attribute 'get'`.
+
 ## What the sandbox can reach
 
 Egress is limited to an allowlist that favors **scholarly sources**, so searches
@@ -132,8 +149,11 @@ plots need no change.
 本环境没有托管版 Web Search。任何联网搜索、在线查询或网页读取，请始终使用本地
 `web-search` 连接器的 `search_literature` / `csp_web_search`（搜索）与 `fetch_url`
 （读取网页），不要调用托管的 `web_search` 工具——它在 CSP 下不可用，会报
-`Tool 'web_search' not found on agent`。沙箱出网被限制为科研数据源白名单，默认使用
-Crossref、arXiv、PubMed（及 OpenAlex / Semantic Scholar）等免密钥学术检索源。
+`Tool 'web_search' not found on agent`。`host.mcp` 搜索返回的是 **dict**
+（含 `results` 列表），正确写法：`data = host.mcp(...); hits = data["results"]`，
+不要直接对返回值做 `for r in data`（会迭代字符串键并触发 AttributeError）。沙箱出网被
+限制为科研数据源白名单，默认使用 Crossref、arXiv、PubMed（及 OpenAlex / Semantic
+Scholar）等免密钥学术检索源。
 
 本地环境约定（与托管 Claude 不同，请每次遵守）：
 

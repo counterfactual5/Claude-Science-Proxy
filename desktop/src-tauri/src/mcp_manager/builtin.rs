@@ -54,7 +54,7 @@ const WEB_SEARCH_SOURCE: &str = include_str!("web_search_server.py");
 
 /// Description surfaced to Science (the model reads this to decide when to call
 /// the tools). English on purpose — it is the tool description, not chrome.
-pub const BUILTIN_WEB_SEARCH_DESCRIPTION: &str = "Local CSP web/literature search & page fetch (free, no API key). Under CSP virtual login Anthropic-hosted web_search/web_fetch are unavailable — bare top-level calls fail with not found on agent OPERON. Call via repl: host.mcp(\"web-search\", \"search_literature\"|\"web_search\"|\"csp_web_search\", query=..., max_results=N) then host.mcp(\"web-search\", \"fetch_url\"|\"web_fetch\", url=...). tools/list names are host.mcp method names only, not top-level tools. Inside the Science sandbox, egress is a scholarly allowlist (Crossref, arXiv, PubMed; also OpenAlex / Semantic Scholar) with automatic fallback. General engines and paid providers (BRAVE_SEARCH_API_KEY / SERPER_API_KEY / TAVILY_API_KEY) are selectable but usually blocked by the allowlist.";
+pub const BUILTIN_WEB_SEARCH_DESCRIPTION: &str = "Local CSP web/literature search & page fetch (free, no API key). Under CSP virtual login Anthropic-hosted web_search/web_fetch are unavailable — bare top-level calls fail with not found on agent OPERON. Call via repl: data = host.mcp(\"web-search\", \"search_literature\"|\"web_search\"|\"csp_web_search\", query=..., max_results=N); hits = data[\"results\"] (list of {title,url,snippet,source}); then page = host.mcp(\"web-search\", \"fetch_url\"|\"web_fetch\", url=...); print(page[\"content\"]). host.mcp returns a parsed dict — do NOT iterate the search return as a bare list. tools/list names are host.mcp method names only, not top-level tools. Inside the Science sandbox, egress is a scholarly allowlist (Crossref, arXiv, PubMed; also OpenAlex / Semantic Scholar) with automatic fallback. General engines and paid providers (BRAVE_SEARCH_API_KEY / SERPER_API_KEY / TAVILY_API_KEY) are selectable but usually blocked by the allowlist.";
 
 /// Optional API-key env vars seeded (empty) so the MCP tab surfaces them as
 /// editable fields; empty values are treated as "unset" by the server.
@@ -174,6 +174,11 @@ mod tests {
         // Docstring must NOT claim tools/list intercepts bare native calls.
         assert!(!WEB_SEARCH_SOURCE.contains("model-native calls resolve"));
         assert!(WEB_SEARCH_SOURCE.contains("host.mcp"));
+        // Return shape must be documented so models don't iterate the wrapper dict.
+        assert!(WEB_SEARCH_SOURCE.contains("RETURN SHAPE"));
+        // Python source escapes quotes: data[\"results\"]
+        assert!(WEB_SEARCH_SOURCE.contains(r#"data[\"results\"]"#));
+        assert!(WEB_SEARCH_SOURCE.contains("SERVER_VERSION = \"1.3.0\""));
     }
 
     #[test]

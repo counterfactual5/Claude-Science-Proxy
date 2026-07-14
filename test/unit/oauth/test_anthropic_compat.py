@@ -307,6 +307,8 @@ class InjectCspWebAccessGuidance(unittest.TestCase):
         self.assertIn(ac.CSP_WEB_ACCESS_GUIDANCE_SENTINEL, out["system"])
         self.assertIn('host.mcp("web-search", "search_literature"', out["system"])
         self.assertIn('host.mcp("web-search", "fetch_url"', out["system"])
+        self.assertIn('data["results"]', out["system"])
+        self.assertIn('page["content"]', out["system"])
         self.assertTrue(out["system"].startswith("You are helpful."))
 
     def test_appends_block_to_list_system(self):

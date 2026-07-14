@@ -76,7 +76,7 @@ import urllib.parse
 import urllib.request
 
 SERVER_NAME = "web-search"
-SERVER_VERSION = "1.2.0"
+SERVER_VERSION = "1.3.0"
 DEFAULT_PROTOCOL = "2025-06-18"
 USER_AGENT = "csp-web-search/1.0 (+https://github.com/; Claude Science Proxy built-in)"
 HTTP_TIMEOUT = 15
@@ -647,22 +647,35 @@ _SEARCH_DESCRIPTION = (
     "web_search tool — calling it as a top-level tool fails with "
     "\"Tool 'web_search' not found on agent\". Use the repl tool: "
     "host.mcp(\"web-search\", \"search_literature\"|\"web_search\"|\"csp_web_search\", "
-    "query=..., max_results=N). Returns titles, URLs and snippets. Free with no "
-    "API key: searches scholarly sources (Crossref, arXiv, PubMed, and optionally "
-    "OpenAlex / Semantic Scholar) with automatic fallback. provider='auto' "
-    "(default) tries configured key providers first, then the no-key scholarly "
-    "providers, capturing per-provider warnings. NOTE: inside Claude Science's "
-    "sandbox, network egress is restricted to an allowlist of scientific "
-    "sources, so general search engines (duckduckgo/wikipedia) and paid "
-    "providers (brave/serper/tavily) are typically unavailable there and are "
-    "best-effort only."
+    "query=..., max_results=N). "
+    "RETURN SHAPE (critical): host.mcp parses the JSON tool result into a "
+    "Python dict — NOT a list. Schema: "
+    "{\"provider\": str|null, \"query\": str, \"results\": "
+    "[{\"title\", \"url\", \"snippet\", \"source\", \"published\"?}, ...], "
+    "\"warnings\": [str, ...]}. Correct usage: "
+    "data = host.mcp(...); hits = data[\"results\"]; "
+    "for r in hits: print(r.get(\"title\"), r.get(\"url\"), r.get(\"snippet\")). "
+    "Or simply print(data). Do NOT iterate the dict itself "
+    "(for x in data yields string keys → AttributeError on .get). "
+    "Free with no API key: searches scholarly sources (Crossref, arXiv, PubMed, "
+    "and optionally OpenAlex / Semantic Scholar) with automatic fallback. "
+    "provider='auto' (default) tries configured key providers first, then the "
+    "no-key scholarly providers, capturing per-provider warnings. NOTE: inside "
+    "Claude Science's sandbox, network egress is restricted to an allowlist of "
+    "scientific sources, so general search engines (duckduckgo/wikipedia) and "
+    "paid providers (brave/serper/tavily) are typically unavailable there and "
+    "are best-effort only."
 )
 
 _FETCH_DESCRIPTION = (
     "Fetch a web page (or text/JSON resource) and return its readable text "
     "with HTML stripped. Call via host.mcp(\"web-search\", \"fetch_url\"|"
     "\"web_fetch\", url=...). Useful after a search_literature / web_search / "
-    "csp_web_search result. Local CSP MCP only — no Anthropic-hosted fetch."
+    "csp_web_search result. Local CSP MCP only — no Anthropic-hosted fetch. "
+    "RETURN SHAPE: host.mcp returns a dict "
+    "{\"url\": str, \"status\": int, \"content\": str}. "
+    "Use: data = host.mcp(...); print(data[\"content\"]). "
+    "Do not assume a bare string unless you read data[\"content\"]."
 )
 
 TOOLS = [

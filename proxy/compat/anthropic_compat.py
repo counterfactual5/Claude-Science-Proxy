@@ -28,10 +28,15 @@ CSP_WEB_ACCESS_GUIDANCE = (
     "Calling them as top-level tools fails with "
     "`Tool 'web_search' not found on agent 'OPERON'`.\n"
     "- To search the web or literature, use the `repl` tool and call:\n"
-    "    host.mcp(\"web-search\", \"search_literature\", query=\"...\", max_results=N)\n"
+    "    data = host.mcp(\"web-search\", \"search_literature\", query=\"...\", max_results=N)\n"
+    "    hits = data[\"results\"]  # list of {title, url, snippet, source, ...}\n"
+    "    for r in hits: print(r.get(\"title\"), r.get(\"url\"))\n"
+    "  Or just print(data). host.mcp returns a parsed dict with key \"results\" "
+    "(NOT a bare list — do not enumerate(data) itself).\n"
     "  Method aliases also accepted: \"web_search\", \"csp_web_search\".\n"
     "- To fetch a page afterward:\n"
-    "    host.mcp(\"web-search\", \"fetch_url\", url=\"...\")\n"
+    "    page = host.mcp(\"web-search\", \"fetch_url\", url=\"...\")\n"
+    "    print(page[\"content\"])  # dict with url, status, content\n"
     "- Do NOT call bare `web_search` / `web_fetch` as top-level tools."
 )
 

@@ -37,7 +37,7 @@ pub const BUILTIN_WEB_ACCESS_NAME: &str = "csp-web-access";
 /// One-line description shown in CSP's Skills tab (the SKILL.md body is what
 /// Science actually reads as standing guidance). Covers the full set of CSP
 /// local environment conventions, not only web search.
-pub const BUILTIN_WEB_ACCESS_DESCRIPTION: &str = "CSP standing environment conventions: for any web search/page fetch use the local web-search MCP (search_literature / csp_web_search, then fetch_url), never the hosted web_search tool; don't write to /mnt/data — save to the workspace cwd and persist via save_artifacts([...]); set a CJK matplotlib font before plotting non-Latin labels; draft skills in the workspace (not host.skills.publish) and use the analysis python env for scientific packages.";
+pub const BUILTIN_WEB_ACCESS_DESCRIPTION: &str = "CSP standing environment conventions: for any web search/page fetch use the local web-search MCP (search_literature / csp_web_search, then fetch_url — host.mcp returns a dict with key results, not a bare list), never the hosted web_search tool; don't write to /mnt/data — save to the workspace cwd and persist via save_artifacts([...]); set a CJK matplotlib font before plotting non-Latin labels; draft skills in the workspace (not host.skills.publish) and use the analysis python env for scientific packages.";
 
 /// Sentinel dotfile under the skill store root recording the one-time seed. Once
 /// present, the skill is never re-seeded, so a user who later disables or removes
@@ -69,6 +69,9 @@ mod tests {
         assert!(WEB_ACCESS_SKILL_MD.contains("csp_web_search"));
         assert!(WEB_ACCESS_SKILL_MD.contains("fetch_url"));
         assert!(WEB_ACCESS_SKILL_MD.contains("web_search"));
+        // Return-shape guidance so models don't iterate the wrapper dict as hits.
+        assert!(WEB_ACCESS_SKILL_MD.contains("data[\"results\"]"));
+        assert!(WEB_ACCESS_SKILL_MD.contains("Return shape"));
         // Front-matter name matches the deploy folder name.
         assert!(WEB_ACCESS_SKILL_MD.contains(&format!("name: {BUILTIN_WEB_ACCESS_NAME}")));
     }
