@@ -1947,6 +1947,7 @@ async function toggleSkill(id, enabled) {
   setBusy(true);
   try {
     await call("set_skill_enabled", { input: { skillId: id, enabled } });
+    setSkillMsg("");
     await loadSkills();
   } catch (e) {
     setSkillMsg(resolveBackendErr(e));
@@ -1959,6 +1960,7 @@ async function openSkillFile(id) {
   setBusy(true);
   try {
     await call("open_skill_file", { input: { skillId: id } });
+    setSkillMsg("");
   } catch (e) {
     setSkillMsg(resolveBackendErr(e));
   } finally {
@@ -1970,6 +1972,7 @@ async function openSkillFolder(id) {
   setBusy(true);
   try {
     await call("open_skill_folder", { input: { skillId: id } });
+    setSkillMsg("");
   } catch (e) {
     setSkillMsg(resolveBackendErr(e));
   } finally {
@@ -1981,6 +1984,7 @@ async function doRemoveSkill(id) {
   setBusy(true);
   try {
     await call("remove_skill", { input: { skillId: id } });
+    setSkillMsg("");
     await loadSkills();
   } catch (e) {
     setSkillMsg(resolveBackendErr(e));
@@ -2444,6 +2448,7 @@ async function toggleMcpServer(id, enabled) {
   setBusy(true);
   try {
     await call("set_mcp_server_enabled", { input: { serverId: id, enabled } });
+    setMcpMsg("");
     await loadMcp();
   } catch (e) {
     setMcpMsg(resolveBackendErr(e));
@@ -2456,6 +2461,7 @@ async function doRemoveMcpServer(id) {
   setBusy(true);
   try {
     await call("remove_mcp_server", { input: { serverId: id } });
+    setMcpMsg("");
     await loadMcp();
   } catch (e) {
     setMcpMsg(resolveBackendErr(e));
