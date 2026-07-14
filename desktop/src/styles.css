@@ -392,7 +392,7 @@ select:focus {
 .provider-combo input {
   flex: 1;
   min-width: 0;
-  padding-right: 2rem;
+  padding-right: 2.5rem;
 }
 
 .provider-combo-caret {
@@ -400,16 +400,19 @@ select:focus {
   top: 1px;
   right: 1px;
   bottom: 1px;
-  width: 1.75rem;
+  width: 2.35rem;
   border: none;
   border-left: 1px solid var(--border);
   border-radius: 0 6px 6px 0;
   background: transparent;
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: 18px;
   line-height: 1;
   cursor: pointer;
   padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .provider-combo-caret:hover {
