@@ -313,20 +313,33 @@ fn deploy_sandbox_mcp(auth_dir: &Path, sbx_home: &Path) -> (String, bool) {
             s.args = vec![script_str.clone()];
         }
     }
+    // Prefill Science network grants for built-in web-search providers (+ user
+    // extensions in ~/.csp/network-allowlist.json). New grants need a Science
+    // restart for Operon to honour them — OR into `changed` like script rewrites.
+    let (allowlist_report, allowlist_changed) =
+        crate::mcp_manager::network_allowlist::apply_best_effort(auth_dir);
+
     match crate::mcp_manager::deploy_enabled_mcp(&enabled, auth_dir, sbx_home, &real_science) {
         Ok(r) => {
-            let changed = r.changed || script_rewritten;
+            let changed = r.changed || script_rewritten || allowlist_changed;
             (
                 format!(
-                    "deploy: servers={:?} granted_paths={} cleared={} changed={} script_rewritten={}",
-                    r.deployed, r.granted_paths, r.cleared, changed, script_rewritten
+                    "deploy: servers={:?} granted_paths={} cleared={} changed={} script_rewritten={}; {}",
+                    r.deployed,
+                    r.granted_paths,
+                    r.cleared,
+                    changed,
+                    script_rewritten,
+                    allowlist_report
                 ),
                 changed,
             )
         }
         Err(e) => (
-            format!("deploy error (sandbox launch continues): {e}"),
-            false,
+            format!(
+                "deploy error (sandbox launch continues): {e}; {allowlist_report}"
+            ),
+            allowlist_changed,
         ),
     }
 }

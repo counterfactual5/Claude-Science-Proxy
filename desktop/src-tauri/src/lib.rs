@@ -113,6 +113,7 @@ pub fn run() {
             commands::skills::open_skill_file,
             commands::mcp::list_mcp_servers,
             commands::mcp::open_mcp_inventory_json,
+            commands::mcp::open_network_allowlist_json,
             commands::mcp::discover_mcp_servers,
             commands::mcp::import_discovered_mcp_server,
             commands::mcp::inspect_mcp_server,
@@ -134,6 +135,10 @@ pub fn run() {
             // hosted web_search is unavailable under CSP virtual login). One-time,
             // sentinel-guarded: a user who later disables/removes it is respected.
             mcp_manager::seed_builtin_connectors();
+
+            // Ensure ~/.csp/network-allowlist.json exists so users can extend
+            // Science egress domains (built-in web-search hosts are merged on Start).
+            let _ = mcp_manager::network_allowlist::ensure_user_file();
 
             // Seed the built-in `csp-web-access` standing-guidance Skill on first
             // run (enabled by default) so Claude Science, in every session,

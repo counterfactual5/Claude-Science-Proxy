@@ -67,6 +67,20 @@ pub async fn open_mcp_inventory_json() -> Result<String, String> {
     .await
 }
 
+/// Ensure `~/.csp/network-allowlist.json` exists and open it in the default editor.
+///
+/// Built-in web-search provider hosts are always merged on Start; this file is
+/// for *extra* Science sandbox egress domains (hostnames only).
+#[tauri::command]
+pub async fn open_network_allowlist_json() -> Result<String, String> {
+    run_blocking(|| {
+        let path = crate::mcp_manager::network_allowlist::ensure_user_file()?;
+        crate::runtime::system::open_path_in_default_app(&path)?;
+        Ok(path.display().to_string())
+    })
+    .await
+}
+
 /// A JSON config file that may hold local stdio MCP definitions, plus the object
 /// key the servers live under. Three shapes are seen in the wild:
 /// - `mcpServers` — Cursor, Claude Desktop, Claude Code, Devin Desktop (Windsurf),

@@ -51,13 +51,15 @@ Semantic Scholar return 200/429, i.e. the CONNECT tunnel is permitted):
   * ``pubmed``          — NCBI E-utilities (biomedical literature).
   * ``openalex``        — OpenAlex works (all fields; small metered budget).
   * ``semanticscholar`` — Semantic Scholar graph (rate-limited without a key).
-Free general-web (work outside the sandbox; **blocked by the sandbox egress
-allowlist today**, so best-effort and not in ``auto``):
+Free general-web (CSP pre-grants these hosts into Science network allowlist on
+Start; HTML scrape may still hit provider anti-bot — prefer ``duckduckgo_ia``;
+not in ``auto`` by default):
   * ``duckduckgo``    — DuckDuckGo HTML endpoint (scraped, fragile).
   * ``duckduckgo_ia`` — DuckDuckGo Instant Answer API (curated abstracts).
   * ``wikipedia``     — MediaWiki search API.
-Key based (opt-in via MCP env — configure in CSP's MCP tab; also subject to the
-sandbox allowlist, which currently blocks their API domains):
+Key based (opt-in via MCP env — configure in CSP's MCP tab; CSP also pre-grants
+``api.search.brave.com`` / ``google.serper.dev`` / ``api.tavily.com`` so keys
+work once set — extra hosts: ``~/.csp/network-allowlist.json``):
   * ``brave``  — Brave Search API    (env ``BRAVE_SEARCH_API_KEY``).
   * ``serper`` — Serper.dev (Google) (env ``SERPER_API_KEY``).
   * ``tavily`` — Tavily Search API   (env ``TAVILY_API_KEY``).

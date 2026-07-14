@@ -3,6 +3,11 @@
 All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.6.1] — 2026-07-14
+
+### Added
+- **Science network allowlist for built-in web-search (+ user JSON)**: On each Start / MCP deploy, CSP writes Operon network grants for all bundled `web-search` provider hosts (DuckDuckGo, Wikipedia, Brave, Serper, Tavily) into the active org `preferences.json`, so API keys configured in the MCP tab work without a separate manual grant. Extra hosts go in `~/.csp/network-allowlist.json` (MCP `⋯` → **网络授权配置**); Stop → Start after edits.
+
 ## [1.6.0] — 2026-07-14
 
 ### Added

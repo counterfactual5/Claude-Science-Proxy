@@ -600,6 +600,8 @@ function mockInvoke(cmd, args) {
       return Promise.resolve("~/.csp/CSP.json");
     case "open_mcp_inventory_json":
       return Promise.resolve("~/.csp/mcp/inventory.json");
+    case "open_network_allowlist_json":
+      return Promise.resolve("~/.csp/network-allowlist.json");
     case "list_skills":
       return Promise.resolve(mockStore.skills.map((s) => ({ ...s })));
     case "discover_skills":
@@ -1018,7 +1020,7 @@ function setBusy(on, op) {
     els.skillImportBtn, els.skillMoreBtn, els.skillInspectBtn, els.skillImportConfirmBtn, els.skillImportCancelBtn,
     els.skillDiscoverBtn, els.skillDiscoverImportBtn, els.skillDiscoverCancelBtn,
     els.skillAdoptBtn, els.skillAdoptConfirmBtn, els.skillAdoptCancelBtn,
-    els.mcpMoreBtn, els.mcpJsonBtn, els.mcpDiscoverBtn, els.mcpDiscoverImportBtn, els.mcpDiscoverCancelBtn,
+    els.mcpMoreBtn, els.mcpJsonBtn, els.mcpNetworkAllowlistBtn, els.mcpDiscoverBtn, els.mcpDiscoverImportBtn, els.mcpDiscoverCancelBtn,
     els.mcpAddBtn, els.mcpSaveBtn, els.mcpCancelBtn,
   ].forEach((b) => b && (b.disabled = on));
   syncProfileBusyState();
@@ -1594,7 +1596,7 @@ function wire() {
     "inspName", "inspDesc", "inspStats", "inspReqs", "inspWarnings", "inspErrors",
     "skillInspectBtn", "skillImportConfirmBtn", "skillImportCancelBtn",
     "tabMcp", "mcpPane", "mcpAddBtn", "mcpMoreBtn", "mcpMenu", "mcpEmpty", "mcpList", "mcpMsg",
-    "mcpJsonBtn", "mcpDiscoverBtn", "mcpDiscoverModal", "mcpDiscoverList",
+    "mcpJsonBtn", "mcpNetworkAllowlistBtn", "mcpDiscoverBtn", "mcpDiscoverModal", "mcpDiscoverList",
     "mcpDiscoverEmpty", "mcpDiscoverImportBtn", "mcpDiscoverCancelBtn",
     "mcpModal", "mcpModalTitle", "mcpName", "mcpDesc", "mcpCommand", "mcpArgs", "mcpEnv",
     "mcpInspection", "mcpWarnings", "mcpErrors", "mcpSaveBtn", "mcpCancelBtn",
@@ -1704,6 +1706,17 @@ function wire() {
       setMcpMsg(resolveBackendErr(e));
     }
   });
+  if (els.mcpNetworkAllowlistBtn) {
+    els.mcpNetworkAllowlistBtn.addEventListener("click", async () => {
+      closeMenu(els.mcpMenu, els.mcpMoreBtn);
+      if (busy) return;
+      try {
+        await call("open_network_allowlist_json");
+      } catch (e) {
+        setMcpMsg(resolveBackendErr(e));
+      }
+    });
+  }
   els.mcpDiscoverBtn.addEventListener("click", openMcpDiscover);
   els.mcpDiscoverCancelBtn.addEventListener("click", closeMcpDiscover);
   els.mcpDiscoverImportBtn.addEventListener("click", importDiscoveredMcpServers);

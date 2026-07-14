@@ -8,6 +8,7 @@
 pub mod builtin;
 pub mod deploy;
 pub mod model;
+pub mod network_allowlist;
 pub mod store;
 
 #[allow(unused_imports)]
