@@ -1049,7 +1049,12 @@ function showView(v) {
   els.wizSec.hidden = v !== "wizard";
   els.connSec.hidden = v !== "conn";
   els.panel.classList.toggle("view-form", v !== "list");
-  if (v === "list") hideSkip();
+  if (v === "list") {
+    hideSkip();
+    // Drop stale errors (e.g. a one-off "fetch models 401") so they don't
+    // linger on the profile list after create/edit succeeded with builtins.
+    setMsg("");
+  }
 }
 function cancelForm() { showView("list"); }
 
@@ -1365,6 +1370,7 @@ async function wizSave() {
       });
     }
     els.wizKey.value = "";
+    setMsg("");
     await loadConfig();
   } catch (e) {
     setMsg(T("createFail", { err: resolveBackendErr(e) }));
@@ -1388,6 +1394,7 @@ function currentConn() {
 function openConn(id) {
   const p = (configState.profiles || []).find((x) => x.id === id);
   if (!p) return;
+  setMsg("");
   const t = tplById(p.template_id);
   const capSrc = profileCapabilitySource(p, t);
   const editable = t ? t.base_url_editable : true;
@@ -1504,6 +1511,7 @@ async function connSave() {
       await call("update_profile_metadata", { id: p.id, name, notes: p.notes || "" });
     }
     els.connKey.value = "";
+    setMsg("");
     await loadConfig();
   } catch (e) {
     setMsg(T("saveConnFail", { err: resolveBackendErr(e) }));
@@ -1516,6 +1524,7 @@ async function doDelete(id) {
   setBusy(true);
   try {
     await call("delete_profile", { id });
+    setMsg("");
     await loadConfig();
   } catch (e) {
     setMsg(T("deleteFail", { err: resolveBackendErr(e) }));
@@ -1532,6 +1541,7 @@ async function activate(id, skipVerify) {
   try {
     const r = await call("set_active_profile", { id, skipVerify: !!skipVerify });
     if (r && r.committed) {
+      setMsg("");
       await loadConfig();
     } else {
       await loadConfig();
