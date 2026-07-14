@@ -3,6 +3,11 @@
 All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.6.3] — 2026-07-14
+
+### Changed
+- **Split web-search into GENERAL vs LITERATURE lanes**: `web_search` / `csp_web_search` use auto Brave/Serper/Tavily → `duckduckgo_ia`; `search_literature` uses auto wikipedia → Crossref → arXiv → PubMed. Proxy + `csp-web-access` guidance updated so product/news queries stop defaulting into the academic tool.
+
 ## [1.6.2] — 2026-07-14
 
 ### Changed

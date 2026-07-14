@@ -78,7 +78,7 @@ import urllib.parse
 import urllib.request
 
 SERVER_NAME = "web-search"
-SERVER_VERSION = "1.4.0"
+SERVER_VERSION = "1.5.0"
 DEFAULT_PROTOCOL = "2025-06-18"
 USER_AGENT = "csp-web-search/1.0 (+https://github.com/; Claude Science Proxy built-in)"
 HTTP_TIMEOUT = 15
@@ -524,35 +524,38 @@ PROVIDERS = {
 }
 
 # Key-based providers and the env var that activates each.
+# Two search lanes (chosen by host.mcp method name, not by guessing the query):
+#   general     — web_search / csp_web_search
+#                 keyed Brave/Serper/Tavily → duckduckgo_ia
+#   literature  — search_literature
+#                 wikipedia → Crossref → arXiv → PubMed
+# Explicit provider=<name> still works on either tool (overrides the lane's auto).
 KEY_PROVIDERS = [
     ("brave", ("BRAVE_SEARCH_API_KEY", "BRAVE_API_KEY")),
     ("serper", ("SERPER_API_KEY",)),
     ("tavily", ("TAVILY_API_KEY",)),
 ]
-# Free fallbacks for auto mode (after any key-based providers). With CSP
-# network-allowlist grants, general-web Instant Answer / Wikipedia usually
-# CONNECT; put them *before* scholarly so product/news queries are not stuck
-# on Crossref. HTML ``duckduckgo`` stays out of auto (anti-bot fragile).
-FREE_FALLBACKS = [
-    "duckduckgo_ia",
-    "wikipedia",
-    "crossref",
-    "arxiv",
-    "pubmed",
-]
+GENERAL_FREE_FALLBACKS = ["duckduckgo_ia"]
+LITERATURE_FREE_FALLBACKS = ["wikipedia", "crossref", "arxiv", "pubmed"]
+# Kept for tests / docs; prefer the lane-specific lists above.
+FREE_FALLBACKS = GENERAL_FREE_FALLBACKS + LITERATURE_FREE_FALLBACKS
 
 
-def auto_order(env):
-    """Key providers whose key is present first, then free fallbacks."""
+def auto_order(env, lane="general"):
+    """Build provider try-order for ``provider=auto`` on a given lane."""
     order = []
+    if lane == "literature":
+        order.extend(LITERATURE_FREE_FALLBACKS)
+        return order
+    # general (default)
     for name, keys in KEY_PROVIDERS:
         if any(env.get(k) for k in keys):
             order.append(name)
-    order.extend(FREE_FALLBACKS)
+    order.extend(GENERAL_FREE_FALLBACKS)
     return order
 
 
-def do_web_search(args, env):
+def do_web_search(args, env, lane="general"):
     query = (args.get("query") or "").strip()
     if not query:
         raise ValueError("query is required")
@@ -564,7 +567,7 @@ def do_web_search(args, env):
     provider = (args.get("provider") or "auto").strip().lower()
 
     if provider == "auto":
-        candidates = auto_order(env)
+        candidates = auto_order(env, lane=lane)
     elif provider in PROVIDERS:
         candidates = [provider]
     else:
@@ -583,12 +586,20 @@ def do_web_search(args, env):
             log("provider %s failed: %s" % (name, exc))
             continue
         if results:
-            return {"provider": name, "query": query,
+            return {"provider": name, "query": query, "lane": lane,
                     "results": results[:max_results], "warnings": warnings}
         warnings.append("%s: no results" % name)
 
-    return {"provider": None, "query": query, "results": [],
+    return {"provider": None, "query": query, "lane": lane, "results": [],
             "warnings": warnings or ["no providers available"]}
+
+
+def do_general_web_search(args, env):
+    return do_web_search(args, env, lane="general")
+
+
+def do_literature_search(args, env):
+    return do_web_search(args, env, lane="literature")
 
 
 def do_fetch_url(args, env):
@@ -646,40 +657,52 @@ _FETCH_INPUT_SCHEMA = {
     "required": ["url"],
 }
 
-# Planner guidance shared by the search tools. tools/list names are host.mcp
-# method names only — bare native web_search is unavailable under CSP.
-_SEARCH_DESCRIPTION = (
-    "Local CSP web / literature search via host.mcp(\"web-search\", …). Under "
-    "Claude Science Proxy (CSP) virtual login there is NO Anthropic-hosted "
-    "web_search tool — calling it as a top-level tool fails with "
-    "\"Tool 'web_search' not found on agent\". Use the repl tool: "
-    "host.mcp(\"web-search\", \"search_literature\"|\"web_search\"|\"csp_web_search\", "
-    "query=..., max_results=N). "
+_RETURN_SHAPE = (
     "RETURN SHAPE (critical): host.mcp parses the JSON tool result into a "
     "Python dict — NOT a list. Schema: "
-    "{\"provider\": str|null, \"query\": str, \"results\": "
-    "[{\"title\", \"url\", \"snippet\", \"source\", \"published\"?}, ...], "
+    "{\"provider\": str|null, \"query\": str, \"lane\": \"general\"|\"literature\", "
+    "\"results\": [{\"title\", \"url\", \"snippet\", \"source\", \"published\"?}, ...], "
     "\"warnings\": [str, ...]}. Correct usage: "
     "data = host.mcp(...); hits = data[\"results\"]; "
     "for r in hits: print(r.get(\"title\"), r.get(\"url\"), r.get(\"snippet\")). "
     "Or simply print(data). Do NOT iterate the dict itself "
     "(for x in data yields string keys → AttributeError on .get). "
-    "provider='auto' (default) tries configured key providers first "
-    "(Brave/Serper/Tavily when env keys are set), then no-key free fallbacks: "
-    "duckduckgo_ia → wikipedia → Crossref → arXiv → PubMed (per-provider "
-    "warnings; first non-empty wins). For general/product/news queries rely on "
-    "auto or set provider='duckduckgo_ia'; for literature-only set "
-    "provider='crossref'|'arxiv'|'pubmed'. OpenAlex / Semantic Scholar remain "
-    "explicitly selectable. HTML provider='duckduckgo' is optional and fragile "
-    "(anti-bot). CSP pre-grants these hosts into Science's network allowlist on "
-    "Start; extend via ~/.csp/network-allowlist.json."
+)
+
+_CSP_NO_NATIVE = (
+    "Under Claude Science Proxy (CSP) virtual login there is NO Anthropic-hosted "
+    "web_search tool — calling it as a top-level tool fails with "
+    "\"Tool 'web_search' not found on agent\". Use the repl tool + host.mcp. "
+)
+
+_GENERAL_DESCRIPTION = (
+    "GENERAL web search (news, products, \"latest models\", facts) via "
+    "host.mcp(\"web-search\", \"web_search\"|\"csp_web_search\", query=..., "
+    "max_results=N). " + _CSP_NO_NATIVE + _RETURN_SHAPE +
+    "With provider='auto' (default) this GENERAL lane tries keyed "
+    "Brave/Serper/Tavily (when env keys are set), then duckduckgo_ia. "
+    "Do NOT use this tool for academic papers — use search_literature instead. "
+    "Explicit provider= still allowed. HTML provider='duckduckgo' is fragile. "
+    "CSP pre-grants search hosts on Start; extend via ~/.csp/network-allowlist.json."
+)
+
+_LITERATURE_DESCRIPTION = (
+    "ACADEMIC / literature search via host.mcp(\"web-search\", "
+    "\"search_literature\", query=..., max_results=N). " + _CSP_NO_NATIVE +
+    _RETURN_SHAPE +
+    "With provider='auto' (default) this LITERATURE lane tries wikipedia → "
+    "Crossref → arXiv → PubMed. Use for papers, DOIs, scholarly metadata. "
+    "For product/news/\"latest GPT\" queries use web_search / csp_web_search "
+    "instead. OpenAlex / Semantic Scholar remain explicitly selectable via "
+    "provider=. CSP network allowlist applies; extend via "
+    "~/.csp/network-allowlist.json."
 )
 
 _FETCH_DESCRIPTION = (
     "Fetch a web page (or text/JSON resource) and return its readable text "
     "with HTML stripped. Call via host.mcp(\"web-search\", \"fetch_url\"|"
-    "\"web_fetch\", url=...). Useful after a search_literature / web_search / "
-    "csp_web_search result. Local CSP MCP only — no Anthropic-hosted fetch. "
+    "\"web_fetch\", url=...). Useful after a search result. Local CSP MCP only "
+    "— no Anthropic-hosted fetch. "
     "RETURN SHAPE: host.mcp returns a dict "
     "{\"url\": str, \"status\": int, \"content\": str}. "
     "Use: data = host.mcp(...); print(data[\"content\"]). "
@@ -688,26 +711,18 @@ _FETCH_DESCRIPTION = (
 
 TOOLS = [
     {
-        # host.mcp method name (NOT a top-level native tool under CSP).
         "name": "web_search",
-        "description": (
-            _SEARCH_DESCRIPTION
-            + " Aliases: search_literature, csp_web_search."
-        ),
-        "inputSchema": _SEARCH_INPUT_SCHEMA,
-    },
-    {
-        "name": "search_literature",
-        "description": (
-            _SEARCH_DESCRIPTION + " Alias of web_search / csp_web_search."
-        ),
+        "description": _GENERAL_DESCRIPTION + " Alias: csp_web_search.",
         "inputSchema": _SEARCH_INPUT_SCHEMA,
     },
     {
         "name": "csp_web_search",
-        "description": (
-            _SEARCH_DESCRIPTION + " Alias of web_search / search_literature."
-        ),
+        "description": _GENERAL_DESCRIPTION + " Alias of web_search.",
+        "inputSchema": _SEARCH_INPUT_SCHEMA,
+    },
+    {
+        "name": "search_literature",
+        "description": _LITERATURE_DESCRIPTION,
         "inputSchema": _SEARCH_INPUT_SCHEMA,
     },
     {
@@ -723,9 +738,9 @@ TOOLS = [
 ]
 
 TOOL_DISPATCH = {
-    "web_search": do_web_search,
-    "search_literature": do_web_search,
-    "csp_web_search": do_web_search,
+    "web_search": do_general_web_search,
+    "csp_web_search": do_general_web_search,
+    "search_literature": do_literature_search,
     "fetch_url": do_fetch_url,
     "web_fetch": do_fetch_url,
 }

@@ -33,33 +33,40 @@ is unavailable — it IS available, through the local connector described below.
 
 ## Which tool to call
 
-The `web-search` connector is already connected and enabled. It exposes:
+The `web-search` connector is already connected and enabled. It exposes **two
+search lanes** (pick by method name — do not guess from keywords alone):
 
-- **`search_literature`** — primary search. Use it for any query: papers,
-  topics, facts, current events, "search for X". (Alias: **`csp_web_search`** —
-  identical behavior; use whichever name your planner surfaces.)
-- **`fetch_url`** — fetch a specific URL and read it back as clean, readable
-  text. Use this to open a search result, or any link the user gives you.
+- **`web_search` / `csp_web_search`** — **GENERAL** lane for news, products,
+  "latest models", facts. `provider="auto"` → keyed Brave/Serper/Tavily (if
+  set) → `duckduckgo_ia`.
+- **`search_literature`** — **LITERATURE** lane for papers / DOIs / scholarly
+  metadata. `provider="auto"` → wikipedia → Crossref → arXiv → PubMed.
+- **`fetch_url`** — fetch a URL as clean text (after either search).
 
-Typical flow: call `search_literature` (or `csp_web_search`) to find sources,
-then `fetch_url` to read the most relevant ones.
-
-**Return shape (critical).** `host.mcp` parses the JSON tool result into a
-Python **dict**, not a bare list:
+Typical flows:
 
 ```python
-data = host.mcp("web-search", "search_literature", query="...", max_results=5)
-hits = data["results"]  # list of {title, url, snippet, source, ...}
+# General / product / news
+data = host.mcp("web-search", "web_search", query="...", max_results=5)
+hits = data["results"]
 for r in hits:
     print(r.get("title"), r.get("url"), r.get("snippet"))
-# or: print(data)
+
+# Academic only
+papers = host.mcp("web-search", "search_literature", query="...", max_results=5)
+for r in papers["results"]:
+    print(r.get("title"), r.get("url"))
+
 page = host.mcp("web-search", "fetch_url", url=hits[0]["url"])
-print(page["content"])  # dict: url, status, content
+print(page["content"])
 ```
 
 Do **not** write `for r in data:` / `enumerate(data)` on the search return —
 that iterates dict **keys** (strings) and raises
 `AttributeError: 'str' object has no attribute 'get'`.
+
+**Return shape:** `host.mcp` returns a **dict** with a `results` list
+(`hits = data["results"]`), never a bare list of hits.
 
 ## What the sandbox can reach
 
@@ -67,16 +74,9 @@ CSP pre-grants hosts for the bundled `web-search` providers into Science's
 network allowlist on Start (DuckDuckGo Instant Answer, Wikipedia, Brave,
 Serper, Tavily). Extra hosts can be added in `~/.csp/network-allowlist.json`.
 
-**`provider="auto"` (default)** tries, in order:
-
-1. Keyed providers when env keys are set (Brave / Serper / Tavily)
-2. General no-key: `duckduckgo_ia` → `wikipedia`
-3. Scholarly: Crossref → arXiv → PubMed
-
-For product / news / "latest model" queries, rely on auto (or set
-`provider="duckduckgo_ia"`). For literature-only, set `provider="crossref"`
-(or `arxiv` / `pubmed`). HTML `provider="duckduckgo"` is optional and fragile
-(anti-bot). Do **not** assume every answer is only academic papers.
+Use the **correct lane** for the question type (GENERAL vs LITERATURE above).
+Explicit `provider=` still works on either tool. HTML `provider="duckduckgo"`
+is optional and fragile (anti-bot).
 
 ## Local environment conventions
 
@@ -114,12 +114,11 @@ plots need no change.
 
 ### Web and network
 
-- Don't call the hosted `web_search` tool — use the local `web-search` MCP
-  (`search_literature` / `csp_web_search`, then `fetch_url`), as described above.
-- Prefer **`provider="auto"`** for general queries (now includes `duckduckgo_ia` /
-  Wikipedia before scholarly). Use scholarly-only providers when the user asks
-  for papers. If a host is still blocked, say so — do **not** retry the hosted
-  Anthropic `web_search` tool.
+- Don't call the hosted `web_search` tool — use the local `web-search` MCP.
+- GENERAL queries → `web_search` / `csp_web_search`; LITERATURE →
+  `search_literature`. Do not send product/news queries down the literature lane.
+- If a host is still blocked, say so — do **not** retry the hosted Anthropic
+  `web_search` tool.
 
 ### Skills and environment edits
 
@@ -136,8 +135,8 @@ plots need no change.
 
 ## Summary
 
-- Web search / online lookup / read a page → use `web-search`
-  (`search_literature` / `csp_web_search`, then `fetch_url`).
+- GENERAL web / news / products → `web_search` / `csp_web_search` (then `fetch_url`).
+- LITERATURE / papers / DOI → `search_literature` (then `fetch_url`).
 - Hosted `web_search` tool → never call it; it does not exist in this environment.
 - Files → write to the workspace cwd with relative paths; never `/mnt/data`;
   persist user-visible files with `save_artifacts([...])`; `/tmp` is scratch only.
@@ -148,14 +147,11 @@ plots need no change.
 
 ## 中文提示
 
-本环境没有托管版 Web Search。任何联网搜索、在线查询或网页读取，请始终使用本地
-`web-search` 连接器的 `search_literature` / `csp_web_search`（搜索）与 `fetch_url`
-（读取网页），不要调用托管的 `web_search` 工具——它在 CSP 下不可用，会报
-`Tool 'web_search' not found on agent`。`host.mcp` 搜索返回的是 **dict**
-（含 `results` 列表），正确写法：`data = host.mcp(...); hits = data["results"]`，
-不要直接对返回值做 `for r in data`（会迭代字符串键并触发 AttributeError）。沙箱出网被
-限制为科研数据源白名单，默认使用 Crossref、arXiv、PubMed（及 OpenAlex / Semantic
-Scholar）等免密钥学术检索源。
+本环境没有托管版 Web Search。联网请用本地 `web-search`：**通用/新闻/产品**用
+`web_search` / `csp_web_search`（auto：Brave/Serper/Tavily → duckduckgo_ia）；
+**论文/学术**用 `search_literature`（auto：wikipedia → Crossref → arXiv → PubMed）；
+读页用 `fetch_url`。不要调用托管 `web_search`。`host.mcp` 搜索返回 **dict**
+（含 `results`），正确写法：`data = host.mcp(...); hits = data["results"]`。
 
 本地环境约定（与托管 Claude 不同，请每次遵守）：
 
