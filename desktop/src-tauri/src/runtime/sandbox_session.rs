@@ -422,3 +422,27 @@ pub(crate) fn redeploy_sandbox_skills() -> bool {
     let (_, changed) = deploy_sandbox_skills(&auth_dir, &sbx_home, org_uuid.as_deref());
     changed
 }
+
+/// Redeploy enabled local MCP servers into the sandbox data-dir. Returns whether
+/// disk changed (mirrors [`redeploy_sandbox_skills`]).
+pub(crate) fn redeploy_sandbox_mcp() -> bool {
+    let sbx_home = sandbox_home();
+    let auth_dir = sbx_home.join(".claude-science");
+    let (_, changed) = deploy_sandbox_mcp(&auth_dir, &sbx_home);
+    changed
+}
+
+/// If our sandbox is running, stop it so the caller can flag `needs_restart` and
+/// the frontend can `one_click_login` again. Used after Skill/MCP redeploys.
+pub(crate) fn stop_running_sandbox_for_redeploy<R: Runtime>(
+    app: &tauri::AppHandle<R>,
+    state: &SharedAppState,
+) -> Result<bool, String> {
+    let cfg = config::load_from(&config::default_dir()).map_err(|e| e.to_string())?;
+    if !sandbox_running_ours(cfg.sandbox_port) {
+        return Ok(false);
+    }
+    let mut st = lock(state);
+    stop_sandbox_state(app, &mut st)?;
+    Ok(true)
+}

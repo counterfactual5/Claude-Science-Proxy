@@ -3,14 +3,15 @@
 use std::path::PathBuf;
 
 use crate::run_blocking;
-use crate::runtime::sandbox_session::redeploy_sandbox_skills;
-use crate::runtime::science::{sandbox_running_ours, stop_sandbox};
+use crate::runtime::sandbox_session::{
+    redeploy_sandbox_skills, stop_running_sandbox_for_redeploy,
+};
 use crate::skill_manager::model::{DiscoveredSkill, InspectionResult, Skill, SkillSummary};
 use crate::skill_manager::store::SkillStore;
 use crate::skill_manager::workspace_ingress::{
     self, AdoptWorkspaceSkillsResult, WorkspaceSkillCandidate,
 };
-use crate::{config, lock, SharedAppState};
+use crate::SharedAppState;
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
@@ -75,12 +76,34 @@ pub struct ImportSkillInput {
     pub source_path: String,
 }
 
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillActionResult {
+    pub skill: Skill,
+    /// Sandbox was stopped so the user can restart with the change applied.
+    pub needs_restart: bool,
+}
+
 #[tauri::command]
-pub async fn import_skill(input: ImportSkillInput) -> Result<Skill, String> {
+pub async fn import_skill(
+    app: tauri::AppHandle,
+    state: State<'_, SharedAppState>,
+    input: ImportSkillInput,
+) -> Result<SkillActionResult, String> {
     let source = PathBuf::from(input.source_path);
+    let state = state.inner().clone();
     run_blocking(move || {
         let store = SkillStore::open()?;
-        store.import(&source)
+        let skill = store.import(&source)?;
+        let mut needs_restart = false;
+        // Imports land enabled; redeploy so a running sandbox can pick them up.
+        if skill.enabled && redeploy_sandbox_skills() {
+            needs_restart = stop_running_sandbox_for_redeploy(&app, &state)?;
+        }
+        Ok(SkillActionResult {
+            skill,
+            needs_restart,
+        })
     })
     .await
 }
@@ -121,16 +144,7 @@ pub async fn create_skill(
         let skill = store.create_from_content(&input.content)?;
         let mut needs_restart = false;
         if redeploy_sandbox_skills() {
-            let cfg = config::load_from(&config::default_dir()).map_err(|e| e.to_string())?;
-            if sandbox_running_ours(cfg.sandbox_port) {
-                let mut st = lock(&state);
-                let mut child = st.sandbox.take();
-                let mut url = st.sandbox_url.take();
-                stop_sandbox(&app, &mut child, &mut url)?;
-                st.sandbox = child;
-                st.sandbox_url = url;
-                needs_restart = true;
-            }
+            needs_restart = stop_running_sandbox_for_redeploy(&app, &state)?;
         }
         Ok(CreateSkillResult {
             skill: SkillSummary::from(&skill),
@@ -148,10 +162,23 @@ pub struct SetSkillEnabledInput {
 }
 
 #[tauri::command]
-pub async fn set_skill_enabled(input: SetSkillEnabledInput) -> Result<Skill, String> {
+pub async fn set_skill_enabled(
+    app: tauri::AppHandle,
+    state: State<'_, SharedAppState>,
+    input: SetSkillEnabledInput,
+) -> Result<SkillActionResult, String> {
+    let state = state.inner().clone();
     run_blocking(move || {
         let store = SkillStore::open()?;
-        store.set_enabled(&input.skill_id, input.enabled)
+        let skill = store.set_enabled(&input.skill_id, input.enabled)?;
+        let mut needs_restart = false;
+        if redeploy_sandbox_skills() {
+            needs_restart = stop_running_sandbox_for_redeploy(&app, &state)?;
+        }
+        Ok(SkillActionResult {
+            skill,
+            needs_restart,
+        })
     })
     .await
 }
@@ -228,16 +255,7 @@ pub async fn adopt_workspace_skills(
     run_blocking(move || {
         let mut result = workspace_ingress::adopt_workspace_skills(&input.keys)?;
         if !result.adopted.is_empty() && redeploy_sandbox_skills() {
-            let cfg = config::load_from(&config::default_dir()).map_err(|e| e.to_string())?;
-            if sandbox_running_ours(cfg.sandbox_port) {
-                let mut st = lock(&state);
-                let mut child = st.sandbox.take();
-                let mut url = st.sandbox_url.take();
-                stop_sandbox(&app, &mut child, &mut url)?;
-                st.sandbox = child;
-                st.sandbox_url = url;
-                result.needs_restart = true;
-            }
+            result.needs_restart = stop_running_sandbox_for_redeploy(&app, &state)?;
         }
         Ok(result)
     })

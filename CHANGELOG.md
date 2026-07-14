@@ -3,6 +3,16 @@
 All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.6.14] — 2026-07-14
+
+### Fixed
+- **Skill/MCP changes apply while Science is running**: Create, import, enable/disable, adopt (Skills), and create/import/update/enable (MCP) redeploy into the sandbox and, if the sandbox is running, stop it so the UI can restart (`needs_restart`) — edits no longer wait silently for the next manual Start.
+- **MCP UI i18n**: MCP list/form/discover copy and restart-status toasts follow the locale dictionaries (EN/ZH), including renamed form title id (`mcpFormTitle`).
+- **Version alignment**: Embedded web-search `SERVER_VERSION` and its builtin test assertion synced to the desktop release version.
+
+### Changed
+- **Naming / cleanup**: Dropped unused `#[allow(dead_code)]` on `SkillStore::get` (now referenced); MCP action commands return `McpActionResult` / Skill equivalents with `needs_restart`.
+
 ## [1.6.13] — 2026-07-14
 
 ### Changed

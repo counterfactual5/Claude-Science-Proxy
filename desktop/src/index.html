@@ -207,18 +207,18 @@
               </div>
             </div>
           </div>
-          <p class="hint apply-hint">新增/编辑/启用的改动会在下次点击「启动 Claude Science」时生效；若沙箱正在运行，会自动重启以应用。</p>
+          <p class="hint apply-hint" id="mcpApplyHint">新增/编辑/启用的改动会在下次点击「启动 Claude Science」时生效；若沙箱正在运行，会自动重启以应用。</p>
 
           <div class="skill-empty" id="mcpEmpty" hidden>
-            <p>还没有本地 MCP。</p>
-            <p class="hint">点「新建」，配置一个本地 <code>stdio</code> 连接器（command + args + env）。启用后会在启动沙箱时写入 <code>&lt;data-dir&gt;/mcp/local-mcp.json</code>。</p>
+            <p id="mcpEmptyTitle">还没有本地 MCP。</p>
+            <p class="hint" id="mcpEmptyHint">点「新建」，配置一个本地 <code>stdio</code> 连接器（command + args + env）。启用后会在启动沙箱时写入 <code>&lt;data-dir&gt;/mcp/local-mcp.json</code>。</p>
           </div>
 
           <div id="mcpList" class="skill-list"></div>
         </div>
 
         <div class="sec form-sec" id="mcpFormSec" hidden>
-          <label id="mcpModalTitle">新增本地 MCP</label>
+          <label id="mcpFormTitle">新增本地 MCP</label>
           <div class="form-group">
             <label for="mcpName">名称</label>
             <input id="mcpName" type="text" placeholder="my-tools" autocomplete="off" spellcheck="false" />
@@ -255,10 +255,10 @@
 
         <div class="sec form-sec" id="mcpDiscoverSec" hidden>
           <label id="mcpDiscoverTitle">扫描本地 MCP</label>
-          <p class="hint">扫描常见 AI 客户端的 MCP 配置：Cursor、Claude Desktop、Claude Code、Codex（<code>~/.codex/config.toml</code>）、Devin Desktop（原 Windsurf）、VS Code（<code>~/Library/Application Support/Code/User/mcp.json</code>）、Zed，以及国产 Qoder / 通义灵码（阿里）、Trae / TRAE SOLO（字节）、CodeBuddy（腾讯）。识别 <code>mcpServers</code> / <code>servers</code> / <code>context_servers</code> 等键，勾选后导入为 CSP 本地 stdio MCP。仅识别本地 stdio（带 <code>command</code>）连接器；环境变量只显示 key，导入时由后端复制原值。</p>
+          <p class="hint" id="mcpDiscoverHint">扫描常见 AI 客户端的 MCP 配置：Cursor、Claude Desktop、Claude Code、Codex（<code>~/.codex/config.toml</code>）、Devin Desktop（原 Windsurf）、VS Code（<code>~/Library/Application Support/Code/User/mcp.json</code>）、Zed，以及国产 Qoder / 通义灵码（阿里）、Trae / TRAE SOLO（字节）、CodeBuddy（腾讯）。识别 <code>mcpServers</code> / <code>servers</code> / <code>context_servers</code> 等键，勾选后导入为 CSP 本地 stdio MCP。仅识别本地 stdio（带 <code>command</code>）连接器；环境变量只显示 key，导入时由后端复制原值。</p>
           <div id="mcpDiscoverList" class="skill-discover-list"></div>
           <div id="mcpDiscoverEmpty" class="skill-empty" hidden>
-            <p>没有扫描到可导入的本地 stdio MCP。</p>
+            <p id="mcpDiscoverEmptyText">没有扫描到可导入的本地 stdio MCP。</p>
           </div>
           <div class="row form-actions">
             <button class="btn small" id="mcpDiscoverImportBtn" disabled>导入所选</button>

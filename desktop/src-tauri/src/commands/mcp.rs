@@ -6,12 +6,16 @@ use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::mcp_manager::model::{DiscoveredMcpServer, McpInspection, McpServerSummary};
 use crate::mcp_manager::store::{McpServerInput, McpStore};
-use crate::{config, run_blocking};
+use crate::runtime::sandbox_session::{
+    redeploy_sandbox_mcp, stop_running_sandbox_for_redeploy,
+};
+use crate::{config, run_blocking, SharedAppState};
+use tauri::State;
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -252,15 +256,46 @@ pub struct ImportDiscoveredMcpServerInput {
     pub name: String,
 }
 
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpActionResult {
+    pub server: McpServerSummary,
+    /// Sandbox was stopped so the frontend can restart with MCP changes applied.
+    pub needs_restart: bool,
+}
+
+fn mcp_redeploy_maybe_restart(
+    app: &tauri::AppHandle,
+    state: &SharedAppState,
+) -> Result<bool, String> {
+    if redeploy_sandbox_mcp() {
+        stop_running_sandbox_for_redeploy(app, state)
+    } else {
+        Ok(false)
+    }
+}
+
 #[tauri::command]
 pub async fn import_discovered_mcp_server(
+    app: tauri::AppHandle,
+    state: State<'_, SharedAppState>,
     input: ImportDiscoveredMcpServerInput,
-) -> Result<McpServerSummary, String> {
+) -> Result<McpActionResult, String> {
+    let state = state.inner().clone();
     run_blocking(move || {
         let server = read_source_server(Path::new(&input.source_path), &input.name)?
             .ok_or_else(|| format!("Discovered MCP not found: {}", input.name))?;
         let store = McpStore::open()?;
-        store.create(server)
+        let summary = store.create(server)?;
+        let needs_restart = if summary.enabled {
+            mcp_redeploy_maybe_restart(&app, &state)?
+        } else {
+            false
+        };
+        Ok(McpActionResult {
+            server: summary,
+            needs_restart,
+        })
     })
     .await
 }
@@ -271,10 +306,24 @@ pub async fn inspect_mcp_server(input: McpServerInputDto) -> Result<McpInspectio
 }
 
 #[tauri::command]
-pub async fn create_mcp_server(input: McpServerInputDto) -> Result<McpServerSummary, String> {
+pub async fn create_mcp_server(
+    app: tauri::AppHandle,
+    state: State<'_, SharedAppState>,
+    input: McpServerInputDto,
+) -> Result<McpActionResult, String> {
+    let state = state.inner().clone();
     run_blocking(move || {
         let store = McpStore::open()?;
-        store.create(input.into())
+        let summary = store.create(input.into())?;
+        let needs_restart = if summary.enabled {
+            mcp_redeploy_maybe_restart(&app, &state)?
+        } else {
+            false
+        };
+        Ok(McpActionResult {
+            server: summary,
+            needs_restart,
+        })
     })
     .await
 }
@@ -287,10 +336,22 @@ pub struct UpdateMcpServerInput {
 }
 
 #[tauri::command]
-pub async fn update_mcp_server(input: UpdateMcpServerInput) -> Result<McpServerSummary, String> {
+pub async fn update_mcp_server(
+    app: tauri::AppHandle,
+    state: State<'_, SharedAppState>,
+    input: UpdateMcpServerInput,
+) -> Result<McpActionResult, String> {
+    let state = state.inner().clone();
     run_blocking(move || {
         let store = McpStore::open()?;
-        store.update(&input.server_id, input.server.into())
+        let summary = store.update(&input.server_id, input.server.into())?;
+        // Always redeploy: enabled edits must apply; disabled edits clear any
+        // stale sandbox entry left from a prior enabled deploy.
+        let needs_restart = mcp_redeploy_maybe_restart(&app, &state)?;
+        Ok(McpActionResult {
+            server: summary,
+            needs_restart,
+        })
     })
     .await
 }
@@ -303,10 +364,20 @@ pub struct SetMcpEnabledInput {
 }
 
 #[tauri::command]
-pub async fn set_mcp_server_enabled(input: SetMcpEnabledInput) -> Result<McpServerSummary, String> {
+pub async fn set_mcp_server_enabled(
+    app: tauri::AppHandle,
+    state: State<'_, SharedAppState>,
+    input: SetMcpEnabledInput,
+) -> Result<McpActionResult, String> {
+    let state = state.inner().clone();
     run_blocking(move || {
         let store = McpStore::open()?;
-        store.set_enabled(&input.server_id, input.enabled)
+        let summary = store.set_enabled(&input.server_id, input.enabled)?;
+        let needs_restart = mcp_redeploy_maybe_restart(&app, &state)?;
+        Ok(McpActionResult {
+            server: summary,
+            needs_restart,
+        })
     })
     .await
 }

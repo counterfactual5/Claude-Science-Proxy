@@ -74,7 +74,6 @@ impl SkillStore {
     }
 
     /// Get a full Skill by id.
-    #[allow(dead_code)]
     pub fn get(&self, id: &str) -> Result<Option<Skill>, String> {
         let inv = self.load_inventory()?;
         Ok(inv.skills.get(id).cloned())

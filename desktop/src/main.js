@@ -29,7 +29,6 @@ const I18N = {
   cn: {
     myConfigs: "我的配置",
     newBtn: "+ 新建",
-    presetPicker: "选择预设",
     presetTitle: "快速填入名称与地址",
     wizNamePlaceholder: "点右侧 ▾ 选预设，或直接输入名称",
     wizBasePlaceholder: "https://api.z.ai/api/anthropic",
@@ -126,6 +125,56 @@ const I18N = {
     skillAdoptEmpty: "没有扫描到可采纳的 Skill 草稿。",
     skillAdoptConfirm: "采纳所选",
     skillAdoptedBadge: "已采纳",
+    skillCreateTitle: "新建 Skill",
+    skillCreated: "已新建 Skill",
+    skillCreatedRestarting: "已新建 Skill；沙箱已停止，正在重新启动…",
+    skillCreatedRestarted: "已新建并重启完成",
+    skillCreatedRestartFail: "已新建，但重新启动失败：{err}",
+    skillImported: "已导入 Skill",
+    skillImportedRestarting: "已导入 Skill；沙箱已停止，正在重新启动…",
+    skillImportedRestarted: "已导入并重启完成",
+    skillImportedRestartFail: "已导入，但重新启动失败：{err}",
+    skillImportPartialFail: "部分导入失败: {err}",
+    skillToggledRestarting: "已更新启用状态；沙箱已停止，正在重新启动…",
+    skillToggledRestarted: "已应用并重启完成",
+    skillToggledRestartFail: "已更新，但重新启动失败：{err}",
+    skillAdoptedRestarting: "已采纳 Skill；沙箱已停止，正在重新启动…",
+    skillAdoptedRestarted: "已采纳并重启完成",
+    skillAdoptedRestartFail: "已采纳，但重新启动失败：{err}",
+    skillAdoptPartialFail: "部分采纳失败: {err}",
+    metaSize: "大小",
+    metaImported: "导入",
+    inspUnnamedSkill: "未命名 Skill",
+    inspNoDesc: "无描述",
+    inspFileCountSize: "文件数: {count} · 大小: {size}",
+    inspRequirements: "依赖环境: {reqs}",
+    inspNone: "无",
+    inspWarningsPrefix: "警告: {msg}",
+    inspErrorsPrefix: "错误: {msg}",
+    mcpManageTitle: "本地 MCP 管理",
+    mcpApplyHint: "新增/编辑/启用的改动会在下次点击「启动 Claude Science」时生效；若沙箱正在运行，会自动重启以应用。",
+    mcpEmptyTitle: "还没有本地 MCP。",
+    mcpEmptyHintHtml: "点「新建」，配置一个本地 <code>stdio</code> 连接器（command + args + env）。启用后会在启动沙箱时写入 <code>&lt;data-dir&gt;/mcp/local-mcp.json</code>。",
+    mcpFormTitleNew: "新增本地 MCP",
+    mcpFormTitleEdit: "编辑本地 MCP",
+    mcpDiscoverTitle: "扫描本地 MCP",
+    mcpDiscoverHintHtml: "扫描常见 AI 客户端的 MCP 配置：Cursor、Claude Desktop、Claude Code、Codex（<code>~/.codex/config.toml</code>）、Devin Desktop（原 Windsurf）、VS Code（<code>~/Library/Application Support/Code/User/mcp.json</code>）、Zed，以及国产 Qoder / 通义灵码（阿里）、Trae / TRAE SOLO（字节）、CodeBuddy（腾讯）。识别 <code>mcpServers</code> / <code>servers</code> / <code>context_servers</code> 等键，勾选后导入为 CSP 本地 stdio MCP。仅识别本地 stdio（带 <code>command</code>）连接器；环境变量只显示 key，导入时由后端复制原值。",
+    mcpDiscoverEmpty: "没有扫描到可导入的本地 stdio MCP。",
+    mcpDiscoverImport: "导入所选",
+    mcpScanning: "扫描中…",
+    mcpNetworkAllowlist: "网络授权配置",
+    mcpEditJson: "编辑 JSON",
+    mcpImportPartialFail: "部分导入失败: {err}",
+    mcpSavedRestarting: "已保存 MCP；沙箱已停止，正在重新启动…",
+    mcpSavedRestarted: "已保存并重启完成",
+    mcpSavedRestartFail: "已保存，但重新启动失败：{err}",
+    mcpImportedRestarting: "已导入 MCP；沙箱已停止，正在重新启动…",
+    mcpImportedRestarted: "已导入并重启完成",
+    mcpImportedRestartFail: "已导入，但重新启动失败：{err}",
+    mcpToggledRestarting: "已更新启用状态；沙箱已停止，正在重新启动…",
+    mcpToggledRestarted: "已应用并重启完成",
+    mcpToggledRestartFail: "已更新，但重新启动失败：{err}",
+    mcpWarnConfirm: "警告: {msg}（如确认无误，请再次点击「保存」）",
     mcpDiscoverBtn: "扫描导入",
     modelHintNative: "由 Science 选择器 + 内置映射自动选择（opus 深度 / haiku 快速）。",
     modelHintFixed: "勾选要在 Science 中启用的模型；列表第一个用于后台任务兜底。",
@@ -149,7 +198,6 @@ const I18N = {
     providerEmpty: "Provider 不能为空。",
     needModel: "该来源需要至少选一个模型才能保存。",
     saveConnFail: "连接未保存：{err}",
-    confirmDelete: "将删除配置「{name}」",
     deleteFail: "删除失败：{err}",
     switchRejected: "校验未通过，未切换。",
     switchFail: "切换失败：{err}",
@@ -273,7 +321,6 @@ const I18N = {
   intl: {
     myConfigs: "Profiles",
     newBtn: "+ New",
-    presetPicker: "Choose preset",
     presetTitle: "Fill name and Base URL",
     wizNamePlaceholder: "Pick ▾ for a preset, or type a name",
     wizBasePlaceholder: "https://api.z.ai/api/anthropic",
@@ -370,6 +417,56 @@ const I18N = {
     skillAdoptEmpty: "No adoptable Skill drafts found.",
     skillAdoptConfirm: "Adopt selected",
     skillAdoptedBadge: "Adopted",
+    skillCreateTitle: "New Skill",
+    skillCreated: "Skill created",
+    skillCreatedRestarting: "Skill created; sandbox stopped, restarting…",
+    skillCreatedRestarted: "Created and restarted",
+    skillCreatedRestartFail: "Created, but restart failed: {err}",
+    skillImported: "Skill imported",
+    skillImportedRestarting: "Skill imported; sandbox stopped, restarting…",
+    skillImportedRestarted: "Imported and restarted",
+    skillImportedRestartFail: "Imported, but restart failed: {err}",
+    skillImportPartialFail: "Some imports failed: {err}",
+    skillToggledRestarting: "Enable state updated; sandbox stopped, restarting…",
+    skillToggledRestarted: "Applied and restarted",
+    skillToggledRestartFail: "Updated, but restart failed: {err}",
+    skillAdoptedRestarting: "Skills adopted; sandbox stopped, restarting…",
+    skillAdoptedRestarted: "Adopted and restarted",
+    skillAdoptedRestartFail: "Adopted, but restart failed: {err}",
+    skillAdoptPartialFail: "Some adopts failed: {err}",
+    metaSize: "Size",
+    metaImported: "Imported",
+    inspUnnamedSkill: "Unnamed Skill",
+    inspNoDesc: "No description",
+    inspFileCountSize: "Files: {count} · Size: {size}",
+    inspRequirements: "Requires: {reqs}",
+    inspNone: "none",
+    inspWarningsPrefix: "Warnings: {msg}",
+    inspErrorsPrefix: "Errors: {msg}",
+    mcpManageTitle: "Local MCP",
+    mcpApplyHint: "Create/edit/enable changes apply the next time you Start Claude Science; a running sandbox restarts automatically.",
+    mcpEmptyTitle: "No local MCP yet.",
+    mcpEmptyHintHtml: "Tap New to add a local <code>stdio</code> connector (command + args + env). When enabled, it is written to <code>&lt;data-dir&gt;/mcp/local-mcp.json</code> on sandbox start.",
+    mcpFormTitleNew: "New local MCP",
+    mcpFormTitleEdit: "Edit local MCP",
+    mcpDiscoverTitle: "Scan local MCP",
+    mcpDiscoverHintHtml: "Scans common AI client MCP configs: Cursor, Claude Desktop, Claude Code, Codex (<code>~/.codex/config.toml</code>), Devin Desktop (ex-Windsurf), VS Code (<code>~/Library/Application Support/Code/User/mcp.json</code>), Zed, plus domestic Qoder / Tongyi Lingma (Alibaba), Trae / TRAE SOLO (ByteDance), CodeBuddy (Tencent). Recognizes <code>mcpServers</code> / <code>servers</code> / <code>context_servers</code>. Checked items import as CSP local stdio MCP. Only local stdio (with <code>command</code>) connectors; env shows keys only, values are copied by the backend on import.",
+    mcpDiscoverEmpty: "No importable local stdio MCP found.",
+    mcpDiscoverImport: "Import selected",
+    mcpScanning: "Scanning…",
+    mcpNetworkAllowlist: "Network allowlist",
+    mcpEditJson: "Edit JSON",
+    mcpImportPartialFail: "Some imports failed: {err}",
+    mcpSavedRestarting: "MCP saved; sandbox stopped, restarting…",
+    mcpSavedRestarted: "Saved and restarted",
+    mcpSavedRestartFail: "Saved, but restart failed: {err}",
+    mcpImportedRestarting: "MCP imported; sandbox stopped, restarting…",
+    mcpImportedRestarted: "Imported and restarted",
+    mcpImportedRestartFail: "Imported, but restart failed: {err}",
+    mcpToggledRestarting: "Enable state updated; sandbox stopped, restarting…",
+    mcpToggledRestarted: "Applied and restarted",
+    mcpToggledRestartFail: "Updated, but restart failed: {err}",
+    mcpWarnConfirm: "Warnings: {msg} (click Save again to confirm)",
     mcpDiscoverBtn: "Scan & import",
     modelHintNative: "Auto-mapped via Science picker + built-in routing (opus for depth, haiku for speed).",
     modelHintFixed: "Check models to enable in Science; the first is the fallback for background tasks.",
@@ -393,7 +490,6 @@ const I18N = {
     providerEmpty: "Provider name is required.",
     needModel: "Select at least one model for this provider.",
     saveConnFail: "Not saved: {err}",
-    confirmDelete: "Delete profile \"{name}\"",
     deleteFail: "Delete failed: {err}",
     switchRejected: "Verify failed; not switched.",
     switchFail: "Switch failed: {err}",
@@ -644,6 +740,8 @@ function applyEditionUI() {
   if (els.skillDiscoverBtn) els.skillDiscoverBtn.textContent = t.scanImport;
   if (els.skillAdoptBtn) els.skillAdoptBtn.textContent = t.adoptFromScience;
   if (els.mcpDiscoverBtn) els.mcpDiscoverBtn.textContent = t.mcpDiscoverBtn;
+  if (els.mcpNetworkAllowlistBtn) els.mcpNetworkAllowlistBtn.textContent = t.mcpNetworkAllowlist;
+  if (els.mcpJsonBtn) els.mcpJsonBtn.textContent = t.mcpEditJson;
   if (els.skillMoreBtn) els.skillMoreBtn.title = t.menuMore;
   if (els.mcpMoreBtn) els.mcpMoreBtn.title = t.menuMore;
   const skillsTitle = document.querySelector("#skillListSec > .skill-hd > .sec-title");
@@ -651,6 +749,9 @@ function applyEditionUI() {
   if (els.skillApplyHint) els.skillApplyHint.textContent = t.skillApplyHint;
   if (els.skillEmptyTitle) els.skillEmptyTitle.textContent = t.skillEmptyTitle;
   if (els.skillEmptyHint) els.skillEmptyHint.textContent = t.skillEmptyHint;
+  if (els.skillCreateTitle) els.skillCreateTitle.textContent = t.skillCreateTitle;
+  if (els.skillCreateSaveBtn) els.skillCreateSaveBtn.textContent = t.save;
+  if (els.skillCreateCancelBtn) els.skillCreateCancelBtn.textContent = t.cancel;
   if (els.skillDiscoverTitle) els.skillDiscoverTitle.textContent = t.skillDiscoverTitle;
   if (els.skillDiscoverHint) els.skillDiscoverHint.innerHTML = t.skillDiscoverHintHtml;
   if (els.skillDiscoverEmptyText) els.skillDiscoverEmptyText.textContent = t.skillDiscoverEmpty;
@@ -667,6 +768,19 @@ function applyEditionUI() {
   if (els.skillAdoptEmptyText) els.skillAdoptEmptyText.textContent = t.skillAdoptEmpty;
   if (els.skillAdoptConfirmBtn) els.skillAdoptConfirmBtn.textContent = t.skillAdoptConfirm;
   if (els.skillAdoptCancelBtn) els.skillAdoptCancelBtn.textContent = t.cancel;
+  const mcpTitle = document.querySelector("#mcpListSec > .skill-hd > .sec-title");
+  if (mcpTitle) mcpTitle.textContent = t.mcpManageTitle;
+  if (els.mcpApplyHint) els.mcpApplyHint.textContent = t.mcpApplyHint;
+  if (els.mcpEmptyTitle) els.mcpEmptyTitle.textContent = t.mcpEmptyTitle;
+  if (els.mcpEmptyHint) els.mcpEmptyHint.innerHTML = t.mcpEmptyHintHtml;
+  if (els.mcpFormTitle) els.mcpFormTitle.textContent = t.mcpFormTitleNew;
+  if (els.mcpSaveBtn) els.mcpSaveBtn.textContent = t.save;
+  if (els.mcpCancelBtn) els.mcpCancelBtn.textContent = t.cancel;
+  if (els.mcpDiscoverTitle) els.mcpDiscoverTitle.textContent = t.mcpDiscoverTitle;
+  if (els.mcpDiscoverHint) els.mcpDiscoverHint.innerHTML = t.mcpDiscoverHintHtml;
+  if (els.mcpDiscoverEmptyText) els.mcpDiscoverEmptyText.textContent = t.mcpDiscoverEmpty;
+  if (els.mcpDiscoverImportBtn) els.mcpDiscoverImportBtn.textContent = t.mcpDiscoverImport;
+  if (els.mcpDiscoverCancelBtn) els.mcpDiscoverCancelBtn.textContent = t.cancel;
   populateWizPresetMenu();
   refreshWizPlaceholders();
 }
@@ -831,7 +945,7 @@ function mockInvoke(cmd, args) {
         requirements: ["python", "mcp"],
       };
       mockStore.skills.push(newSkill);
-      return Promise.resolve(newSkill);
+      return Promise.resolve({ skill: newSkill, needsRestart: false });
     }
     case "create_skill": {
       const content = (args.input && args.input.content) || "";
@@ -863,7 +977,7 @@ function mockInvoke(cmd, args) {
       const input = args.input || {};
       const s = mockStore.skills.find((x) => x.id === input.skillId);
       if (s) s.enabled = !!input.enabled;
-      return Promise.resolve(s);
+      return Promise.resolve({ skill: s, needsRestart: false });
     }
     case "remove_skill": {
       const input = args.input || {};
@@ -910,7 +1024,7 @@ function mockInvoke(cmd, args) {
       const now = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
       const srv = { id, ...found, enabled: true, createdAt: now, updatedAt: now };
       mockStore.mcpServers.push(srv);
-      return Promise.resolve({ ...srv });
+      return Promise.resolve({ server: { ...srv }, needsRestart: false });
     }
     case "inspect_mcp_server": {
       const inp = args.input || {};
@@ -938,7 +1052,7 @@ function mockInvoke(cmd, args) {
       Object.entries(inp.env || {}).forEach(([k, v]) => (env[k] = mockMask(v)));
       const srv = { id, name: inp.name, description: inp.description || "", command: inp.command, args: inp.args || [], env, enabled: true, createdAt: now, updatedAt: now };
       mockStore.mcpServers.push(srv);
-      return Promise.resolve(srv);
+      return Promise.resolve({ server: srv, needsRestart: false });
     }
     case "update_mcp_server": {
       const s = mockStore.mcpServers.find((x) => x.id === args.input.serverId);
@@ -952,12 +1066,12 @@ function mockInvoke(cmd, args) {
         else env[k] = mockMask(v);
       });
       s.env = env; s.updatedAt = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
-      return Promise.resolve(s);
+      return Promise.resolve({ server: s, needsRestart: false });
     }
     case "set_mcp_server_enabled": {
       const s = mockStore.mcpServers.find((x) => x.id === args.input.serverId);
       if (s) s.enabled = !!args.input.enabled;
-      return Promise.resolve(s);
+      return Promise.resolve({ server: s, needsRestart: false });
     }
     case "remove_mcp_server":
       mockStore.mcpServers = mockStore.mcpServers.filter((x) => x.id !== args.input.serverId);
@@ -1888,9 +2002,9 @@ function wire() {
     "i18nConnName", "i18nConnBase", "i18nConnKey", "i18nPorts", "i18nProxyPort", "i18nSandboxPort",
     "wizSec", "wizName", "wizPresetBtn", "wizPresetMenu", "wizBase", "wizKey", "wizSaveBtn", "wizCancelBtn",
     "connSec", "connTitle", "connName", "connBase", "connBaseHint",
-    "connModelInfo", "connModelHint", "connModelPick", "connKey", "connSaveBtn", "connCancelBtn",
+    "connModelLabel", "connModelInfo", "connModelHint", "connModelPick", "connKey", "connSaveBtn", "connCancelBtn",
     "tabProfiles", "tabSkills", "skillPane", "skillListSec",
-    "skillCreateBtn", "skillCreateSec", "skillCreateName", "skillCreateDesc",
+    "skillCreateBtn", "skillCreateSec", "skillCreateTitle", "skillCreateName", "skillCreateDesc",
     "skillCreateBody", "skillCreateInspection", "skillCreateErrors",
     "skillCreateSaveBtn", "skillCreateCancelBtn",
     "skillMoreBtn", "skillMenu", "skillEmpty", "skillEmptyTitle", "skillEmptyHint",
@@ -1905,10 +2019,11 @@ function wire() {
     "skillAdoptBtn", "skillAdoptSec", "skillAdoptTitle", "skillAdoptHint",
     "skillAdoptList", "skillAdoptEmpty", "skillAdoptEmptyText",
     "skillAdoptConfirmBtn", "skillAdoptCancelBtn",
-    "tabMcp", "mcpPane", "mcpListSec", "mcpAddBtn", "mcpMoreBtn", "mcpMenu", "mcpEmpty", "mcpList", "mcpMsg",
-    "mcpJsonBtn", "mcpNetworkAllowlistBtn", "mcpDiscoverBtn", "mcpDiscoverSec", "mcpDiscoverList",
-    "mcpDiscoverEmpty", "mcpDiscoverImportBtn", "mcpDiscoverCancelBtn",
-    "mcpFormSec", "mcpModalTitle", "mcpName", "mcpDesc", "mcpCommand", "mcpArgs", "mcpEnv",
+    "tabMcp", "mcpPane", "mcpListSec", "mcpAddBtn", "mcpMoreBtn", "mcpMenu", "mcpEmpty", "mcpEmptyTitle", "mcpEmptyHint",
+    "mcpApplyHint", "mcpList", "mcpMsg",
+    "mcpJsonBtn", "mcpNetworkAllowlistBtn", "mcpDiscoverBtn", "mcpDiscoverSec", "mcpDiscoverTitle", "mcpDiscoverHint",
+    "mcpDiscoverList", "mcpDiscoverEmpty", "mcpDiscoverEmptyText", "mcpDiscoverImportBtn", "mcpDiscoverCancelBtn",
+    "mcpFormSec", "mcpFormTitle", "mcpName", "mcpDesc", "mcpCommand", "mcpArgs", "mcpEnv",
     "mcpInspection", "mcpWarnings", "mcpErrors", "mcpSaveBtn", "mcpCancelBtn",
   ].forEach((id) => (els[id] = $(id)));
   els.panel = document.querySelector(".panel");
@@ -2043,9 +2158,9 @@ function wire() {
   els.mcpDiscoverList.addEventListener("change", (e) => {
     if (e.target && e.target.type === "checkbox") refreshMcpDiscoverGate();
   });
-  els.mcpAddBtn.addEventListener("click", () => openMcpModal());
+  els.mcpAddBtn.addEventListener("click", () => openMcpForm());
   els.mcpSaveBtn.addEventListener("click", saveMcpServer);
-  els.mcpCancelBtn.addEventListener("click", closeMcpModal);
+  els.mcpCancelBtn.addEventListener("click", closeMcpForm);
   // Editing any field invalidates a prior warning acknowledgement.
   [els.mcpName, els.mcpDesc, els.mcpCommand, els.mcpArgs, els.mcpEnv].forEach((el) =>
     el.addEventListener("input", () => { mcpWarnAck = false; })
@@ -2075,7 +2190,7 @@ function wire() {
       }
       if (act === "delete") { menuConfirmDelete(btn, () => doRemoveMcpServer(id)); return; }
       closeAllMenus();
-      if (act === "edit") openMcpModal(id);
+      if (act === "edit") openMcpForm(id);
     } else if (e.target.type === "checkbox") {
       toggleMcpServer(id, e.target.checked);
     }
@@ -2117,7 +2232,6 @@ function wire() {
     const row = e.target.closest(".skill-row[data-id]");
     if (!row) return;
     const id = row.getAttribute("data-id");
-    const name = row.getAttribute("data-name");
     if (btn) {
       const act = btn.getAttribute("data-act");
       if (act === "menu") {
@@ -2135,7 +2249,7 @@ function wire() {
       }
       if (act === "delete") { menuConfirmDelete(btn, () => doRemoveSkill(id)); return; }
       closeAllMenus();
-      if (act === "edit") openSkillFile(id, name);
+      if (act === "edit") openSkillFile(id);
       if (act === "openfolder") openSkillFolder(id);
     } else if (e.target.type === "checkbox") {
       toggleSkill(id, e.target.checked);
@@ -2235,8 +2349,8 @@ function renderSkills(list) {
         </div>
         ${skillDescHtml(s.description)}
         <div class="skill-meta">
-          <span>大小: ${escapeHtml(formatBytes(s.sizeBytes))}</span>
-          ${dateText ? `<span>导入: ${escapeHtml(dateText)}</span>` : ""}
+          <span>${escapeHtml(S().metaSize)}: ${escapeHtml(formatBytes(s.sizeBytes))}</span>
+          ${dateText ? `<span>${escapeHtml(S().metaImported)}: ${escapeHtml(dateText)}</span>` : ""}
         </div>
         ${reqTags ? `<div class="skill-reqs-list">${reqTags}</div>` : ""}
       </div>
@@ -2337,9 +2451,19 @@ function formatBytes(bytes) {
 async function toggleSkill(id, enabled) {
   setBusy(true);
   try {
-    await call("set_skill_enabled", { input: { skillId: id, enabled } });
-    setSkillMsg("");
+    const result = await call("set_skill_enabled", { input: { skillId: id, enabled } });
     await loadSkills();
+    if (result && result.needsRestart) {
+      setSkillMsg(T("skillToggledRestarting"), "info");
+      try {
+        await call("one_click_login");
+        setSkillMsg(T("skillToggledRestarted"), "info");
+      } catch (e) {
+        setSkillMsg(T("skillToggledRestartFail", { err: resolveBackendErr(e) }));
+      }
+    } else {
+      setSkillMsg("");
+    }
   } catch (e) {
     setSkillMsg(resolveBackendErr(e));
   } finally {
@@ -2441,15 +2565,15 @@ async function saveNewSkill() {
     closeSkillCreate();
     await loadSkills();
     if (result && result.needsRestart) {
-      setSkillMsg("已新建 Skill；沙箱已停止，正在重新启动…", "info");
+      setSkillMsg(T("skillCreatedRestarting"), "info");
       try {
         await call("one_click_login");
-        setSkillMsg("已新建并重启完成", "info");
+        setSkillMsg(T("skillCreatedRestarted"), "info");
       } catch (e) {
-        setSkillMsg(`已新建，但重新启动失败：${resolveBackendErr(e)}`);
+        setSkillMsg(T("skillCreatedRestartFail", { err: resolveBackendErr(e) }));
       }
     } else {
-      setSkillMsg("已新建 Skill", "info");
+      setSkillMsg(T("skillCreated"), "info");
     }
   } catch (e) {
     els.skillCreateInspection.hidden = false;
@@ -2474,21 +2598,26 @@ async function inspectSkillSource() {
   setBusy(true);
   try {
     const data = await call("inspect_skill_source", { input: { sourcePath: path } });
-    els.inspName.textContent = data.name || "未命名 Skill";
-    els.inspDesc.textContent = data.description || "无描述";
-    els.inspStats.textContent = `文件数: ${data.fileCount} · 大小: ${formatBytes(data.totalSizeBytes)}`;
-    els.inspReqs.textContent = `依赖环境: ${(data.requirements || []).join(", ") || "无"}`;
+    els.inspName.textContent = data.name || S().inspUnnamedSkill;
+    els.inspDesc.textContent = data.description || S().inspNoDesc;
+    els.inspStats.textContent = T("inspFileCountSize", {
+      count: data.fileCount,
+      size: formatBytes(data.totalSizeBytes),
+    });
+    els.inspReqs.textContent = T("inspRequirements", {
+      reqs: (data.requirements || []).join(", ") || S().inspNone,
+    });
     
     if (data.warnings && data.warnings.length) {
       els.inspWarnings.hidden = false;
-      els.inspWarnings.textContent = `警告: ${data.warnings.join("; ")}`;
+      els.inspWarnings.textContent = T("inspWarningsPrefix", { msg: data.warnings.join("; ") });
     } else {
       els.inspWarnings.hidden = true;
     }
     
     if (data.errors && data.errors.length) {
       els.inspErrors.hidden = false;
-      els.inspErrors.textContent = `错误: ${data.errors.join("; ")}`;
+      els.inspErrors.textContent = T("inspErrorsPrefix", { msg: data.errors.join("; ") });
     } else {
       els.inspErrors.hidden = true;
     }
@@ -2515,9 +2644,20 @@ async function importSkillConfirm() {
   if (!path) return;
   setBusy(true);
   try {
-    await call("import_skill", { input: { sourcePath: path } });
+    const result = await call("import_skill", { input: { sourcePath: path } });
     closeSkillDiscover();
     await loadSkills();
+    if (result && result.needsRestart) {
+      setSkillMsg(T("skillImportedRestarting"), "info");
+      try {
+        await call("one_click_login");
+        setSkillMsg(T("skillImportedRestarted"), "info");
+      } catch (e) {
+        setSkillMsg(T("skillImportedRestartFail", { err: resolveBackendErr(e) }));
+      }
+    } else {
+      setSkillMsg(T("skillImported"), "info");
+    }
   } catch (e) {
     els.inspErrors.hidden = false;
     els.inspErrors.textContent = resolveBackendErr(e);
@@ -2588,17 +2728,36 @@ async function importDiscoveredSkills() {
   if (!paths.length) return;
   setBusy(true);
   const failures = [];
+  let needsRestart = false;
   try {
     for (const p of paths) {
       try {
-        await call("import_skill", { input: { sourcePath: p } });
+        const result = await call("import_skill", { input: { sourcePath: p } });
+        if (result && result.needsRestart) needsRestart = true;
       } catch (e) {
         failures.push(`${p}: ${resolveBackendErr(e)}`);
       }
     }
     closeSkillDiscover();
     await loadSkills();
-    if (failures.length) setSkillMsg(`部分导入失败: ${failures.join("; ")}`);
+    if (needsRestart) {
+      setSkillMsg(T("skillImportedRestarting"), "info");
+      try {
+        await call("one_click_login");
+        setSkillMsg(
+          failures.length
+            ? T("skillImportPartialFail", { err: failures.join("; ") })
+            : T("skillImportedRestarted"),
+          failures.length ? "err" : "info"
+        );
+      } catch (e) {
+        setSkillMsg(T("skillImportedRestartFail", { err: resolveBackendErr(e) }));
+      }
+    } else if (failures.length) {
+      setSkillMsg(T("skillImportPartialFail", { err: failures.join("; ") }));
+    } else {
+      setSkillMsg(T("skillImported"), "info");
+    }
   } finally {
     setBusy(false);
   }
@@ -2674,15 +2833,15 @@ async function adoptWorkspaceSkills() {
     await loadSkills();
     const failures = (result.failures || []).join("; ");
     if (result.needsRestart) {
-      setSkillMsg("已采纳 Skill；沙箱已停止，正在重新启动…", "info");
+      setSkillMsg(T("skillAdoptedRestarting"), "info");
       try {
         await call("one_click_login");
-        setSkillMsg("已采纳并重启完成", "info");
+        setSkillMsg(T("skillAdoptedRestarted"), "info");
       } catch (e) {
-        setSkillMsg(`已采纳，但重新启动失败：${resolveBackendErr(e)}`);
+        setSkillMsg(T("skillAdoptedRestartFail", { err: resolveBackendErr(e) }));
       }
     } else if (failures) {
-      setSkillMsg(`部分采纳失败: ${failures}`);
+      setSkillMsg(T("skillAdoptPartialFail", { err: failures }));
     }
   } catch (e) {
     setSkillMsg(resolveBackendErr(e));
@@ -2701,7 +2860,7 @@ let mcpWarnAck = false;
 async function openMcpDiscover() {
   closeMenu(els.mcpMenu, els.mcpMoreBtn);
   if (busy) return;
-  els.mcpDiscoverList.innerHTML = "<p class=\"hint\">扫描中…</p>";
+  els.mcpDiscoverList.innerHTML = `<p class="hint">${escapeHtml(S().mcpScanning)}</p>`;
   els.mcpDiscoverEmpty.hidden = true;
   els.mcpDiscoverImportBtn.disabled = true;
   showMcpView("discover");
@@ -2726,9 +2885,10 @@ function renderMcpDiscover(found) {
     return;
   }
   els.mcpDiscoverEmpty.hidden = true;
+  const importedBadge = S().skillAlreadyImported;
   els.mcpDiscoverList.innerHTML = found.map((d) => {
     const disabled = d.alreadyImported ? " disabled" : "";
-    const badge = d.alreadyImported ? `<span class="skill-req-tag">已导入</span>` : "";
+    const badge = d.alreadyImported ? `<span class="skill-req-tag">${escapeHtml(importedBadge)}</span>` : "";
     const env = (d.envKeys || []).length
       ? `<span class="skill-meta"><span>env: ${escapeHtml((d.envKeys || []).join(", "))}</span></span>`
       : "";
@@ -2761,17 +2921,34 @@ async function importDiscoveredMcpServers() {
   if (!selected.length) return;
   setBusy(true);
   const failures = [];
+  let needsRestart = false;
   try {
     for (const item of selected) {
       try {
-        await call("import_discovered_mcp_server", { input: item });
+        const result = await call("import_discovered_mcp_server", { input: item });
+        if (result && result.needsRestart) needsRestart = true;
       } catch (e) {
         failures.push(`${item.name}: ${resolveBackendErr(e)}`);
       }
     }
     closeMcpDiscover();
     await loadMcp();
-    if (failures.length) setMcpMsg(`部分导入失败: ${failures.join("; ")}`);
+    if (needsRestart) {
+      setMcpMsg(T("mcpImportedRestarting"), "info");
+      try {
+        await call("one_click_login");
+        setMcpMsg(
+          failures.length
+            ? T("mcpImportPartialFail", { err: failures.join("; ") })
+            : T("mcpImportedRestarted"),
+          failures.length ? "err" : "info"
+        );
+      } catch (e) {
+        setMcpMsg(T("mcpImportedRestartFail", { err: resolveBackendErr(e) }));
+      }
+    } else if (failures.length) {
+      setMcpMsg(T("mcpImportPartialFail", { err: failures.join("; ") }));
+    }
   } finally {
     setBusy(false);
   }
@@ -2787,10 +2964,11 @@ async function loadMcp() {
   }
 }
 
-function setMcpMsg(text) {
+function setMcpMsg(text, kind = "err") {
   const t = text ? String(text) : "";
+  const cls = kind === "err" ? "err" : "ok";
   els.mcpMsg.textContent = t;
-  els.mcpMsg.className = "msg" + (t ? " err" : "");
+  els.mcpMsg.className = "msg" + (t ? " " + cls : "");
   els.mcpMsg.parentElement.hidden = !t;
 }
 
@@ -2837,9 +3015,19 @@ function renderMcp(list) {
 async function toggleMcpServer(id, enabled) {
   setBusy(true);
   try {
-    await call("set_mcp_server_enabled", { input: { serverId: id, enabled } });
-    setMcpMsg("");
+    const result = await call("set_mcp_server_enabled", { input: { serverId: id, enabled } });
     await loadMcp();
+    if (result && result.needsRestart) {
+      setMcpMsg(T("mcpToggledRestarting"), "info");
+      try {
+        await call("one_click_login");
+        setMcpMsg(T("mcpToggledRestarted"), "info");
+      } catch (e) {
+        setMcpMsg(T("mcpToggledRestartFail", { err: resolveBackendErr(e) }));
+      }
+    } else {
+      setMcpMsg("");
+    }
   } catch (e) {
     setMcpMsg(resolveBackendErr(e));
   } finally {
@@ -2860,12 +3048,13 @@ async function doRemoveMcpServer(id) {
   }
 }
 
-function openMcpModal(id) {
+/** Open MCP create/edit form (full-page form-sec, not a modal). */
+function openMcpForm(id) {
   if (busy) return;
   closeMenu(els.mcpMenu, els.mcpMoreBtn);
   mcpEditId = id || null;
   const s = id ? mcpCache.find((x) => x.id === id) : null;
-  els.mcpModalTitle.textContent = s ? "编辑本地 MCP" : "新增本地 MCP";
+  els.mcpFormTitle.textContent = s ? S().mcpFormTitleEdit : S().mcpFormTitleNew;
   els.mcpName.value = s ? s.name : "";
   els.mcpDesc.value = s ? (s.description || "") : "";
   els.mcpCommand.value = s ? s.command : "";
@@ -2881,7 +3070,7 @@ function openMcpModal(id) {
   els.mcpName.focus();
 }
 
-function closeMcpModal() {
+function closeMcpForm() {
   showMcpView("list");
   mcpEditId = null;
   mcpWarnAck = false;
@@ -2922,7 +3111,7 @@ async function saveMcpServer() {
       // Errors always block the save; reset any prior warning acknowledgement.
       mcpWarnAck = false;
       els.mcpErrors.hidden = false;
-      els.mcpErrors.textContent = `错误: ${(insp.errors || []).join("; ")}`;
+      els.mcpErrors.textContent = T("inspErrorsPrefix", { msg: (insp.errors || []).join("; ") });
       els.mcpInspection.hidden = false;
       return;
     }
@@ -2931,7 +3120,7 @@ async function saveMcpServer() {
       // Surface warnings and require a second click to confirm past them.
       mcpWarnAck = true;
       els.mcpWarnings.hidden = false;
-      els.mcpWarnings.textContent = `警告: ${warnings.join("; ")}（如确认无误，请再次点击「保存」）`;
+      els.mcpWarnings.textContent = T("mcpWarnConfirm", { msg: warnings.join("; ") });
       els.mcpInspection.hidden = false;
       return;
     }
@@ -2945,13 +3134,23 @@ async function saveMcpServer() {
 
   setBusy(true);
   try {
+    let result;
     if (mcpEditId) {
-      await call("update_mcp_server", { input: { serverId: mcpEditId, server: input } });
+      result = await call("update_mcp_server", { input: { serverId: mcpEditId, server: input } });
     } else {
-      await call("create_mcp_server", { input });
+      result = await call("create_mcp_server", { input });
     }
-    closeMcpModal();
+    closeMcpForm();
     await loadMcp();
+    if (result && result.needsRestart) {
+      setMcpMsg(T("mcpSavedRestarting"), "info");
+      try {
+        await call("one_click_login");
+        setMcpMsg(T("mcpSavedRestarted"), "info");
+      } catch (e) {
+        setMcpMsg(T("mcpSavedRestartFail", { err: resolveBackendErr(e) }));
+      }
+    }
   } catch (e) {
     els.mcpErrors.hidden = false;
     els.mcpErrors.textContent = resolveBackendErr(e);
