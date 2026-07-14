@@ -2,6 +2,7 @@ import json
 import os
 import sys
 import unittest
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -300,8 +301,9 @@ class InjectCspWebAccessGuidance(unittest.TestCase):
         self.assertIs(ac.inject_csp_web_access_guidance(body), body)
 
     def test_appends_to_string_system(self):
+        frozen = datetime(2026, 7, 14, 12, 46, tzinfo=timezone(timedelta(hours=8), "CST"))
         body = {"system": "You are helpful.", "messages": []}
-        out = ac.inject_csp_web_access_guidance(body)
+        out = ac.inject_csp_web_access_guidance(body, now=frozen)
         self.assertIsNot(out, body)
         self.assertEqual(body["system"], "You are helpful.")  # original untouched
         self.assertIn(ac.CSP_WEB_ACCESS_GUIDANCE_SENTINEL, out["system"])
@@ -309,6 +311,10 @@ class InjectCspWebAccessGuidance(unittest.TestCase):
         self.assertIn('host.mcp("web-search", "fetch_url"', out["system"])
         self.assertIn('data["results"]', out["system"])
         self.assertIn('page["content"]', out["system"])
+        self.assertIn("Current local date/time:", out["system"])
+        self.assertIn("2026-07-14", out["system"])
+        self.assertIn("latest as of 2026-07-14", out["system"])
+        self.assertIn("freshness", out["system"])
         self.assertTrue(out["system"].startswith("You are helpful."))
 
     def test_appends_block_to_list_system(self):
@@ -318,19 +324,35 @@ class InjectCspWebAccessGuidance(unittest.TestCase):
         self.assertEqual(out["system"][0], {"type": "text", "text": "base"})
         self.assertEqual(out["system"][1]["type"], "text")
         self.assertIn(ac.CSP_WEB_ACCESS_GUIDANCE_SENTINEL, out["system"][1]["text"])
+        self.assertIn("Current local date/time:", out["system"][1]["text"])
 
     def test_idempotent_on_string_and_list(self):
-        once = ac.inject_csp_web_access_guidance({"system": "a", "messages": []})
-        twice = ac.inject_csp_web_access_guidance(once)
+        frozen = datetime(2026, 7, 14, 12, 46, tzinfo=timezone(timedelta(hours=8), "CST"))
+        once = ac.inject_csp_web_access_guidance(
+            {"system": "a", "messages": []}, now=frozen)
+        twice = ac.inject_csp_web_access_guidance(once, now=frozen)
         self.assertIs(twice, once)
         self.assertEqual(twice["system"].count(ac.CSP_WEB_ACCESS_GUIDANCE_SENTINEL), 1)
 
         once_list = ac.inject_csp_web_access_guidance({
-            "system": [{"type": "text", "text": "a"}], "messages": []})
-        twice_list = ac.inject_csp_web_access_guidance(once_list)
+            "system": [{"type": "text", "text": "a"}], "messages": []}, now=frozen)
+        twice_list = ac.inject_csp_web_access_guidance(once_list, now=frozen)
         self.assertIs(twice_list, once_list)
         texts = [b.get("text", "") for b in twice_list["system"] if isinstance(b, dict)]
         self.assertEqual("".join(texts).count(ac.CSP_WEB_ACCESS_GUIDANCE_SENTINEL), 1)
+
+    def test_refreshes_stale_date_without_duplicate_sentinel(self):
+        day1 = datetime(2026, 7, 13, 9, 0, tzinfo=timezone(timedelta(hours=8), "CST"))
+        day2 = datetime(2026, 7, 14, 12, 46, tzinfo=timezone(timedelta(hours=8), "CST"))
+        once = ac.inject_csp_web_access_guidance(
+            {"system": "operon", "messages": []}, now=day1)
+        self.assertIn("2026-07-13", once["system"])
+        refreshed = ac.inject_csp_web_access_guidance(once, now=day2)
+        self.assertIsNot(refreshed, once)
+        self.assertEqual(refreshed["system"].count(ac.CSP_WEB_ACCESS_GUIDANCE_SENTINEL), 1)
+        self.assertIn("2026-07-14", refreshed["system"])
+        self.assertNotIn("2026-07-13", refreshed["system"])
+        self.assertTrue(refreshed["system"].startswith("operon"))
 
     def test_transform_request_injects_for_anthropic_path(self):
         st = _state(cs.PROVIDERS["deepseek"], "deepseek")
@@ -338,6 +360,7 @@ class InjectCspWebAccessGuidance(unittest.TestCase):
                 "messages": [{"role": "user", "content": "search"}], "max_tokens": 100}
         up, _ctx = ac.transform_request(body, st)
         self.assertIn(ac.CSP_WEB_ACCESS_GUIDANCE_SENTINEL, up["system"])
+        self.assertIn("Current local date/time:", up["system"])
         self.assertEqual(body["system"], "operon")  # copy semantics
 
 

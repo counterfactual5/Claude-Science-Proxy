@@ -7,6 +7,7 @@ Dependency direction: skeleton → this module → provider_policy; no reverse i
 """
 import json
 from dataclasses import dataclass
+from datetime import datetime
 
 from proxy.dsml import dsml_shim
 from proxy.policy import provider_policy
@@ -20,25 +21,57 @@ _EMPTY_OBJECT_SCHEMA = {"type": "object", "properties": {}}
 # and insufficient as standing prompt text — inject on every /v1/messages
 # request that already carries a system prompt. Re-advertising names in MCP
 # tools/list cannot intercept bare tool calls; this prompt injection is the fix.
+# Current wall-clock date/time is generated at request time (Science has no
+# reliable clock; knowledge cutoff ~early 2024).
 CSP_WEB_ACCESS_GUIDANCE_SENTINEL = "<!-- CSP_WEB_ACCESS_GUIDANCE -->"
-CSP_WEB_ACCESS_GUIDANCE = (
-    CSP_WEB_ACCESS_GUIDANCE_SENTINEL + "\n"
-    "CSP web access (standing rules):\n"
-    "- This environment has NO native Anthropic `web_search` / `web_fetch` tools. "
-    "Calling them as top-level tools fails with "
-    "`Tool 'web_search' not found on agent 'OPERON'`.\n"
-    "- To search the web or literature, use the `repl` tool and call:\n"
-    "    data = host.mcp(\"web-search\", \"search_literature\", query=\"...\", max_results=N)\n"
-    "    hits = data[\"results\"]  # list of {title, url, snippet, source, ...}\n"
-    "    for r in hits: print(r.get(\"title\"), r.get(\"url\"))\n"
-    "  Or just print(data). host.mcp returns a parsed dict with key \"results\" "
-    "(NOT a bare list — do not enumerate(data) itself).\n"
-    "  Method aliases also accepted: \"web_search\", \"csp_web_search\".\n"
-    "- To fetch a page afterward:\n"
-    "    page = host.mcp(\"web-search\", \"fetch_url\", url=\"...\")\n"
-    "    print(page[\"content\"])  # dict with url, status, content\n"
-    "- Do NOT call bare `web_search` / `web_fetch` as top-level tools."
-)
+
+
+def _local_now_label(now=None):
+    """Short host-local date/time label, e.g. ``2026-07-14 12:46 (Asia/Shanghai)``."""
+    if now is None:
+        now = datetime.now().astimezone()
+    elif now.tzinfo is None:
+        now = now.astimezone()
+    else:
+        now = now.astimezone()
+    tz = now.tzinfo
+    tz_label = getattr(tz, "key", None) or now.strftime("%Z") or now.strftime("%z") or "local"
+    return now, f"{now.strftime('%Y-%m-%d %H:%M')} ({tz_label})"
+
+
+def build_csp_web_access_guidance(now=None):
+    """Build standing web-access guidance with a fresh wall-clock date line."""
+    now, label = _local_now_label(now)
+    date_only = now.strftime("%Y-%m-%d")
+    year = now.year
+    return (
+        CSP_WEB_ACCESS_GUIDANCE_SENTINEL + "\n"
+        f"Current local date/time: {label}. "
+        "Treat this as \"today\" when answering date/time questions, ranking search "
+        "freshness, and writing search queries — prefer the current calendar year "
+        f"(e.g. {year}) and \"latest as of {date_only}\" over training-cutoff "
+        "years (do not assume it is still 2024).\n"
+        "CSP web access (standing rules):\n"
+        "- This environment has NO native Anthropic `web_search` / `web_fetch` tools. "
+        "Calling them as top-level tools fails with "
+        "`Tool 'web_search' not found on agent 'OPERON'`.\n"
+        "- To search the web or literature, use the `repl` tool and call:\n"
+        "    data = host.mcp(\"web-search\", \"search_literature\", query=\"...\", max_results=N)\n"
+        "    hits = data[\"results\"]  # list of {title, url, snippet, source, ...}\n"
+        "    for r in hits: print(r.get(\"title\"), r.get(\"url\"))\n"
+        "  Or just print(data). host.mcp returns a parsed dict with key \"results\" "
+        "(NOT a bare list — do not enumerate(data) itself).\n"
+        "  Method aliases also accepted: \"web_search\", \"csp_web_search\".\n"
+        "- To fetch a page afterward:\n"
+        "    page = host.mcp(\"web-search\", \"fetch_url\", url=\"...\")\n"
+        "    print(page[\"content\"])  # dict with url, status, content\n"
+        "- Do NOT call bare `web_search` / `web_fetch` as top-level tools."
+    )
+
+
+# Back-compat alias for callers that still read a module-level string; prefer
+# ``build_csp_web_access_guidance()`` so the date is request-fresh.
+CSP_WEB_ACCESS_GUIDANCE = build_csp_web_access_guidance()
 
 
 @dataclass
@@ -102,31 +135,90 @@ def _system_already_has_guidance(system):
     return False
 
 
-def inject_csp_web_access_guidance(body):
-    """Idempotently append standing web-access guidance to Anthropic `system`.
+def _refresh_guidance_text(text, guidance):
+    """Replace an existing trailing guidance block (from sentinel to EOF) with ``guidance``.
 
-    Only touches requests that already have a non-empty `system` prompt / blocks
-    (Science operon turns always do). Returns a shallow-copied body when a
-    mutation is needed so callers keep copy-on-write semantics; returns ``body``
-    unchanged when there is nothing to do.
+    Guidance is always appended as a trailing block, so rewriting from the sentinel
+    updates a prior day's date from earlier conversation turns without stacking a
+    second sentinel.
+    """
+    if not isinstance(text, str):
+        return text
+    idx = text.find(CSP_WEB_ACCESS_GUIDANCE_SENTINEL)
+    if idx < 0:
+        return text.rstrip() + "\n\n" + guidance
+    prefix = text[:idx].rstrip()
+    return (prefix + "\n\n" + guidance) if prefix else guidance
+
+
+def _refresh_system_with_guidance(system, guidance):
+    """Return updated ``system`` with fresh guidance, or ``system`` if unchanged."""
+    if isinstance(system, str):
+        updated = _refresh_guidance_text(system, guidance)
+        return system if updated == system else updated
+    if isinstance(system, list):
+        found = False
+        blocks = []
+        for blk in system:
+            if isinstance(blk, dict) and CSP_WEB_ACCESS_GUIDANCE_SENTINEL in (blk.get("text") or ""):
+                new_text = _refresh_guidance_text(blk.get("text") or "", guidance)
+                if new_text != blk.get("text"):
+                    blocks.append({**blk, "text": new_text})
+                else:
+                    blocks.append(blk)
+                found = True
+            elif isinstance(blk, str) and CSP_WEB_ACCESS_GUIDANCE_SENTINEL in blk:
+                new_text = _refresh_guidance_text(blk, guidance)
+                blocks.append(new_text if new_text != blk else blk)
+                found = True
+            else:
+                blocks.append(blk)
+        if not found:
+            blocks.append({"type": "text", "text": guidance})
+            return blocks
+        # Identity-preserving when nothing changed (same-second re-inject).
+        if len(blocks) == len(system) and all(a is b for a, b in zip(blocks, system)):
+            return system
+        return blocks
+    return system
+
+
+def inject_csp_web_access_guidance(body, now=None):
+    """Idempotently append / refresh standing web-access guidance on Anthropic ``system``.
+
+    Only touches requests that already have a non-empty ``system`` prompt / blocks
+    (Science operon turns always do). Generates a fresh wall-clock date at call
+    time. If the sentinel is already present (e.g. prior turn's date in a carried
+    ``system``), rewrites that trailing guidance block instead of stacking a
+    duplicate. Returns a shallow-copied body when a mutation is needed; returns
+    ``body`` unchanged when there is nothing to do (including same-second refresh
+    that yields identical text).
     """
     if not isinstance(body, dict):
         return body
     system = body.get("system")
     if system is None or system == "" or system == []:
         return body
+
+    guidance = build_csp_web_access_guidance(now=now)
+
     if _system_already_has_guidance(system):
-        return body
+        refreshed = _refresh_system_with_guidance(system, guidance)
+        if refreshed is system:
+            return body
+        out = dict(body)
+        out["system"] = refreshed
+        return out
 
     out = dict(body)
     if isinstance(system, str):
-        out["system"] = system.rstrip() + "\n\n" + CSP_WEB_ACCESS_GUIDANCE
+        out["system"] = system.rstrip() + "\n\n" + guidance
         return out
     if isinstance(system, list):
         blocks = list(system)
         # Prefer appending a new text block so we never mutate caller-owned
         # block dicts in place.
-        blocks.append({"type": "text", "text": CSP_WEB_ACCESS_GUIDANCE})
+        blocks.append({"type": "text", "text": guidance})
         out["system"] = blocks
         return out
     return body
