@@ -35,11 +35,6 @@ impl SkillStore {
         Ok(Self { root })
     }
 
-    /// Absolute path of the inventory root (`~/.csp/skills/`).
-    pub fn root_dir(&self) -> &Path {
-        &self.root
-    }
-
     fn inventory_path(&self) -> PathBuf {
         self.root.join(INVENTORY_FILE)
     }

@@ -69,7 +69,6 @@ const I18N = {
     delete: "删除",
     confirmDeleteShort: "确认删除？",
     openFolder: "打开文件夹",
-    openSkillsRootTitle: "打开 ~/.csp/skills/",
     models: "启用模型",
     ports: "端口管理",
     runtimeStatus: "运行状态",
@@ -314,7 +313,6 @@ const I18N = {
     delete: "Delete",
     confirmDeleteShort: "Confirm delete?",
     openFolder: "Open folder",
-    openSkillsRootTitle: "Open ~/.csp/skills/",
     models: "Enabled models",
     ports: "Ports",
     runtimeStatus: "Runtime",
@@ -642,10 +640,6 @@ function applyEditionUI() {
   if (els.skipActivateBtn) els.skipActivateBtn.textContent = t.skipActivate;
   if (els.listhdMoreBtn) els.listhdMoreBtn.title = t.menuMore;
   if (els.skillCreateBtn) els.skillCreateBtn.textContent = t.createSkill;
-  if (els.skillOpenFolderBtn) {
-    els.skillOpenFolderBtn.textContent = t.openFolder;
-    els.skillOpenFolderBtn.title = t.openSkillsRootTitle;
-  }
   if (els.mcpAddBtn) els.mcpAddBtn.textContent = t.addMcp;
   if (els.skillDiscoverBtn) els.skillDiscoverBtn.textContent = t.scanImport;
   if (els.skillAdoptBtn) els.skillAdoptBtn.textContent = t.adoptFromScience;
@@ -879,8 +873,6 @@ function mockInvoke(cmd, args) {
     case "open_skill_file":
     case "open_skill_folder":
       return Promise.resolve("/preview/skills/" + ((args.input && args.input.skillId) || ""));
-    case "open_skills_root":
-      return Promise.resolve("/preview/skills");
     case "list_mcp_servers":
       return Promise.resolve(mockStore.mcpServers.map((s) => ({ ...s })));
     case "discover_mcp_servers":
@@ -1187,7 +1179,7 @@ function setBusy(on, op) {
     // Disable port inputs while busy: changing ports mid-operation races in-flight work (P1-c frontend).
     els.proxyPort, els.sandboxPort,
     // Skill / MCP manager actions: prevent concurrent mutations racing a running op.
-    els.skillCreateBtn, els.skillOpenFolderBtn, els.skillCreateSaveBtn, els.skillCreateCancelBtn,
+    els.skillCreateBtn, els.skillCreateSaveBtn, els.skillCreateCancelBtn,
     els.skillMoreBtn, els.skillInspectBtn, els.skillImportConfirmBtn,
     els.skillDiscoverBtn, els.skillDiscoverImportBtn, els.skillDiscoverCancelBtn,
     els.skillAdoptBtn, els.skillAdoptConfirmBtn, els.skillAdoptCancelBtn,
@@ -1898,7 +1890,7 @@ function wire() {
     "connSec", "connTitle", "connName", "connBase", "connBaseHint",
     "connModelInfo", "connModelHint", "connModelPick", "connKey", "connSaveBtn", "connCancelBtn",
     "tabProfiles", "tabSkills", "skillPane", "skillListSec",
-    "skillCreateBtn", "skillOpenFolderBtn", "skillCreateSec", "skillCreateName", "skillCreateDesc",
+    "skillCreateBtn", "skillCreateSec", "skillCreateName", "skillCreateDesc",
     "skillCreateBody", "skillCreateInspection", "skillCreateErrors",
     "skillCreateSaveBtn", "skillCreateCancelBtn",
     "skillMoreBtn", "skillMenu", "skillEmpty", "skillEmptyTitle", "skillEmptyHint",
@@ -2091,7 +2083,6 @@ function wire() {
 
   // Skills panel actions
   els.skillCreateBtn.addEventListener("click", openSkillCreate);
-  els.skillOpenFolderBtn.addEventListener("click", openSkillsRoot);
   els.skillCreateSaveBtn.addEventListener("click", saveNewSkill);
   els.skillCreateCancelBtn.addEventListener("click", closeSkillCreate);
   // Keep the SKILL.md front-matter in sync with the name/description fields
@@ -2145,6 +2136,7 @@ function wire() {
       if (act === "delete") { menuConfirmDelete(btn, () => doRemoveSkill(id)); return; }
       closeAllMenus();
       if (act === "edit") openSkillFile(id, name);
+      if (act === "openfolder") openSkillFolder(id);
     } else if (e.target.type === "checkbox") {
       toggleSkill(id, e.target.checked);
     }
@@ -2236,6 +2228,7 @@ function renderSkills(list) {
             <button type="button" class="abtn pmenu-btn" data-act="menu" aria-haspopup="true" aria-expanded="false" title="${escapeHtml(S().menuMore)}">⋯</button>
             <div class="pmenu" hidden role="menu">
               <button type="button" class="pmenu-item" data-act="edit" role="menuitem">${escapeHtml(S().edit)}</button>
+              <button type="button" class="pmenu-item" data-act="openfolder" role="menuitem">${escapeHtml(S().openFolder)}</button>
               <button type="button" class="pmenu-item danger" data-act="delete" role="menuitem">${escapeHtml(S().delete)}</button>
             </div>
           </div>
@@ -2366,12 +2359,10 @@ async function openSkillFile(id) {
   }
 }
 
-async function openSkillsRoot() {
-  closeMenu(els.skillMenu, els.skillMoreBtn);
-  if (busy) return;
+async function openSkillFolder(id) {
   setBusy(true);
   try {
-    await call("open_skills_root");
+    await call("open_skill_folder", { input: { skillId: id } });
     setSkillMsg("");
   } catch (e) {
     setSkillMsg(resolveBackendErr(e));

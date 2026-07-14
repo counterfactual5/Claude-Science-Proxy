@@ -4,7 +4,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License">
-  <img src="https://img.shields.io/badge/version-1.6.12-brightgreen.svg" alt="v1.6.12">
+  <img src="https://img.shields.io/badge/version-1.6.13-brightgreen.svg" alt="v1.6.13">
   <img src="https://img.shields.io/badge/platform-macOS%20Apple%20Silicon-1d1d1f.svg" alt="macOS Apple Silicon">
   <img src="https://img.shields.io/badge/built%20with-Tauri%202-C25A34.svg" alt="Tauri 2">
 </p>
@@ -25,7 +25,7 @@ CSP is a **macOS desktop app** (Tauri) that:
 4. Verifies API keys **before** switching the active profile
 5. Manages local **Skills** and **stdio MCP connectors**, deploying enabled ones into the sandbox on launch
 
-> **v1.6.12** — Skills/MCP meta: path row + tags row (no orphan ·); row ⋯ menu z-index/overflow fix; Skills header **打开文件夹** moved into `⋯` (`open_skills_root`). See [Releases](https://github.com/counterfactual5/Claude-Science-Proxy/releases/tag/v1.6.12).
+> **v1.6.13** — Skills **打开文件夹** restored on each card only (`open_skill_folder`); header root-open and unused `open_skills_root` removed. See [Releases](https://github.com/counterfactual5/Claude-Science-Proxy/releases/tag/v1.6.13).
 
 > **Platform:** macOS **Apple Silicon** today. The app is **not notarized** yet; on first launch, right-click → **Open**.
 

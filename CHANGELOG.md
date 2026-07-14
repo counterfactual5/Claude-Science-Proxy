@@ -3,6 +3,12 @@
 All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.6.13] — 2026-07-14
+
+### Changed
+- **Skills “打开文件夹” per card only**: Removed the list-header `⋯` → open-all-skills-root action. Each Skill card’s `⋯` menu again has **打开文件夹**, which reveals that skill’s managed folder via `open_skill_folder`.
+- **Removed unused `open_skills_root`**: Dropped the Tauri command and `SkillStore::root_dir` helper that only served the header action.
+
 ## [1.6.12] — 2026-07-14
 
 ### Changed
