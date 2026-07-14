@@ -4,7 +4,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License">
-  <img src="https://img.shields.io/badge/version-1.6.1-brightgreen.svg" alt="v1.6.1">
+  <img src="https://img.shields.io/badge/version-1.6.2-brightgreen.svg" alt="v1.6.2">
   <img src="https://img.shields.io/badge/platform-macOS%20Apple%20Silicon-1d1d1f.svg" alt="macOS Apple Silicon">
   <img src="https://img.shields.io/badge/built%20with-Tauri%202-C25A34.svg" alt="Tauri 2">
 </p>
@@ -25,7 +25,7 @@ CSP is a **macOS desktop app** (Tauri) that:
 4. Verifies API keys **before** switching the active profile
 5. Manages local **Skills** and **stdio MCP connectors**, deploying enabled ones into the sandbox on launch
 
-> **v1.6.1** — Built-in `web-search` provider hosts (DuckDuckGo, Wikipedia, Brave, Serper, Tavily) are auto-granted into Science’s network allowlist on Start; extend via `~/.csp/network-allowlist.json` (MCP `⋯` → **网络授权配置**). Continues **v1.6.0** Skills **新建**, proxy `host.mcp` guidance, and date injection. Report issues on [GitHub](https://github.com/counterfactual5/Claude-Science-Proxy/issues).
+> **v1.6.2** — `web-search` `provider=auto` now tries `duckduckgo_ia` / Wikipedia before scholarly sources (still respects Brave/Serper/Tavily keys first). Proxy guidance updated. Builds on **v1.6.1** network allowlist. Local builds only for now.
 
 > **Platform:** macOS **Apple Silicon** today. The app is **not notarized** yet; on first launch, right-click → **Open**.
 

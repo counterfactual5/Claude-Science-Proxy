@@ -63,17 +63,20 @@ that iterates dict **keys** (strings) and raises
 
 ## What the sandbox can reach
 
-Egress is limited to an allowlist that favors **scholarly sources**, so searches
-default to reliable, no-key scholarly providers:
+CSP pre-grants hosts for the bundled `web-search` providers into Science's
+network allowlist on Start (DuckDuckGo Instant Answer, Wikipedia, Brave,
+Serper, Tavily). Extra hosts can be added in `~/.csp/network-allowlist.json`.
 
-- Crossref, arXiv, PubMed (and OpenAlex / Semantic Scholar), with automatic
-  fallback between them.
+**`provider="auto"` (default)** tries, in order:
 
-General search engines (DuckDuckGo / Wikipedia) and paid providers (Brave /
-Serper / Tavily, if API keys are set in CSP's MCP tab) are selectable but are
-usually blocked by the sandbox allowlist. Prefer scholarly queries; if a general
-page is blocked, say so and suggest a scholarly source — do NOT fall back to the
-hosted `web_search` tool.
+1. Keyed providers when env keys are set (Brave / Serper / Tavily)
+2. General no-key: `duckduckgo_ia` → `wikipedia`
+3. Scholarly: Crossref → arXiv → PubMed
+
+For product / news / "latest model" queries, rely on auto (or set
+`provider="duckduckgo_ia"`). For literature-only, set `provider="crossref"`
+(or `arxiv` / `pubmed`). HTML `provider="duckduckgo"` is optional and fragile
+(anti-bot). Do **not** assume every answer is only academic papers.
 
 ## Local environment conventions
 
@@ -113,11 +116,10 @@ plots need no change.
 
 - Don't call the hosted `web_search` tool — use the local `web-search` MCP
   (`search_literature` / `csp_web_search`, then `fetch_url`), as described above.
-- Egress is a **scholarly allowlist**: Crossref, arXiv, PubMed, OpenAlex,
-  Semantic Scholar, Notion, and PyPI are reliable; general search engines
-  (DuckDuckGo/Wikipedia/Google/Bing) and paid search APIs are usually blocked.
-  Prefer scholarly sources; if a general page is blocked, say so rather than
-  retrying the hosted tool.
+- Prefer **`provider="auto"`** for general queries (now includes `duckduckgo_ia` /
+  Wikipedia before scholarly). Use scholarly-only providers when the user asks
+  for papers. If a host is still blocked, say so — do **not** retry the hosted
+  Anthropic `web_search` tool.
 
 ### Skills and environment edits
 

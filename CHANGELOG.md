@@ -3,6 +3,11 @@
 All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.6.2] — 2026-07-14
+
+### Changed
+- **`web-search` `provider=auto` prefers general web before scholarly**: With CSP network grants in place, free auto fallbacks are now `duckduckgo_ia` → `wikipedia` → Crossref → arXiv → PubMed (key-based Brave/Serper/Tavily still first when env keys are set). Proxy standing guidance and `csp-web-access` updated so product/news/"latest" queries are not stuck on academic-only results. HTML `duckduckgo` remains out of auto.
+
 ## [1.6.1] — 2026-07-14
 
 ### Added

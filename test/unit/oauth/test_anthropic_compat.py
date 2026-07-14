@@ -311,6 +311,8 @@ class InjectCspWebAccessGuidance(unittest.TestCase):
         self.assertIn('host.mcp("web-search", "fetch_url"', out["system"])
         self.assertIn('data["results"]', out["system"])
         self.assertIn('page["content"]', out["system"])
+        self.assertIn("duckduckgo_ia", out["system"])
+        self.assertIn("provider=\"auto\"", out["system"])
         self.assertIn("Current local date/time:", out["system"])
         self.assertIn("2026-07-14", out["system"])
         self.assertIn("latest as of 2026-07-14", out["system"])

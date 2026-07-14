@@ -78,7 +78,7 @@ import urllib.parse
 import urllib.request
 
 SERVER_NAME = "web-search"
-SERVER_VERSION = "1.3.0"
+SERVER_VERSION = "1.4.0"
 DEFAULT_PROTOCOL = "2025-06-18"
 USER_AGENT = "csp-web-search/1.0 (+https://github.com/; Claude Science Proxy built-in)"
 HTTP_TIMEOUT = 15
@@ -529,12 +529,17 @@ KEY_PROVIDERS = [
     ("serper", ("SERPER_API_KEY",)),
     ("tavily", ("TAVILY_API_KEY",)),
 ]
-# Free fallbacks, in order, for auto mode. Ordered for the primary deployment
-# target — inside Claude Science's sandbox, where egress is limited to an
-# allowlist of scientific sources — so we lead with the reliable no-key
-# scholarly APIs. General-web/paid providers are omitted from auto (blocked
-# in-sandbox); they remain explicitly selectable via provider=<name>.
-FREE_FALLBACKS = ["crossref", "arxiv", "pubmed"]
+# Free fallbacks for auto mode (after any key-based providers). With CSP
+# network-allowlist grants, general-web Instant Answer / Wikipedia usually
+# CONNECT; put them *before* scholarly so product/news queries are not stuck
+# on Crossref. HTML ``duckduckgo`` stays out of auto (anti-bot fragile).
+FREE_FALLBACKS = [
+    "duckduckgo_ia",
+    "wikipedia",
+    "crossref",
+    "arxiv",
+    "pubmed",
+]
 
 
 def auto_order(env):
@@ -659,14 +664,15 @@ _SEARCH_DESCRIPTION = (
     "for r in hits: print(r.get(\"title\"), r.get(\"url\"), r.get(\"snippet\")). "
     "Or simply print(data). Do NOT iterate the dict itself "
     "(for x in data yields string keys → AttributeError on .get). "
-    "Free with no API key: searches scholarly sources (Crossref, arXiv, PubMed, "
-    "and optionally OpenAlex / Semantic Scholar) with automatic fallback. "
-    "provider='auto' (default) tries configured key providers first, then the "
-    "no-key scholarly providers, capturing per-provider warnings. NOTE: inside "
-    "Claude Science's sandbox, network egress is restricted to an allowlist of "
-    "scientific sources, so general search engines (duckduckgo/wikipedia) and "
-    "paid providers (brave/serper/tavily) are typically unavailable there and "
-    "are best-effort only."
+    "provider='auto' (default) tries configured key providers first "
+    "(Brave/Serper/Tavily when env keys are set), then no-key free fallbacks: "
+    "duckduckgo_ia → wikipedia → Crossref → arXiv → PubMed (per-provider "
+    "warnings; first non-empty wins). For general/product/news queries rely on "
+    "auto or set provider='duckduckgo_ia'; for literature-only set "
+    "provider='crossref'|'arxiv'|'pubmed'. OpenAlex / Semantic Scholar remain "
+    "explicitly selectable. HTML provider='duckduckgo' is optional and fragile "
+    "(anti-bot). CSP pre-grants these hosts into Science's network allowlist on "
+    "Start; extend via ~/.csp/network-allowlist.json."
 )
 
 _FETCH_DESCRIPTION = (
