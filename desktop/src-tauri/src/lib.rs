@@ -140,12 +140,12 @@ pub fn run() {
             // Science egress domains (built-in web-search hosts are merged on Start).
             let _ = mcp_manager::network_allowlist::ensure_user_file();
 
-            // Seed the built-in `csp-web-access` standing-guidance Skill on first
-            // run (enabled by default) so Claude Science, in every session,
-            // prefers CSP's local `web-search` MCP for any web search and never
-            // wastes a turn on the hosted `web_search` tool (unavailable under
-            // CSP). Sentinel-guarded and self-healing, mirroring the MCP seed; a
-            // user who later disables/removes it is respected.
+            // Seed the built-in `csp-environment` standing-guidance Skill on
+            // first run (enabled by default) so Claude Science gets the local
+            // environment handbook (web lanes, filesystem, CJK, skills/env)
+            // every session. Migrates legacy `csp-web-access` installs while
+            // respecting sticky opt-out. Sentinel-guarded and self-healing,
+            // mirroring the MCP seed.
             skill_manager::seed_builtin_skills();
 
             // Close window → quit: stop proxy, clear secret, keep sandbox running (spec §5.1).

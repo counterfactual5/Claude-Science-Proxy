@@ -3,6 +3,12 @@
 All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.6.4] — 2026-07-14
+
+### Changed
+- **Built-in Skill renamed `csp-web-access` → `csp-environment`**: The standing-guidance Skill is now the CSP **environment handbook** (dual web-search lanes, `/mnt/data` / `save_artifacts`, CJK fonts, `host.skills.publish` / analysis python env, network allowlist). Bundled path is `skill_manager/csp-environment/`; seed sentinel is `~/.csp/skills/.seeded-csp-environment`.
+- **Sticky opt-out migration**: On launch, if the new sentinel is absent: replace an inventory `csp-web-access` builtin with a seed of `csp-environment`; if only the legacy `.seeded-csp-web-access` sentinel remains (user removed the skill), stamp the new sentinel **without** reseeding; otherwise seed normally. Proxy injection sentinel `CSP_WEB_ACCESS_GUIDANCE` is unchanged (injection, not the Skill name).
+
 ## [1.6.3] — 2026-07-14
 
 ### Changed

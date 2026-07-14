@@ -1,25 +1,22 @@
 ---
-name: csp-web-access
-description: Standing environment conventions for Claude Science Proxy (CSP), the local sandbox you run in. Covers (1) web access — this environment has NO hosted Web Search, so for any web search or online lookup ALWAYS use CSP's local `web-search` MCP connector (tools `search_literature` / `csp_web_search` / `fetch_url`) and NEVER call the hosted `web_search` tool; and (2) local filesystem, plotting/CJK fonts, and env conventions — never write to `/mnt/data`, save outputs to the workspace cwd then `save_artifacts([...])`, set a CJK matplotlib font before plotting non-Latin labels, and don't rely on `host.skills.publish()`.
+name: csp-environment
+description: Standing CSP local-environment handbook for Claude Science Proxy. Covers (1) web access — no hosted Web Search; ALWAYS use the local `web-search` MCP (GENERAL lane `web_search`/`csp_web_search`, LITERATURE lane `search_literature`, then `fetch_url`) and NEVER the hosted `web_search` tool; (2) filesystem — never `/mnt/data`, save to workspace cwd then `save_artifacts([...])`; (3) CJK matplotlib fonts; (4) skills/env — don't rely on `host.skills.publish()`, use analysis `python` for science packages; (5) network allowlist via CSP Start + `~/.csp/network-allowlist.json`.
 license: Apache-2.0
 ---
 
-# CSP environment conventions (web access + local sandbox)
+# CSP environment handbook
 
-You are running inside **Claude Science Proxy (CSP)**, a sandboxed environment on
-the user's local machine that reaches the internet through a scholarly egress
-proxy. Treat this as standing guidance for **every** session — the user should
-never have to repeat it. This skill covers two things: how to reach the web (the
-local `web-search` MCP, below) and the **local environment conventions**
-(filesystem, plotting/CJK fonts, network, and skill/env edits) that differ from
-Anthropic's hosted Claude environment.
+You are running inside **Claude Science Proxy (CSP)** — a sandboxed Claude Science
+on the user's local machine, with internet reaches via a scholarly egress proxy.
+Treat this as **standing guidance for every session**. It covers how CSP differs
+from Anthropic's hosted Claude environment: web access, files/artifacts,
+plotting/CJK, skills/env, and network.
 
-## The one rule
+## 1. Web access — the one rule
 
-For ANY web search, online lookup, "search the web", news/fact check, or
-literature / paper search, and for reading any web page, ALWAYS use the local
-MCP connector named **`web-search`**. NEVER call Anthropic's hosted
-**`web_search`** tool.
+For ANY web search, online lookup, news/fact check, literature / paper search,
+or reading a web page: ALWAYS use the local MCP connector named **`web-search`**.
+NEVER call Anthropic's hosted **`web_search`** tool.
 
 The hosted `web_search` tool is **not available** under CSP's virtual login. If
 you try it, the planner fails with:
@@ -29,30 +26,29 @@ Tool 'web_search' not found on agent
 ```
 
 That wastes a turn. Do not attempt it, and do not tell the user that web search
-is unavailable — it IS available, through the local connector described below.
+is unavailable — it IS available through the local connector below.
 
-## Which tool to call
+### Which tool to call (two search lanes)
 
-The `web-search` connector is already connected and enabled. It exposes **two
-search lanes** (pick by method name — do not guess from keywords alone):
+The `web-search` connector is already connected and enabled. Pick the lane by
+**method name** — do not guess from keywords alone:
 
-- **`web_search` / `csp_web_search`** — **GENERAL** lane for news, products,
-  "latest models", facts. `provider="auto"` → keyed Brave/Serper/Tavily (if
-  set) → `duckduckgo_ia`.
-- **`search_literature`** — **LITERATURE** lane for papers / DOIs / scholarly
-  metadata. `provider="auto"` → wikipedia → Crossref → arXiv → PubMed.
-- **`fetch_url`** — fetch a URL as clean text (after either search).
+| Lane | Methods | Use for | `provider="auto"` order |
+|------|---------|---------|-------------------------|
+| **GENERAL** | `web_search` / `csp_web_search` | news, products, "latest models", facts | keyed Brave/Serper/Tavily (if set) → `duckduckgo_ia` |
+| **LITERATURE** | `search_literature` | papers, DOIs, scholarly metadata | wikipedia → Crossref → arXiv → PubMed |
+| (fetch) | `fetch_url` | read a URL as clean text after either search | — |
 
 Typical flows:
 
 ```python
-# General / product / news
+# GENERAL / product / news
 data = host.mcp("web-search", "web_search", query="...", max_results=5)
 hits = data["results"]
 for r in hits:
     print(r.get("title"), r.get("url"), r.get("snippet"))
 
-# Academic only
+# LITERATURE / academic only
 papers = host.mcp("web-search", "search_literature", query="...", max_results=5)
 for r in papers["results"]:
     print(r.get("title"), r.get("url"))
@@ -66,38 +62,29 @@ that iterates dict **keys** (strings) and raises
 `AttributeError: 'str' object has no attribute 'get'`.
 
 **Return shape:** `host.mcp` returns a **dict** with a `results` list
-(`hits = data["results"]`), never a bare list of hits.
+(`hits = data["results"]`), never a bare list of hits. Fetch returns
+`{"url", "status", "content"}`.
 
-## What the sandbox can reach
+Use the **correct lane** for the question type. Explicit `provider=` still
+works on either tool. HTML `provider="duckduckgo"` is optional and fragile
+(anti-bot).
 
-CSP pre-grants hosts for the bundled `web-search` providers into Science's
-network allowlist on Start (DuckDuckGo Instant Answer, Wikipedia, Brave,
-Serper, Tavily). Extra hosts can be added in `~/.csp/network-allowlist.json`.
+## 2. Files and artifacts
 
-Use the **correct lane** for the question type (GENERAL vs LITERATURE above).
-Explicit `provider=` still works on either tool. HTML `provider="duckduckgo"`
-is optional and fragile (anti-bot).
+CSP is **not** the hosted Claude environment:
 
-## Local environment conventions
-
-CSP is **not** the hosted Claude environment. The following conventions apply to
-every session; following them avoids failed writes, blank/□□□ plots, wasted
-tool calls, and skills that never persist.
-
-### Files and artifacts
-
-- `/mnt/data` **does not exist here** — neither do any other `/mnt/...` paths
-  such as `/mnt/user-data`. Never write there; a write will fail or vanish.
+- `/mnt/data` **does not exist here** — neither do other `/mnt/...` paths such
+  as `/mnt/user-data`. Never write there; a write will fail or vanish.
 - Save all outputs to the **current working directory** — the active Science
-  workspace, `orgs/<org_uuid>/workspaces/<workspace_uuid>/` — using **relative
+  workspace `orgs/<org_uuid>/workspaces/<workspace_uuid>/` — using **relative
   paths** (e.g. `./result.csv`, `figures/plot.png`). Do not hard-code absolute
   paths.
 - Use `/tmp` only for **disposable scratch** you don't need to keep.
 - To persist a **user-visible** file: write it in the workspace (cwd), then call
   `save_artifacts([...])` with the relative path(s). Writing a file alone does
-  not surface it to the user — the `save_artifacts` call is what does.
+  not surface it to the user — `save_artifacts` is what does.
 
-### Plotting and CJK (Chinese/Japanese/Korean) text
+## 3. Plotting and CJK (Chinese/Japanese/Korean) text
 
 matplotlib's default font `DejaVu Sans` **cannot render CJK glyphs** — CJK
 labels come out as tofu boxes (□□□). Before plotting any non-Latin (CJK) text,
@@ -112,15 +99,7 @@ plt.rcParams["axes.unicode_minus"] = False  # keep the minus sign rendering
 If you use the `figure-style` skill, pass it a CJK font the same way. Latin-only
 plots need no change.
 
-### Web and network
-
-- Don't call the hosted `web_search` tool — use the local `web-search` MCP.
-- GENERAL queries → `web_search` / `csp_web_search`; LITERATURE →
-  `search_literature`. Do not send product/news queries down the literature lane.
-- If a host is still blocked, say so — do **not** retry the hosted Anthropic
-  `web_search` tool.
-
-### Skills and environment edits
+## 4. Skills and Python environments
 
 - Don't rely on `host.skills.publish()` / `host.skills.edit()` for durable skill
   installs — they don't take effect under CSP's virtual login. Instead, **draft
@@ -133,17 +112,25 @@ plots need no change.
   scientific packages, so don't assume they're importable from an MCP tool
   context.
 
+## 5. Network allowlist
+
+CSP pre-grants hosts for the bundled `web-search` providers into Science's
+network allowlist on Start (DuckDuckGo Instant Answer, Wikipedia, Brave,
+Serper, Tavily). Extra hosts can be added in `~/.csp/network-allowlist.json`.
+If a host is still blocked, say so — do **not** retry the hosted Anthropic
+`web_search` tool.
+
 ## Summary
 
 - GENERAL web / news / products → `web_search` / `csp_web_search` (then `fetch_url`).
 - LITERATURE / papers / DOI → `search_literature` (then `fetch_url`).
 - Hosted `web_search` tool → never call it; it does not exist in this environment.
-- Files → write to the workspace cwd with relative paths; never `/mnt/data`;
-  persist user-visible files with `save_artifacts([...])`; `/tmp` is scratch only.
-- CJK plots → set a CJK `font.sans-serif` (Arial Unicode MS / Songti SC / STHeiti)
-  and `axes.unicode_minus = False` before plotting.
-- Durable skills → draft in the workspace and adopt via CSP's Skills tab, not
-  `host.skills.publish()`. Scientific packages live in the analysis `python` env.
+- Files → workspace cwd + relative paths; never `/mnt/data`; persist with
+  `save_artifacts([...])`; `/tmp` is scratch only.
+- CJK plots → set CJK `font.sans-serif` + `axes.unicode_minus = False` first.
+- Durable skills → draft in workspace, adopt via CSP Skills tab (not
+  `host.skills.publish()`). Scientific packages → analysis `python` env.
+- Extra egress hosts → `~/.csp/network-allowlist.json` (then Stop → Start).
 
 ## 中文提示
 
@@ -166,3 +153,5 @@ plots need no change.
 - **技能/环境修改**：不要依赖 `host.skills.publish()` 做持久安装；请把技能文件写在工作区，
   再用 CSP「Skills 标签 → 从 Science 采纳」纳入管理。科学计算包在**分析用 `python` 环境**里，
   MCP 的 Python 环境可能没有绘图/科学库。
+- **网络授权**：Start 时 CSP 会预授权内置搜索域名；额外域名写在
+  `~/.csp/network-allowlist.json`，改完后需 Stop → Start。

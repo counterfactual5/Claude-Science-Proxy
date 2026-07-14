@@ -325,7 +325,7 @@ impl SkillStore {
     /// sentinel exists or a Skill with the same `name` is already present.
     ///
     /// `sentinel` is a dotfile name under the store root (e.g.
-    /// `.seeded-csp-web-access`). Mirrors `McpStore::seed_once`.
+    /// `.seeded-csp-environment`). Mirrors `McpStore::seed_once`.
     pub fn seed_once(
         &self,
         sentinel: &str,
@@ -393,6 +393,107 @@ impl SkillStore {
         skill.size_bytes = size_bytes;
         self.save_inventory(&inv)?;
         Ok(true)
+    }
+
+    /// Stamp a seed sentinel without seeding. Used to carry sticky opt-out
+    /// across a built-in skill rename.
+    pub fn stamp_sentinel(&self, sentinel: &str) -> Result<(), String> {
+        let marker = self.root.join(sentinel);
+        if marker.exists() {
+            return Ok(());
+        }
+        fs::write(&marker, b"1\n").map_err(|e| format!("write seed sentinel: {e}"))?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = fs::set_permissions(&marker, fs::Permissions::from_mode(0o600));
+        }
+        Ok(())
+    }
+
+    /// Whether a sentinel dotfile already exists under the store root.
+    pub fn sentinel_exists(&self, sentinel: &str) -> bool {
+        self.root.join(sentinel).exists()
+    }
+
+    /// Remove the first inventory entry whose display `name` matches (and
+    /// delete its `store_path`). Returns `true` if something was removed.
+    pub fn remove_by_name(&self, name: &str) -> Result<bool, String> {
+        let mut inv = self.load_inventory()?;
+        let Some((id, skill)) = inv
+            .skills
+            .iter()
+            .find(|(_, s)| s.name == name)
+            .map(|(id, s)| (id.clone(), s.clone()))
+        else {
+            return Ok(false);
+        };
+        inv.skills.remove(&id);
+        if skill.store_path.exists() {
+            fs::remove_dir_all(&skill.store_path)
+                .map_err(|e| format!("remove skill dir: {e}"))?;
+        }
+        self.save_inventory(&inv)?;
+        Ok(true)
+    }
+
+    /// Whether the inventory currently has a **builtin** Skill with `name`.
+    pub fn has_builtin_named(&self, name: &str) -> Result<bool, String> {
+        let inv = self.load_inventory()?;
+        Ok(inv.skills.values().any(|s| s.builtin && s.name == name))
+    }
+
+    /// Seed / refresh the built-in environment handbook Skill, migrating from
+    /// the legacy `csp-web-access` name when needed while respecting sticky
+    /// opt-out:
+    ///
+    /// 1. If `sentinel` already exists → only `refresh_builtin` (normal path).
+    /// 2. Else if inventory has a builtin named `legacy_name` → remove it, then
+    ///    `seed_once` the new skill (stamps `sentinel`).
+    /// 3. Else if `legacy_sentinel` exists but no `legacy_name` in inventory →
+    ///    user opted out; stamp `sentinel` without seeding.
+    /// 4. Else → `seed_once` as usual.
+    pub fn seed_or_migrate_environment_skill(
+        &self,
+        sentinel: &str,
+        name: &str,
+        description: &str,
+        files: &[(&str, &str)],
+        requirements: &[&str],
+        legacy_name: &str,
+        legacy_sentinel: &str,
+    ) -> Result<bool, String> {
+        // Path 1: already migrated / seeded under the new name.
+        if self.sentinel_exists(sentinel) {
+            return self.refresh_builtin(name, description, files);
+        }
+
+        // Path 2: replace the legacy builtin install with the renamed skill.
+        if self.has_builtin_named(legacy_name)? {
+            let _ = self.remove_by_name(legacy_name)?;
+            return self.seed_once(sentinel, name, description, files, requirements);
+        }
+
+        // Path 3: legacy sentinel present but skill gone → sticky opt-out.
+        // Check inventory for the legacy name (builtin or not) so we don't
+        // confuse a still-present non-builtin collision; seed_once below also
+        // name-guards. Opt-out is specifically: sentinel set, inventory empty
+        // of that name.
+        let inv = self.load_inventory()?;
+        let legacy_still_present = inv.skills.values().any(|s| s.name == legacy_name);
+        if self.sentinel_exists(legacy_sentinel) && !legacy_still_present {
+            self.stamp_sentinel(sentinel)?;
+            return Ok(false);
+        }
+
+        // Path 4: first-time seed.
+        let seeded = self.seed_once(sentinel, name, description, files, requirements)?;
+        if seeded {
+            // Already written by seed_once; refresh is a no-op but keeps parity
+            // with the historical seed-then-refresh callers.
+            let _ = self.refresh_builtin(name, description, files);
+        }
+        Ok(seeded)
     }
 
     /// Discover importable Skills under the given `(dir, label)` roots.
@@ -973,17 +1074,17 @@ mod tests {
     #[test]
     fn seed_once_seeds_then_is_sticky() {
         let store = temp_store();
-        let files = [("SKILL.md", "---\nname: csp-web-access\n---\nguidance")];
+        let files = [("SKILL.md", "---\nname: csp-environment\n---\nguidance")];
         // First seed: creates an enabled builtin skill + stamps the sentinel.
         let seeded = store
-            .seed_once(".seeded-test", "csp-web-access", "desc", &files, &["mcp"])
+            .seed_once(".seeded-test", "csp-environment", "desc", &files, &["mcp"])
             .unwrap();
         assert!(seeded);
         let list = store.list().unwrap();
         assert_eq!(list.len(), 1);
         assert!(list[0].builtin);
         assert!(list[0].enabled);
-        assert_eq!(list[0].name, "csp-web-access");
+        assert_eq!(list[0].name, "csp-environment");
 
         // User removes it → gone from inventory.
         let id = list[0].id.clone();
@@ -992,7 +1093,7 @@ mod tests {
 
         // Second seed is sticky: sentinel present → no resurrection.
         let seeded2 = store
-            .seed_once(".seeded-test", "csp-web-access", "desc", &files, &["mcp"])
+            .seed_once(".seeded-test", "csp-environment", "desc", &files, &["mcp"])
             .unwrap();
         assert!(!seeded2);
         assert!(store.list().unwrap().is_empty());
@@ -1005,7 +1106,7 @@ mod tests {
         let store = temp_store();
         let v1 = [("SKILL.md", "v1")];
         store
-            .seed_once(".seeded-test", "csp-web-access", "d1", &v1, &["mcp"])
+            .seed_once(".seeded-test", "csp-environment", "d1", &v1, &["mcp"])
             .unwrap();
         let id = store.list().unwrap()[0].id.clone();
         // User disables it.
@@ -1014,7 +1115,7 @@ mod tests {
         // Refresh with new content: rewrites files, keeps it disabled.
         let v2 = [("SKILL.md", "v2-longer-content")];
         let refreshed = store
-            .refresh_builtin("csp-web-access", "d2", &v2)
+            .refresh_builtin("csp-environment", "d2", &v2)
             .unwrap();
         assert!(refreshed);
         let skill = store.get(&id).unwrap().unwrap();
@@ -1025,6 +1126,131 @@ mod tests {
 
         // Refreshing a non-existent builtin name is a no-op.
         assert!(!store.refresh_builtin("nope", "x", &v2).unwrap());
+
+        let _ = fs::remove_dir_all(&store.root);
+    }
+
+    #[test]
+    fn migrate_replaces_legacy_builtin_with_environment() {
+        let store = temp_store();
+        let legacy = [("SKILL.md", "---\nname: csp-web-access\n---\nold")];
+        store
+            .seed_once(
+                ".seeded-csp-web-access",
+                "csp-web-access",
+                "old desc",
+                &legacy,
+                &["mcp"],
+            )
+            .unwrap();
+        assert!(store.has_builtin_named("csp-web-access").unwrap());
+
+        let files = [("SKILL.md", "---\nname: csp-environment\n---\nnew handbook")];
+        let migrated = store
+            .seed_or_migrate_environment_skill(
+                ".seeded-csp-environment",
+                "csp-environment",
+                "new desc",
+                &files,
+                &["network", "mcp"],
+                "csp-web-access",
+                ".seeded-csp-web-access",
+            )
+            .unwrap();
+        assert!(migrated);
+
+        let list = store.list().unwrap();
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].name, "csp-environment");
+        assert!(list[0].builtin);
+        assert!(list[0].enabled);
+        assert!(!store.has_builtin_named("csp-web-access").unwrap());
+        assert!(store.sentinel_exists(".seeded-csp-environment"));
+        let skill = store.get(&list[0].id).unwrap().unwrap();
+        let md = fs::read_to_string(skill.store_path.join("SKILL.md")).unwrap();
+        assert!(md.contains("new handbook"));
+
+        // Second launch: new sentinel → refresh only, no duplicate.
+        let again = store
+            .seed_or_migrate_environment_skill(
+                ".seeded-csp-environment",
+                "csp-environment",
+                "newer desc",
+                &[("SKILL.md", "---\nname: csp-environment\n---\nrefreshed")],
+                &["network", "mcp"],
+                "csp-web-access",
+                ".seeded-csp-web-access",
+            )
+            .unwrap();
+        assert!(again);
+        let list2 = store.list().unwrap();
+        assert_eq!(list2.len(), 1);
+        assert_eq!(list2[0].description, "newer desc");
+
+        let _ = fs::remove_dir_all(&store.root);
+    }
+
+    #[test]
+    fn migrate_respects_legacy_opt_out_without_seeding() {
+        let store = temp_store();
+        // Opt-out: legacy sentinel stamped, skill removed from inventory.
+        store.stamp_sentinel(".seeded-csp-web-access").unwrap();
+        assert!(store.list().unwrap().is_empty());
+
+        let files = [("SKILL.md", "---\nname: csp-environment\n---\nshould not seed")];
+        let migrated = store
+            .seed_or_migrate_environment_skill(
+                ".seeded-csp-environment",
+                "csp-environment",
+                "desc",
+                &files,
+                &["mcp"],
+                "csp-web-access",
+                ".seeded-csp-web-access",
+            )
+            .unwrap();
+        assert!(!migrated);
+        assert!(store.list().unwrap().is_empty());
+        assert!(store.sentinel_exists(".seeded-csp-environment"));
+
+        // Further launches stay empty (new sentinel → refresh no-op).
+        let again = store
+            .seed_or_migrate_environment_skill(
+                ".seeded-csp-environment",
+                "csp-environment",
+                "desc",
+                &files,
+                &["mcp"],
+                "csp-web-access",
+                ".seeded-csp-web-access",
+            )
+            .unwrap();
+        assert!(!again);
+        assert!(store.list().unwrap().is_empty());
+
+        let _ = fs::remove_dir_all(&store.root);
+    }
+
+    #[test]
+    fn migrate_fresh_install_seeds_environment() {
+        let store = temp_store();
+        let files = [("SKILL.md", "---\nname: csp-environment\n---\nfresh")];
+        let seeded = store
+            .seed_or_migrate_environment_skill(
+                ".seeded-csp-environment",
+                "csp-environment",
+                "desc",
+                &files,
+                &["mcp"],
+                "csp-web-access",
+                ".seeded-csp-web-access",
+            )
+            .unwrap();
+        assert!(seeded);
+        let list = store.list().unwrap();
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].name, "csp-environment");
+        assert!(store.sentinel_exists(".seeded-csp-environment"));
 
         let _ = fs::remove_dir_all(&store.root);
     }

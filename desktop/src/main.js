@@ -53,8 +53,8 @@ const I18N = {
     editCspJson: "Edit CSP.json",
     activeBadge: "当前生效",
     mcpBuiltinBadge: "内置",
-    mcpBuiltinHint: "CSP 内置的免费联网搜索（无需 API Key）。在 Claude Science 沙箱内出网被限制为科研数据源白名单，因此默认使用可用的免密钥学术检索源（Crossref、arXiv、PubMed，及 OpenAlex / Semantic Scholar）并自动回退；通用搜索引擎（DuckDuckGo/维基百科）与需密钥的 Brave/Serper/Tavily 通常被沙箱白名单拦截。可在 env 中填入 BRAVE_SEARCH_API_KEY / SERPER_API_KEY / TAVILY_API_KEY 尝试启用。",
-    skillBuiltinHint: "CSP 内置的常驻指引 Skill：让 Claude Science 在每个会话都优先使用本地 web-search MCP（search_literature / csp_web_search 搜索，fetch_url 读取网页），不要调用 CSP 下不可用的托管 web_search 工具。可像其他 Skill 一样停用或删除（会被记住）。",
+    mcpBuiltinHint: "CSP 内置联网搜索（无需 API Key）。通用：web_search（csp_web_search 为同方法别名）auto → 可选密钥引擎 → DuckDuckGo Instant Answer → DuckDuckGo Lite → 维基百科；学术：search_literature → 维基百科/Crossref/arXiv/PubMed。CSP 启动时会预授权检索域名。Brave/Serper/Tavily 密钥可选，用于提高可靠性，不是必需。",
+    skillBuiltinHint: "CSP 内置环境手册 Skill（csp-environment）：常驻指引本地与托管 Claude 的差异——双车道联网搜索、禁止 /mnt/data、save_artifacts、CJK 字体、Skills 采纳与 network-allowlist。可像其他 Skill 一样停用或删除（会被记住）。",
     emptyTitle: "还没有模型配置",
     emptyHint: "点右上「＋ 新建」添加一条连接",
     noUrl: "（未填地址）",
@@ -240,8 +240,8 @@ const I18N = {
     editCspJson: "Edit CSP.json",
     activeBadge: "Active",
     mcpBuiltinBadge: "Built-in",
-    mcpBuiltinHint: "CSP's bundled free web search (no API key). Inside the Claude Science sandbox, egress is limited to an allowlist of scientific sources, so it defaults to reliable no-key scholarly providers (Crossref, arXiv, PubMed; also OpenAlex / Semantic Scholar) with automatic fallback. General engines (DuckDuckGo/Wikipedia) and paid providers (Brave/Serper/Tavily) are usually blocked by the allowlist; add BRAVE_SEARCH_API_KEY / SERPER_API_KEY / TAVILY_API_KEY to env to try them.",
-    skillBuiltinHint: "CSP's built-in standing-guidance Skill: it makes Claude Science prefer the local web-search MCP (search_literature / csp_web_search to search, fetch_url to read pages) in every session, and never call the hosted web_search tool (unavailable under CSP). You can disable or remove it like any Skill (the choice is remembered).",
+    mcpBuiltinHint: "CSP's bundled web search (no API key required). GENERAL: web_search (csp_web_search is an alias) auto → optional keyed engines → DuckDuckGo Instant Answer → DuckDuckGo Lite → Wikipedia. LITERATURE: search_literature → Wikipedia/Crossref/arXiv/PubMed. CSP pre-grants search hosts on Start. Brave/Serper/Tavily keys are optional reliability upgrades, not required.",
+    skillBuiltinHint: "CSP's built-in environment handbook Skill (csp-environment): standing guidance for the local sandbox vs hosted Claude — dual-lane web search, no /mnt/data, save_artifacts, CJK fonts, skill adopt, and network-allowlist. You can disable or remove it like any Skill (the choice is remembered).",
     emptyTitle: "No profiles yet",
     emptyHint: "Tap + New to add a connection",
     noUrl: "(no URL)",
@@ -539,7 +539,7 @@ const mockStore = {
     { id: "sk_1", name: "AlphaFold Database Fetch & Analyze", description: "Retrieve and analyze AlphaFold predicted structures for a protein.", enabled: true, sizeBytes: 12450, importedAt: "2026-07-12T02:30:00Z", requirements: ["python"] }
   ],
   mcpServers: [
-    { id: "mcp_0000000000000000", name: "web-search", description: "Free web search & page fetch (no API key). Defaults to no-key scholarly providers (Crossref, arXiv, PubMed) with automatic fallback; general/paid providers are usually blocked by the sandbox allowlist. Set BRAVE_SEARCH_API_KEY / SERPER_API_KEY / TAVILY_API_KEY to try them.", command: "python3", args: ["/Users/me/.csp/sandbox/home/.claude-science/mcp/csp-web-search-server.py"], env: { BRAVE_SEARCH_API_KEY: "", SERPER_API_KEY: "", TAVILY_API_KEY: "" }, enabled: true, builtin: true, createdAt: "2026-07-12T02:30:00Z", updatedAt: "2026-07-12T02:30:00Z" },
+    { id: "mcp_0000000000000000", name: "web-search", description: "Local web + literature search (no API key required). GENERAL web_search (csp_web_search alias) → duckduckgo_ia/lite/wikipedia; LITERATURE search_literature → Crossref/arXiv/PubMed. Optional BRAVE_SEARCH_API_KEY / SERPER_API_KEY / TAVILY_API_KEY improve reliability only.", command: "python3", args: ["/Users/me/.csp/sandbox/home/.claude-science/mcp/csp-web-search-server.py"], env: { BRAVE_SEARCH_API_KEY: "", SERPER_API_KEY: "", TAVILY_API_KEY: "" }, enabled: true, builtin: true, createdAt: "2026-07-12T02:30:00Z", updatedAt: "2026-07-12T02:30:00Z" },
     { id: "mcp_0000000000000001", name: "local-fs", description: "本地文件系统工具", command: "python3", args: ["/Users/me/mcp/fs_server.py"], env: { API_TOKEN: "••••1234" }, enabled: true, builtin: false, createdAt: "2026-07-12T02:30:00Z", updatedAt: "2026-07-12T02:30:00Z" }
   ],
 };
