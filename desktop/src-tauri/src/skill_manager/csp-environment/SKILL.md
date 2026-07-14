@@ -36,8 +36,8 @@ The `web-search` connector is already connected and enabled. Pick the lane by
 
 | Lane | Methods | Use for | `provider="auto"` order |
 |------|---------|---------|-------------------------|
-| **GENERAL** | **`csp_web_search`** (only public GENERAL name) | news, products, "latest models", facts | optional keyed Brave/Serper/Tavily (if set) → `duckduckgo_ia` → `duckduckgo_lite` → `wikipedia` (**no key required**) |
-| **LITERATURE** | `search_literature` | papers, DOIs, scholarly metadata | wikipedia → Crossref → arXiv → PubMed |
+| **GENERAL** | **`csp_web_search`** (only public GENERAL name) | news, products, "latest models", facts | optional keyed Brave/Serper/Tavily (if set) → `duckduckgo_ia` → `duckduckgo_lite` (**no key required**; Wikipedia is **not** on this lane) |
+| **LITERATURE** | `search_literature` | papers, DOIs, scholarly / encyclopedic | wikipedia → Crossref → arXiv → PubMed |
 | (fetch) | `fetch_url` | read a URL as clean text after either search | — |
 
 Typical flows:
@@ -73,9 +73,10 @@ that iterates dict **keys** (strings) and raises
 ### Empty Instant Answer ≠ missing API key
 
 DuckDuckGo Instant Answer needs **no key**. Empty IA for news / "latest …"
-queries is normal; auto then tries free `duckduckgo_lite` and `wikipedia`.
+queries is normal; auto then tries free `duckduckgo_lite` (GENERAL stops
+there). Wikipedia lives on the **LITERATURE** lane (`search_literature`).
 **Never** tell the user they must configure Brave / Serper / Tavily because
-Instant Answer was empty — those keys are optional reliability upgrades only.
+Instant Answer was empty — those keys are optional quality upgrades only.
 If `results` is still empty, rephrase, `fetch_url` a known URL, or read the
 empty-result `hint` / `message` field.
 
@@ -139,8 +140,9 @@ free Instant Answer returned empty.
 
 - GENERAL web / news / products → `csp_web_search` then `fetch_url`. No API key
   required. One public GENERAL method only.
-- LITERATURE / papers / DOI → `search_literature` (then `fetch_url`).
-- Empty `duckduckgo_ia` → not a missing key; free lite/wikipedia follow.
+- LITERATURE / papers / DOI / encyclopedic → `search_literature` (then `fetch_url`).
+- Empty `duckduckgo_ia` → not a missing key; free `duckduckgo_lite` follows
+  (Wikipedia is not a GENERAL fallback).
 - Native Anthropic `web_search` tool → never call it; it does not exist here.
 - Files → workspace cwd + relative paths; never `/mnt/data`; persist with
   `save_artifacts([...])`; `/tmp` is scratch only.
@@ -153,10 +155,11 @@ free Instant Answer returned empty.
 
 本环境没有托管版 / OPERON 原生 `web_search`。联网请用本地 `web-search` MCP：
 **通用/新闻/产品**用公共方法名 **`csp_web_search`**（auto：可选
-Brave/Serper/Tavily → duckduckgo_ia → duckduckgo_lite → wikipedia，**无需
-API key**）；**论文/学术**用 `search_literature`（auto：wikipedia → Crossref →
-arXiv → PubMed）；读页用 `fetch_url`。不要调用原生 `web_search`。Instant Answer
-为空是常见情况，**不等于缺密钥**，勿要求用户必须配置 Brave/Serper/Tavily。
+Brave/Serper/Tavily → duckduckgo_ia → duckduckgo_lite，**无需 API key**；
+Wikipedia 不在 GENERAL）；**论文/学术/百科**用 `search_literature`（auto：
+wikipedia → Crossref → arXiv → PubMed）；读页用 `fetch_url`。不要调用原生
+`web_search`。Instant Answer 为空是常见情况，**不等于缺密钥**，勿要求用户必须
+配置 Brave/Serper/Tavily。
 `host.mcp` 搜索返回 **dict**（含 `results`），正确写法：
 `data = host.mcp(...); hits = data["results"]`。
 

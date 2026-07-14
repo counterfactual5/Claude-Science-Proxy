@@ -55,7 +55,7 @@ const WEB_SEARCH_SOURCE: &str = include_str!("web_search_server.py");
 
 /// Description surfaced to Science (the model reads this to decide when to call
 /// the tools). English on purpose — it is the tool description, not chrome.
-pub const BUILTIN_WEB_SEARCH_DESCRIPTION: &str = "Local CSP web + literature search (two host.mcp lanes). Under CSP virtual login Anthropic-hosted web_search/web_fetch are unavailable — never call them. GENERAL (one public method): host.mcp(\"web-search\", \"csp_web_search\", query=...). auto: optional Brave/Serper/Tavily (if keyed) → duckduckgo_ia → duckduckgo_lite → wikipedia (no key required). LITERATURE: host.mcp(\"web-search\", \"search_literature\", query=...) — auto: wikipedia → Crossref → arXiv → PubMed. Then fetch_url/web_fetch. hits = data[\"results\"] (dict, not a bare list). Empty Instant Answer ≠ missing API key. CSP pre-grants search hosts on Start; extend via ~/.csp/network-allowlist.json.";
+pub const BUILTIN_WEB_SEARCH_DESCRIPTION: &str = "Local CSP web + literature search (two host.mcp lanes). Under CSP virtual login Anthropic-hosted web_search/web_fetch are unavailable — never call them. GENERAL (one public method): host.mcp(\"web-search\", \"csp_web_search\", query=...). auto: optional Brave/Serper/Tavily (if keyed) → duckduckgo_ia → duckduckgo_lite (no key required; wikipedia is NOT on this lane). LITERATURE: host.mcp(\"web-search\", \"search_literature\", query=...) — auto: wikipedia → Crossref → arXiv → PubMed. Then fetch_url/web_fetch. hits = data[\"results\"] (dict, not a bare list). Empty Instant Answer ≠ missing API key. CSP pre-grants search hosts on Start; extend via ~/.csp/network-allowlist.json.";
 
 /// Optional API-key env vars seeded (empty) so the MCP tab surfaces them as
 /// editable fields; empty values are treated as "unset" by the server.
@@ -209,7 +209,8 @@ mod tests {
             .unwrap_or("");
         assert!(gen.contains("duckduckgo_ia"));
         assert!(gen.contains("duckduckgo_lite"));
-        assert!(gen.contains("wikipedia"));
+        // Wikipedia belongs on LITERATURE auto, not GENERAL.
+        assert!(!gen.contains("wikipedia"));
         assert!(!gen.contains("crossref"));
     }
 

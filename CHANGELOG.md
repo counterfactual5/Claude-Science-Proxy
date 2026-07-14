@@ -3,6 +3,11 @@
 All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.6.7] — 2026-07-14
+
+### Changed
+- **GENERAL auto no longer falls back to Wikipedia**: `csp_web_search` `provider=auto` is now optional keyed Brave/Serper/Tavily → `duckduckgo_ia` → `duckduckgo_lite` only. Wikipedia stays on the **LITERATURE** lane (`search_literature` auto: wikipedia → Crossref → arXiv → PubMed) where it belongs as an academic/encyclopedic source — not as a general-web fallback. Proxy guidance, `csp-environment`, inventory description, empty-result hints, and tests updated; empty GENERAL payloads still state API keys are **not** required (rephrase / optional paid APIs improve quality).
+
 ## [1.6.6] — 2026-07-14
 
 ### Changed

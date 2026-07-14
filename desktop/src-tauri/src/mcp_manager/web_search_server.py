@@ -60,10 +60,11 @@ Start; no API key required):
   * ``duckduckgo_ia``   — DuckDuckGo Instant Answer API (entity/curated abstracts;
     often empty for news/"latest …" queries — that is normal, not a missing key).
   * ``duckduckgo_lite`` — DuckDuckGo Lite HTML (broader web results; preferred
-    free fallback when Instant Answer is empty).
+    free fallback when Instant Answer is empty; end of GENERAL auto).
   * ``duckduckgo``      — DuckDuckGo full HTML endpoint (scraped, often anti-bot;
     explicit ``provider=`` only — not in auto).
-  * ``wikipedia``       — MediaWiki search API (also used by the literature lane).
+  * ``wikipedia``       — MediaWiki search API (LITERATURE-lane auto home; also
+    selectable via explicit ``provider=`` on either tool — not in GENERAL auto).
 Key based (optional quality upgrade via MCP env — configure in CSP's MCP tab;
 CSP also pre-grants ``api.search.brave.com`` / ``google.serper.dev`` /
 ``api.tavily.com`` so keys work once set — extra hosts:
@@ -93,11 +94,13 @@ HTTP_TIMEOUT = 15
 # Empty Instant Answer / exhausted free providers — do NOT tell the user they
 # "must" configure Brave/Serper/Tavily. Keys are optional quality upgrades.
 _EMPTY_GENERAL_HINT = (
-    "No free general-web hits for this query (DuckDuckGo Instant Answer is often "
-    "empty for news/\"latest …\" questions; that does NOT mean an API key is "
-    "missing). Try a shorter/entity-style query, call fetch_url on a known URL, "
-    "or optionally set BRAVE_SEARCH_API_KEY / SERPER_API_KEY / TAVILY_API_KEY in "
-    "the MCP tab to improve reliability — keys are optional, not required."
+    "No free general-web hits for this query (DuckDuckGo Instant Answer / Lite "
+    "often empty for news/\"latest …\" questions; that does NOT mean an API key "
+    "is missing — keys are NOT required). Try a shorter/entity-style rephrase "
+    "or call fetch_url on a known URL. Optional BRAVE_SEARCH_API_KEY / "
+    "SERPER_API_KEY / TAVILY_API_KEY in the MCP tab can improve quality — "
+    "paid APIs are optional upgrades, not a prerequisite. For encyclopedic / "
+    "academic topics use search_literature (wikipedia → Crossref → arXiv → PubMed)."
 )
 _EMPTY_LITERATURE_HINT = (
     "No literature hits from wikipedia/Crossref/arXiv/PubMed for this query. "
@@ -324,8 +327,8 @@ def provider_duckduckgo_lite(query, max_results, env):
 def provider_duckduckgo_ia(query, max_results, env):
     # Instant Answer API: no key. Returns curated abstracts/related topics for
     # entity-like queries; empty JSON for many news/"latest …" queries is
-    # expected (not a network failure and not a missing API key) — auto falls
-    # through to duckduckgo_lite / wikipedia.
+    # expected (not a network failure and not a missing API key) — GENERAL auto
+    # falls through to duckduckgo_lite only (wikipedia lives on LITERATURE).
     data = http_json(
         "GET", "https://api.duckduckgo.com/",
         params={"q": query, "format": "json", "no_html": 1, "no_redirect": 1,
@@ -620,7 +623,7 @@ PROVIDERS = {
 # Two search lanes (chosen by host.mcp method name, not by guessing the query):
 #   general     — csp_web_search (canonical); web_search = unlisted dispatch alias
 #                 keyed Brave/Serper/Tavily (optional) → duckduckgo_ia →
-#                 duckduckgo_lite → wikipedia
+#                 duckduckgo_lite  (wikipedia is NOT a GENERAL fallback)
 #   literature  — search_literature
 #                 wikipedia → Crossref → arXiv → PubMed
 # Explicit provider=<name> still works on either tool (overrides the lane's auto).
@@ -629,7 +632,7 @@ KEY_PROVIDERS = [
     ("serper", ("SERPER_API_KEY",)),
     ("tavily", ("TAVILY_API_KEY",)),
 ]
-GENERAL_FREE_FALLBACKS = ["duckduckgo_ia", "duckduckgo_lite", "wikipedia"]
+GENERAL_FREE_FALLBACKS = ["duckduckgo_ia", "duckduckgo_lite"]
 LITERATURE_FREE_FALLBACKS = ["wikipedia", "crossref", "arxiv", "pubmed"]
 # Kept for tests / docs; prefer the lane-specific lists above.
 FREE_FALLBACKS = GENERAL_FREE_FALLBACKS + LITERATURE_FREE_FALLBACKS
@@ -794,11 +797,13 @@ _GENERAL_DESCRIPTION = (
     "This is the ONE public GENERAL method name — do not treat any other name "
     "as a second search engine. " + _CSP_NO_NATIVE + _RETURN_SHAPE +
     "With provider='auto' (default): optional keyed Brave/Serper/Tavily IF "
-    "env keys are set, then free duckduckgo_ia → duckduckgo_lite → wikipedia. "
-    "DuckDuckGo needs NO API key. Empty Instant Answer is normal for many "
+    "env keys are set, then free duckduckgo_ia → duckduckgo_lite (stops there; "
+    "wikipedia is on the LITERATURE lane, not GENERAL). "
+    "DuckDuckGo needs NO API key. Empty Instant Answer / Lite is normal for many "
     "queries and does NOT mean keys are missing — do not tell the user to "
     "configure Brave/Serper/Tavily as the only fix. Optional keys only improve "
-    "reliability. Do NOT use this for academic papers — use search_literature. "
+    "quality. Do NOT use this for academic / encyclopedic topics — use "
+    "search_literature. "
     "Explicit provider= still allowed. Full HTML provider='duckduckgo' is fragile. "
     "CSP pre-grants search hosts on Start; extend via ~/.csp/network-allowlist.json."
 )

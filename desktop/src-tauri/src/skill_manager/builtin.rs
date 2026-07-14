@@ -80,9 +80,13 @@ mod tests {
         // Return-shape guidance so models don't iterate the wrapper dict as hits.
         assert!(ENVIRONMENT_SKILL_MD.contains("data[\"results\"]"));
         assert!(ENVIRONMENT_SKILL_MD.contains("Return shape"));
-        // Dual search lanes.
+        // Dual search lanes; Wikipedia is LITERATURE-only for auto.
         assert!(ENVIRONMENT_SKILL_MD.contains("GENERAL"));
         assert!(ENVIRONMENT_SKILL_MD.contains("LITERATURE"));
+        assert!(ENVIRONMENT_SKILL_MD.contains("Wikipedia is **not** on this lane"));
+        assert!(!ENVIRONMENT_SKILL_MD.contains(
+            "duckduckgo_lite` → `wikipedia`"
+        ));
         // Front-matter name matches the deploy folder name.
         assert!(ENVIRONMENT_SKILL_MD.contains(&format!("name: {BUILTIN_ENVIRONMENT_NAME}")));
         // Must not advertise the legacy name as the active skill.
