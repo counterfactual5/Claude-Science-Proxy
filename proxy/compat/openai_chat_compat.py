@@ -60,9 +60,11 @@ def anthropic_to_openai(req, state):
                     "content": c if isinstance(c, str) else json.dumps(c, ensure_ascii=False),
                 })
         if role == "assistant" and tool_calls:
+            # GLM / several OpenAI-compat gateways reject content:null with tool_calls
+            # (HTTP 400 / "API 调用参数有误"). Prefer empty string over null.
             msgs.append({
                 "role": "assistant",
-                "content": "".join(text_parts) or None,
+                "content": "".join(text_parts),
                 "tool_calls": tool_calls,
             })
         elif tool_results:

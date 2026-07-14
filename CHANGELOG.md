@@ -3,6 +3,22 @@
 All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.6.10] — 2026-07-14
+
+### Added
+- **Runtime status row**: Panel footer shows proxy / Science running state via `get_runtime_status` (idle, starting/stopping, proxy-only, Science-only, or both).
+- **Skill / MCP exclusive full-page forms**: Create, import, discover, adopt, and MCP add/edit no longer use modals — list hides while an opaque wizard-like page is open (same pattern as the config wizard). Menu item emoji icons removed.
+- **Extra provider presets**: Groq, Gemini, Together, Fireworks, SiliconFlow, DashScope (CN/Intl), Doubao / Volcengine Ark, and Doubao Coding Plan in the config combobox.
+
+### Fixed
+- **OpenAI-compat / GLM tool-call content**: Assistant messages with `tool_calls` now send `content: ""` instead of `null` (several gateways reject null).
+- **OpenAI-custom SSE keepalives**: Buffered upstream POST emits SSE keepalives during TTFT so Science does not idle-timeout with “Connection issue — retrying…”.
+- **Dated Science shell ids**: Model registry strips trailing `YYYYMMDD` (e.g. `claude-haiku-4-5-20251001`) when resolving routes so background agents are not left unmapped.
+
+### Changed
+- **`search_skills` standing guidance**: Proxy injection, `csp-environment` Skill, and UI hints require non-empty `query` or `prefix` (never empty args; empty fails with `Missing 'query' argument`).
+- **Skill description clamp**: Long skill/MCP descriptions can expand/collapse in the list (“更多” / “收起”).
+
 ## [1.6.9] — 2026-07-14
 
 ### Fixed

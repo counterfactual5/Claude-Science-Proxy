@@ -1,5 +1,4 @@
-//! Runtime status lights and diagnostic snapshot for unit tests / future doctor hooks.
-//! Not exposed as a Tauri command (frontend does not poll status lights).
+//! Runtime status lights and diagnostic snapshot for the panel status row and unit tests.
 #![allow(dead_code)]
 
 use serde_json::json;
@@ -38,7 +37,7 @@ pub(crate) fn status_response_for_config_error(error: &dyn std::fmt::Display) ->
     )
 }
 
-/// Internal runtime status snapshot (isolated smoke tests; not registered as a Tauri command).
+/// Runtime status snapshot (`proxy` / `sandbox` / `upstream` lights). Exposed via `get_runtime_status`.
 pub(crate) fn runtime_status_snapshot(state: &SharedAppState) -> serde_json::Value {
     let (pport, secret, sport, adapter, base_url, active_profile, catalog_profile) = {
         let st = lock(state);

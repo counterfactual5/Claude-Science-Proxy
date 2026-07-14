@@ -39,7 +39,7 @@ pub const BUILTIN_ENVIRONMENT_NAME: &str = "csp-environment";
 /// One-line description shown in CSP's Skills tab (the SKILL.md body is what
 /// Science actually reads as standing guidance). Covers the full set of CSP
 /// local environment conventions, not only web search.
-pub const BUILTIN_ENVIRONMENT_DESCRIPTION: &str = "CSP standing environment handbook: for any web search/page fetch use the local web-search MCP (GENERAL: csp_web_search only; LITERATURE: search_literature; then fetch_url — host.mcp returns a dict with key results, not a bare list), never the hosted Anthropic web_search tool; don't write to /mnt/data — save to the workspace cwd and persist via save_artifacts([...]); set a CJK matplotlib font before plotting non-Latin labels; draft skills in the workspace (not host.skills.publish) and use the analysis python env for scientific packages; extend egress via ~/.csp/network-allowlist.json.";
+pub const BUILTIN_ENVIRONMENT_DESCRIPTION: &str = "CSP standing environment handbook: for any web search/page fetch use the local web-search MCP (GENERAL: csp_web_search only; LITERATURE: search_literature; then fetch_url — host.mcp returns a dict with key results, not a bare list), never the hosted Anthropic web_search tool; when calling Science search_skills (skills/MCP discovery) ALWAYS pass query or prefix (never empty args); don't write to /mnt/data — save to the workspace cwd and persist via save_artifacts([...]); set a CJK matplotlib font before plotting non-Latin labels; draft skills in the workspace (not host.skills.publish) and use the analysis python env for scientific packages; extend egress via ~/.csp/network-allowlist.json.";
 
 /// Sentinel dotfile under the skill store root recording the one-time seed. Once
 /// present, the skill is never re-seeded, so a user who later disables or removes
@@ -115,6 +115,9 @@ mod tests {
         assert!(ENVIRONMENT_SKILL_MD.contains("axes.unicode_minus"));
         // Skills/env conventions.
         assert!(ENVIRONMENT_SKILL_MD.contains("host.skills.publish"));
+        assert!(ENVIRONMENT_SKILL_MD.contains("search_skills"));
+        assert!(ENVIRONMENT_SKILL_MD.contains("Missing 'query' argument"));
+        assert!(BUILTIN_ENVIRONMENT_DESCRIPTION.contains("search_skills"));
         // Network allowlist.
         assert!(ENVIRONMENT_SKILL_MD.contains("network-allowlist.json"));
         // The one-line description was broadened beyond web search.

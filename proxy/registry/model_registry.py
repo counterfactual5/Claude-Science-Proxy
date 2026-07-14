@@ -26,6 +26,9 @@ from functools import cmp_to_key
 from proxy.registry import model_sort
 
 
+# Science often appends YYYYMMDD to shell ids (e.g. claude-haiku-4-5-20251001).
+_DATE_SUFFIX = re.compile(r"-\d{8}$")
+
 # Exactly one haiku shell in the whole pool (main). Overflow uses opus/sonnet only.
 SHELL_POOL = [
     ("claude-opus-4-8", "main"),
@@ -220,18 +223,31 @@ class ModelRegistry:
         return routed[0] if routed else None
 
     def resolve_route(self, shell_id: str) -> tuple[str, str] | None:
-        """Return (real_id, profile_id) for a shell id."""
+        """Return (real_id, profile_id) for a shell id.
+
+        Science often sends dated shell ids (e.g. ``claude-haiku-4-5-20251001``).
+        Match the undated pool/FALLBACK id so background agents do not route to an
+        empty upstream model.
+        """
         if not shell_id:
             if self.default_model:
                 return self.default_model, self.default_profile_id
             return None
-        if shell_id in self.routes:
-            return self.routes[shell_id], self.profile_routes.get(shell_id, self.default_profile_id)
-        kind = FALLBACK_SHELLS.get(shell_id)
-        if kind == "fast" and self.fast_model:
-            return self.fast_model, self.default_profile_id
-        if kind == "default" and self.default_model:
-            return self.default_model, self.default_profile_id
+        candidates = [shell_id]
+        stripped = _DATE_SUFFIX.sub("", shell_id)
+        if stripped != shell_id:
+            candidates.append(stripped)
+        for candidate in candidates:
+            if candidate in self.routes:
+                return (
+                    self.routes[candidate],
+                    self.profile_routes.get(candidate, self.default_profile_id),
+                )
+            kind = FALLBACK_SHELLS.get(candidate)
+            if kind == "fast" and self.fast_model:
+                return self.fast_model, self.default_profile_id
+            if kind == "default" and self.default_model:
+                return self.default_model, self.default_profile_id
         return None
 
     def models_response(self):

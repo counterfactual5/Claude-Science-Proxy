@@ -81,9 +81,9 @@
         </div>
       </div>
 
-      <!-- Skills panel (tab content) -->
+      <!-- Skills panel (tab content): list + full-page forms (same pattern as config wizard) -->
       <div class="panel-body skill-pane" id="skillPane" hidden>
-        <div class="sec">
+        <div class="sec list-only" id="skillListSec">
           <div class="skill-hd">
             <label class="sec-title">Skills 管理</label>
             <div class="skill-hd-acts">
@@ -91,9 +91,9 @@
               <div class="listhd-more">
                 <button type="button" class="btn small listhd-more-btn" id="skillMoreBtn" aria-haspopup="true" aria-expanded="false" title="更多">⋯</button>
                 <div class="pmenu listhd-menu" id="skillMenu" hidden role="menu">
-                  <button type="button" class="pmenu-item" id="skillImportBtn" role="menuitem">📁 导入</button>
-                  <button type="button" class="pmenu-item" id="skillDiscoverBtn" role="menuitem">🔍 扫描导入</button>
-                  <button type="button" class="pmenu-item" id="skillAdoptBtn" role="menuitem">📥 从 Science 采纳</button>
+                  <button type="button" class="pmenu-item" id="skillImportBtn" role="menuitem">导入</button>
+                  <button type="button" class="pmenu-item" id="skillDiscoverBtn" role="menuitem">扫描导入</button>
+                  <button type="button" class="pmenu-item" id="skillAdoptBtn" role="menuitem">从 Science 采纳</button>
                 </div>
               </div>
             </div>
@@ -108,14 +108,88 @@
           <div id="skillList" class="skill-list"></div>
         </div>
 
+        <div class="sec form-sec" id="skillCreateSec" hidden>
+          <label id="skillCreateTitle">新建 Skill</label>
+          <div class="form-group">
+            <label for="skillCreateName">名称</label>
+            <input id="skillCreateName" type="text" placeholder="my-skill" autocomplete="off" spellcheck="false" />
+            <p class="hint">作为 Skill 名称写入 <code>SKILL.md</code> 的 frontmatter。同名 Skill 不可重复。</p>
+          </div>
+          <div class="form-group">
+            <label for="skillCreateDesc">描述（可选）</label>
+            <input id="skillCreateDesc" type="text" placeholder="一句话说明这个 Skill 的用途" autocomplete="off" spellcheck="false" />
+          </div>
+          <div class="form-group">
+            <label for="skillCreateBody">SKILL.md 内容</label>
+            <textarea id="skillCreateBody" class="skill-body-editor" rows="14" autocomplete="off" spellcheck="false"></textarea>
+            <p class="hint">编辑上方名称/描述会自动同步到 frontmatter；手动改动正文后以此处内容为准。保存后写入 <code>~/.csp/skills/</code>。</p>
+          </div>
+          <div id="skillCreateInspection" class="inspection-preview" hidden>
+            <div class="insp-errors" id="skillCreateErrors" hidden></div>
+          </div>
+          <div class="row form-actions">
+            <button class="btn small" id="skillCreateSaveBtn">保存</button>
+            <button class="btn small" id="skillCreateCancelBtn">取消</button>
+          </div>
+        </div>
+
+        <div class="sec form-sec" id="skillImportSec" hidden>
+          <label id="skillImportTitle">导入 Skill</label>
+          <div class="form-group">
+            <label for="skillSourcePath">源目录路径</label>
+            <input id="skillSourcePath" type="text" placeholder="/path/to/skill-directory" autocomplete="off" spellcheck="false" />
+            <p class="hint">选择包含 <code>SKILL.md</code> 的目录，将被复制到 <code>~/.csp/skills/</code>。</p>
+          </div>
+          <div id="skillInspectionPreview" class="inspection-preview" hidden>
+            <h4>检查预览</h4>
+            <div class="insp-name"><strong id="inspName"></strong></div>
+            <div class="insp-desc" id="inspDesc"></div>
+            <div class="insp-stats" id="inspStats"></div>
+            <div class="insp-reqs" id="inspReqs"></div>
+            <div class="insp-warnings" id="inspWarnings" hidden></div>
+            <div class="insp-errors" id="inspErrors" hidden></div>
+          </div>
+          <div class="row form-actions">
+            <button class="btn small" id="skillInspectBtn">检查</button>
+            <button class="btn small" id="skillImportConfirmBtn" disabled>导入</button>
+            <button class="btn small" id="skillImportCancelBtn">取消</button>
+          </div>
+        </div>
+
+        <div class="sec form-sec" id="skillDiscoverSec" hidden>
+          <label id="skillDiscoverTitle">扫描本地 Skill</label>
+          <p class="hint">扫描 <code>~/.agents/skills</code>、<code>~/.codex/skills</code>、<code>~/.claude/skills</code>、<code>~/.cursor/skills</code>，以及国产 <code>~/.trae/skills</code> / <code>~/.trae-cn/skills</code>（字节）、<code>~/.codebuddy/skills</code>（腾讯），勾选后复制到 <code>~/.csp/skills/</code>。沙箱自带的科学 Skill 不在此列。</p>
+          <div id="skillDiscoverList" class="skill-discover-list"></div>
+          <div id="skillDiscoverEmpty" class="skill-empty" hidden>
+            <p>没有扫描到可导入的 Skill。</p>
+          </div>
+          <div class="row form-actions">
+            <button class="btn small" id="skillDiscoverImportBtn" disabled>导入所选</button>
+            <button class="btn small" id="skillDiscoverCancelBtn">取消</button>
+          </div>
+        </div>
+
+        <div class="sec form-sec" id="skillAdoptSec" hidden>
+          <label id="skillAdoptTitle">从 Science 工作区采纳</label>
+          <p class="hint">扫描沙盒内 <code>workspaces/</code> 下的 Skill 草稿（<code>*.skill.md</code>、<code>*_SKILL.md</code> 或含 <code>SKILL.md</code> 的目录），连同 <code>kernel.py</code> 等伴随文件复制到 <code>~/.csp/skills/</code>。Science 无法直接发布技能时请用此功能。</p>
+          <div id="skillAdoptList" class="skill-discover-list"></div>
+          <div id="skillAdoptEmpty" class="skill-empty" hidden>
+            <p>没有扫描到可采纳的 Skill 草稿。</p>
+          </div>
+          <div class="row form-actions">
+            <button class="btn small" id="skillAdoptConfirmBtn" disabled>采纳所选</button>
+            <button class="btn small" id="skillAdoptCancelBtn">取消</button>
+          </div>
+        </div>
+
         <div class="sec feedback" hidden>
           <div class="msg" id="skillMsg" role="status" aria-live="polite"></div>
         </div>
       </div>
 
-      <!-- MCP panel (tab content) -->
+      <!-- MCP panel (tab content): list + full-page forms -->
       <div class="panel-body skill-pane" id="mcpPane" hidden>
-        <div class="sec">
+        <div class="sec list-only" id="mcpListSec">
           <div class="skill-hd">
             <label class="sec-title">本地 MCP 管理</label>
             <div class="skill-hd-acts">
@@ -123,8 +197,8 @@
               <div class="listhd-more">
                 <button type="button" class="btn small listhd-more-btn" id="mcpMoreBtn" aria-haspopup="true" aria-expanded="false" title="更多">⋯</button>
                 <div class="pmenu listhd-menu" id="mcpMenu" hidden role="menu">
-                  <button type="button" class="pmenu-item" id="mcpDiscoverBtn" role="menuitem">🔍 扫描导入</button>
-                  <button type="button" class="pmenu-item" id="mcpNetworkAllowlistBtn" role="menuitem">🌐 网络授权配置</button>
+                  <button type="button" class="pmenu-item" id="mcpDiscoverBtn" role="menuitem">扫描导入</button>
+                  <button type="button" class="pmenu-item" id="mcpNetworkAllowlistBtn" role="menuitem">网络授权配置</button>
                   <button type="button" class="pmenu-item" id="mcpJsonBtn" role="menuitem" title="编辑 ~/.csp/mcp/inventory.json">编辑 JSON</button>
                 </div>
               </div>
@@ -140,31 +214,8 @@
           <div id="mcpList" class="skill-list"></div>
         </div>
 
-        <div class="sec feedback" hidden>
-          <div class="msg" id="mcpMsg" role="status" aria-live="polite"></div>
-        </div>
-      </div>
-
-      <!-- MCP discovery modal -->
-      <div class="modal" id="mcpDiscoverModal" hidden role="dialog" aria-modal="true" aria-labelledby="mcpDiscoverTitle">
-        <div class="modal-content">
-          <h3 id="mcpDiscoverTitle">扫描本地 MCP</h3>
-          <p class="hint">扫描常见 AI 客户端的 MCP 配置：Cursor、Claude Desktop、Claude Code、Codex（<code>~/.codex/config.toml</code>）、Devin Desktop（原 Windsurf）、VS Code（<code>~/Library/Application Support/Code/User/mcp.json</code>）、Zed，以及国产 Qoder / 通义灵码（阿里）、Trae / TRAE SOLO（字节）、CodeBuddy（腾讯）。识别 <code>mcpServers</code> / <code>servers</code> / <code>context_servers</code> 等键，勾选后导入为 CSP 本地 stdio MCP。仅识别本地 stdio（带 <code>command</code>）连接器；环境变量只显示 key，导入时由后端复制原值。</p>
-          <div id="mcpDiscoverList" class="skill-discover-list"></div>
-          <div id="mcpDiscoverEmpty" class="skill-empty" hidden>
-            <p>没有扫描到可导入的本地 stdio MCP。</p>
-          </div>
-          <div class="row modal-actions">
-            <button class="btn small" id="mcpDiscoverImportBtn" disabled>导入所选</button>
-            <button class="btn small" id="mcpDiscoverCancelBtn">取消</button>
-          </div>
-        </div>
-      </div>
-
-      <!-- MCP add/edit modal -->
-      <div class="modal" id="mcpModal" hidden role="dialog" aria-modal="true" aria-labelledby="mcpModalTitle">
-        <div class="modal-content">
-          <h3 id="mcpModalTitle">新增本地 MCP</h3>
+        <div class="sec form-sec" id="mcpFormSec" hidden>
+          <label id="mcpModalTitle">新增本地 MCP</label>
           <div class="form-group">
             <label for="mcpName">名称</label>
             <input id="mcpName" type="text" placeholder="my-tools" autocomplete="off" spellcheck="false" />
@@ -189,110 +240,42 @@
             <textarea id="mcpEnv" rows="3" placeholder="API_TOKEN=sk-xxx" autocomplete="off" spellcheck="false"></textarea>
             <p class="hint">编辑时：<code>KEY=</code> 留空保留原值，删除整行则删除该变量，填新值则覆盖。密钥不会回显。</p>
           </div>
-
           <div id="mcpInspection" class="inspection-preview" hidden>
             <div class="insp-warnings" id="mcpWarnings" hidden></div>
             <div class="insp-errors" id="mcpErrors" hidden></div>
           </div>
-
-          <div class="row modal-actions">
+          <div class="row form-actions">
             <button class="btn small" id="mcpSaveBtn">保存</button>
             <button class="btn small" id="mcpCancelBtn">取消</button>
           </div>
         </div>
-      </div>
 
-      <!-- Skill discovery modal -->
-      <div class="modal" id="skillDiscoverModal" hidden role="dialog" aria-modal="true" aria-labelledby="skillDiscoverTitle">
-        <div class="modal-content">
-          <h3 id="skillDiscoverTitle">扫描本地 Skill</h3>
-          <p class="hint">扫描 <code>~/.agents/skills</code>、<code>~/.codex/skills</code>、<code>~/.claude/skills</code>、<code>~/.cursor/skills</code>，以及国产 <code>~/.trae/skills</code> / <code>~/.trae-cn/skills</code>（字节）、<code>~/.codebuddy/skills</code>（腾讯），勾选后复制到 <code>~/.csp/skills/</code>。沙箱自带的科学 Skill 不在此列。</p>
-          <div id="skillDiscoverList" class="skill-discover-list"></div>
-          <div id="skillDiscoverEmpty" class="skill-empty" hidden>
-            <p>没有扫描到可导入的 Skill。</p>
+        <div class="sec form-sec" id="mcpDiscoverSec" hidden>
+          <label id="mcpDiscoverTitle">扫描本地 MCP</label>
+          <p class="hint">扫描常见 AI 客户端的 MCP 配置：Cursor、Claude Desktop、Claude Code、Codex（<code>~/.codex/config.toml</code>）、Devin Desktop（原 Windsurf）、VS Code（<code>~/Library/Application Support/Code/User/mcp.json</code>）、Zed，以及国产 Qoder / 通义灵码（阿里）、Trae / TRAE SOLO（字节）、CodeBuddy（腾讯）。识别 <code>mcpServers</code> / <code>servers</code> / <code>context_servers</code> 等键，勾选后导入为 CSP 本地 stdio MCP。仅识别本地 stdio（带 <code>command</code>）连接器；环境变量只显示 key，导入时由后端复制原值。</p>
+          <div id="mcpDiscoverList" class="skill-discover-list"></div>
+          <div id="mcpDiscoverEmpty" class="skill-empty" hidden>
+            <p>没有扫描到可导入的本地 stdio MCP。</p>
           </div>
-          <div class="row modal-actions">
-            <button class="btn small" id="skillDiscoverImportBtn" disabled>导入所选</button>
-            <button class="btn small" id="skillDiscoverCancelBtn">取消</button>
+          <div class="row form-actions">
+            <button class="btn small" id="mcpDiscoverImportBtn" disabled>导入所选</button>
+            <button class="btn small" id="mcpDiscoverCancelBtn">取消</button>
           </div>
         </div>
-      </div>
 
-      <!-- Science workspace skill adopt modal -->
-      <div class="modal" id="skillAdoptModal" hidden role="dialog" aria-modal="true" aria-labelledby="skillAdoptTitle">
-        <div class="modal-content">
-          <h3 id="skillAdoptTitle">从 Science 工作区采纳</h3>
-          <p class="hint">扫描沙盒内 <code>workspaces/</code> 下的 Skill 草稿（<code>*.skill.md</code>、<code>*_SKILL.md</code> 或含 <code>SKILL.md</code> 的目录），连同 <code>kernel.py</code> 等伴随文件复制到 <code>~/.csp/skills/</code>。Science 无法直接发布技能时请用此功能。</p>
-          <div id="skillAdoptList" class="skill-discover-list"></div>
-          <div id="skillAdoptEmpty" class="skill-empty" hidden>
-            <p>没有扫描到可采纳的 Skill 草稿。</p>
-          </div>
-          <div class="row modal-actions">
-            <button class="btn small" id="skillAdoptConfirmBtn" disabled>采纳所选</button>
-            <button class="btn small" id="skillAdoptCancelBtn">取消</button>
-          </div>
-        </div>
-      </div>
-
-      <!-- Skill create (new from scratch) modal -->
-      <div class="modal" id="skillCreateModal" hidden role="dialog" aria-modal="true" aria-labelledby="skillCreateTitle">
-        <div class="modal-content">
-          <h3 id="skillCreateTitle">新建 Skill</h3>
-          <div class="form-group">
-            <label for="skillCreateName">名称</label>
-            <input id="skillCreateName" type="text" placeholder="my-skill" autocomplete="off" spellcheck="false" />
-            <p class="hint">作为 Skill 名称写入 <code>SKILL.md</code> 的 frontmatter。同名 Skill 不可重复。</p>
-          </div>
-          <div class="form-group">
-            <label for="skillCreateDesc">描述（可选）</label>
-            <input id="skillCreateDesc" type="text" placeholder="一句话说明这个 Skill 的用途" autocomplete="off" spellcheck="false" />
-          </div>
-          <div class="form-group">
-            <label for="skillCreateBody">SKILL.md 内容</label>
-            <textarea id="skillCreateBody" rows="12" autocomplete="off" spellcheck="false"></textarea>
-            <p class="hint">编辑上方名称/描述会自动同步到 frontmatter；手动改动正文后以此处内容为准。保存后写入 <code>~/.csp/skills/</code>。</p>
-          </div>
-
-          <div id="skillCreateInspection" class="inspection-preview" hidden>
-            <div class="insp-errors" id="skillCreateErrors" hidden></div>
-          </div>
-
-          <div class="row modal-actions">
-            <button class="btn small" id="skillCreateSaveBtn">保存</button>
-            <button class="btn small" id="skillCreateCancelBtn">取消</button>
-          </div>
-        </div>
-      </div>
-
-      <!-- Skill import modal -->
-      <div class="modal" id="skillImportModal" hidden role="dialog" aria-modal="true" aria-labelledby="skillImportTitle">
-        <div class="modal-content">
-          <h3 id="skillImportTitle">导入 Skill</h3>
-          <div class="form-group">
-            <label for="skillSourcePath">源目录路径</label>
-            <input id="skillSourcePath" type="text" placeholder="/path/to/skill-directory" autocomplete="off" spellcheck="false" />
-            <p class="hint">选择包含 <code>SKILL.md</code> 的目录，将被复制到 <code>~/.csp/skills/</code>。</p>
-          </div>
-
-          <div id="skillInspectionPreview" class="inspection-preview" hidden>
-            <h4>检查预览</h4>
-            <div class="insp-name"><strong id="inspName"></strong></div>
-            <div class="insp-desc" id="inspDesc"></div>
-            <div class="insp-stats" id="inspStats"></div>
-            <div class="insp-reqs" id="inspReqs"></div>
-            <div class="insp-warnings" id="inspWarnings" hidden></div>
-            <div class="insp-errors" id="inspErrors" hidden></div>
-          </div>
-
-          <div class="row modal-actions">
-            <button class="btn small" id="skillInspectBtn">检查</button>
-            <button class="btn small" id="skillImportConfirmBtn" disabled>导入</button>
-            <button class="btn small" id="skillImportCancelBtn">取消</button>
-          </div>
+        <div class="sec feedback" hidden>
+          <div class="msg" id="mcpMsg" role="status" aria-live="polite"></div>
         </div>
       </div>
 
       <div class="panel-foot list-only">
+        <div class="sec runtime-status list-only" id="runtimeStatusSec">
+          <div class="runtime-status-row">
+            <span class="runtime-status-label" id="i18nRuntimeStatus">运行状态</span>
+            <span class="runtime-status-value" id="runtimeStatusText">未运行</span>
+          </div>
+        </div>
+
         <details class="sec adv list-only" id="advSec">
           <summary><span class="adv-label" id="i18nPorts">端口管理</span></summary>
           <div class="adv-body">

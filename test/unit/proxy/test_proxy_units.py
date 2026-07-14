@@ -391,5 +391,35 @@ class BuildModelsResponse(unittest.TestCase):
         self.assertEqual(body["data"][0]["id"], "glm-4.6")
 
 
+class RegistryDatedShellResolve(unittest.TestCase):
+    def test_dated_haiku_shell_resolves_like_undated(self):
+        reg = mr.ModelRegistry.from_models(
+            ["glm-5.2", "glm-5.1", "glm-5-turbo", "glm-5", "glm-4.7", "glm-4.6", "glm-4.5-air", "glm-4.5"],
+            default_model="glm-5.2",
+            fast_model="glm-4.5",
+        )
+        self.assertEqual(
+            reg.resolve("claude-haiku-4-5-20251001"),
+            reg.resolve("claude-haiku-4-5"),
+        )
+        self.assertTrue(reg.resolve("claude-haiku-4-5-20251001"))
+
+    def test_openai_tool_call_content_is_empty_string(self):
+        cs.PROV = dict(cs.PROVIDERS["openai-custom"])
+        cs.PROV_NAME = "openai-custom"
+        cs.PROV["default_model"] = "glm-4.7"
+        cs.RELAY_FORCE_MODEL = "glm-4.7"
+        cs.MODEL_REGISTRY = None
+        out = cs.anthropic_to_openai({
+            "model": "claude-sonnet-4-6",
+            "messages": [{
+                "role": "assistant",
+                "content": [{"type": "tool_use", "id": "t1", "name": "lookup", "input": {"q": "x"}}],
+            }],
+        })
+        asst = next(m for m in out["messages"] if m.get("tool_calls"))
+        self.assertEqual(asst["content"], "")
+
+
 if __name__ == "__main__":
     unittest.main()

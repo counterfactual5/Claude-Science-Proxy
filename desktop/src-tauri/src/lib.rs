@@ -100,6 +100,7 @@ pub fn run() {
             commands::runtime::fetch_models,
             commands::runtime::stop_all,
             commands::runtime::one_click_login,
+            commands::runtime::get_runtime_status,
             commands::skills::list_skills,
             commands::skills::discover_skills,
             commands::skills::inspect_skill_source,

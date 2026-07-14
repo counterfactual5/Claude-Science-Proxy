@@ -4,7 +4,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License">
-  <img src="https://img.shields.io/badge/version-1.6.9-brightgreen.svg" alt="v1.6.9">
+  <img src="https://img.shields.io/badge/version-1.6.10-brightgreen.svg" alt="v1.6.10">
   <img src="https://img.shields.io/badge/platform-macOS%20Apple%20Silicon-1d1d1f.svg" alt="macOS Apple Silicon">
   <img src="https://img.shields.io/badge/built%20with-Tauri%202-C25A34.svg" alt="Tauri 2">
 </p>
@@ -25,7 +25,7 @@ CSP is a **macOS desktop app** (Tauri) that:
 4. Verifies API keys **before** switching the active profile
 5. Manages local **Skills** and **stdio MCP connectors**, deploying enabled ones into the sandbox on launch
 
-> **v1.6.9** — Built-in local **web-search** (GENERAL `csp_web_search` + LITERATURE `search_literature`), proxy standing guidance, **`csp-environment`** Skill, network allowlist, and MCP script self-heal on app open. See [Releases](https://github.com/counterfactual5/Claude-Science-Proxy/releases/tag/v1.6.9).
+> **v1.6.10** — Runtime status row; Skill/MCP full-page forms; more provider presets; `search_skills` guidance; GLM/OpenAI connection keepalives & dated shell routing. See [Releases](https://github.com/counterfactual5/Claude-Science-Proxy/releases/tag/v1.6.10).
 
 > **Platform:** macOS **Apple Silicon** today. The app is **not notarized** yet; on first launch, right-click → **Open**.
 

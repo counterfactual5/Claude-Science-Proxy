@@ -155,6 +155,15 @@ fn one_click_login_cmd(
     })
 }
 
+/// Compact runtime lights for the panel status row (`proxy` / `sandbox`: `green` | `amber`).
+#[tauri::command]
+pub(crate) async fn get_runtime_status(
+    state: State<'_, SharedAppState>,
+) -> Result<serde_json::Value, String> {
+    let state = state.inner().clone();
+    run_blocking(move || Ok(crate::runtime::diagnostics::runtime_status_snapshot(&state))).await
+}
+
 #[cfg(test)]
 mod tests {
     use crate::runtime::diagnostics::runtime_status_snapshot;

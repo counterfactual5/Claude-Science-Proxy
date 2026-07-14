@@ -90,6 +90,33 @@ def open_stream_with_keepalive(write_chunk, url, data, headers, log_fn):
             write_chunk(keepalive)
 
 
+def post_with_keepalive(write_chunk, url, data, headers, log_fn, attempts=4, timeout=300):
+    """Buffered POST while emitting downstream SSE keepalives (OpenAI-compat path).
+
+    openai-custom forces ``stream: false`` upstream then replays as SSE. Without
+    keepalives during long TTFT / tool-heavy completions, Science idle-times out
+    and surfaces "Connection issue — retrying…".
+    """
+    q = queue.Queue(maxsize=1)
+
+    def _post():
+        try:
+            q.put(("ok", post(url, data, headers, log_fn, attempts, timeout)))
+        except BaseException as e:
+            q.put(("err", e))
+
+    threading.Thread(target=_post, daemon=True).start()
+    keepalive = b": csp-keepalive\n\n"
+    while True:
+        try:
+            kind, payload = q.get(timeout=1.0)
+            if kind == "err":
+                raise payload
+            return payload
+        except queue.Empty:
+            write_chunk(keepalive)
+
+
 def get_json(url, headers, log_fn, attempts=3, timeout=30):
     """GET upstream JSON with connection-level retry."""
     headers = _with_user_agent(headers)

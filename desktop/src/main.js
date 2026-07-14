@@ -45,10 +45,20 @@ const I18N = {
     wizPresetLabel_xiaomi_token_cn: "小米 MiMo Token（中国）",
     wizPresetLabel_xiaomi_token_sgp: "小米 MiMo Token（新加坡）",
     wizPresetLabel_xiaomi_token_ams: "小米 MiMo Token（欧洲）",
+    wizPresetLabel_deepseek: "DeepSeek",
     wizPresetLabel_openai: "OpenAI",
     wizPresetLabel_anthropic: "Anthropic",
     wizPresetLabel_xai: "xAI Grok",
+    wizPresetLabel_groq: "Groq",
+    wizPresetLabel_gemini: "Google Gemini",
+    wizPresetLabel_together: "Together AI",
+    wizPresetLabel_fireworks: "Fireworks",
     wizPresetLabel_openrouter: "OpenRouter",
+    wizPresetLabel_siliconflow: "硅基流动",
+    wizPresetLabel_dashscope_cn: "通义千问（国内）",
+    wizPresetLabel_dashscope_intl: "通义千问（国际）",
+    wizPresetLabel_doubao: "豆包 / 火山方舟",
+    wizPresetLabel_doubao_coding: "豆包 Coding Plan",
     provider: "Provider",
     baseUrl: "Base_URL",
     apiKey: "API Key",
@@ -61,6 +71,13 @@ const I18N = {
     openFolder: "打开文件夹",
     models: "启用模型",
     ports: "端口管理",
+    runtimeStatus: "运行状态",
+    runStatusOff: "未运行",
+    runStatusProxy: "代理运行中",
+    runStatusScience: "Science 运行中",
+    runStatusBoth: "代理+Science 运行中",
+    runStatusStarting: "启动中",
+    runStatusStopping: "停止中",
     proxyPort: "代理",
     sandboxPort: "沙箱",
     startScience: "启动 Claude Science",
@@ -70,7 +87,7 @@ const I18N = {
     activeBadge: "当前生效",
     mcpBuiltinBadge: "内置",
     mcpBuiltinHint: "CSP 内置联网搜索（无需 API Key）。通用公共方法名：csp_web_search（auto → 可选密钥引擎 → DuckDuckGo Instant Answer → DuckDuckGo Lite → 维基百科）；学术：search_literature → 维基百科/Crossref/arXiv/PubMed。CSP 启动时会预授权检索域名。Brave/Serper/Tavily 密钥可选，用于提高可靠性，不是必需。切勿调用 Anthropic 原生 web_search。",
-    skillBuiltinHint: "CSP 内置环境手册 Skill（csp-environment）：常驻指引本地与托管 Claude 的差异——双车道联网搜索、禁止 /mnt/data、save_artifacts、CJK 字体、Skills 采纳与 network-allowlist。可像其他 Skill 一样停用或删除（会被记住）。",
+    skillBuiltinHint: "CSP 内置环境手册 Skill（csp-environment）：常驻指引本地与托管 Claude 的差异——双车道联网搜索、search_skills 必须带 query/prefix、禁止 /mnt/data、save_artifacts、CJK 字体、Skills 采纳与 network-allowlist。可像其他 Skill 一样停用或删除（会被记住）。",
     emptyTitle: "还没有模型配置",
     emptyHint: "点右上「＋ 新建」添加一条连接",
     noUrl: "（未填地址）",
@@ -82,8 +99,10 @@ const I18N = {
     fillApiKey: "请填写 API Key。",
     skipActivate: "校验没过，仍要启用这条",
     menuMore: "更多",
+    descExpand: "更多",
+    descCollapse: "收起",
     createSkill: "➕ 新建",
-    importSkill: "📁 导入",
+    importSkill: "导入",
     modelHintNative: "由 Science 选择器 + 内置映射自动选择（opus 深度 / haiku 快速）。",
     modelHintFixed: "勾选要在 Science 中启用的模型；列表第一个用于后台任务兜底。",
     metaManyModels: "{n} 个模型已启用",
@@ -246,10 +265,20 @@ const I18N = {
     wizPresetLabel_xiaomi_token_cn: "MiMo Token (China)",
     wizPresetLabel_xiaomi_token_sgp: "MiMo Token (Singapore)",
     wizPresetLabel_xiaomi_token_ams: "MiMo Token (Europe)",
+    wizPresetLabel_deepseek: "DeepSeek",
     wizPresetLabel_openai: "OpenAI",
     wizPresetLabel_anthropic: "Anthropic",
     wizPresetLabel_xai: "xAI Grok",
+    wizPresetLabel_groq: "Groq",
+    wizPresetLabel_gemini: "Google Gemini",
+    wizPresetLabel_together: "Together AI",
+    wizPresetLabel_fireworks: "Fireworks",
     wizPresetLabel_openrouter: "OpenRouter",
+    wizPresetLabel_siliconflow: "SiliconFlow",
+    wizPresetLabel_dashscope_cn: "Qwen / DashScope (China)",
+    wizPresetLabel_dashscope_intl: "Qwen / DashScope (Intl)",
+    wizPresetLabel_doubao: "Doubao / Volcengine Ark",
+    wizPresetLabel_doubao_coding: "Doubao Coding Plan",
     provider: "Provider",
     baseUrl: "Base URL",
     apiKey: "API Key",
@@ -262,6 +291,13 @@ const I18N = {
     openFolder: "Open folder",
     models: "Enabled models",
     ports: "Ports",
+    runtimeStatus: "Runtime",
+    runStatusOff: "Not running",
+    runStatusProxy: "Proxy running",
+    runStatusScience: "Science running",
+    runStatusBoth: "Proxy + Science running",
+    runStatusStarting: "Starting…",
+    runStatusStopping: "Stopping…",
     proxyPort: "Proxy",
     sandboxPort: "Sandbox",
     startScience: "Start Claude Science",
@@ -271,7 +307,7 @@ const I18N = {
     activeBadge: "Active",
     mcpBuiltinBadge: "Built-in",
     mcpBuiltinHint: "CSP's bundled web search (no API key required). GENERAL public method: csp_web_search — auto → optional keyed engines → DuckDuckGo Instant Answer → DuckDuckGo Lite → Wikipedia. LITERATURE: search_literature → Wikipedia/Crossref/arXiv/PubMed. CSP pre-grants search hosts on Start. Brave/Serper/Tavily keys are optional reliability upgrades, not required. Never call the native Anthropic web_search tool.",
-    skillBuiltinHint: "CSP's built-in environment handbook Skill (csp-environment): standing guidance for the local sandbox vs hosted Claude — dual-lane web search, no /mnt/data, save_artifacts, CJK fonts, skill adopt, and network-allowlist. You can disable or remove it like any Skill (the choice is remembered).",
+    skillBuiltinHint: "CSP's built-in environment handbook Skill (csp-environment): standing guidance for the local sandbox vs hosted Claude — dual-lane web search, search_skills must pass query/prefix, no /mnt/data, save_artifacts, CJK fonts, skill adopt, and network-allowlist. You can disable or remove it like any Skill (the choice is remembered).",
     emptyTitle: "No profiles yet",
     emptyHint: "Tap + New to add a connection",
     noUrl: "(no URL)",
@@ -283,8 +319,10 @@ const I18N = {
     fillApiKey: "Enter an API key.",
     skipActivate: "Activate anyway (skip verify)",
     menuMore: "More",
+    descExpand: "More",
+    descCollapse: "Less",
     createSkill: "➕ New",
-    importSkill: "📁 Import",
+    importSkill: "Import",
     modelHintNative: "Auto-mapped via Science picker + built-in routing (opus for depth, haiku for speed).",
     modelHintFixed: "Check models to enable in Science; the first is the fallback for background tasks.",
     metaManyModels: "{n} models enabled",
@@ -485,10 +523,20 @@ const WIZ_PRESETS = [
   { id: "openai", templateId: "custom-openai", name: "OpenAI", baseUrl: "https://api.openai.com/v1" },
   { id: "anthropic", templateId: "custom", name: "Anthropic", baseUrl: "https://api.anthropic.com" },
   { id: "xai", templateId: "custom-openai", name: "xAI Grok", baseUrl: "https://api.x.ai/v1" },
+  { id: "groq", templateId: "custom-openai", name: "Groq", baseUrl: "https://api.groq.com/openai/v1" },
+  { id: "gemini", templateId: "custom-openai", name: "Gemini", baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai/" },
+  { id: "together", templateId: "custom-openai", name: "Together", baseUrl: "https://api.together.ai/v1" },
+  { id: "fireworks", templateId: "custom-openai", name: "Fireworks", baseUrl: "https://api.fireworks.ai/inference/v1" },
+  { id: "openrouter", templateId: "openrouter", name: "OpenRouter", baseUrl: "https://openrouter.ai/api" },
   { id: "glm-cn", templateId: "glm", name: "GLM", baseUrl: "https://open.bigmodel.cn/api/anthropic" },
   { id: "zai", templateId: "glm", name: "ZAI", baseUrl: "https://api.z.ai/api/anthropic" },
   { id: "glm-coding-cn", templateId: "custom-openai", name: "GLM Coding Plan", baseUrl: "https://open.bigmodel.cn/api/coding/paas/v4" },
   { id: "zai-coding", templateId: "custom-openai", name: "ZAI Coding Plan", baseUrl: "https://api.z.ai/api/coding/paas/v4" },
+  { id: "siliconflow", templateId: "custom-openai", name: "SiliconFlow", baseUrl: "https://api.siliconflow.cn/v1" },
+  { id: "dashscope-cn", templateId: "custom-openai", name: "DashScope", baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1" },
+  { id: "dashscope-intl", templateId: "custom-openai", name: "DashScope", baseUrl: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1" },
+  { id: "doubao", templateId: "custom-openai", name: "Doubao", baseUrl: "https://ark.cn-beijing.volces.com/api/v3" },
+  { id: "doubao-coding", templateId: "custom-openai", name: "Doubao Coding Plan", baseUrl: "https://ark.cn-beijing.volces.com/api/coding/v3" },
   { id: "kimi-cn", templateId: "kimi", name: "Kimi", baseUrl: "https://api.moonshot.cn/anthropic" },
   { id: "kimi-intl", templateId: "kimi", name: "Moonshot", baseUrl: "https://api.moonshot.ai/anthropic" },
   { id: "minimax-cn", templateId: "minimax", name: "MiniMax", baseUrl: "https://api.minimaxi.com/anthropic" },
@@ -497,7 +545,6 @@ const WIZ_PRESETS = [
   { id: "xiaomi-token-cn", templateId: "xiaomi", name: "MiMo Token", baseUrl: "https://token-plan-cn.xiaomimimo.com/anthropic" },
   { id: "xiaomi-token-sgp", templateId: "xiaomi", name: "MiMo Token", baseUrl: "https://token-plan-sgp.xiaomimimo.com/anthropic" },
   { id: "xiaomi-token-ams", templateId: "xiaomi", name: "MiMo Token", baseUrl: "https://token-plan-ams.xiaomimimo.com/anthropic" },
-  { id: "openrouter", templateId: "openrouter", name: "OpenRouter", baseUrl: "https://openrouter.ai/api" },
 ];
 
 /** Currently selected preset id (menu highlight); empty when typing a custom name. */
@@ -535,10 +582,12 @@ function applyEditionUI() {
   if (els.connSaveBtn) els.connSaveBtn.textContent = t.save;
   if (els.connCancelBtn) els.connCancelBtn.textContent = t.cancel;
   if (els.i18nPorts) els.i18nPorts.textContent = t.ports;
+  if (els.i18nRuntimeStatus) els.i18nRuntimeStatus.textContent = t.runtimeStatus;
   if (els.i18nProxyPort) els.i18nProxyPort.textContent = t.proxyPort;
   if (els.i18nSandboxPort) els.i18nSandboxPort.textContent = t.sandboxPort;
   if (els.oneClickBtn) els.oneClickBtn.textContent = t.startScience;
   if (els.stopBtn) { els.stopBtn.textContent = t.stop; els.stopBtn.title = t.stopTitle; }
+  updateRuntimeStatusUI();
   if (els.editCspJsonBtn) els.editCspJsonBtn.textContent = t.editCspJson;
   if (els.skipActivateBtn) els.skipActivateBtn.textContent = t.skipActivate;
   if (els.listhdMoreBtn) els.listhdMoreBtn.title = t.menuMore;
@@ -632,6 +681,10 @@ function mockInvoke(cmd, args) {
       return Promise.resolve(null);
     case "one_click_login":
       return Promise.resolve({ url: "http://127.0.0.1:8990", action: "started" });
+    case "stop_all":
+      return Promise.resolve(null);
+    case "get_runtime_status":
+      return Promise.resolve({ proxy: "amber", sandbox: "amber", upstream: "amber" });
     case "open_csp_json":
       return Promise.resolve("~/.csp/CSP.json");
     case "open_mcp_inventory_json":
@@ -1062,6 +1115,56 @@ function setBusy(on, op) {
   syncProfileBusyState();
   // On busy release, hand model-required save gating back to gates (avoid setBusy(false) overwriting gate).
   if (!on) { refreshWizGate(); refreshConnGate(); }
+  updateRuntimeStatusUI();
+}
+
+/** Last probed lights from get_runtime_status (`green` | `amber`). */
+let lastRuntimeLights = { proxy: "amber", sandbox: "amber" };
+/** Transient UI phase while start/stop is in flight. */
+let runtimePhase = null; // "starting" | "stopping" | null
+let runtimeStatusTimer = null;
+
+function runtimeStatusText() {
+  const t = S();
+  if (runtimePhase === "starting") return t.runStatusStarting;
+  if (runtimePhase === "stopping") return t.runStatusStopping;
+  const proxyOn = lastRuntimeLights.proxy === "green";
+  const scienceOn = lastRuntimeLights.sandbox === "green";
+  if (proxyOn && scienceOn) return t.runStatusBoth;
+  if (proxyOn) return t.runStatusProxy;
+  if (scienceOn) return t.runStatusScience;
+  return t.runStatusOff;
+}
+
+function updateRuntimeStatusUI() {
+  if (!els.runtimeStatusText) return;
+  const text = runtimeStatusText();
+  els.runtimeStatusText.textContent = text;
+  const proxyOn = lastRuntimeLights.proxy === "green";
+  const scienceOn = lastRuntimeLights.sandbox === "green";
+  const busyPhase = runtimePhase === "starting" || runtimePhase === "stopping";
+  els.runtimeStatusText.classList.toggle("is-busy", busyPhase);
+  els.runtimeStatusText.classList.toggle("is-running", !busyPhase && (proxyOn || scienceOn));
+}
+
+async function refreshRuntimeStatus() {
+  try {
+    const st = await call("get_runtime_status");
+    lastRuntimeLights = {
+      proxy: st && st.proxy === "green" ? "green" : "amber",
+      sandbox: st && st.sandbox === "green" ? "green" : "amber",
+    };
+  } catch (_) {
+    // Keep last known lights on probe failure.
+  }
+  updateRuntimeStatusUI();
+}
+
+function startRuntimeStatusPolling() {
+  if (runtimeStatusTimer) return;
+  runtimeStatusTimer = setInterval(() => {
+    if (!busy) refreshRuntimeStatus().catch(() => {});
+  }, 4000);
 }
 
 async function call(cmd, args) {
@@ -1082,9 +1185,13 @@ function tplById(id) {
 function showView(v) {
   els.listSec.hidden = v !== "list";
   els.advSec.hidden = v !== "list";
+  if (els.runtimeStatusSec) els.runtimeStatusSec.hidden = v !== "list";
   els.wizSec.hidden = v !== "wizard";
   els.connSec.hidden = v !== "conn";
-  els.panel.classList.toggle("view-form", v !== "list");
+  // Only drive the panel form chrome when the profiles pane is active.
+  if (!els.panelBody || !els.panelBody.hidden) {
+    els.panel.classList.toggle("view-form", v !== "list");
+  }
   if (v === "list") {
     hideSkip();
     closeWizPresetMenu();
@@ -1094,6 +1201,34 @@ function showView(v) {
   }
 }
 function cancelForm() { showView("list"); }
+
+// Skill tab: list / create / import / discover / adopt (full-page panels, same chrome as config wizard).
+function showSkillView(v) {
+  const list = v === "list";
+  if (els.skillListSec) els.skillListSec.hidden = !list;
+  if (els.skillCreateSec) els.skillCreateSec.hidden = v !== "create";
+  if (els.skillImportSec) els.skillImportSec.hidden = v !== "import";
+  if (els.skillDiscoverSec) els.skillDiscoverSec.hidden = v !== "discover";
+  if (els.skillAdoptSec) els.skillAdoptSec.hidden = v !== "adopt";
+  if (els.skillPane) {
+    els.skillPane.classList.toggle("pane-form", !list);
+    if (!els.skillPane.hidden) els.panel.classList.toggle("view-form", !list);
+  }
+  if (list) closeMenu(els.skillMenu, els.skillMoreBtn);
+}
+
+// MCP tab: list / form (add|edit) / discover.
+function showMcpView(v) {
+  const list = v === "list";
+  if (els.mcpListSec) els.mcpListSec.hidden = !list;
+  if (els.mcpFormSec) els.mcpFormSec.hidden = v !== "form";
+  if (els.mcpDiscoverSec) els.mcpDiscoverSec.hidden = v !== "discover";
+  if (els.mcpPane) {
+    els.mcpPane.classList.toggle("pane-form", !list);
+    if (!els.mcpPane.hidden) els.panel.classList.toggle("view-form", !list);
+  }
+  if (list) closeMenu(els.mcpMenu, els.mcpMoreBtn);
+}
 
 function showSkip() { els.skipActivateBtn.hidden = false; }
 function hideSkip() { els.skipActivateBtn.hidden = true; pendingSkipActivateId = null; }
@@ -1146,6 +1281,7 @@ async function loadConfig(opts = {}) {
     renderList();
     // Focus refresh must not yank the user out of create/edit forms.
     if (!keepView) showView("list");
+    await refreshRuntimeStatus();
   } catch (e) {
     setMsg(T("loadConfigFail", { err: resolveBackendErr(e) }));
   }
@@ -1378,7 +1514,14 @@ function inferTemplateId(baseUrl) {
   if (norm.includes("minimaxi.com") || norm.includes("minimax.io")) return "minimax";
   if (norm.includes("openrouter.ai")) return "openrouter";
   if (norm.includes("/responses") && !norm.includes("/anthropic")) return "custom-openai-responses";
-  if (norm.includes("/v1") || norm.includes("/paas/") || norm.includes("compatible-mode") || norm.includes("/coding/")) {
+  // OpenAI-compat roots: /v1, Coding Plan (/paas /coding/), DashScope, Volcengine Ark /api/v3
+  if (
+    norm.includes("/v1") ||
+    norm.includes("/paas/") ||
+    norm.includes("compatible-mode") ||
+    norm.includes("/coding/") ||
+    norm.includes("/api/v3")
+  ) {
     return "custom-openai";
   }
   return "custom";
@@ -1417,7 +1560,13 @@ async function wizSave() {
   if (!name) { setMsg(S().fillProvider); return; }
   if (!base) { setMsg(S().fillBaseUrl); return; }
   if (!key) { setMsg(S().fillApiKey); return; }
-  const templateId = inferTemplateId(base);
+  // Prefer the selected preset's template when the URL is still the preset default
+  // (covers hosts like volces.com/api/v3 that URL heuristics alone can miss).
+  const selected = wizSelectedPresetId ? wizPresetById(wizSelectedPresetId) : null;
+  const templateId =
+    selected && selected.templateId && normBaseUrl(base) === normBaseUrl(selected.baseUrl)
+      ? selected.templateId
+      : inferTemplateId(base);
   const t = tplById(templateId);
   const baseErr = openaiCustomAnthropicBaseMessage(t, base);
   if (baseErr) { setMsg(baseErr); return; }
@@ -1630,53 +1779,59 @@ async function oneClick() {
     setMsg(T("noActiveProfile"));
     return;
   }
+  runtimePhase = "starting";
   setBusy(true, { kind: "oneClick" });
   try {
     await call("one_click_login");
   } catch (e) {
     setMsg(T("oneClickFail", { err: resolveBackendErr(e) }));
   } finally {
+    runtimePhase = null;
     setBusy(false);
+    await refreshRuntimeStatus();
   }
 }
 
 async function stopAll() {
-  setBusy(true);
+  runtimePhase = "stopping";
+  setBusy(true, { kind: "stop" });
   try {
     await call("stop_all");
   } catch (e) {
     setMsg(T("stopFail", { err: resolveBackendErr(e) }));
   } finally {
+    runtimePhase = null;
     setBusy(false);
+    await refreshRuntimeStatus();
   }
 }
 
 function wire() {
   [
     "oneClickBtn", "stopBtn",
-    "msg", "proxyPort", "sandboxPort", "advSec",
+    "msg", "proxyPort", "sandboxPort", "advSec", "runtimeStatusSec", "runtimeStatusText", "i18nRuntimeStatus",
     "listSec", "profileList", "newBtn", "listhdMoreBtn", "listhdMenu", "editCspJsonBtn", "skipActivateBtn",
     "i18nMyConfigs", "i18nLabelProvider", "i18nLabelBase", "i18nLabelKey",
     "i18nConnName", "i18nConnBase", "i18nConnKey", "i18nPorts", "i18nProxyPort", "i18nSandboxPort",
     "wizSec", "wizName", "wizPresetBtn", "wizPresetMenu", "wizBase", "wizKey", "wizSaveBtn", "wizCancelBtn",
     "connSec", "connTitle", "connName", "connBase", "connBaseHint",
     "connModelInfo", "connModelHint", "connModelPick", "connKey", "connSaveBtn", "connCancelBtn",
-    "tabProfiles", "tabSkills", "skillPane",
-    "skillCreateBtn", "skillCreateModal", "skillCreateName", "skillCreateDesc",
+    "tabProfiles", "tabSkills", "skillPane", "skillListSec",
+    "skillCreateBtn", "skillCreateSec", "skillCreateName", "skillCreateDesc",
     "skillCreateBody", "skillCreateInspection", "skillCreateErrors",
     "skillCreateSaveBtn", "skillCreateCancelBtn",
     "skillImportBtn", "skillMoreBtn", "skillMenu", "skillEmpty", "skillList", "skillMsg",
-    "skillDiscoverBtn", "skillDiscoverModal", "skillDiscoverList",
+    "skillDiscoverBtn", "skillDiscoverSec", "skillDiscoverList",
     "skillDiscoverEmpty", "skillDiscoverImportBtn", "skillDiscoverCancelBtn",
-    "skillAdoptBtn", "skillAdoptModal", "skillAdoptList",
+    "skillAdoptBtn", "skillAdoptSec", "skillAdoptList",
     "skillAdoptEmpty", "skillAdoptConfirmBtn", "skillAdoptCancelBtn",
-    "skillImportModal", "skillSourcePath", "skillInspectionPreview",
+    "skillImportSec", "skillSourcePath", "skillInspectionPreview",
     "inspName", "inspDesc", "inspStats", "inspReqs", "inspWarnings", "inspErrors",
     "skillInspectBtn", "skillImportConfirmBtn", "skillImportCancelBtn",
-    "tabMcp", "mcpPane", "mcpAddBtn", "mcpMoreBtn", "mcpMenu", "mcpEmpty", "mcpList", "mcpMsg",
-    "mcpJsonBtn", "mcpNetworkAllowlistBtn", "mcpDiscoverBtn", "mcpDiscoverModal", "mcpDiscoverList",
+    "tabMcp", "mcpPane", "mcpListSec", "mcpAddBtn", "mcpMoreBtn", "mcpMenu", "mcpEmpty", "mcpList", "mcpMsg",
+    "mcpJsonBtn", "mcpNetworkAllowlistBtn", "mcpDiscoverBtn", "mcpDiscoverSec", "mcpDiscoverList",
     "mcpDiscoverEmpty", "mcpDiscoverImportBtn", "mcpDiscoverCancelBtn",
-    "mcpModal", "mcpModalTitle", "mcpName", "mcpDesc", "mcpCommand", "mcpArgs", "mcpEnv",
+    "mcpFormSec", "mcpModalTitle", "mcpName", "mcpDesc", "mcpCommand", "mcpArgs", "mcpEnv",
     "mcpInspection", "mcpWarnings", "mcpErrors", "mcpSaveBtn", "mcpCancelBtn",
   ].forEach((id) => (els[id] = $(id)));
   els.panel = document.querySelector(".panel");
@@ -1820,6 +1975,7 @@ function wire() {
   );
   els.mcpList.addEventListener("click", (e) => {
     if (busy) return;
+    if (handleDescToggleClick(e)) return;
     const row = e.target.closest(".skill-row[data-id]");
     if (!row) return;
     const id = row.getAttribute("data-id");
@@ -1877,6 +2033,7 @@ function wire() {
   // Skill list interactions
   els.skillList.addEventListener("click", (e) => {
     if (busy) return;
+    if (handleDescToggleClick(e)) return;
     const btn = e.target.closest("[data-act]");
     const row = e.target.closest(".skill-row[data-id]");
     if (!row) return;
@@ -1934,9 +2091,24 @@ function switchTab(tab) {
   els.skillPane.hidden = tab !== "skills";
   els.mcpPane.hidden = tab !== "mcp";
   els.advSec.hidden = !isProfiles;
+  if (els.runtimeStatusSec) els.runtimeStatusSec.hidden = !isProfiles;
 
-  if (isProfiles) showView("list");
-  else if (tab === "skills") loadSkills();
+  // Reset every tab's sub-view so leaving a form never leaves view-form stuck.
+  showSkillView("list");
+  showMcpView("list");
+  if (isProfiles) {
+    showView("list");
+  } else {
+    // Clear profile form state without re-showing ports/status on Skills/MCP.
+    els.listSec.hidden = false;
+    els.wizSec.hidden = true;
+    els.connSec.hidden = true;
+    closeWizPresetMenu();
+    hideSkip();
+    els.panel.classList.remove("view-form");
+  }
+
+  if (tab === "skills") loadSkills();
   else if (tab === "mcp") loadMcp();
 }
 
@@ -1987,7 +2159,7 @@ function renderSkills(list) {
             </div>
           </div>
         </div>
-        ${s.description ? `<div class="skill-desc">${escapeHtml(s.description)}</div>` : ""}
+        ${skillDescHtml(s.description)}
         <div class="skill-meta">
           <span>大小: ${escapeHtml(formatBytes(s.sizeBytes))}</span>
           ${dateText ? `· <span>导入: ${escapeHtml(dateText)}</span>` : ""}
@@ -1996,6 +2168,73 @@ function renderSkills(list) {
       </div>
     `;
   }).join("");
+  refreshDescToggles(els.skillList);
+}
+
+function skillDescHtml(description) {
+  if (!description) return "";
+  return `
+    <div class="skill-desc-block">
+      <div class="skill-desc">${escapeHtml(description)}</div>
+      <button type="button" class="skill-desc-toggle" data-act="toggle-desc" hidden aria-expanded="false">${escapeHtml(S().descExpand)}</button>
+    </div>
+  `;
+}
+
+function refreshDescToggles(listEl) {
+  if (!listEl) return;
+  listEl.querySelectorAll(".skill-desc-block").forEach((block) => {
+    const desc = block.querySelector(".skill-desc");
+    const toggle = block.querySelector(".skill-desc-toggle");
+    if (!desc || !toggle) return;
+    desc.classList.remove("is-expanded", "is-truncatable");
+    toggle.hidden = true;
+    toggle.setAttribute("aria-expanded", "false");
+    toggle.textContent = S().descExpand;
+    desc.removeAttribute("title");
+    requestAnimationFrame(() => {
+      const needs = desc.scrollHeight > desc.clientHeight + 1;
+      toggle.hidden = !needs;
+      desc.classList.toggle("is-truncatable", needs);
+      if (needs) desc.title = desc.textContent || "";
+      else desc.removeAttribute("title");
+    });
+  });
+}
+
+function toggleSkillDesc(block) {
+  const desc = block.querySelector(".skill-desc");
+  const toggle = block.querySelector(".skill-desc-toggle");
+  if (!desc) return;
+  const expanded = desc.classList.toggle("is-expanded");
+  desc.classList.toggle("is-truncatable", !expanded);
+  if (toggle) {
+    toggle.hidden = false;
+    toggle.setAttribute("aria-expanded", expanded ? "true" : "false");
+    toggle.textContent = expanded ? S().descCollapse : S().descExpand;
+  }
+  if (expanded) {
+    desc.removeAttribute("title");
+  } else {
+    requestAnimationFrame(() => {
+      const needs = desc.scrollHeight > desc.clientHeight + 1;
+      if (toggle) toggle.hidden = !needs;
+      desc.classList.toggle("is-truncatable", needs);
+      if (needs) desc.title = desc.textContent || "";
+      else desc.removeAttribute("title");
+    });
+  }
+}
+
+function handleDescToggleClick(e) {
+  const toggleBtn = e.target.closest("[data-act='toggle-desc']");
+  const descEl = e.target.closest(".skill-desc.is-truncatable, .skill-desc.is-expanded");
+  if (!toggleBtn && !descEl) return false;
+  const block = (toggleBtn || descEl).closest(".skill-desc-block");
+  if (!block) return false;
+  e.preventDefault();
+  toggleSkillDesc(block);
+  return true;
 }
 
 // Backend now emits ISO 8601 (e.g. 2026-07-12T10:30:00Z). Older inventories may
@@ -2108,12 +2347,12 @@ function openSkillCreate() {
   els.skillCreateBody.value = skillCreateTemplate("", "");
   els.skillCreateInspection.hidden = true;
   els.skillCreateErrors.hidden = true;
-  els.skillCreateModal.hidden = false;
+  showSkillView("create");
   els.skillCreateName.focus();
 }
 
 function closeSkillCreate() {
-  els.skillCreateModal.hidden = true;
+  showSkillView("list");
 }
 
 async function saveNewSkill() {
@@ -2154,12 +2393,12 @@ function openSkillImport() {
   els.skillSourcePath.value = "";
   els.skillImportConfirmBtn.disabled = true;
   els.skillInspectionPreview.hidden = true;
-  els.skillImportModal.hidden = false;
+  showSkillView("import");
   els.skillSourcePath.focus();
 }
 
 function closeSkillImport() {
-  els.skillImportModal.hidden = true;
+  showSkillView("list");
 }
 
 async function inspectSkillSource() {
@@ -2227,7 +2466,7 @@ async function openSkillDiscover() {
   els.skillDiscoverList.innerHTML = "<p class=\"hint\">扫描中…</p>";
   els.skillDiscoverEmpty.hidden = true;
   els.skillDiscoverImportBtn.disabled = true;
-  els.skillDiscoverModal.hidden = false;
+  showSkillView("discover");
   try {
     const found = (await call("discover_skills")) || [];
     renderDiscover(found);
@@ -2239,7 +2478,7 @@ async function openSkillDiscover() {
 }
 
 function closeSkillDiscover() {
-  els.skillDiscoverModal.hidden = true;
+  showSkillView("list");
 }
 
 function renderDiscover(found) {
@@ -2301,7 +2540,7 @@ async function openSkillAdopt() {
   els.skillAdoptList.innerHTML = "<p class=\"hint\">扫描中…</p>";
   els.skillAdoptEmpty.hidden = true;
   els.skillAdoptConfirmBtn.disabled = true;
-  els.skillAdoptModal.hidden = false;
+  showSkillView("adopt");
   try {
     const found = (await call("discover_workspace_skills")) || [];
     renderSkillAdopt(found);
@@ -2313,7 +2552,7 @@ async function openSkillAdopt() {
 }
 
 function closeSkillAdopt() {
-  els.skillAdoptModal.hidden = true;
+  showSkillView("list");
 }
 
 function renderSkillAdopt(found) {
@@ -2393,7 +2632,7 @@ async function openMcpDiscover() {
   els.mcpDiscoverList.innerHTML = "<p class=\"hint\">扫描中…</p>";
   els.mcpDiscoverEmpty.hidden = true;
   els.mcpDiscoverImportBtn.disabled = true;
-  els.mcpDiscoverModal.hidden = false;
+  showMcpView("discover");
   try {
     const found = (await call("discover_mcp_servers")) || [];
     renderMcpDiscover(found);
@@ -2405,7 +2644,7 @@ async function openMcpDiscover() {
 }
 
 function closeMcpDiscover() {
-  els.mcpDiscoverModal.hidden = true;
+  showMcpView("list");
 }
 
 function renderMcpDiscover(found) {
@@ -2512,7 +2751,7 @@ function renderMcp(list) {
             </div>
           </div>
         </div>
-        ${s.description ? `<div class="skill-desc">${escapeHtml(s.description)}</div>` : ""}
+        ${skillDescHtml(s.description)}
         <div class="skill-meta">
           <span class="mcp-cmd" title="${cmdLine}">${cmdLine}</span>
           ${envTags ? `· <div class="skill-reqs-list">${envTags}</div>` : ""}
@@ -2520,6 +2759,7 @@ function renderMcp(list) {
       </div>
     `;
   }).join("");
+  refreshDescToggles(els.mcpList);
 }
 
 async function toggleMcpServer(id, enabled) {
@@ -2550,6 +2790,7 @@ async function doRemoveMcpServer(id) {
 
 function openMcpModal(id) {
   if (busy) return;
+  closeMenu(els.mcpMenu, els.mcpMoreBtn);
   mcpEditId = id || null;
   const s = id ? mcpCache.find((x) => x.id === id) : null;
   els.mcpModalTitle.textContent = s ? "编辑本地 MCP" : "新增本地 MCP";
@@ -2564,12 +2805,12 @@ function openMcpModal(id) {
   els.mcpWarnings.hidden = true;
   els.mcpErrors.hidden = true;
   mcpWarnAck = false;
-  els.mcpModal.hidden = false;
+  showMcpView("form");
   els.mcpName.focus();
 }
 
 function closeMcpModal() {
-  els.mcpModal.hidden = true;
+  showMcpView("list");
   mcpEditId = null;
   mcpWarnAck = false;
 }
@@ -2651,9 +2892,11 @@ async function saveMcpServer() {
 window.addEventListener("DOMContentLoaded", async () => {
   wire();
   await loadConfig();
+  startRuntimeStatusPolling();
   window.addEventListener("focus", () => {
     if (!busy) {
       loadConfig({ keepView: true }).catch(() => {});
+      refreshRuntimeStatus().catch(() => {});
       if (!els.skillPane.hidden) loadSkills().catch(() => {});
       if (!els.mcpPane.hidden) loadMcp().catch(() => {});
     }

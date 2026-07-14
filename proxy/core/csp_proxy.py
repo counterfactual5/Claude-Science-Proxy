@@ -257,6 +257,11 @@ def _open_stream_with_keepalive(write_chunk, url, data, headers):
     return http_transport.open_stream_with_keepalive(write_chunk, url, data, headers, log)
 
 
+def _post_with_keepalive(write_chunk, url, data, headers):
+    """Emit SSE keepalives while waiting for a buffered (non-stream) upstream POST."""
+    return http_transport.post_with_keepalive(write_chunk, url, data, headers, log)
+
+
 def http_get_json(url, headers, attempts=3, timeout=30):
     """GET upstream JSON (relay /v1/models fetch). Retry connection errors only."""
     return http_transport.get_json(url, headers, log, attempts, timeout)
@@ -811,15 +816,36 @@ class H(BaseHTTPRequestHandler):
             f"msgs={msg_count} rules={rules}  (入站鉴权已剥离, {runtime.prov_name})")
         headers = {"Authorization": f"Bearer {runtime.key}", "Content-Type": "application/json"}
         data = json.dumps(oreq).encode()
+        headers_sent = False
         try:
-            raw, _ct = http_post(runtime.prov["url"], data, headers)
+            if stream:
+                # Science asks for SSE; openai-custom still buffers upstream as a
+                # single JSON completion. Open the downstream SSE first and emit
+                # keepalives during TTFT so the client does not idle-timeout mid
+                # tool-result continuation (same tradeoff as Anthropic path).
+                self.send_response(200)
+                self.send_header("Content-Type", "text/event-stream")
+                self.send_header("Cache-Control", "no-cache")
+                self.send_header("Transfer-Encoding", "chunked")
+                self.end_headers()
+                self.wfile.flush()
+                headers_sent = True
+
+                def _wc(b):
+                    if b:
+                        self.wfile.write(hex(len(b))[2:].encode() + b"\r\n" + b + b"\r\n")
+                        self.wfile.flush()
+
+                raw, _ct = _post_with_keepalive(_wc, runtime.prov["url"], data, headers)
+            else:
+                raw, _ct = http_post(runtime.prov["url"], data, headers)
             oresp = json.loads(raw)
             if runtime.prov.get("api_format") == "openai_responses":
                 aresp = openai_responses_to_anthropic(oresp, model_id)
             else:
                 aresp = openai_to_anthropic(oresp, model_id)
             if stream:
-                self._replay_as_sse(aresp)
+                self._replay_as_sse(aresp, headers_already_sent=True)
             else:
                 self._send_json(200, aresp)
             log(f"  <- {runtime.prov_name} OK (blocks={len(aresp['content'])} stop={aresp['stop_reason']})")
@@ -828,18 +854,36 @@ class H(BaseHTTPRequestHandler):
             log(f"  !! 上游 HTTP {e.code}: {detail}")
             # Keep upstream 401/403/429 on OpenAI path so verify_key can surface bad keys.
             code = e.code if e.code in (401, 403, 429) else 502
-            self._send_json(code, {"type": "error", "error": {"type": "api_error",
-                                   "message": f"upstream {e.code}: {detail}"}})
+            if headers_sent:
+                try:
+                    self._sse_error_and_terminate(f"upstream {e.code}: {detail}")
+                except BrokenPipeError:
+                    pass
+            else:
+                self._send_json(code, {"type": "error", "error": {"type": "api_error",
+                                       "message": f"upstream {e.code}: {detail}"}})
+        except BrokenPipeError:
+            log("  !! 代理异常: [Errno 32] Broken pipe")
         except Exception as e:
             log(f"  !! 代理异常: {e}")
-            self._send_json(502, {"type": "error", "error": {"type": "api_error", "message": str(e)}})
+            if headers_sent:
+                try:
+                    self._sse_error_and_terminate(str(e))
+                except BrokenPipeError:
+                    pass
+            else:
+                try:
+                    self._send_json(502, {"type": "error", "error": {"type": "api_error", "message": str(e)}})
+                except BrokenPipeError:
+                    pass
 
-    def _replay_as_sse(self, aresp):
-        self.send_response(200)
-        self.send_header("Content-Type", "text/event-stream")
-        self.send_header("Cache-Control", "no-cache")
-        self.send_header("Transfer-Encoding", "chunked")
-        self.end_headers()
+    def _replay_as_sse(self, aresp, headers_already_sent=False):
+        if not headers_already_sent:
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Cache-Control", "no-cache")
+            self.send_header("Transfer-Encoding", "chunked")
+            self.end_headers()
         blocks = aresp.get("content") or [{"type": "text", "text": ""}]
         self._sse("message_start", {"type": "message_start", "message": {
             "id": aresp.get("id", "msg_proxy"), "type": "message", "role": "assistant",
