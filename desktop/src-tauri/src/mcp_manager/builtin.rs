@@ -11,10 +11,11 @@
 //! `Tool 'web_search' not found on agent 'OPERON'`. Local MCP tools are **not**
 //! top-level model tools — they are only callable via the `repl` tool as
 //! `host.mcp("web-search", "<method>", ...)`. Names in `tools/list`
-//! (`web_search`, `search_literature`, `csp_web_search`, `fetch_url`,
-//! `web_fetch`) are **method names for `host.mcp` only**; re-advertising them
-//! cannot intercept bare native calls. Standing guidance is injected by the
-//! proxy (`inject_csp_web_access_guidance` in `anthropic_compat.py`).
+//! (`csp_web_search`, `search_literature`, `fetch_url`, `web_fetch`) are
+//! **method names for `host.mcp` only**; `web_search` is an unlisted dispatch
+//! alias of `csp_web_search`. Re-advertising cannot intercept bare native
+//! calls. Standing guidance is injected by the proxy
+//! (`inject_csp_web_access_guidance` in `anthropic_compat.py`).
 //!
 //! The server is:
 //!
@@ -54,7 +55,7 @@ const WEB_SEARCH_SOURCE: &str = include_str!("web_search_server.py");
 
 /// Description surfaced to Science (the model reads this to decide when to call
 /// the tools). English on purpose — it is the tool description, not chrome.
-pub const BUILTIN_WEB_SEARCH_DESCRIPTION: &str = "Local CSP web + literature search (two host.mcp lanes). Under CSP virtual login Anthropic-hosted web_search/web_fetch are unavailable. GENERAL: host.mcp(\"web-search\", \"web_search\", query=...) — csp_web_search is an alias of the same method. auto: optional Brave/Serper/Tavily (if keyed) → duckduckgo_ia → duckduckgo_lite → wikipedia (no key required). LITERATURE: host.mcp(\"web-search\", \"search_literature\", query=...) — auto: wikipedia → Crossref → arXiv → PubMed. Then fetch_url/web_fetch. hits = data[\"results\"] (dict, not a bare list). Empty Instant Answer ≠ missing API key. CSP pre-grants search hosts on Start; extend via ~/.csp/network-allowlist.json.";
+pub const BUILTIN_WEB_SEARCH_DESCRIPTION: &str = "Local CSP web + literature search (two host.mcp lanes). Under CSP virtual login Anthropic-hosted web_search/web_fetch are unavailable — never call them. GENERAL (one public method): host.mcp(\"web-search\", \"csp_web_search\", query=...). auto: optional Brave/Serper/Tavily (if keyed) → duckduckgo_ia → duckduckgo_lite → wikipedia (no key required). LITERATURE: host.mcp(\"web-search\", \"search_literature\", query=...) — auto: wikipedia → Crossref → arXiv → PubMed. Then fetch_url/web_fetch. hits = data[\"results\"] (dict, not a bare list). Empty Instant Answer ≠ missing API key. CSP pre-grants search hosts on Start; extend via ~/.csp/network-allowlist.json.";
 
 /// Optional API-key env vars seeded (empty) so the MCP tab surfaces them as
 /// editable fields; empty values are treated as "unset" by the server.
@@ -155,22 +156,29 @@ mod tests {
         assert!(WEB_SEARCH_SOURCE.contains("\"duckduckgo\""));
         assert!(WEB_SEARCH_SOURCE.contains("BRAVE_SEARCH_API_KEY"));
         // Under CSP virtual login bare web_search is unavailable as a top-level
-        // tool; tools/list names are host.mcp method names only.
-        assert!(WEB_SEARCH_SOURCE.contains("\"web_search\""));
+        // tool; tools/list names are host.mcp method names only. GENERAL is
+        // advertised as csp_web_search only; web_search stays dispatch-only.
         assert!(WEB_SEARCH_SOURCE.contains("\"search_literature\""));
         assert!(WEB_SEARCH_SOURCE.contains("\"csp_web_search\""));
         assert!(WEB_SEARCH_SOURCE.contains("\"fetch_url\""));
         assert!(WEB_SEARCH_SOURCE.contains("\"web_fetch\""));
-        // Confirm they appear in the advertised TOOLS list, not only dispatch.
         let tools_idx = WEB_SEARCH_SOURCE
             .find("TOOLS = [")
             .expect("TOOLS list present");
-        let tools_block = &WEB_SEARCH_SOURCE[tools_idx..];
-        assert!(tools_block.contains("\"name\": \"web_search\""));
-        assert!(tools_block.contains("\"name\": \"web_fetch\""));
-        assert!(tools_block.contains("\"name\": \"search_literature\""));
+        let dispatch_idx = WEB_SEARCH_SOURCE
+            .find("TOOL_DISPATCH")
+            .expect("TOOL_DISPATCH present");
+        let tools_block = &WEB_SEARCH_SOURCE[tools_idx..dispatch_idx];
+        let dispatch_block = &WEB_SEARCH_SOURCE[dispatch_idx..];
         assert!(tools_block.contains("\"name\": \"csp_web_search\""));
+        assert!(tools_block.contains("\"name\": \"search_literature\""));
         assert!(tools_block.contains("\"name\": \"fetch_url\""));
+        assert!(tools_block.contains("\"name\": \"web_fetch\""));
+        // Must NOT list web_search in tools/list (two-product confusion).
+        assert!(!tools_block.contains("\"name\": \"web_search\""));
+        // Unlisted alias must still dispatch.
+        assert!(dispatch_block.contains("\"web_search\""));
+        assert!(dispatch_block.contains("do_general_web_search"));
         // Docstring must NOT claim tools/list intercepts bare native calls.
         assert!(!WEB_SEARCH_SOURCE.contains("model-native calls resolve"));
         assert!(WEB_SEARCH_SOURCE.contains("host.mcp"));
@@ -184,7 +192,7 @@ mod tests {
         assert!(WEB_SEARCH_SOURCE.contains("do_general_web_search"));
         assert!(WEB_SEARCH_SOURCE.contains("do_literature_search"));
         assert!(WEB_SEARCH_SOURCE.contains("duckduckgo_lite"));
-        assert!(WEB_SEARCH_SOURCE.contains("ALIAS of web_search"));
+        assert!(WEB_SEARCH_SOURCE.contains("ONE public GENERAL"));
         // literature auto must not start with duckduckgo_ia
         let lit = WEB_SEARCH_SOURCE
             .split("LITERATURE_FREE_FALLBACKS = [")

@@ -12,13 +12,15 @@ are stripped from OPERON's toolset — top-level calls fail with
 ``Tool 'web_search' not found on agent 'OPERON'``. Local MCP tools are **not**
 top-level model tools; call them only via ``repl`` as::
 
+    host.mcp("web-search", "csp_web_search", query="...", max_results=N)
     host.mcp("web-search", "search_literature", query="...", max_results=N)
     host.mcp("web-search", "fetch_url", url="...")
 
-Names in ``tools/list`` (``web_search``, ``search_literature``,
-``csp_web_search``, ``fetch_url``, ``web_fetch``) are **method names for
-``host.mcp`` only**. Re-advertising them cannot intercept bare native calls;
-the CSP proxy injects standing system guidance instead.
+Names in ``tools/list`` (``csp_web_search``, ``search_literature``,
+``fetch_url``, ``web_fetch``) are **method names for ``host.mcp`` only**.
+``web_search`` remains a **dispatch-only** alias of ``csp_web_search`` (not
+listed) so old sessions/skills do not hard-fail. Re-advertising names cannot
+intercept bare native calls; the CSP proxy injects standing system guidance.
 
 Design notes
 ------------
@@ -34,9 +36,10 @@ Design notes
   they reach the internet through operon without any extra work.
 * **Multi-provider with automatic fallback (OpenClaw-style).** One server hosts
   several search providers behind a single search implementation, exposed under
-  several ``host.mcp`` method aliases. ``web_search`` and ``csp_web_search`` are
-  the **same GENERAL handler** (prefer ``web_search``); ``search_literature`` is
-  the LITERATURE lane. ``provider=auto`` (the default) tries key-based providers
+  several ``host.mcp`` method aliases. ``csp_web_search`` is the **canonical
+  GENERAL** method (``web_search`` is an unlisted dispatch alias of the same
+  handler); ``search_literature`` is the LITERATURE lane. ``provider=auto``
+  (the default) tries key-based providers
   first *iff* their API key is present in the environment, then falls back to
   the free/no-key providers. Any single provider failure is captured as a
   warning and the next provider is tried; the call only fails if *every*
@@ -615,7 +618,7 @@ PROVIDERS = {
 
 # Key-based providers and the env var that activates each.
 # Two search lanes (chosen by host.mcp method name, not by guessing the query):
-#   general     — web_search ≡ csp_web_search (same handler; alias only)
+#   general     — csp_web_search (canonical); web_search = unlisted dispatch alias
 #                 keyed Brave/Serper/Tavily (optional) → duckduckgo_ia →
 #                 duckduckgo_lite → wikipedia
 #   literature  — search_literature
@@ -787,9 +790,9 @@ _CSP_NO_NATIVE = (
 
 _GENERAL_DESCRIPTION = (
     "GENERAL web search (news, products, \"latest models\", facts) via "
-    "host.mcp(\"web-search\", \"web_search\", query=..., max_results=N). "
-    "csp_web_search is the SAME method (alias) — not a second engine. "
-    + _CSP_NO_NATIVE + _RETURN_SHAPE +
+    "host.mcp(\"web-search\", \"csp_web_search\", query=..., max_results=N). "
+    "This is the ONE public GENERAL method name — do not treat any other name "
+    "as a second search engine. " + _CSP_NO_NATIVE + _RETURN_SHAPE +
     "With provider='auto' (default): optional keyed Brave/Serper/Tavily IF "
     "env keys are set, then free duckduckgo_ia → duckduckgo_lite → wikipedia. "
     "DuckDuckGo needs NO API key. Empty Instant Answer is normal for many "
@@ -806,10 +809,10 @@ _LITERATURE_DESCRIPTION = (
     _RETURN_SHAPE +
     "With provider='auto' (default) this LITERATURE lane tries wikipedia → "
     "Crossref → arXiv → PubMed. Use for papers, DOIs, scholarly metadata. "
-    "For product/news/\"latest GPT\" queries use web_search (alias csp_web_search) "
-    "instead — those two names are the same GENERAL method. OpenAlex / Semantic "
-    "Scholar remain explicitly selectable via provider=. CSP network allowlist "
-    "applies; extend via ~/.csp/network-allowlist.json."
+    "For product/news/\"latest GPT\" queries use csp_web_search instead "
+    "(GENERAL lane). OpenAlex / Semantic Scholar remain explicitly selectable "
+    "via provider=. CSP network allowlist applies; extend via "
+    "~/.csp/network-allowlist.json."
 )
 
 _FETCH_DESCRIPTION = (
@@ -823,22 +826,12 @@ _FETCH_DESCRIPTION = (
     "Do not assume a bare string unless you read data[\"content\"]."
 )
 
+# Public tools/list — ONE GENERAL method name only. Listing both web_search and
+# csp_web_search made models think there were two search products.
 TOOLS = [
     {
-        "name": "web_search",
-        "description": (
-            _GENERAL_DESCRIPTION
-            + " Alias: csp_web_search (identical handler — prefer this name)."
-        ),
-        "inputSchema": _SEARCH_INPUT_SCHEMA,
-    },
-    {
         "name": "csp_web_search",
-        "description": (
-            "ALIAS of web_search — same GENERAL search method / same results. "
-            "Prefer calling web_search; do not present this as a separate engine. "
-            + _GENERAL_DESCRIPTION
-        ),
+        "description": _GENERAL_DESCRIPTION,
         "inputSchema": _SEARCH_INPUT_SCHEMA,
     },
     {
@@ -858,9 +851,11 @@ TOOLS = [
     },
 ]
 
+# Dispatch still accepts web_search as an undocumented alias of csp_web_search
+# (old sessions, proxy remnants, skills that still say web_search).
 TOOL_DISPATCH = {
-    "web_search": do_general_web_search,
     "csp_web_search": do_general_web_search,
+    "web_search": do_general_web_search,  # unlisted alias
     "search_literature": do_literature_search,
     "fetch_url": do_fetch_url,
     "web_fetch": do_fetch_url,

@@ -5,7 +5,7 @@
 //! from Anthropic's hosted Claude environment:
 //!
 //! - **Web access**: use the built-in local `web-search` MCP connector for any
-//!   web/online search (GENERAL: `web_search` / `csp_web_search`; LITERATURE:
+//!   web/online search (GENERAL: `csp_web_search`; LITERATURE:
 //!   `search_literature`; then `fetch_url`) and never call Anthropic's hosted
 //!   `web_search` tool — which is unavailable under CSP's virtual login and fails
 //!   with `Tool 'web_search' not found on agent`.
@@ -39,7 +39,7 @@ pub const BUILTIN_ENVIRONMENT_NAME: &str = "csp-environment";
 /// One-line description shown in CSP's Skills tab (the SKILL.md body is what
 /// Science actually reads as standing guidance). Covers the full set of CSP
 /// local environment conventions, not only web search.
-pub const BUILTIN_ENVIRONMENT_DESCRIPTION: &str = "CSP standing environment handbook: for any web search/page fetch use the local web-search MCP (GENERAL: web_search / csp_web_search; LITERATURE: search_literature; then fetch_url — host.mcp returns a dict with key results, not a bare list), never the hosted web_search tool; don't write to /mnt/data — save to the workspace cwd and persist via save_artifacts([...]); set a CJK matplotlib font before plotting non-Latin labels; draft skills in the workspace (not host.skills.publish) and use the analysis python env for scientific packages; extend egress via ~/.csp/network-allowlist.json.";
+pub const BUILTIN_ENVIRONMENT_DESCRIPTION: &str = "CSP standing environment handbook: for any web search/page fetch use the local web-search MCP (GENERAL: csp_web_search only; LITERATURE: search_literature; then fetch_url — host.mcp returns a dict with key results, not a bare list), never the hosted Anthropic web_search tool; don't write to /mnt/data — save to the workspace cwd and persist via save_artifacts([...]); set a CJK matplotlib font before plotting non-Latin labels; draft skills in the workspace (not host.skills.publish) and use the analysis python env for scientific packages; extend egress via ~/.csp/network-allowlist.json.";
 
 /// Sentinel dotfile under the skill store root recording the one-time seed. Once
 /// present, the skill is never re-seeded, so a user who later disables or removes

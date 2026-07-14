@@ -1,6 +1,6 @@
 ---
 name: csp-environment
-description: Standing CSP local-environment handbook for Claude Science Proxy. Covers (1) web access — no hosted Web Search; ALWAYS use the local `web-search` MCP (GENERAL lane `web_search`/`csp_web_search`, LITERATURE lane `search_literature`, then `fetch_url`) and NEVER the hosted `web_search` tool; (2) filesystem — never `/mnt/data`, save to workspace cwd then `save_artifacts([...])`; (3) CJK matplotlib fonts; (4) skills/env — don't rely on `host.skills.publish()`, use analysis `python` for science packages; (5) network allowlist via CSP Start + `~/.csp/network-allowlist.json`.
+description: Standing CSP local-environment handbook for Claude Science Proxy. Covers (1) web access — no hosted Web Search; ALWAYS use the local `web-search` MCP (GENERAL lane `csp_web_search`, LITERATURE lane `search_literature`, then `fetch_url`) and NEVER the hosted Anthropic `web_search` tool; (2) filesystem — never `/mnt/data`, save to workspace cwd then `save_artifacts([...])`; (3) CJK matplotlib fonts; (4) skills/env — don't rely on `host.skills.publish()`, use analysis `python` for science packages; (5) network allowlist via CSP Start + `~/.csp/network-allowlist.json`.
 license: Apache-2.0
 ---
 
@@ -16,7 +16,8 @@ plotting/CJK, skills/env, and network.
 
 For ANY web search, online lookup, news/fact check, literature / paper search,
 or reading a web page: ALWAYS use the local MCP connector named **`web-search`**.
-NEVER call Anthropic's hosted **`web_search`** tool.
+NEVER call Anthropic's hosted / native **`web_search`** tool (that OPERON tool
+does not exist here).
 
 The hosted `web_search` tool is **not available** under CSP's virtual login. If
 you try it, the planner fails with:
@@ -35,15 +36,15 @@ The `web-search` connector is already connected and enabled. Pick the lane by
 
 | Lane | Methods | Use for | `provider="auto"` order |
 |------|---------|---------|-------------------------|
-| **GENERAL** | `web_search` (**prefer**); `csp_web_search` is an **alias of the same method** — not a second engine | news, products, "latest models", facts | optional keyed Brave/Serper/Tavily (if set) → `duckduckgo_ia` → `duckduckgo_lite` → `wikipedia` (**no key required**) |
+| **GENERAL** | **`csp_web_search`** (only public GENERAL name) | news, products, "latest models", facts | optional keyed Brave/Serper/Tavily (if set) → `duckduckgo_ia` → `duckduckgo_lite` → `wikipedia` (**no key required**) |
 | **LITERATURE** | `search_literature` | papers, DOIs, scholarly metadata | wikipedia → Crossref → arXiv → PubMed |
 | (fetch) | `fetch_url` | read a URL as clean text after either search | — |
 
 Typical flows:
 
 ```python
-# GENERAL / product / news — prefer web_search (csp_web_search is identical)
-data = host.mcp("web-search", "web_search", query="...", max_results=5)
+# GENERAL / product / news — public method is csp_web_search only
+data = host.mcp("web-search", "csp_web_search", query="...", max_results=5)
 hits = data["results"]
 for r in hits:
     print(r.get("title"), r.get("url"), r.get("snippet"))
@@ -64,6 +65,10 @@ that iterates dict **keys** (strings) and raises
 **Return shape:** `host.mcp` returns a **dict** with a `results` list
 (`hits = data["results"]`), never a bare list of hits. Fetch returns
 `{"url", "status", "content"}`.
+
+**Name clarity:** Anthropic's native OPERON tool `web_search` ≠ MCP method
+`csp_web_search`. Never call the native tool. Public GENERAL MCP method is only
+`csp_web_search` (do not present a second Web Search product).
 
 ### Empty Instant Answer ≠ missing API key
 
@@ -132,11 +137,11 @@ free Instant Answer returned empty.
 
 ## Summary
 
-- GENERAL web / news / products → `web_search` (alias `csp_web_search`; same
-  method) then `fetch_url`. No API key required.
+- GENERAL web / news / products → `csp_web_search` then `fetch_url`. No API key
+  required. One public GENERAL method only.
 - LITERATURE / papers / DOI → `search_literature` (then `fetch_url`).
 - Empty `duckduckgo_ia` → not a missing key; free lite/wikipedia follow.
-- Hosted `web_search` tool → never call it; it does not exist in this environment.
+- Native Anthropic `web_search` tool → never call it; it does not exist here.
 - Files → workspace cwd + relative paths; never `/mnt/data`; persist with
   `save_artifacts([...])`; `/tmp` is scratch only.
 - CJK plots → set CJK `font.sans-serif` + `axes.unicode_minus = False` first.
@@ -146,11 +151,11 @@ free Instant Answer returned empty.
 
 ## 中文提示
 
-本环境没有托管版 Web Search。联网请用本地 `web-search`：**通用/新闻/产品**用
-`web_search`（`csp_web_search` 只是同方法别名，不是第二个引擎；auto：可选
+本环境没有托管版 / OPERON 原生 `web_search`。联网请用本地 `web-search` MCP：
+**通用/新闻/产品**用公共方法名 **`csp_web_search`**（auto：可选
 Brave/Serper/Tavily → duckduckgo_ia → duckduckgo_lite → wikipedia，**无需
 API key**）；**论文/学术**用 `search_literature`（auto：wikipedia → Crossref →
-arXiv → PubMed）；读页用 `fetch_url`。不要调用托管 `web_search`。Instant Answer
+arXiv → PubMed）；读页用 `fetch_url`。不要调用原生 `web_search`。Instant Answer
 为空是常见情况，**不等于缺密钥**，勿要求用户必须配置 Brave/Serper/Tavily。
 `host.mcp` 搜索返回 **dict**（含 `results`），正确写法：
 `data = host.mcp(...); hits = data["results"]`。

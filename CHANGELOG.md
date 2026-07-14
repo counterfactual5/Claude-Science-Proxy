@@ -3,6 +3,11 @@
 All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.6.6] — 2026-07-14
+
+### Changed
+- **Unify GENERAL web search to one public MCP method `csp_web_search`**: `tools/list` no longer advertises both `web_search` and `csp_web_search` (that made models treat them as two search products). Canonical / advertised GENERAL name is **`csp_web_search` only**; `web_search` remains an **unlisted dispatch alias** for old sessions, proxy remnants, and skills. Native Anthropic OPERON tool `web_search` is still unavailable and must never be called top-level — that is a different layer from the MCP method. Proxy standing guidance, `csp-environment` Skill, inventory descriptions, and UI hints updated accordingly.
+
 ## [1.6.5] — 2026-07-14
 
 ### Fixed
