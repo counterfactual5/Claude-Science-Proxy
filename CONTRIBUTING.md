@@ -96,6 +96,25 @@ project's [MIT License](./LICENSE).
 
 ---
 
+## Cutting a GitHub Release
+
+When shipping a public version (not only a local build):
+
+1. Bump version in lockstep: `desktop/package.json`, `desktop/src-tauri/Cargo.toml`,
+   `desktop/src-tauri/tauri.conf.json`, README badges, and `CHANGELOG.md`.
+2. Update the README “what’s new” callout (EN + ZH) — do **not** leave
+   “local build; no GitHub release” after you published.
+3. Update the GitHub repo **About** description (and topics if needed) to the new
+   version / capabilities:
+   `gh repo edit --description "… vX.Y.Z."`
+4. Push `main`, tag `vX.Y.Z`, and `gh release create` with the DMG + notes
+   (Summary + Install; skip internal Test-plan checklists on public notes unless
+   asked).
+5. After release: rewrite notes if they understate the jump from the previous
+   public tag.
+
+---
+
 ## 中文摘要
 
 欢迎贡献。提交前请先读 [`README.md`](./README.md)、[`docs/DEVELOPMENT.md`](./docs/DEVELOPMENT.md)、[`AGENT.md`](./AGENT.md)。
@@ -104,3 +123,4 @@ project's [MIT License](./LICENSE).
 - **提 Issue**：走 [GitHub Issues](https://github.com/counterfactual5/Claude-Science-Proxy/issues/new/choose)，附 macOS 版本、芯片、CSP 版本、provider 类型和复现步骤；**不要粘贴 API key**。安全漏洞请看 [`SECURITY.md`](./SECURITY.md)，勿开公开 issue。
 - **提交前自测**：`bash test/run_all.sh`（必跑）；改动 Rust 跑 `cargo test` / `clippy` / `fmt`；改动前端跑 `node --check`。
 - **PR**：按模板填写测试计划和红线清单，关联相关 issue。贡献代码即视为接受 [MIT 许可](./LICENSE)。
+- **发版**：升版本号 → 更新 README 亮点（中英）→ **同步 GitHub About 描述** → push / tag / Release + DMG。

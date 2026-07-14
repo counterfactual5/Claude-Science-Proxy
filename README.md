@@ -25,7 +25,7 @@ CSP is a **macOS desktop app** (Tauri) that:
 4. Verifies API keys **before** switching the active profile
 5. Manages local **Skills** and **stdio MCP connectors**, deploying enabled ones into the sandbox on launch
 
-> **v1.6.9** — Harden DuckDuckGo Lite anti-bot (cookie warmup / retry); forbid false GENERAL→Wikipedia / "need API keys" narrative. Local build; no GitHub release.
+> **v1.6.9** — Built-in local **web-search** (GENERAL `csp_web_search` + LITERATURE `search_literature`), proxy standing guidance, **`csp-environment`** Skill, network allowlist, and MCP script self-heal on app open. See [Releases](https://github.com/counterfactual5/Claude-Science-Proxy/releases/tag/v1.6.9).
 
 > **Platform:** macOS **Apple Silicon** today. The app is **not notarized** yet; on first launch, right-click → **Open**.
 
@@ -67,8 +67,9 @@ Claude Science (sandbox)
 - **One-click start** — launches proxy, prepares sandbox, opens Science
 - **Real model names** in Science’s selector (not a generic `claude` / `opus` label)
 - **Multi-model per profile** — virtual registry maps up to **8** `claude-*` shell IDs to real upstream models
-- **Local Skills manager** — import, enable/disable, and scan-and-import Skill folders (a `SKILL.md`); enabled Skills deploy into the sandbox on launch
+- **Local Skills manager** — create, import, enable/disable, scan-and-import, or adopt Skill drafts from the Science workspace; built-in **`csp-environment`** handbook; enabled Skills deploy into the sandbox on launch
 - **Local stdio MCP manager** — add/edit or scan-and-import local MCP connectors (e.g. Notion) from other AI clients; enabled ones deploy into the sandbox on launch
+- **Built-in web-search MCP** — no key required for the free path: GENERAL (`csp_web_search` → DuckDuckGo IA/Lite) and LITERATURE (`search_literature` → Wikipedia / Crossref / arXiv / PubMed); optional Brave/Serper/Tavily keys; Start auto-grants provider hosts (`~/.csp/network-allowlist.json` for extras)
 
 ### For power users
 
@@ -138,6 +139,7 @@ Science only accepts model IDs starting with `claude-`. CSP allocates **up to ei
 ## Current limitations
 
 - **Anthropic-hosted cloud features** (remote/hosted MCP, directory connectors) and some cloud-only capabilities are unavailable or fast-fail — **local stdio MCP connectors are supported** via the MCP tab
+- **Hosted top-level `web_search` / `web_fetch` are unavailable** under CSP virtual login — use the built-in `web-search` MCP: `host.mcp("web-search", "csp_web_search" | "search_literature" | "fetch_url", …)` and read `data["results"]`
 - Provider quality varies for tools, long context, thinking, images, and streaming
 - **Not Apple-notarized** — manual approval on first open
 - Proxy still requires **`python3`** today
