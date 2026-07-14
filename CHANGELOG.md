@@ -3,6 +3,13 @@
 All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.6.8] — 2026-07-14
+
+### Fixed
+- **DuckDuckGo Lite anti-bot (botnet / `anomaly.js`) on GENERAL**: Lite HTML often returns a temporary interstitial after rapid queries. `duckduckgo_lite` now warms a cookie session on the Lite homepage, retries once with backoff, falls back to GET `?q=`, parses `result-link` anchors first, and treats `anomaly.js`/`cc=botnet` as the challenge signal (not bare "challenge"). GENERAL still does **not** fall through to Wikipedia — empty + honest `hint` when free providers fail.
+- **Wikipedia-only Instant Answer short-circuit**: When `duckduckgo_ia` returns only `wikipedia.org` AbstractURL hits, GENERAL continues to `duckduckgo_lite` for broader web results (keeps IA as soft fallback if Lite fails). This stops Science from treating entity Instant Answers as "GENERAL = Wikipedia".
+- **False "fell back to Wikipedia / need API keys" narrative**: Proxy standing guidance, `csp-environment`, tool descriptions, and empty-GENERAL hints explicitly forbid claiming GENERAL fell back to Wikipedia or that Brave/Serper/Tavily keys are required when IA is empty or Lite is briefly challenged. Wikipedia-only lists from `search_literature` are expected — do not conflate lanes. **Stop→Start** Science after upgrading so the sandbox MCP script is rewritten (stale pre-1.6.7 scripts still had Wikipedia on GENERAL auto).
+
 ## [1.6.7] — 2026-07-14
 
 ### Changed

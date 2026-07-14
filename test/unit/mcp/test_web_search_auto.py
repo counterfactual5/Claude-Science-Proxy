@@ -65,6 +65,98 @@ class GeneralAutoChain(unittest.TestCase):
             ["wikipedia", "crossref", "arxiv", "pubmed"],
         )
 
+    def test_ddg_lite_is_challenge_detects_anomaly_js(self):
+        self.assertTrue(
+            self.ws._ddg_lite_is_challenge(
+                202,
+                '<form action="//duckduckgo.com/anomaly.js?sv=lite&cc=botnet"></form>',
+            )
+        )
+        # Valid Lite markup should not be flagged even with HTTP 202.
+        self.assertFalse(
+            self.ws._ddg_lite_is_challenge(
+                200,
+                '<a class="result-link" href="https://example.com">ex</a>',
+            )
+        )
+        # Bare "challenge" in a title/snippet must not trip the detector.
+        self.assertFalse(
+            self.ws._ddg_lite_is_challenge(
+                200,
+                '<a class="result-link" href="https://example.com/challenge">x</a>',
+            )
+        )
+
+    def test_empty_general_hint_forbids_wikipedia_fallback_story(self):
+        hint = self.ws._EMPTY_GENERAL_HINT
+        self.assertIn("does NOT fall back to Wikipedia", hint)
+        self.assertIn("NOT required", hint)
+        self.assertIn("fell back to", hint)
+
+    def test_general_skips_wikipedia_only_ia_when_lite_available(self):
+        """Wiki-only Instant Answer must not short-circuit GENERAL before Lite."""
+        calls = []
+
+        def fake_ia(query, max_results, env):
+            calls.append("ia")
+            return [{
+                "title": "AI slop",
+                "url": "https://en.wikipedia.org/wiki/AI_slop",
+                "snippet": "…",
+                "source": "duckduckgo_ia",
+            }]
+
+        def fake_lite(query, max_results, env):
+            calls.append("lite")
+            return [{
+                "title": "BBC",
+                "url": "https://www.bbc.com/news/ai-slop",
+                "snippet": "…",
+                "source": "duckduckgo_lite",
+            }]
+
+        orig = dict(self.ws.PROVIDERS)
+        try:
+            self.ws.PROVIDERS["duckduckgo_ia"] = fake_ia
+            self.ws.PROVIDERS["duckduckgo_lite"] = fake_lite
+            out = self.ws.do_web_search(
+                {"query": "AI slop", "max_results": 5}, {}, lane="general",
+            )
+        finally:
+            self.ws.PROVIDERS.clear()
+            self.ws.PROVIDERS.update(orig)
+        self.assertEqual(calls, ["ia", "lite"])
+        self.assertEqual(out["provider"], "duckduckgo_lite")
+        self.assertEqual(out["results"][0]["url"], "https://www.bbc.com/news/ai-slop")
+        self.assertTrue(
+            any("Wikipedia-only" in w for w in out.get("warnings") or [])
+        )
+
+    def test_general_keeps_wiki_ia_if_lite_fails(self):
+        def fake_ia(query, max_results, env):
+            return [{
+                "title": "AI slop",
+                "url": "https://en.wikipedia.org/wiki/AI_slop",
+                "snippet": "…",
+                "source": "duckduckgo_ia",
+            }]
+
+        def fake_lite(query, max_results, env):
+            raise self.ws.HttpError("duckduckgo_lite anti-bot challenge")
+
+        orig = dict(self.ws.PROVIDERS)
+        try:
+            self.ws.PROVIDERS["duckduckgo_ia"] = fake_ia
+            self.ws.PROVIDERS["duckduckgo_lite"] = fake_lite
+            out = self.ws.do_web_search(
+                {"query": "AI slop", "max_results": 5}, {}, lane="general",
+            )
+        finally:
+            self.ws.PROVIDERS.clear()
+            self.ws.PROVIDERS.update(orig)
+        self.assertEqual(out["provider"], "duckduckgo_ia")
+        self.assertIn("wikipedia.org", out["results"][0]["url"])
+
 
 if __name__ == "__main__":
     unittest.main()

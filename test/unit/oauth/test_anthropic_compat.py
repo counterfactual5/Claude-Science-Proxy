@@ -317,6 +317,7 @@ class InjectCspWebAccessGuidance(unittest.TestCase):
         self.assertIn("ONE public method", out["system"])
         self.assertIn("does NOT mean keys are missing", out["system"])
         self.assertIn("wikipedia is NOT on GENERAL", out["system"])
+        self.assertIn("fell back to Wikipedia", out["system"])
         # GENERAL auto comment must not list wikipedia as a fallthrough.
         self.assertNotIn("duckduckgo_lite → wikipedia", out["system"])
         self.assertIn("GENERAL", out["system"])

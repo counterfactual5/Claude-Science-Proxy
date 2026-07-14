@@ -4,7 +4,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License">
-  <img src="https://img.shields.io/badge/version-1.6.7-brightgreen.svg" alt="v1.6.7">
+  <img src="https://img.shields.io/badge/version-1.6.8-brightgreen.svg" alt="v1.6.8">
   <img src="https://img.shields.io/badge/platform-macOS%20Apple%20Silicon-1d1d1f.svg" alt="macOS Apple Silicon">
   <img src="https://img.shields.io/badge/built%20with-Tauri%202-C25A34.svg" alt="Tauri 2">
 </p>
@@ -25,7 +25,7 @@ CSP is a **macOS desktop app** (Tauri) that:
 4. Verifies API keys **before** switching the active profile
 5. Manages local **Skills** and **stdio MCP connectors**, deploying enabled ones into the sandbox on launch
 
-> **v1.6.7** — GENERAL auto stops at DDG IA/lite (Wikipedia only on LITERATURE `search_literature`). Local build; no GitHub release.
+> **v1.6.8** — Harden DuckDuckGo Lite anti-bot (cookie warmup / retry); forbid false GENERAL→Wikipedia / "need API keys" narrative. Local build; no GitHub release.
 
 > **Platform:** macOS **Apple Silicon** today. The app is **not notarized** yet; on first launch, right-click → **Open**.
 

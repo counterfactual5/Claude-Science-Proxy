@@ -77,30 +77,40 @@ Secrets are read only from the process environment (CSP injects them from its
 0600 inventory); nothing is ever hardcoded or logged.
 """
 
+import http.cookiejar
 import json
 import os
 import re
 import sys
+import time
 import html as _html
 import urllib.error
 import urllib.parse
 import urllib.request
 
 SERVER_NAME = "web-search"
-SERVER_VERSION = "1.6.0"
+SERVER_VERSION = "1.6.8"
 DEFAULT_PROTOCOL = "2025-06-18"
 USER_AGENT = "csp-web-search/1.0 (+https://github.com/; Claude Science Proxy built-in)"
+# Browser-like UA for DuckDuckGo HTML endpoints (Lite / full HTML). CSP UA
+# alone is often classified as botnet (anomaly.js?cc=botnet).
+_DDG_BROWSER_UA = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+    "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15"
+)
 HTTP_TIMEOUT = 15
 # Empty Instant Answer / exhausted free providers — do NOT tell the user they
 # "must" configure Brave/Serper/Tavily. Keys are optional quality upgrades.
 _EMPTY_GENERAL_HINT = (
-    "No free general-web hits for this query (DuckDuckGo Instant Answer / Lite "
-    "often empty for news/\"latest …\" questions; that does NOT mean an API key "
-    "is missing — keys are NOT required). Try a shorter/entity-style rephrase "
-    "or call fetch_url on a known URL. Optional BRAVE_SEARCH_API_KEY / "
-    "SERPER_API_KEY / TAVILY_API_KEY in the MCP tab can improve quality — "
-    "paid APIs are optional upgrades, not a prerequisite. For encyclopedic / "
-    "academic topics use search_literature (wikipedia → Crossref → arXiv → PubMed)."
+    "No free general-web hits for this query (DuckDuckGo Instant Answer may be "
+    "empty for news/\"latest …\" questions; Lite may briefly hit anti-bot — "
+    "retry or rephrase). That does NOT mean an API key is missing — keys are "
+    "NOT required. GENERAL does NOT fall back to Wikipedia (wikipedia lives on "
+    "search_literature only). Do NOT tell the user GENERAL \"fell back to "
+    "Wikipedia\" or that they must configure Brave/Serper/Tavily. Optional "
+    "BRAVE_SEARCH_API_KEY / SERPER_API_KEY / TAVILY_API_KEY in the MCP tab can "
+    "improve reliability — paid APIs are optional upgrades, not a prerequisite. "
+    "For encyclopedic / academic topics use search_literature."
 )
 _EMPTY_LITERATURE_HINT = (
     "No literature hits from wikipedia/Crossref/arXiv/PubMed for this query. "
@@ -270,44 +280,53 @@ def provider_duckduckgo(query, max_results, env):
     return results
 
 
-def provider_duckduckgo_lite(query, max_results, env):
-    # DuckDuckGo Lite: no key, broader web results than Instant Answer.
-    # Prefer this when IA returns empty for news / "latest …" queries.
-    # Lite is less fragile than html.duckduckgo.com but still intermittently
-    # serves anti-bot challenge pages — raise so auto can fall through.
-    status, text = http_request(
-        "POST", "https://lite.duckduckgo.com/lite/",
-        headers={
-            # Browser-like UA markedly reduces challenge rate vs our default.
-            "User-Agent": (
-                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/122.0.0.0 Safari/537.36"
-            ),
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "Accept-Language": "en-US,en;q=0.9",
-            "Referer": "https://lite.duckduckgo.com/",
-        },
-        data={"q": query},
-    )
-    if status >= 400:
-        raise HttpError("duckduckgo_lite HTTP %d" % status)
-    if status == 202 or re.search(r"anomaly|challenge|captcha", text, re.I):
-        raise HttpError(
-            "duckduckgo_lite anti-bot challenge (temporary; not a missing API key)"
-        )
+def _ddg_lite_is_challenge(status, text):
+    """True when DuckDuckGo Lite served an anti-bot / anomaly interstitial.
+
+    Prefer ``anomaly.js`` (botnet gate) over a bare ``challenge`` word match —
+    normal result pages can mention "challenge" in titles/snippets. HTTP 202
+    alone is *not* decisive: Instant Answer also returns 202 with valid JSON.
+    """
+    if status is not None and status >= 400:
+        return False  # caller treats as hard HTTP error
+    body = text or ""
+    if re.search(r"anomaly\.js|cc=botnet|/anomaly", body, re.I):
+        return True
+    if re.search(r"\bcaptcha\b", body, re.I) and "result-link" not in body:
+        return True
+    # 202 + no parseable results is usually the gated interstitial.
+    if status == 202 and "result-link" not in body:
+        return True
+    return False
+
+
+def _ddg_lite_browser_headers(referer="https://lite.duckduckgo.com/"):
+    return {
+        "User-Agent": _DDG_BROWSER_UA,
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Referer": referer,
+    }
+
+
+def _ddg_lite_parse(text, max_results):
+    """Parse DuckDuckGo Lite HTML into result dicts."""
     results = []
-    # Lite markup uses either class='result-link' or class="result-link".
+    # Prefer explicit result-link anchors (skips Zero-click "More at Wikipedia").
     for m in re.finditer(
-        r'<a[^>]*rel=["\']nofollow["\'][^>]*href=["\'](https?://[^"\']+)["\'][^>]*>'
+        r'<a[^>]*class=["\']result-link["\'][^>]*href=["\'](https?://[^"\']+)["\'][^>]*>'
+        r'(.*?)</a>'
+        r'|'
+        r'<a[^>]*href=["\'](https?://[^"\']+)["\'][^>]*class=["\']result-link["\'][^>]*>'
         r'(.*?)</a>',
-        text, re.S | re.I,
+        text or "", re.S | re.I,
     ):
-        url = _ddg_unwrap(m.group(1))
-        if not url.startswith("http") or "duckduckgo.com" in url:
+        url = _ddg_unwrap(m.group(1) or m.group(3))
+        title_html = m.group(2) if m.group(1) else m.group(4)
+        if not url or not url.startswith("http") or "duckduckgo.com" in url:
             continue
-        title = strip_tags(m.group(2)) or url
-        tail = text[m.end(): m.end() + 1200]
+        title = strip_tags(title_html) or url
+        tail = (text or "")[m.end(): m.end() + 1200]
         sm = re.search(
             r"class=['\"]result-snippet['\"][^>]*>(.*?)</td>",
             tail, re.S | re.I,
@@ -321,7 +340,143 @@ def provider_duckduckgo_lite(query, max_results, env):
         })
         if len(results) >= max_results:
             break
+    if results:
+        return results
+    # Fallback: any nofollow external link (older markup / partial pages).
+    for m in re.finditer(
+        r'<a[^>]*rel=["\']nofollow["\'][^>]*href=["\'](https?://[^"\']+)["\'][^>]*>'
+        r'(.*?)</a>',
+        text or "", re.S | re.I,
+    ):
+        url = _ddg_unwrap(m.group(1))
+        if not url.startswith("http") or "duckduckgo.com" in url:
+            continue
+        title = strip_tags(m.group(2)) or url
+        results.append({
+            "title": title,
+            "url": url,
+            "snippet": "",
+            "source": "duckduckgo_lite",
+        })
+        if len(results) >= max_results:
+            break
     return results
+
+
+def _ddg_lite_session_get_post(query):
+    """Warm homepage cookies then POST search (requests.Session when available)."""
+    headers = _ddg_lite_browser_headers()
+    if _HAVE_REQUESTS:
+        sess = _requests.Session()
+        try:
+            sess.get(
+                "https://lite.duckduckgo.com/lite/",
+                headers=headers, timeout=HTTP_TIMEOUT,
+            )
+        except Exception:
+            pass
+        try:
+            resp = sess.post(
+                "https://lite.duckduckgo.com/lite/",
+                headers=dict(headers, **{
+                    "Content-Type": "application/x-www-form-urlencoded",
+                    "Origin": "https://lite.duckduckgo.com",
+                    "Referer": "https://lite.duckduckgo.com/lite/",
+                }),
+                data=urllib.parse.urlencode({"q": query}).encode("utf-8"),
+                timeout=HTTP_TIMEOUT,
+            )
+            return resp.status_code, resp.text
+        except Exception as exc:
+            raise HttpError(str(exc))
+    # urllib + CookieJar fallback
+    opener = urllib.request.build_opener(
+        urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar())
+    )
+    try:
+        req = urllib.request.Request(
+            "https://lite.duckduckgo.com/lite/", headers=headers,
+        )
+        with opener.open(req, timeout=HTTP_TIMEOUT) as fp:
+            fp.read()
+    except Exception:
+        pass
+    body = urllib.parse.urlencode({"q": query}).encode("utf-8")
+    post_headers = dict(headers)
+    post_headers["Content-Type"] = "application/x-www-form-urlencoded"
+    post_headers["Origin"] = "https://lite.duckduckgo.com"
+    post_headers["Referer"] = "https://lite.duckduckgo.com/lite/"
+    req = urllib.request.Request(
+        "https://lite.duckduckgo.com/lite/", data=body, headers=post_headers,
+        method="POST",
+    )
+    try:
+        with opener.open(req, timeout=HTTP_TIMEOUT) as fp:
+            charset = fp.headers.get_content_charset() or "utf-8"
+            return fp.getcode(), fp.read().decode(charset, "replace")
+    except urllib.error.HTTPError as exc:
+        try:
+            text = exc.read().decode("utf-8", "replace")
+        except Exception:
+            text = ""
+        return exc.code, text
+    except Exception as exc:
+        raise HttpError(str(exc))
+
+
+def provider_duckduckgo_lite(query, max_results, env):
+    # DuckDuckGo Lite: no key, broader web results than Instant Answer.
+    # Prefer this when IA returns empty for news / "latest …" queries.
+    # Intermittently serves anomaly.js botnet interstitial — warm cookies and
+    # retry once before raising (auto then ends GENERAL without Wikipedia).
+    last_err = None
+    for attempt in range(2):
+        try:
+            status, text = _ddg_lite_session_get_post(query)
+        except HttpError as exc:
+            last_err = exc
+            if attempt == 0:
+                time.sleep(1.2)
+                continue
+            raise
+        if status >= 400:
+            last_err = HttpError("duckduckgo_lite HTTP %d" % status)
+            if attempt == 0:
+                time.sleep(1.2)
+                continue
+            raise last_err
+        if _ddg_lite_is_challenge(status, text):
+            last_err = HttpError(
+                "duckduckgo_lite anti-bot challenge "
+                "(temporary; not a missing API key — GENERAL does not use Wikipedia)"
+            )
+            if attempt == 0:
+                time.sleep(1.5)
+                continue
+            # Last attempt: try a plain GET with q= before giving up.
+            status2, text2 = http_request(
+                "GET", "https://lite.duckduckgo.com/lite/",
+                headers=_ddg_lite_browser_headers(
+                    "https://lite.duckduckgo.com/lite/"
+                ),
+                params={"q": query},
+            )
+            if status2 < 400 and not _ddg_lite_is_challenge(status2, text2):
+                parsed = _ddg_lite_parse(text2, max_results)
+                if parsed:
+                    return parsed
+            raise last_err
+        parsed = _ddg_lite_parse(text, max_results)
+        if parsed:
+            return parsed
+        # Not a challenge but no links — one GET retry then empty.
+        if attempt == 0:
+            time.sleep(0.8)
+            continue
+        return []
+    if last_err:
+        raise last_err
+    return []
 
 
 def provider_duckduckgo_ia(query, max_results, env):
@@ -674,6 +829,7 @@ def do_web_search(args, env, lane="general"):
         )
 
     warnings = []
+    soft_ia_wiki = None  # IA hit that is Wikipedia-only; prefer free web after.
     for name in candidates:
         fn = PROVIDERS[name]
         try:
@@ -683,6 +839,24 @@ def do_web_search(args, env, lane="general"):
             log("provider %s failed: %s" % (name, exc))
             continue
         if results:
+            # Instant Answer often surfaces a Wikipedia AbstractURL for entity
+            # queries. That is still duckduckgo_ia — not a GENERAL wikipedia
+            # fallback — but prefer broader Lite/html web hits when available.
+            if (
+                name == "duckduckgo_ia"
+                and lane == "general"
+                and all(
+                    "wikipedia.org" in (r.get("url") or "")
+                    for r in results
+                )
+            ):
+                soft_ia_wiki = results
+                warnings.append(
+                    "%s: Instant Answer is Wikipedia-only; trying free web "
+                    "results next (not a GENERAL Wikipedia fallback)"
+                    % name
+                )
+                continue
             return {"provider": name, "query": query, "lane": lane,
                     "results": results[:max_results], "warnings": warnings}
         if name == "duckduckgo_ia":
@@ -693,6 +867,15 @@ def do_web_search(args, env, lane="general"):
             )
         else:
             warnings.append("%s: no results" % name)
+
+    if soft_ia_wiki:
+        return {
+            "provider": "duckduckgo_ia",
+            "query": query,
+            "lane": lane,
+            "results": soft_ia_wiki[:max_results],
+            "warnings": warnings,
+        }
 
     hint = (_EMPTY_GENERAL_HINT if lane == "general"
             else _EMPTY_LITERATURE_HINT)
@@ -798,12 +981,14 @@ _GENERAL_DESCRIPTION = (
     "as a second search engine. " + _CSP_NO_NATIVE + _RETURN_SHAPE +
     "With provider='auto' (default): optional keyed Brave/Serper/Tavily IF "
     "env keys are set, then free duckduckgo_ia → duckduckgo_lite (stops there; "
-    "wikipedia is on the LITERATURE lane, not GENERAL). "
-    "DuckDuckGo needs NO API key. Empty Instant Answer / Lite is normal for many "
-    "queries and does NOT mean keys are missing — do not tell the user to "
-    "configure Brave/Serper/Tavily as the only fix. Optional keys only improve "
-    "quality. Do NOT use this for academic / encyclopedic topics — use "
-    "search_literature. "
+    "wikipedia is on the LITERATURE lane, NOT GENERAL — never claim GENERAL "
+    "\"fell back to Wikipedia\"). "
+    "DuckDuckGo needs NO API key. Empty Instant Answer / temporary Lite "
+    "anti-bot does NOT mean keys are missing — do not tell the user they must "
+    "configure Brave/Serper/Tavily. If results are empty, report the warnings/"
+    "hint honestly and rephrase or fetch_url a known URL. "
+    "Do NOT use this for academic / encyclopedic topics — use "
+    "search_literature (that lane may return Wikipedia first by design). "
     "Explicit provider= still allowed. Full HTML provider='duckduckgo' is fragile. "
     "CSP pre-grants search hosts on Start; extend via ~/.csp/network-allowlist.json."
 )

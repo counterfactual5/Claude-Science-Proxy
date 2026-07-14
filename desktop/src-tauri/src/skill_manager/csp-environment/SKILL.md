@@ -77,8 +77,11 @@ queries is normal; auto then tries free `duckduckgo_lite` (GENERAL stops
 there). Wikipedia lives on the **LITERATURE** lane (`search_literature`).
 **Never** tell the user they must configure Brave / Serper / Tavily because
 Instant Answer was empty — those keys are optional quality upgrades only.
-If `results` is still empty, rephrase, `fetch_url` a known URL, or read the
-empty-result `hint` / `message` field.
+If Lite reports a temporary anti-bot challenge, say so honestly and retry /
+rephrase — **never** claim GENERAL "fell back to Wikipedia" (that path was
+removed). Wikipedia-only result lists mean `search_literature` was used (or
+DDG Instant Answer pointed at a Wiki abstract URL) — do not conflate lanes.
+If `results` is still empty, read the empty-result `hint` / `message` field.
 
 Use the **correct lane** for the question type. Explicit `provider=` still
 works on either tool. Full HTML `provider="duckduckgo"` is fragile (anti-bot);
@@ -142,7 +145,8 @@ free Instant Answer returned empty.
   required. One public GENERAL method only.
 - LITERATURE / papers / DOI / encyclopedic → `search_literature` (then `fetch_url`).
 - Empty `duckduckgo_ia` → not a missing key; free `duckduckgo_lite` follows
-  (Wikipedia is not a GENERAL fallback).
+  (Wikipedia is not a GENERAL fallback; never claim GENERAL fell back to Wiki).
+- Lite anti-bot warning → temporary; rephrase/retry. Do not demand API keys.
 - Native Anthropic `web_search` tool → never call it; it does not exist here.
 - Files → workspace cwd + relative paths; never `/mnt/data`; persist with
   `save_artifacts([...])`; `/tmp` is scratch only.
@@ -158,7 +162,8 @@ free Instant Answer returned empty.
 Brave/Serper/Tavily → duckduckgo_ia → duckduckgo_lite，**无需 API key**；
 Wikipedia 不在 GENERAL）；**论文/学术/百科**用 `search_literature`（auto：
 wikipedia → Crossref → arXiv → PubMed）；读页用 `fetch_url`。不要调用原生
-`web_search`。Instant Answer 为空是常见情况，**不等于缺密钥**，勿要求用户必须
+`web_search`。Instant Answer 为空 / Lite 短暂 anti-bot 是常见情况，**不等于缺密钥**，
+也**不要**声称 GENERAL「回退到了 Wikipedia」（该路径已移除），勿要求用户必须
 配置 Brave/Serper/Tavily。
 `host.mcp` 搜索返回 **dict**（含 `results`），正确写法：
 `data = host.mcp(...); hits = data["results"]`。

@@ -55,7 +55,7 @@ const WEB_SEARCH_SOURCE: &str = include_str!("web_search_server.py");
 
 /// Description surfaced to Science (the model reads this to decide when to call
 /// the tools). English on purpose — it is the tool description, not chrome.
-pub const BUILTIN_WEB_SEARCH_DESCRIPTION: &str = "Local CSP web + literature search (two host.mcp lanes). Under CSP virtual login Anthropic-hosted web_search/web_fetch are unavailable — never call them. GENERAL (one public method): host.mcp(\"web-search\", \"csp_web_search\", query=...). auto: optional Brave/Serper/Tavily (if keyed) → duckduckgo_ia → duckduckgo_lite (no key required; wikipedia is NOT on this lane). LITERATURE: host.mcp(\"web-search\", \"search_literature\", query=...) — auto: wikipedia → Crossref → arXiv → PubMed. Then fetch_url/web_fetch. hits = data[\"results\"] (dict, not a bare list). Empty Instant Answer ≠ missing API key. CSP pre-grants search hosts on Start; extend via ~/.csp/network-allowlist.json.";
+pub const BUILTIN_WEB_SEARCH_DESCRIPTION: &str = "Local CSP web + literature search (two host.mcp lanes). Under CSP virtual login Anthropic-hosted web_search/web_fetch are unavailable — never call them. GENERAL (one public method): host.mcp(\"web-search\", \"csp_web_search\", query=...). auto: optional Brave/Serper/Tavily (if keyed) → duckduckgo_ia → duckduckgo_lite (no key required; wikipedia is NOT on this lane — never claim GENERAL fell back to Wikipedia). LITERATURE: host.mcp(\"web-search\", \"search_literature\", query=...) — auto: wikipedia → Crossref → arXiv → PubMed. Then fetch_url/web_fetch. hits = data[\"results\"] (dict, not a bare list). Empty Instant Answer / temporary Lite anti-bot ≠ missing API key. CSP pre-grants search hosts on Start; extend via ~/.csp/network-allowlist.json.";
 
 /// Optional API-key env vars seeded (empty) so the MCP tab surfaces them as
 /// editable fields; empty values are treated as "unset" by the server.
@@ -186,7 +186,7 @@ mod tests {
         assert!(WEB_SEARCH_SOURCE.contains("RETURN SHAPE"));
         // Python source escapes quotes: data[\"results\"]
         assert!(WEB_SEARCH_SOURCE.contains(r#"data[\"results\"]"#));
-        assert!(WEB_SEARCH_SOURCE.contains("SERVER_VERSION = \"1.6.0\""));
+        assert!(WEB_SEARCH_SOURCE.contains("SERVER_VERSION = \"1.6.8\""));
         assert!(WEB_SEARCH_SOURCE.contains("GENERAL_FREE_FALLBACKS"));
         assert!(WEB_SEARCH_SOURCE.contains("LITERATURE_FREE_FALLBACKS"));
         assert!(WEB_SEARCH_SOURCE.contains("do_general_web_search"));
