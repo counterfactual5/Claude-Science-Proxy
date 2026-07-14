@@ -3,6 +3,12 @@
 All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.6.5] — 2026-07-14
+
+### Fixed
+- **GENERAL web search empty Instant Answer → false “need API key” story**: DuckDuckGo Instant Answer often returns empty JSON for news/"latest …" queries (not a missing key and not a network failure). Auto now falls through to free `duckduckgo_lite` (Lite HTML) then `wikipedia`; empty-result payloads include an explicit `hint`/`message` that keys are optional. Proxy + `csp-environment` guidance tell the model `csp_web_search` ≡ `web_search` (alias) and not to demand Brave/Serper/Tavily.
+- **Allowlist**: pre-grant `lite.duckduckgo.com` alongside the other DuckDuckGo hosts.
+
 ## [1.6.4] — 2026-07-14
 
 ### Changed

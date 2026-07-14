@@ -34,12 +34,13 @@ Design notes
   they reach the internet through operon without any extra work.
 * **Multi-provider with automatic fallback (OpenClaw-style).** One server hosts
   several search providers behind a single search implementation, exposed under
-  several ``host.mcp`` method aliases (``web_search`` / ``search_literature`` /
-  ``csp_web_search``). ``provider=auto`` (the default) tries key-based providers
+  several ``host.mcp`` method aliases. ``web_search`` and ``csp_web_search`` are
+  the **same GENERAL handler** (prefer ``web_search``); ``search_literature`` is
+  the LITERATURE lane. ``provider=auto`` (the default) tries key-based providers
   first *iff* their API key is present in the environment, then falls back to
   the free/no-key providers. Any single provider failure is captured as a
   warning and the next provider is tried; the call only fails if *every*
-  candidate fails.
+  candidate fails. Empty Instant Answer is **not** a missing-key error.
 
 Providers
 ---------
@@ -52,14 +53,18 @@ Semantic Scholar return 200/429, i.e. the CONNECT tunnel is permitted):
   * ``openalex``        — OpenAlex works (all fields; small metered budget).
   * ``semanticscholar`` — Semantic Scholar graph (rate-limited without a key).
 Free general-web (CSP pre-grants these hosts into Science network allowlist on
-Start; HTML scrape may still hit provider anti-bot — prefer ``duckduckgo_ia``;
-not in ``auto`` by default):
-  * ``duckduckgo``    — DuckDuckGo HTML endpoint (scraped, fragile).
-  * ``duckduckgo_ia`` — DuckDuckGo Instant Answer API (curated abstracts).
-  * ``wikipedia``     — MediaWiki search API.
-Key based (opt-in via MCP env — configure in CSP's MCP tab; CSP also pre-grants
-``api.search.brave.com`` / ``google.serper.dev`` / ``api.tavily.com`` so keys
-work once set — extra hosts: ``~/.csp/network-allowlist.json``):
+Start; no API key required):
+  * ``duckduckgo_ia``   — DuckDuckGo Instant Answer API (entity/curated abstracts;
+    often empty for news/"latest …" queries — that is normal, not a missing key).
+  * ``duckduckgo_lite`` — DuckDuckGo Lite HTML (broader web results; preferred
+    free fallback when Instant Answer is empty).
+  * ``duckduckgo``      — DuckDuckGo full HTML endpoint (scraped, often anti-bot;
+    explicit ``provider=`` only — not in auto).
+  * ``wikipedia``       — MediaWiki search API (also used by the literature lane).
+Key based (optional quality upgrade via MCP env — configure in CSP's MCP tab;
+CSP also pre-grants ``api.search.brave.com`` / ``google.serper.dev`` /
+``api.tavily.com`` so keys work once set — extra hosts:
+``~/.csp/network-allowlist.json``). Keys are NOT required for general search:
   * ``brave``  — Brave Search API    (env ``BRAVE_SEARCH_API_KEY``).
   * ``serper`` — Serper.dev (Google) (env ``SERPER_API_KEY``).
   * ``tavily`` — Tavily Search API   (env ``TAVILY_API_KEY``).
@@ -78,10 +83,24 @@ import urllib.parse
 import urllib.request
 
 SERVER_NAME = "web-search"
-SERVER_VERSION = "1.5.0"
+SERVER_VERSION = "1.6.0"
 DEFAULT_PROTOCOL = "2025-06-18"
 USER_AGENT = "csp-web-search/1.0 (+https://github.com/; Claude Science Proxy built-in)"
 HTTP_TIMEOUT = 15
+# Empty Instant Answer / exhausted free providers — do NOT tell the user they
+# "must" configure Brave/Serper/Tavily. Keys are optional quality upgrades.
+_EMPTY_GENERAL_HINT = (
+    "No free general-web hits for this query (DuckDuckGo Instant Answer is often "
+    "empty for news/\"latest …\" questions; that does NOT mean an API key is "
+    "missing). Try a shorter/entity-style query, call fetch_url on a known URL, "
+    "or optionally set BRAVE_SEARCH_API_KEY / SERPER_API_KEY / TAVILY_API_KEY in "
+    "the MCP tab to improve reliability — keys are optional, not required."
+)
+_EMPTY_LITERATURE_HINT = (
+    "No literature hits from wikipedia/Crossref/arXiv/PubMed for this query. "
+    "Try a paper title, DOI, author+year, or a narrower scholarly phrase. "
+    "Paid Brave/Serper/Tavily keys are unrelated to this lane."
+)
 
 
 def log(msg):
@@ -214,13 +233,16 @@ def _ddg_unwrap(href):
 # Providers. Each returns a list of {title, url, snippet, source, published?}. #
 # --------------------------------------------------------------------------- #
 def provider_duckduckgo(query, max_results, env):
-    # HTML endpoint gives titles + snippets; scraped and rate-limited.
+    # Full HTML endpoint: titles + snippets; scraped, rate-limited, and often
+    # blocked by anti-bot challenges. Prefer duckduckgo_lite for auto.
     status, text = http_request(
         "POST", "https://html.duckduckgo.com/html/",
         data={"q": query, "kl": "us-en"},
     )
     if status >= 400:
         raise HttpError("duckduckgo HTTP %d" % status)
+    if re.search(r"anomaly|challenge|captcha", text, re.I):
+        raise HttpError("duckduckgo anti-bot challenge (use duckduckgo_lite)")
     results = []
     # Each result: an <a class="result__a" href="...">title</a> optionally
     # followed by an <a class="result__snippet">snippet</a>.
@@ -242,10 +264,65 @@ def provider_duckduckgo(query, max_results, env):
     return results
 
 
+def provider_duckduckgo_lite(query, max_results, env):
+    # DuckDuckGo Lite: no key, broader web results than Instant Answer.
+    # Prefer this when IA returns empty for news / "latest …" queries.
+    # Lite is less fragile than html.duckduckgo.com but still intermittently
+    # serves anti-bot challenge pages — raise so auto can fall through.
+    status, text = http_request(
+        "POST", "https://lite.duckduckgo.com/lite/",
+        headers={
+            # Browser-like UA markedly reduces challenge rate vs our default.
+            "User-Agent": (
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/122.0.0.0 Safari/537.36"
+            ),
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Referer": "https://lite.duckduckgo.com/",
+        },
+        data={"q": query},
+    )
+    if status >= 400:
+        raise HttpError("duckduckgo_lite HTTP %d" % status)
+    if status == 202 or re.search(r"anomaly|challenge|captcha", text, re.I):
+        raise HttpError(
+            "duckduckgo_lite anti-bot challenge (temporary; not a missing API key)"
+        )
+    results = []
+    # Lite markup uses either class='result-link' or class="result-link".
+    for m in re.finditer(
+        r'<a[^>]*rel=["\']nofollow["\'][^>]*href=["\'](https?://[^"\']+)["\'][^>]*>'
+        r'(.*?)</a>',
+        text, re.S | re.I,
+    ):
+        url = _ddg_unwrap(m.group(1))
+        if not url.startswith("http") or "duckduckgo.com" in url:
+            continue
+        title = strip_tags(m.group(2)) or url
+        tail = text[m.end(): m.end() + 1200]
+        sm = re.search(
+            r"class=['\"]result-snippet['\"][^>]*>(.*?)</td>",
+            tail, re.S | re.I,
+        )
+        snippet = strip_tags(sm.group(1)) if sm else ""
+        results.append({
+            "title": title,
+            "url": url,
+            "snippet": snippet,
+            "source": "duckduckgo_lite",
+        })
+        if len(results) >= max_results:
+            break
+    return results
+
+
 def provider_duckduckgo_ia(query, max_results, env):
-    # Instant Answer API: no key, reliable, but only returns curated
-    # abstracts/related topics for entity-like queries (empty for many general
-    # queries — callers should fall through to another provider then).
+    # Instant Answer API: no key. Returns curated abstracts/related topics for
+    # entity-like queries; empty JSON for many news/"latest …" queries is
+    # expected (not a network failure and not a missing API key) — auto falls
+    # through to duckduckgo_lite / wikipedia.
     data = http_json(
         "GET", "https://api.duckduckgo.com/",
         params={"q": query, "format": "json", "no_html": 1, "no_redirect": 1,
@@ -253,11 +330,12 @@ def provider_duckduckgo_ia(query, max_results, env):
     )
     out = []
     abstract = data.get("AbstractText") or data.get("Abstract")
-    if abstract:
+    answer = data.get("Answer")
+    if abstract or answer:
         out.append({
             "title": data.get("Heading") or query,
-            "url": data.get("AbstractURL", ""),
-            "snippet": strip_tags(abstract),
+            "url": data.get("AbstractURL", "") or data.get("AnswerURL", ""),
+            "snippet": strip_tags(abstract or answer),
             "source": "duckduckgo_ia",
         })
 
@@ -277,6 +355,19 @@ def provider_duckduckgo_ia(query, max_results, env):
                 })
 
     _walk(data.get("RelatedTopics", []) or [])
+    # Also surface top-level "Results" (instant answer external links).
+    for hit in (data.get("Results") or []):
+        if len(out) >= max_results:
+            break
+        if not isinstance(hit, dict) or not hit.get("FirstURL"):
+            continue
+        text = strip_tags(hit.get("Text", ""))
+        out.append({
+            "title": text.split(" - ")[0] if text else hit["FirstURL"],
+            "url": hit.get("FirstURL", ""),
+            "snippet": text,
+            "source": "duckduckgo_ia",
+        })
     return out[:max_results]
 
 
@@ -509,10 +600,9 @@ PROVIDERS = {
     "pubmed": provider_pubmed,
     "openalex": provider_openalex,
     "semanticscholar": provider_semanticscholar,
-    # Free general-web providers. These WORK when the server runs outside the
-    # sandbox, but Claude Science's operon egress allowlist currently blocks
-    # DuckDuckGo/Wikipedia (403), so in-sandbox they fail fast and fall through.
+    # Free general-web providers. CSP pre-grants their hosts on Start.
     "duckduckgo": provider_duckduckgo,
+    "duckduckgo_lite": provider_duckduckgo_lite,
     "duckduckgo_ia": provider_duckduckgo_ia,
     "wikipedia": provider_wikipedia,
     # Key-based general search. Also subject to the sandbox allowlist (their API
@@ -525,8 +615,9 @@ PROVIDERS = {
 
 # Key-based providers and the env var that activates each.
 # Two search lanes (chosen by host.mcp method name, not by guessing the query):
-#   general     — web_search / csp_web_search
-#                 keyed Brave/Serper/Tavily → duckduckgo_ia
+#   general     — web_search ≡ csp_web_search (same handler; alias only)
+#                 keyed Brave/Serper/Tavily (optional) → duckduckgo_ia →
+#                 duckduckgo_lite → wikipedia
 #   literature  — search_literature
 #                 wikipedia → Crossref → arXiv → PubMed
 # Explicit provider=<name> still works on either tool (overrides the lane's auto).
@@ -535,7 +626,7 @@ KEY_PROVIDERS = [
     ("serper", ("SERPER_API_KEY",)),
     ("tavily", ("TAVILY_API_KEY",)),
 ]
-GENERAL_FREE_FALLBACKS = ["duckduckgo_ia"]
+GENERAL_FREE_FALLBACKS = ["duckduckgo_ia", "duckduckgo_lite", "wikipedia"]
 LITERATURE_FREE_FALLBACKS = ["wikipedia", "crossref", "arxiv", "pubmed"]
 # Kept for tests / docs; prefer the lane-specific lists above.
 FREE_FALLBACKS = GENERAL_FREE_FALLBACKS + LITERATURE_FREE_FALLBACKS
@@ -588,10 +679,29 @@ def do_web_search(args, env, lane="general"):
         if results:
             return {"provider": name, "query": query, "lane": lane,
                     "results": results[:max_results], "warnings": warnings}
-        warnings.append("%s: no results" % name)
+        if name == "duckduckgo_ia":
+            warnings.append(
+                "%s: no Instant Answer hits (common for non-entity / news "
+                "queries; not a missing API key — trying free fallbacks)"
+                % name
+            )
+        else:
+            warnings.append("%s: no results" % name)
 
-    return {"provider": None, "query": query, "lane": lane, "results": [],
-            "warnings": warnings or ["no providers available"]}
+    hint = (_EMPTY_GENERAL_HINT if lane == "general"
+            else _EMPTY_LITERATURE_HINT)
+    if not candidates:
+        warnings = warnings or ["no providers available"]
+    return {
+        "provider": None,
+        "query": query,
+        "lane": lane,
+        "results": [],
+        "warnings": warnings,
+        "hint": hint,
+        # Keep message for models that only skim string fields.
+        "message": hint,
+    }
 
 
 def do_general_web_search(args, env):
@@ -636,8 +746,8 @@ _SEARCH_INPUT_SCHEMA = {
             "type": "string",
             "default": "auto",
             "enum": ["auto", "crossref", "arxiv", "pubmed", "openalex",
-                     "semanticscholar", "duckduckgo", "duckduckgo_ia",
-                     "wikipedia", "brave", "serper", "tavily"],
+                     "semanticscholar", "duckduckgo", "duckduckgo_lite",
+                     "duckduckgo_ia", "wikipedia", "brave", "serper", "tavily"],
             "description": "Search backend; 'auto' picks the best available.",
         },
     },
@@ -677,12 +787,16 @@ _CSP_NO_NATIVE = (
 
 _GENERAL_DESCRIPTION = (
     "GENERAL web search (news, products, \"latest models\", facts) via "
-    "host.mcp(\"web-search\", \"web_search\"|\"csp_web_search\", query=..., "
-    "max_results=N). " + _CSP_NO_NATIVE + _RETURN_SHAPE +
-    "With provider='auto' (default) this GENERAL lane tries keyed "
-    "Brave/Serper/Tavily (when env keys are set), then duckduckgo_ia. "
-    "Do NOT use this tool for academic papers — use search_literature instead. "
-    "Explicit provider= still allowed. HTML provider='duckduckgo' is fragile. "
+    "host.mcp(\"web-search\", \"web_search\", query=..., max_results=N). "
+    "csp_web_search is the SAME method (alias) — not a second engine. "
+    + _CSP_NO_NATIVE + _RETURN_SHAPE +
+    "With provider='auto' (default): optional keyed Brave/Serper/Tavily IF "
+    "env keys are set, then free duckduckgo_ia → duckduckgo_lite → wikipedia. "
+    "DuckDuckGo needs NO API key. Empty Instant Answer is normal for many "
+    "queries and does NOT mean keys are missing — do not tell the user to "
+    "configure Brave/Serper/Tavily as the only fix. Optional keys only improve "
+    "reliability. Do NOT use this for academic papers — use search_literature. "
+    "Explicit provider= still allowed. Full HTML provider='duckduckgo' is fragile. "
     "CSP pre-grants search hosts on Start; extend via ~/.csp/network-allowlist.json."
 )
 
@@ -692,10 +806,10 @@ _LITERATURE_DESCRIPTION = (
     _RETURN_SHAPE +
     "With provider='auto' (default) this LITERATURE lane tries wikipedia → "
     "Crossref → arXiv → PubMed. Use for papers, DOIs, scholarly metadata. "
-    "For product/news/\"latest GPT\" queries use web_search / csp_web_search "
-    "instead. OpenAlex / Semantic Scholar remain explicitly selectable via "
-    "provider=. CSP network allowlist applies; extend via "
-    "~/.csp/network-allowlist.json."
+    "For product/news/\"latest GPT\" queries use web_search (alias csp_web_search) "
+    "instead — those two names are the same GENERAL method. OpenAlex / Semantic "
+    "Scholar remain explicitly selectable via provider=. CSP network allowlist "
+    "applies; extend via ~/.csp/network-allowlist.json."
 )
 
 _FETCH_DESCRIPTION = (
@@ -712,12 +826,19 @@ _FETCH_DESCRIPTION = (
 TOOLS = [
     {
         "name": "web_search",
-        "description": _GENERAL_DESCRIPTION + " Alias: csp_web_search.",
+        "description": (
+            _GENERAL_DESCRIPTION
+            + " Alias: csp_web_search (identical handler — prefer this name)."
+        ),
         "inputSchema": _SEARCH_INPUT_SCHEMA,
     },
     {
         "name": "csp_web_search",
-        "description": _GENERAL_DESCRIPTION + " Alias of web_search.",
+        "description": (
+            "ALIAS of web_search — same GENERAL search method / same results. "
+            "Prefer calling web_search; do not present this as a separate engine. "
+            + _GENERAL_DESCRIPTION
+        ),
         "inputSchema": _SEARCH_INPUT_SCHEMA,
     },
     {

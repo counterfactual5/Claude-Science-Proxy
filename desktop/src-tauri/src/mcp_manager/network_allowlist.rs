@@ -35,6 +35,7 @@ const PREFERENCES_FILE: &str = "preferences.json";
 pub const WEB_SEARCH_PROVIDER_DOMAINS: &[&str] = &[
     // DuckDuckGo
     "html.duckduckgo.com",
+    "lite.duckduckgo.com",
     "api.duckduckgo.com",
     // Wikipedia (MediaWiki API)
     "en.wikipedia.org",
@@ -477,6 +478,7 @@ mod tests {
     #[test]
     fn web_search_provider_domains_cover_key_vendors() {
         let joined = WEB_SEARCH_PROVIDER_DOMAINS.join(" ");
+        assert!(joined.contains("lite.duckduckgo.com"));
         assert!(joined.contains("duckduckgo"));
         assert!(joined.contains("brave"));
         assert!(joined.contains("serper"));

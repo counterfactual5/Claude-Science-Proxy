@@ -35,14 +35,14 @@ The `web-search` connector is already connected and enabled. Pick the lane by
 
 | Lane | Methods | Use for | `provider="auto"` order |
 |------|---------|---------|-------------------------|
-| **GENERAL** | `web_search` / `csp_web_search` | news, products, "latest models", facts | keyed Brave/Serper/Tavily (if set) → `duckduckgo_ia` |
+| **GENERAL** | `web_search` (**prefer**); `csp_web_search` is an **alias of the same method** — not a second engine | news, products, "latest models", facts | optional keyed Brave/Serper/Tavily (if set) → `duckduckgo_ia` → `duckduckgo_lite` → `wikipedia` (**no key required**) |
 | **LITERATURE** | `search_literature` | papers, DOIs, scholarly metadata | wikipedia → Crossref → arXiv → PubMed |
 | (fetch) | `fetch_url` | read a URL as clean text after either search | — |
 
 Typical flows:
 
 ```python
-# GENERAL / product / news
+# GENERAL / product / news — prefer web_search (csp_web_search is identical)
 data = host.mcp("web-search", "web_search", query="...", max_results=5)
 hits = data["results"]
 for r in hits:
@@ -65,9 +65,18 @@ that iterates dict **keys** (strings) and raises
 (`hits = data["results"]`), never a bare list of hits. Fetch returns
 `{"url", "status", "content"}`.
 
+### Empty Instant Answer ≠ missing API key
+
+DuckDuckGo Instant Answer needs **no key**. Empty IA for news / "latest …"
+queries is normal; auto then tries free `duckduckgo_lite` and `wikipedia`.
+**Never** tell the user they must configure Brave / Serper / Tavily because
+Instant Answer was empty — those keys are optional reliability upgrades only.
+If `results` is still empty, rephrase, `fetch_url` a known URL, or read the
+empty-result `hint` / `message` field.
+
 Use the **correct lane** for the question type. Explicit `provider=` still
-works on either tool. HTML `provider="duckduckgo"` is optional and fragile
-(anti-bot).
+works on either tool. Full HTML `provider="duckduckgo"` is fragile (anti-bot);
+prefer auto / `duckduckgo_lite`.
 
 ## 2. Files and artifacts
 
@@ -115,15 +124,18 @@ plots need no change.
 ## 5. Network allowlist
 
 CSP pre-grants hosts for the bundled `web-search` providers into Science's
-network allowlist on Start (DuckDuckGo Instant Answer, Wikipedia, Brave,
+network allowlist on Start (DuckDuckGo Instant Answer + Lite, Wikipedia, Brave,
 Serper, Tavily). Extra hosts can be added in `~/.csp/network-allowlist.json`.
 If a host is still blocked, say so — do **not** retry the hosted Anthropic
-`web_search` tool.
+`web_search` tool, and do **not** invent a "missing API key" requirement when
+free Instant Answer returned empty.
 
 ## Summary
 
-- GENERAL web / news / products → `web_search` / `csp_web_search` (then `fetch_url`).
+- GENERAL web / news / products → `web_search` (alias `csp_web_search`; same
+  method) then `fetch_url`. No API key required.
 - LITERATURE / papers / DOI → `search_literature` (then `fetch_url`).
+- Empty `duckduckgo_ia` → not a missing key; free lite/wikipedia follow.
 - Hosted `web_search` tool → never call it; it does not exist in this environment.
 - Files → workspace cwd + relative paths; never `/mnt/data`; persist with
   `save_artifacts([...])`; `/tmp` is scratch only.
@@ -135,10 +147,13 @@ If a host is still blocked, say so — do **not** retry the hosted Anthropic
 ## 中文提示
 
 本环境没有托管版 Web Search。联网请用本地 `web-search`：**通用/新闻/产品**用
-`web_search` / `csp_web_search`（auto：Brave/Serper/Tavily → duckduckgo_ia）；
-**论文/学术**用 `search_literature`（auto：wikipedia → Crossref → arXiv → PubMed）；
-读页用 `fetch_url`。不要调用托管 `web_search`。`host.mcp` 搜索返回 **dict**
-（含 `results`），正确写法：`data = host.mcp(...); hits = data["results"]`。
+`web_search`（`csp_web_search` 只是同方法别名，不是第二个引擎；auto：可选
+Brave/Serper/Tavily → duckduckgo_ia → duckduckgo_lite → wikipedia，**无需
+API key**）；**论文/学术**用 `search_literature`（auto：wikipedia → Crossref →
+arXiv → PubMed）；读页用 `fetch_url`。不要调用托管 `web_search`。Instant Answer
+为空是常见情况，**不等于缺密钥**，勿要求用户必须配置 Brave/Serper/Tavily。
+`host.mcp` 搜索返回 **dict**（含 `results`），正确写法：
+`data = host.mcp(...); hits = data["results"]`。
 
 本地环境约定（与托管 Claude 不同，请每次遵守）：
 

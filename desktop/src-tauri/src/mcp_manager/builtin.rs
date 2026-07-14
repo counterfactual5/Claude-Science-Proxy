@@ -54,7 +54,7 @@ const WEB_SEARCH_SOURCE: &str = include_str!("web_search_server.py");
 
 /// Description surfaced to Science (the model reads this to decide when to call
 /// the tools). English on purpose — it is the tool description, not chrome.
-pub const BUILTIN_WEB_SEARCH_DESCRIPTION: &str = "Local CSP web + literature search (two host.mcp lanes). Under CSP virtual login Anthropic-hosted web_search/web_fetch are unavailable. GENERAL: host.mcp(\"web-search\", \"web_search\"|\"csp_web_search\", query=...) — auto: Brave/Serper/Tavily (if keyed) → duckduckgo_ia. LITERATURE: host.mcp(\"web-search\", \"search_literature\", query=...) — auto: wikipedia → Crossref → arXiv → PubMed. Then fetch_url/web_fetch. hits = data[\"results\"] (dict, not a bare list). CSP pre-grants search hosts on Start; extend via ~/.csp/network-allowlist.json.";
+pub const BUILTIN_WEB_SEARCH_DESCRIPTION: &str = "Local CSP web + literature search (two host.mcp lanes). Under CSP virtual login Anthropic-hosted web_search/web_fetch are unavailable. GENERAL: host.mcp(\"web-search\", \"web_search\", query=...) — csp_web_search is an alias of the same method. auto: optional Brave/Serper/Tavily (if keyed) → duckduckgo_ia → duckduckgo_lite → wikipedia (no key required). LITERATURE: host.mcp(\"web-search\", \"search_literature\", query=...) — auto: wikipedia → Crossref → arXiv → PubMed. Then fetch_url/web_fetch. hits = data[\"results\"] (dict, not a bare list). Empty Instant Answer ≠ missing API key. CSP pre-grants search hosts on Start; extend via ~/.csp/network-allowlist.json.";
 
 /// Optional API-key env vars seeded (empty) so the MCP tab surfaces them as
 /// editable fields; empty values are treated as "unset" by the server.
@@ -178,11 +178,13 @@ mod tests {
         assert!(WEB_SEARCH_SOURCE.contains("RETURN SHAPE"));
         // Python source escapes quotes: data[\"results\"]
         assert!(WEB_SEARCH_SOURCE.contains(r#"data[\"results\"]"#));
-        assert!(WEB_SEARCH_SOURCE.contains("SERVER_VERSION = \"1.5.0\""));
+        assert!(WEB_SEARCH_SOURCE.contains("SERVER_VERSION = \"1.6.0\""));
         assert!(WEB_SEARCH_SOURCE.contains("GENERAL_FREE_FALLBACKS"));
         assert!(WEB_SEARCH_SOURCE.contains("LITERATURE_FREE_FALLBACKS"));
         assert!(WEB_SEARCH_SOURCE.contains("do_general_web_search"));
         assert!(WEB_SEARCH_SOURCE.contains("do_literature_search"));
+        assert!(WEB_SEARCH_SOURCE.contains("duckduckgo_lite"));
+        assert!(WEB_SEARCH_SOURCE.contains("ALIAS of web_search"));
         // literature auto must not start with duckduckgo_ia
         let lit = WEB_SEARCH_SOURCE
             .split("LITERATURE_FREE_FALLBACKS = [")
@@ -198,6 +200,8 @@ mod tests {
             .and_then(|s| s.split(']').next())
             .unwrap_or("");
         assert!(gen.contains("duckduckgo_ia"));
+        assert!(gen.contains("duckduckgo_lite"));
+        assert!(gen.contains("wikipedia"));
         assert!(!gen.contains("crossref"));
     }
 
