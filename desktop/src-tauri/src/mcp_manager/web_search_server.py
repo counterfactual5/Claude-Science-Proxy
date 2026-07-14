@@ -6,6 +6,20 @@ Bundled into Claude Science Proxy (CSP) and deployed as the built-in
 even though Anthropic's hosted ``web_search`` tool is unavailable under CSP's
 virtual login.
 
+**How models must call this:** bare ``web_search`` / ``web_fetch`` are Anthropic
+*native server tools*, not local MCP entry points. Under CSP virtual login they
+are stripped from OPERON's toolset — top-level calls fail with
+``Tool 'web_search' not found on agent 'OPERON'``. Local MCP tools are **not**
+top-level model tools; call them only via ``repl`` as::
+
+    host.mcp("web-search", "search_literature", query="...", max_results=N)
+    host.mcp("web-search", "fetch_url", url="...")
+
+Names in ``tools/list`` (``web_search``, ``search_literature``,
+``csp_web_search``, ``fetch_url``, ``web_fetch``) are **method names for
+``host.mcp`` only**. Re-advertising them cannot intercept bare native calls;
+the CSP proxy injects standing system guidance instead.
+
 Design notes
 ------------
 * **Transport.** Newline-delimited JSON-RPC 2.0 over stdio (the MCP stdio
@@ -20,18 +34,12 @@ Design notes
   they reach the internet through operon without any extra work.
 * **Multi-provider with automatic fallback (OpenClaw-style).** One server hosts
   several search providers behind a single search implementation, exposed under
-  several aliases (``web_search`` / ``search_literature`` / ``csp_web_search``).
-  ``provider=auto`` (the default) tries key-based providers first *iff* their API
-  key is present in the environment, then falls back to the free/no-key
-  providers. Any single provider failure is captured as a warning and the next
-  provider is tried; the call only fails if *every* candidate fails.
-* **Advertise ``web_search`` locally (safe under CSP).** Under CSP virtual login
-  there is **no** Anthropic-hosted ``web_search`` tool — model-native calls to
-  that name previously failed with ``Tool 'web_search' not found on agent``.
-  This connector therefore advertises ``web_search`` (and ``web_fetch``) in
-  ``tools/list`` so reflexive model calls resolve to this local MCP. Aliases
-  ``search_literature``, ``csp_web_search``, and ``fetch_url`` remain advertised
-  too (belt-and-suspenders).
+  several ``host.mcp`` method aliases (``web_search`` / ``search_literature`` /
+  ``csp_web_search``). ``provider=auto`` (the default) tries key-based providers
+  first *iff* their API key is present in the environment, then falls back to
+  the free/no-key providers. Any single provider failure is captured as a
+  warning and the next provider is tried; the call only fails if *every*
+  candidate fails.
 
 Providers
 ---------
@@ -631,36 +639,35 @@ _FETCH_INPUT_SCHEMA = {
     "required": ["url"],
 }
 
-# Planner guidance shared by the search tools. Under CSP virtual login there is
-# no Anthropic-hosted web_search — this local MCP *is* the correct target for
-# model-native ``web_search`` calls.
+# Planner guidance shared by the search tools. tools/list names are host.mcp
+# method names only — bare native web_search is unavailable under CSP.
 _SEARCH_DESCRIPTION = (
-    "Local CSP web / literature search (this MCP connector). Under Claude "
-    "Science Proxy (CSP) virtual login there is NO Anthropic-hosted web_search "
-    "tool — calling a hosted one fails with \"Tool 'web_search' not found on "
-    "agent\". This local ``web_search`` (and its aliases) is the correct tool "
-    "for web/literature search here; no Anthropic account is needed. Returns "
-    "titles, URLs and snippets. Free with no API key: searches scholarly "
-    "sources (Crossref, arXiv, PubMed, and optionally OpenAlex / Semantic "
-    "Scholar) with automatic fallback. provider='auto' (default) tries "
-    "configured key providers first, then the no-key scholarly providers, "
-    "capturing per-provider warnings. NOTE: inside Claude Science's sandbox, "
-    "network egress is restricted to an allowlist of scientific sources, so "
-    "general search engines (duckduckgo/wikipedia) and paid providers "
-    "(brave/serper/tavily) are typically unavailable there and are best-effort "
-    "only."
+    "Local CSP web / literature search via host.mcp(\"web-search\", …). Under "
+    "Claude Science Proxy (CSP) virtual login there is NO Anthropic-hosted "
+    "web_search tool — calling it as a top-level tool fails with "
+    "\"Tool 'web_search' not found on agent\". Use the repl tool: "
+    "host.mcp(\"web-search\", \"search_literature\"|\"web_search\"|\"csp_web_search\", "
+    "query=..., max_results=N). Returns titles, URLs and snippets. Free with no "
+    "API key: searches scholarly sources (Crossref, arXiv, PubMed, and optionally "
+    "OpenAlex / Semantic Scholar) with automatic fallback. provider='auto' "
+    "(default) tries configured key providers first, then the no-key scholarly "
+    "providers, capturing per-provider warnings. NOTE: inside Claude Science's "
+    "sandbox, network egress is restricted to an allowlist of scientific "
+    "sources, so general search engines (duckduckgo/wikipedia) and paid "
+    "providers (brave/serper/tavily) are typically unavailable there and are "
+    "best-effort only."
 )
 
 _FETCH_DESCRIPTION = (
     "Fetch a web page (or text/JSON resource) and return its readable text "
-    "with HTML stripped. Useful to read a result found via web_search / "
-    "search_literature / csp_web_search. Part of the local CSP web-search MCP "
-    "connector (no Anthropic-hosted fetch required)."
+    "with HTML stripped. Call via host.mcp(\"web-search\", \"fetch_url\"|"
+    "\"web_fetch\", url=...). Useful after a search_literature / web_search / "
+    "csp_web_search result. Local CSP MCP only — no Anthropic-hosted fetch."
 )
 
 TOOLS = [
     {
-        # Model-native name — safe to advertise under CSP (no hosted clash).
+        # host.mcp method name (NOT a top-level native tool under CSP).
         "name": "web_search",
         "description": (
             _SEARCH_DESCRIPTION

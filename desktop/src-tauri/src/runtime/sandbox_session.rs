@@ -288,12 +288,18 @@ fn deploy_sandbox_mcp(auth_dir: &Path, sbx_home: &Path) -> (String, bool) {
     // the entry self-heals against the current sandbox Python layout. Also
     // force-refresh the built-in description so already-seeded inventories pick
     // up upgraded tool-name guidance (command/args already rewritten here).
+    // If the embedded script bytes change, treat deploy as changed so a running
+    // sandbox is restarted — MCP children keep the old script in memory.
+    let mut script_rewritten = false;
     if enabled.iter().any(|s| s.builtin) {
         use crate::mcp_manager::builtin;
         let mcp_dir = auth_dir.join("mcp");
         let _ = std::fs::create_dir_all(&mcp_dir);
-        let script = builtin::write_web_search_server(&mcp_dir)
-            .unwrap_or_else(|| builtin::web_search_script_path(sbx_home));
+        let (script, rewritten) = match builtin::write_web_search_server(&mcp_dir) {
+            Some((path, rewritten)) => (path, rewritten),
+            None => (builtin::web_search_script_path(sbx_home), false),
+        };
+        script_rewritten = rewritten;
         let script_str = script.to_string_lossy().into_owned();
         let python = builtin::resolve_sandbox_python(sbx_home)
             .map(|p| p.to_string_lossy().into_owned());
@@ -308,13 +314,16 @@ fn deploy_sandbox_mcp(auth_dir: &Path, sbx_home: &Path) -> (String, bool) {
         }
     }
     match crate::mcp_manager::deploy_enabled_mcp(&enabled, auth_dir, sbx_home, &real_science) {
-        Ok(r) => (
-            format!(
-                "deploy: servers={:?} granted_paths={} cleared={} changed={}",
-                r.deployed, r.granted_paths, r.cleared, r.changed
-            ),
-            r.changed,
-        ),
+        Ok(r) => {
+            let changed = r.changed || script_rewritten;
+            (
+                format!(
+                    "deploy: servers={:?} granted_paths={} cleared={} changed={} script_rewritten={}",
+                    r.deployed, r.granted_paths, r.cleared, changed, script_rewritten
+                ),
+                changed,
+            )
+        }
         Err(e) => (
             format!("deploy error (sandbox launch continues): {e}"),
             false,

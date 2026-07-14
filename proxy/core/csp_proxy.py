@@ -792,6 +792,10 @@ class H(BaseHTTPRequestHandler):
     # ---- OpenAI compatible: translate to OpenAI; non-stream may replay as SSE ----
     def _handle_openai(self, areq, runtime=None):
         runtime = runtime or current_runtime()
+        # Same standing web-access guidance as Anthropic passthrough (Science
+        # always sends Anthropic-shaped /v1/messages; OpenAI translation reads
+        # `system` after this inject). Idempotent via sentinel.
+        areq = anthropic_compat.inject_csp_web_access_guidance(areq)
         model_id = areq.get("model", "claude-sonnet-5")
         stream = bool(areq.get("stream"))
         metadata = {"rule_ids": ()}

@@ -294,5 +294,50 @@ def _min_sse_frames():
     ]
 
 
+class InjectCspWebAccessGuidance(unittest.TestCase):
+    def test_skips_when_no_system(self):
+        body = {"model": "claude-opus-4-8", "messages": [{"role": "user", "content": "hi"}]}
+        self.assertIs(ac.inject_csp_web_access_guidance(body), body)
+
+    def test_appends_to_string_system(self):
+        body = {"system": "You are helpful.", "messages": []}
+        out = ac.inject_csp_web_access_guidance(body)
+        self.assertIsNot(out, body)
+        self.assertEqual(body["system"], "You are helpful.")  # original untouched
+        self.assertIn(ac.CSP_WEB_ACCESS_GUIDANCE_SENTINEL, out["system"])
+        self.assertIn('host.mcp("web-search", "search_literature"', out["system"])
+        self.assertIn('host.mcp("web-search", "fetch_url"', out["system"])
+        self.assertTrue(out["system"].startswith("You are helpful."))
+
+    def test_appends_block_to_list_system(self):
+        body = {"system": [{"type": "text", "text": "base"}], "messages": []}
+        out = ac.inject_csp_web_access_guidance(body)
+        self.assertEqual(len(out["system"]), 2)
+        self.assertEqual(out["system"][0], {"type": "text", "text": "base"})
+        self.assertEqual(out["system"][1]["type"], "text")
+        self.assertIn(ac.CSP_WEB_ACCESS_GUIDANCE_SENTINEL, out["system"][1]["text"])
+
+    def test_idempotent_on_string_and_list(self):
+        once = ac.inject_csp_web_access_guidance({"system": "a", "messages": []})
+        twice = ac.inject_csp_web_access_guidance(once)
+        self.assertIs(twice, once)
+        self.assertEqual(twice["system"].count(ac.CSP_WEB_ACCESS_GUIDANCE_SENTINEL), 1)
+
+        once_list = ac.inject_csp_web_access_guidance({
+            "system": [{"type": "text", "text": "a"}], "messages": []})
+        twice_list = ac.inject_csp_web_access_guidance(once_list)
+        self.assertIs(twice_list, once_list)
+        texts = [b.get("text", "") for b in twice_list["system"] if isinstance(b, dict)]
+        self.assertEqual("".join(texts).count(ac.CSP_WEB_ACCESS_GUIDANCE_SENTINEL), 1)
+
+    def test_transform_request_injects_for_anthropic_path(self):
+        st = _state(cs.PROVIDERS["deepseek"], "deepseek")
+        body = {"model": "claude-opus-4-8", "system": "operon",
+                "messages": [{"role": "user", "content": "search"}], "max_tokens": 100}
+        up, _ctx = ac.transform_request(body, st)
+        self.assertIn(ac.CSP_WEB_ACCESS_GUIDANCE_SENTINEL, up["system"])
+        self.assertEqual(body["system"], "operon")  # copy semantics
+
+
 if __name__ == "__main__":
     unittest.main()

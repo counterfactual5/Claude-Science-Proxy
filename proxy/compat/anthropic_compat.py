@@ -13,6 +13,28 @@ from proxy.policy import provider_policy
 
 _EMPTY_OBJECT_SCHEMA = {"type": "object", "properties": {}}
 
+# Standing guidance for Science / OPERON under CSP virtual login.
+# Bare Anthropic-native web_search / web_fetch are stripped by the subscription
+# tier and are never top-level tools here. Local MCP tools are only reachable
+# via `repl` → host.mcp("web-search", ...). Skills are progressive-disclosure
+# and insufficient as standing prompt text — inject on every /v1/messages
+# request that already carries a system prompt. Re-advertising names in MCP
+# tools/list cannot intercept bare tool calls; this prompt injection is the fix.
+CSP_WEB_ACCESS_GUIDANCE_SENTINEL = "<!-- CSP_WEB_ACCESS_GUIDANCE -->"
+CSP_WEB_ACCESS_GUIDANCE = (
+    CSP_WEB_ACCESS_GUIDANCE_SENTINEL + "\n"
+    "CSP web access (standing rules):\n"
+    "- This environment has NO native Anthropic `web_search` / `web_fetch` tools. "
+    "Calling them as top-level tools fails with "
+    "`Tool 'web_search' not found on agent 'OPERON'`.\n"
+    "- To search the web or literature, use the `repl` tool and call:\n"
+    "    host.mcp(\"web-search\", \"search_literature\", query=\"...\", max_results=N)\n"
+    "  Method aliases also accepted: \"web_search\", \"csp_web_search\".\n"
+    "- To fetch a page afterward:\n"
+    "    host.mcp(\"web-search\", \"fetch_url\", url=\"...\")\n"
+    "- Do NOT call bare `web_search` / `web_fetch` as top-level tools."
+)
+
 
 @dataclass
 class Ctx:
@@ -60,6 +82,49 @@ def _degrade_missing_tool_choice(upstream):
 def _append_rule_id(rule_ids, rule_id):
     if rule_ids is not None and rule_id not in rule_ids:
         rule_ids.append(rule_id)
+
+
+def _system_already_has_guidance(system):
+    """Return True if the Anthropic `system` field already carries our sentinel."""
+    if isinstance(system, str):
+        return CSP_WEB_ACCESS_GUIDANCE_SENTINEL in system
+    if isinstance(system, list):
+        for blk in system:
+            if isinstance(blk, dict) and CSP_WEB_ACCESS_GUIDANCE_SENTINEL in (blk.get("text") or ""):
+                return True
+            if isinstance(blk, str) and CSP_WEB_ACCESS_GUIDANCE_SENTINEL in blk:
+                return True
+    return False
+
+
+def inject_csp_web_access_guidance(body):
+    """Idempotently append standing web-access guidance to Anthropic `system`.
+
+    Only touches requests that already have a non-empty `system` prompt / blocks
+    (Science operon turns always do). Returns a shallow-copied body when a
+    mutation is needed so callers keep copy-on-write semantics; returns ``body``
+    unchanged when there is nothing to do.
+    """
+    if not isinstance(body, dict):
+        return body
+    system = body.get("system")
+    if system is None or system == "" or system == []:
+        return body
+    if _system_already_has_guidance(system):
+        return body
+
+    out = dict(body)
+    if isinstance(system, str):
+        out["system"] = system.rstrip() + "\n\n" + CSP_WEB_ACCESS_GUIDANCE
+        return out
+    if isinstance(system, list):
+        blocks = list(system)
+        # Prefer appending a new text block so we never mutate caller-owned
+        # block dicts in place.
+        blocks.append({"type": "text", "text": CSP_WEB_ACCESS_GUIDANCE})
+        out["system"] = blocks
+        return out
+    return body
 
 
 def _normalize_relay_tools(upstream, rule_ids=None):
@@ -118,6 +183,7 @@ def _filter_upstream_tools(upstream, target_model, provider, rule_ids=None):
 def transform_request(body, state):
     """(body, ProviderState) -> (upstream_body, Ctx). Pure function: no network, no global reads.
     Equivalent to legacy _handle_anthropic :695-702 + :714-718."""
+    body = inject_csp_web_access_guidance(body)
     src = body.get("model", "?")
     target = provider_policy.resolve_model(src, state)
     rule_ids = []

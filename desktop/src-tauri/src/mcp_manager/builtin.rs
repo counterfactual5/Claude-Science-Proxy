@@ -3,9 +3,20 @@
 //! CSP bundles a small multi-provider web-search + page-fetch MCP server
 //! (`web_search_server.py`) so Claude Science can do real web search/fetch even
 //! though Anthropic's hosted `web_search` tool is unavailable under CSP's
-//! virtual login. Under CSP there is no real hosted `web_search`, so the local
-//! connector advertises `web_search` / `web_fetch` (plus aliases) in tools/list
-//! and model-native calls resolve here. The server is:
+//! virtual login.
+//!
+//! **Important:** bare `web_search` / `web_fetch` are Anthropic *native server
+//! tools*, not local MCP entry points. Under CSP virtual login they are
+//! stripped from OPERON's toolset, so top-level calls fail with
+//! `Tool 'web_search' not found on agent 'OPERON'`. Local MCP tools are **not**
+//! top-level model tools — they are only callable via the `repl` tool as
+//! `host.mcp("web-search", "<method>", ...)`. Names in `tools/list`
+//! (`web_search`, `search_literature`, `csp_web_search`, `fetch_url`,
+//! `web_fetch`) are **method names for `host.mcp` only**; re-advertising them
+//! cannot intercept bare native calls. Standing guidance is injected by the
+//! proxy (`inject_csp_web_access_guidance` in `anthropic_compat.py`).
+//!
+//! The server is:
 //!
 //! - **Free and no-key out of the box** — it falls back across DuckDuckGo and
 //!   Wikipedia (plus arXiv/Crossref for papers) with no configuration.
@@ -21,7 +32,9 @@
 //! The script itself is bundled via `include_str!` and written into the sandbox
 //! `mcp/` dir at deploy time (mirroring `mcp_http_tunnel_shim.cjs`); the
 //! connector's interpreter and script path are (re-)resolved on every deploy so
-//! the entry self-heals even if the sandbox's Python layout changes.
+//! the entry self-heals even if the sandbox's Python layout changes. A rewrite
+//! of the embedded script marks deploy as changed so a running sandbox is
+//! restarted (MCP children keep the old script in memory otherwise).
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -41,7 +54,7 @@ const WEB_SEARCH_SOURCE: &str = include_str!("web_search_server.py");
 
 /// Description surfaced to Science (the model reads this to decide when to call
 /// the tools). English on purpose — it is the tool description, not chrome.
-pub const BUILTIN_WEB_SEARCH_DESCRIPTION: &str = "Local CSP web/literature search & page fetch (free, no API key). Under CSP virtual login there is no Anthropic-hosted web_search — this connector advertises web_search (local), search_literature, csp_web_search, fetch_url / web_fetch so model-native calls resolve here. Inside Claude Science's sandbox, egress is limited to an allowlist of scientific sources, so search defaults to reliable no-key scholarly providers (Crossref, arXiv, PubMed; also OpenAlex / Semantic Scholar) with automatic fallback. General search engines (DuckDuckGo/Wikipedia) and paid providers (set BRAVE_SEARCH_API_KEY / SERPER_API_KEY / TAVILY_API_KEY) are selectable but usually blocked by the sandbox allowlist. fetch_url / web_fetch read any allowlisted page as readable text.";
+pub const BUILTIN_WEB_SEARCH_DESCRIPTION: &str = "Local CSP web/literature search & page fetch (free, no API key). Under CSP virtual login Anthropic-hosted web_search/web_fetch are unavailable — bare top-level calls fail with not found on agent OPERON. Call via repl: host.mcp(\"web-search\", \"search_literature\"|\"web_search\"|\"csp_web_search\", query=..., max_results=N) then host.mcp(\"web-search\", \"fetch_url\"|\"web_fetch\", url=...). tools/list names are host.mcp method names only, not top-level tools. Inside the Science sandbox, egress is a scholarly allowlist (Crossref, arXiv, PubMed; also OpenAlex / Semantic Scholar) with automatic fallback. General engines and paid providers (BRAVE_SEARCH_API_KEY / SERPER_API_KEY / TAVILY_API_KEY) are selectable but usually blocked by the allowlist.";
 
 /// Optional API-key env vars seeded (empty) so the MCP tab surfaces them as
 /// editable fields; empty values are treated as "unset" by the server.
@@ -75,16 +88,20 @@ pub fn web_search_script_path(sbx_home: &Path) -> PathBuf {
         .join(WEB_SEARCH_SCRIPT_FILE)
 }
 
-/// Idempotently write the bundled server into `<mcp_dir>` and return its path,
-/// or `None` on write failure (non-fatal — deployment continues without it).
-pub fn write_web_search_server(mcp_dir: &Path) -> Option<PathBuf> {
+/// Idempotently write the bundled server into `<mcp_dir>`.
+/// Returns `(path, rewritten)` where `rewritten` is true when disk bytes changed
+/// (so callers can force a sandbox restart — a running MCP child keeps the old
+/// script loaded). Returns `None` on write failure (non-fatal).
+pub fn write_web_search_server(mcp_dir: &Path) -> Option<(PathBuf, bool)> {
     let path = mcp_dir.join(WEB_SEARCH_SCRIPT_FILE);
     let current = fs::read_to_string(&path).ok();
-    if current.as_deref() != Some(WEB_SEARCH_SOURCE) && fs::write(&path, WEB_SEARCH_SOURCE).is_err()
-    {
+    if current.as_deref() == Some(WEB_SEARCH_SOURCE) {
+        return Some((path, false));
+    }
+    if fs::write(&path, WEB_SEARCH_SOURCE).is_err() {
         return None;
     }
-    Some(path)
+    Some((path, true))
 }
 
 /// Build the built-in connector definition for seeding. `python` is the
@@ -137,8 +154,8 @@ mod tests {
         assert!(WEB_SEARCH_SOURCE.contains("\"pubmed\""));
         assert!(WEB_SEARCH_SOURCE.contains("\"duckduckgo\""));
         assert!(WEB_SEARCH_SOURCE.contains("BRAVE_SEARCH_API_KEY"));
-        // Under CSP virtual login there is no hosted web_search, so the local
-        // connector advertises web_search / web_fetch (plus aliases) in TOOLS.
+        // Under CSP virtual login bare web_search is unavailable as a top-level
+        // tool; tools/list names are host.mcp method names only.
         assert!(WEB_SEARCH_SOURCE.contains("\"web_search\""));
         assert!(WEB_SEARCH_SOURCE.contains("\"search_literature\""));
         assert!(WEB_SEARCH_SOURCE.contains("\"csp_web_search\""));
@@ -154,6 +171,9 @@ mod tests {
         assert!(tools_block.contains("\"name\": \"search_literature\""));
         assert!(tools_block.contains("\"name\": \"csp_web_search\""));
         assert!(tools_block.contains("\"name\": \"fetch_url\""));
+        // Docstring must NOT claim tools/list intercepts bare native calls.
+        assert!(!WEB_SEARCH_SOURCE.contains("model-native calls resolve"));
+        assert!(WEB_SEARCH_SOURCE.contains("host.mcp"));
     }
 
     #[test]
@@ -173,13 +193,28 @@ mod tests {
     fn write_web_search_server_is_idempotent() {
         let dir = env::temp_dir().join(format!("csp-ws-{}", uniq()));
         fs::create_dir_all(&dir).unwrap();
-        let p1 = write_web_search_server(&dir).unwrap();
+        let (p1, rewritten1) = write_web_search_server(&dir).unwrap();
         assert!(p1.is_file());
+        assert!(rewritten1, "first write must report rewritten");
         let contents = fs::read_to_string(&p1).unwrap();
         assert_eq!(contents, WEB_SEARCH_SOURCE);
         // Second write is a no-op (same bytes) and still returns the path.
-        let p2 = write_web_search_server(&dir).unwrap();
+        let (p2, rewritten2) = write_web_search_server(&dir).unwrap();
         assert_eq!(p1, p2);
+        assert!(!rewritten2, "identical content must not report rewritten");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn write_web_search_server_reports_rewrite_when_stale() {
+        let dir = env::temp_dir().join(format!("csp-ws-stale-{}", uniq()));
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join(WEB_SEARCH_SCRIPT_FILE);
+        fs::write(&path, b"# stale bundled script\n").unwrap();
+        let (p, rewritten) = write_web_search_server(&dir).unwrap();
+        assert_eq!(p, path);
+        assert!(rewritten);
+        assert_eq!(fs::read_to_string(&p).unwrap(), WEB_SEARCH_SOURCE);
         let _ = fs::remove_dir_all(&dir);
     }
 
