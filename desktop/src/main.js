@@ -29,10 +29,20 @@ const I18N = {
   cn: {
     myConfigs: "我的配置",
     newBtn: "＋ 新建",
-    presetPicker: "预设…",
+    presetPicker: "选择预设",
     presetTitle: "快速填入名称与地址",
-    wizNamePlaceholder: "DeepSeek",
-    wizBasePlaceholder: "https://open.bigmodel.cn/api/anthropic",
+    wizNamePlaceholder: "点右侧 ▾ 选预设，或直接输入名称",
+    wizBasePlaceholder: "https://api.z.ai/api/anthropic",
+    wizPresetLabel_glm_cn: "智谱 GLM（国内）",
+    wizPresetLabel_zai: "Z.AI（海外）",
+    wizPresetLabel_glm_coding_cn: "智谱 Coding Plan（国内 · OpenAI）",
+    wizPresetLabel_zai_coding: "Z.AI Coding Plan（海外 · OpenAI）",
+    wizPresetLabel_kimi_cn: "Kimi / Moonshot（国内）",
+    wizPresetLabel_kimi_intl: "Moonshot（海外）",
+    wizPresetLabel_minimax_cn: "MiniMax（国内）",
+    wizPresetLabel_minimax_intl: "MiniMax（海外）",
+    wizPresetLabel_xiaomi_token: "小米 MiMo · Token 套餐",
+    wizPresetLabel_openrouter: "OpenRouter",
     provider: "Provider",
     baseUrl: "Base_URL",
     apiKey: "API Key",
@@ -210,16 +220,24 @@ const I18N = {
     tplName_custom_openai: "自定义 OpenAI",
     tplName_custom_openai_responses: "自定义 OpenAI Responses",
     tplName_custom: "自定义 Anthropic",
-    wizPresetLabel_glm_coding: "智谱 Coding Plan",
-    wizPresetLabel_xiaomi_token: "小米 MiMo · Token 套餐",
   },
   intl: {
     myConfigs: "Profiles",
     newBtn: "+ New",
-    presetPicker: "Preset…",
-    presetTitle: "Fill name and URL",
-    wizNamePlaceholder: "ZAI",
+    presetPicker: "Choose preset",
+    presetTitle: "Fill name and Base URL",
+    wizNamePlaceholder: "Pick ▾ for a preset, or type a name",
     wizBasePlaceholder: "https://api.z.ai/api/anthropic",
+    wizPresetLabel_glm_cn: "GLM (China)",
+    wizPresetLabel_zai: "Z.AI (Overseas)",
+    wizPresetLabel_glm_coding_cn: "GLM Coding Plan (China · OpenAI)",
+    wizPresetLabel_zai_coding: "Z.AI Coding Plan (Overseas · OpenAI)",
+    wizPresetLabel_kimi_cn: "Kimi / Moonshot (China)",
+    wizPresetLabel_kimi_intl: "Moonshot (Overseas)",
+    wizPresetLabel_minimax_cn: "MiniMax (China)",
+    wizPresetLabel_minimax_intl: "MiniMax (Overseas)",
+    wizPresetLabel_xiaomi_token: "MiMo · Token Plan",
+    wizPresetLabel_openrouter: "OpenRouter",
     provider: "Provider",
     baseUrl: "Base URL",
     apiKey: "API Key",
@@ -397,7 +415,6 @@ const I18N = {
     tplName_custom_openai: "Custom OpenAI",
     tplName_custom_openai_responses: "Custom OpenAI Responses",
     tplName_custom: "Custom Anthropic",
-    wizPresetLabel_xiaomi_token: "MiMo · Token Plan",
   },
 };
 function S() { return I18N[EDITION]; }
@@ -445,30 +462,32 @@ function modelHints() {
   return { native: t.modelHintNative, fixed: t.modelHintFixed };
 }
 
-/** CN edition: one default endpoint per provider; domestic routes only. */
-const WIZ_PRESETS_CN = [
+/**
+ * Unified provider presets for both UI languages.
+ * Edition (cn/intl) only affects i18n copy — endpoint choice is regional, not
+ * language: Chinese users often buy overseas Z.AI plans, and vice versa.
+ * Labels carry region hints; profile `name` stays short for the card list.
+ */
+const WIZ_PRESETS = [
   { id: "deepseek", templateId: "deepseek", name: "DeepSeek", baseUrl: "https://api.deepseek.com/anthropic", lockUrl: true },
-  { id: "glm", templateId: "glm", name: "GLM", baseUrl: "https://open.bigmodel.cn/api/anthropic" },
-  { id: "glm-coding", templateId: "custom-openai", name: "GLM Coding Plan", baseUrl: "https://open.bigmodel.cn/api/coding/paas/v4" },
-  { id: "kimi", templateId: "kimi", name: "Moonshot", baseUrl: "https://api.moonshot.cn/anthropic" },
-  { id: "minimax", templateId: "minimax", name: "MiniMax", baseUrl: "https://api.minimaxi.com/anthropic" },
-  { id: "xiaomi", templateId: "xiaomi", name: "MiMo", baseUrl: "https://api.xiaomimimo.com/anthropic" },
-  { id: "xiaomi-token", templateId: "xiaomi", name: "MiMo", baseUrl: "https://token-plan-cn.xiaomimimo.com/anthropic" },
-];
-
-/** Intl edition: common overseas endpoints. */
-const WIZ_PRESETS_INTL = [
-  { id: "deepseek", templateId: "deepseek", name: "DeepSeek", baseUrl: "https://api.deepseek.com/anthropic", lockUrl: true },
-  { id: "glm", templateId: "glm", name: "ZAI", baseUrl: "https://api.z.ai/api/anthropic" },
-  { id: "kimi", templateId: "kimi", name: "Moonshot", baseUrl: "https://api.moonshot.ai/anthropic" },
-  { id: "minimax", templateId: "minimax", name: "MiniMax", baseUrl: "https://api.minimax.io/anthropic" },
+  { id: "glm-cn", templateId: "glm", name: "GLM", baseUrl: "https://open.bigmodel.cn/api/anthropic" },
+  { id: "zai", templateId: "glm", name: "ZAI", baseUrl: "https://api.z.ai/api/anthropic" },
+  { id: "glm-coding-cn", templateId: "custom-openai", name: "GLM Coding Plan", baseUrl: "https://open.bigmodel.cn/api/coding/paas/v4" },
+  { id: "zai-coding", templateId: "custom-openai", name: "ZAI Coding Plan", baseUrl: "https://api.z.ai/api/coding/paas/v4" },
+  { id: "kimi-cn", templateId: "kimi", name: "Moonshot", baseUrl: "https://api.moonshot.cn/anthropic" },
+  { id: "kimi-intl", templateId: "kimi", name: "Moonshot", baseUrl: "https://api.moonshot.ai/anthropic" },
+  { id: "minimax-cn", templateId: "minimax", name: "MiniMax", baseUrl: "https://api.minimaxi.com/anthropic" },
+  { id: "minimax-intl", templateId: "minimax", name: "MiniMax", baseUrl: "https://api.minimax.io/anthropic" },
   { id: "xiaomi", templateId: "xiaomi", name: "MiMo", baseUrl: "https://api.xiaomimimo.com/anthropic" },
   { id: "xiaomi-token", templateId: "xiaomi", name: "MiMo", baseUrl: "https://token-plan-cn.xiaomimimo.com/anthropic" },
   { id: "openrouter", templateId: "openrouter", name: "OpenRouter", baseUrl: "https://openrouter.ai/api" },
 ];
 
+/** Currently selected preset id (menu highlight); empty when typing a custom name. */
+let wizSelectedPresetId = "";
+
 function wizPresets() {
-  return EDITION === "cn" ? WIZ_PRESETS_CN : WIZ_PRESETS_INTL;
+  return WIZ_PRESETS;
 }
 
 function wizPresetLabel(preset) {
@@ -508,7 +527,7 @@ function applyEditionUI() {
   if (els.listhdMoreBtn) els.listhdMoreBtn.title = t.menuMore;
   if (els.skillCreateBtn) els.skillCreateBtn.textContent = t.createSkill;
   if (els.skillImportBtn) els.skillImportBtn.textContent = t.importSkill;
-  populateWizPresetSelect();
+  populateWizPresetMenu();
   refreshWizPlaceholders();
 }
 
@@ -1051,6 +1070,7 @@ function showView(v) {
   els.panel.classList.toggle("view-form", v !== "list");
   if (v === "list") {
     hideSkip();
+    closeWizPresetMenu();
     // Drop stale errors (e.g. a one-off "fetch models 401") so they don't
     // linger on the profile list after create/edit succeeded with builtins.
     setMsg("");
@@ -1236,9 +1256,11 @@ function wizPresetById(id) {
 function wizPresetByName(name) {
   const q = (name || "").trim().toLowerCase();
   if (!q) return null;
-  return wizPresets().find(
-    (item) => item.name.toLowerCase() === q || wizPresetLabel(item).toLowerCase() === q
-  ) || null;
+  // Prefer full localized label (e.g. "Z.AI（海外）") before short card names
+  // that collide across regions ("Moonshot", "MiniMax", "GLM").
+  const byLabel = wizPresets().find((item) => wizPresetLabel(item).toLowerCase() === q);
+  if (byLabel) return byLabel;
+  return wizPresets().find((item) => item.name.toLowerCase() === q) || null;
 }
 
 function applyWizPresetFields(preset) {
@@ -1246,6 +1268,7 @@ function applyWizPresetFields(preset) {
   els.wizBase.value = preset.baseUrl;
   els.wizBase.readOnly = !!preset.lockUrl;
   wizLastAutoBase = preset.baseUrl || "";
+  wizSelectedPresetId = preset.id;
   if (!preset.baseUrl) els.wizBase.focus();
 }
 
@@ -1253,12 +1276,12 @@ function applyWizNameAutofill() {
   const name = els.wizName.value.trim();
   const preset = wizPresetByName(name);
   if (!preset) {
-    if (els.wizPreset.value) els.wizPreset.value = "";
+    wizSelectedPresetId = "";
     if (els.wizBase.readOnly) els.wizBase.readOnly = false;
     refreshWizGate();
     return;
   }
-  if (els.wizPreset.value !== preset.id) els.wizPreset.value = preset.id;
+  wizSelectedPresetId = preset.id;
   const currentBase = els.wizBase.value.trim();
   const canAutoFill = !currentBase || currentBase === wizLastAutoBase;
   if (canAutoFill && preset.baseUrl) {
@@ -1269,22 +1292,47 @@ function applyWizNameAutofill() {
   refreshWizGate();
 }
 
-function populateWizPresetSelect() {
-  const sel = els.wizPreset;
-  if (!sel) return;
+function closeWizPresetMenu() {
+  if (!els.wizPresetMenu || !els.wizPresetBtn) return;
+  els.wizPresetMenu.hidden = true;
+  els.wizPresetBtn.setAttribute("aria-expanded", "false");
+}
+
+function populateWizPresetMenu() {
+  const menu = els.wizPresetMenu;
+  if (!menu) return;
   const t = S();
-  sel.title = t.presetTitle;
-  sel.innerHTML = '<option value="">' + escapeHtml(t.presetPicker) + "</option>";
+  if (els.wizPresetBtn) els.wizPresetBtn.title = t.presetTitle;
+  menu.innerHTML = "";
   for (const item of wizPresets()) {
-    const opt = document.createElement("option");
-    opt.value = item.id;
-    opt.textContent = wizPresetLabel(item);
-    sel.appendChild(opt);
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "pmenu-item";
+    btn.setAttribute("role", "option");
+    btn.dataset.presetId = item.id;
+    btn.textContent = wizPresetLabel(item);
+    if (item.id === wizSelectedPresetId) btn.setAttribute("aria-selected", "true");
+    menu.appendChild(btn);
   }
 }
 
-function applyWizPreset() {
-  const preset = wizPresetById(els.wizPreset.value);
+function toggleWizPresetMenu() {
+  if (!els.wizPresetMenu || !els.wizPresetBtn) return;
+  const open = els.wizPresetMenu.hidden;
+  closeAllMenus();
+  closeHeaderMenus();
+  if (open) {
+    populateWizPresetMenu();
+    els.wizPresetMenu.hidden = false;
+    els.wizPresetBtn.setAttribute("aria-expanded", "true");
+  } else {
+    closeWizPresetMenu();
+  }
+}
+
+function applyWizPresetFromMenu(presetId) {
+  const preset = wizPresetById(presetId);
+  closeWizPresetMenu();
   if (!preset) {
     refreshWizGate();
     return;
@@ -1321,7 +1369,8 @@ function openWizard() {
   hideSkip();
   wizLastAutoBase = "";
   els.wizName.value = "";
-  els.wizPreset.value = "";
+  wizSelectedPresetId = "";
+  closeWizPresetMenu();
   els.wizBase.value = "";
   els.wizBase.readOnly = false;
   els.wizKey.value = "";
@@ -1590,7 +1639,7 @@ function wire() {
     "listSec", "profileList", "newBtn", "listhdMoreBtn", "listhdMenu", "editCspJsonBtn", "skipActivateBtn",
     "i18nMyConfigs", "i18nLabelProvider", "i18nLabelBase", "i18nLabelKey",
     "i18nConnName", "i18nConnBase", "i18nConnKey", "i18nPorts", "i18nProxyPort", "i18nSandboxPort",
-    "wizSec", "wizName", "wizPreset", "wizBase", "wizKey", "wizSaveBtn", "wizCancelBtn",
+    "wizSec", "wizName", "wizPresetBtn", "wizPresetMenu", "wizBase", "wizKey", "wizSaveBtn", "wizCancelBtn",
     "connSec", "connTitle", "connName", "connBase", "connBaseHint",
     "connModelInfo", "connModelHint", "connModelPick", "connKey", "connSaveBtn", "connCancelBtn",
     "tabProfiles", "tabSkills", "skillPane",
@@ -1652,6 +1701,7 @@ function wire() {
   document.addEventListener("click", (e) => {
     if (!e.target.closest(".pmenu-wrap")) closeAllMenus();
     if (!e.target.closest(".listhd-more")) closeHeaderMenus();
+    if (!e.target.closest(".provider-combo")) closeWizPresetMenu();
   });
 
   els.newBtn.addEventListener("click", openWizard);
@@ -1684,8 +1734,17 @@ function wire() {
     if (id) activate(id, true);
   });
 
-  els.wizPreset.addEventListener("change", applyWizPreset);
+  els.wizPresetBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    toggleWizPresetMenu();
+  });
+  els.wizPresetMenu.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-preset-id]");
+    if (!btn) return;
+    applyWizPresetFromMenu(btn.dataset.presetId);
+  });
   els.wizName.addEventListener("input", applyWizNameAutofill);
+  els.wizName.addEventListener("focus", closeWizPresetMenu);
   els.wizBase.addEventListener("input", () => {
     const base = els.wizBase.value.trim();
     if (wizLastAutoBase && base !== wizLastAutoBase) wizLastAutoBase = "";

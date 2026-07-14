@@ -383,23 +383,57 @@ select:focus {
   align-items: center;
 }
 
-.provider-row {
+.provider-combo {
+  position: relative;
   display: flex;
   align-items: stretch;
-  gap: 8px;
 }
 
-.provider-row input {
+.provider-combo input {
   flex: 1;
   min-width: 0;
+  padding-right: 2rem;
 }
 
-.provider-row select.provider-preset {
-  flex: none;
-  width: 6.8rem;
-  padding-right: 1.6rem;
-  font-size: 11px;
+.provider-combo-caret {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  bottom: 1px;
+  width: 1.75rem;
+  border: none;
+  border-left: 1px solid var(--border);
+  border-radius: 0 6px 6px 0;
+  background: transparent;
   color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+}
+
+.provider-combo-caret:hover {
+  color: var(--text);
+  background: color-mix(in srgb, var(--surface-2) 80%, transparent);
+}
+
+.provider-combo-caret[aria-expanded="true"] {
+  color: var(--accent);
+}
+
+.provider-combo-menu {
+  left: 0;
+  right: 0;
+  top: calc(100% + 4px);
+  max-height: 220px;
+  overflow-y: auto;
+  z-index: 40;
+}
+
+.provider-combo-menu .pmenu-item {
+  text-align: left;
+  white-space: normal;
+  line-height: 1.35;
 }
 
 .listhd-more { position: relative; }
