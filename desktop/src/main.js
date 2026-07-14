@@ -37,14 +37,17 @@ const I18N = {
     wizPresetLabel_zai: "Z.AI",
     wizPresetLabel_glm_coding_cn: "智谱 Coding Plan",
     wizPresetLabel_zai_coding: "Z.AI Coding Plan",
-    wizPresetLabel_kimi_cn: "Kimi / Moonshot（国内）",
-    wizPresetLabel_kimi_intl: "Moonshot（海外）",
+    wizPresetLabel_kimi_cn: "Kimi",
+    wizPresetLabel_kimi_intl: "Moonshot",
     wizPresetLabel_minimax_cn: "MiniMax（国内）",
     wizPresetLabel_minimax_intl: "MiniMax（海外）",
-    wizPresetLabel_xiaomi: "小米 MiMo（按量）",
+    wizPresetLabel_xiaomi: "小米 MiMo",
     wizPresetLabel_xiaomi_token_cn: "小米 MiMo Token（中国）",
     wizPresetLabel_xiaomi_token_sgp: "小米 MiMo Token（新加坡）",
     wizPresetLabel_xiaomi_token_ams: "小米 MiMo Token（欧洲）",
+    wizPresetLabel_openai: "OpenAI",
+    wizPresetLabel_anthropic: "Anthropic",
+    wizPresetLabel_xai: "xAI Grok",
     wizPresetLabel_openrouter: "OpenRouter",
     provider: "Provider",
     baseUrl: "Base_URL",
@@ -235,14 +238,17 @@ const I18N = {
     wizPresetLabel_zai: "Z.AI",
     wizPresetLabel_glm_coding_cn: "GLM Coding Plan",
     wizPresetLabel_zai_coding: "Z.AI Coding Plan",
-    wizPresetLabel_kimi_cn: "Kimi / Moonshot (China)",
-    wizPresetLabel_kimi_intl: "Moonshot (Overseas)",
+    wizPresetLabel_kimi_cn: "Kimi",
+    wizPresetLabel_kimi_intl: "Moonshot",
     wizPresetLabel_minimax_cn: "MiniMax (China)",
     wizPresetLabel_minimax_intl: "MiniMax (Overseas)",
-    wizPresetLabel_xiaomi: "MiMo (pay-as-you-go)",
+    wizPresetLabel_xiaomi: "MiMo",
     wizPresetLabel_xiaomi_token_cn: "MiMo Token (China)",
     wizPresetLabel_xiaomi_token_sgp: "MiMo Token (Singapore)",
     wizPresetLabel_xiaomi_token_ams: "MiMo Token (Europe)",
+    wizPresetLabel_openai: "OpenAI",
+    wizPresetLabel_anthropic: "Anthropic",
+    wizPresetLabel_xai: "xAI Grok",
     wizPresetLabel_openrouter: "OpenRouter",
     provider: "Provider",
     baseUrl: "Base URL",
@@ -476,11 +482,14 @@ function modelHints() {
  */
 const WIZ_PRESETS = [
   { id: "deepseek", templateId: "deepseek", name: "DeepSeek", baseUrl: "https://api.deepseek.com/anthropic", lockUrl: true },
+  { id: "openai", templateId: "custom-openai", name: "OpenAI", baseUrl: "https://api.openai.com/v1" },
+  { id: "anthropic", templateId: "custom", name: "Anthropic", baseUrl: "https://api.anthropic.com" },
+  { id: "xai", templateId: "custom-openai", name: "xAI Grok", baseUrl: "https://api.x.ai/v1" },
   { id: "glm-cn", templateId: "glm", name: "GLM", baseUrl: "https://open.bigmodel.cn/api/anthropic" },
   { id: "zai", templateId: "glm", name: "ZAI", baseUrl: "https://api.z.ai/api/anthropic" },
   { id: "glm-coding-cn", templateId: "custom-openai", name: "GLM Coding Plan", baseUrl: "https://open.bigmodel.cn/api/coding/paas/v4" },
   { id: "zai-coding", templateId: "custom-openai", name: "ZAI Coding Plan", baseUrl: "https://api.z.ai/api/coding/paas/v4" },
-  { id: "kimi-cn", templateId: "kimi", name: "Moonshot", baseUrl: "https://api.moonshot.cn/anthropic" },
+  { id: "kimi-cn", templateId: "kimi", name: "Kimi", baseUrl: "https://api.moonshot.cn/anthropic" },
   { id: "kimi-intl", templateId: "kimi", name: "Moonshot", baseUrl: "https://api.moonshot.ai/anthropic" },
   { id: "minimax-cn", templateId: "minimax", name: "MiniMax", baseUrl: "https://api.minimaxi.com/anthropic" },
   { id: "minimax-intl", templateId: "minimax", name: "MiniMax", baseUrl: "https://api.minimax.io/anthropic" },
@@ -1123,7 +1132,8 @@ function resetAllMenuConfirms() {
 }
 
 // ── Load config + render list ──
-async function loadConfig() {
+async function loadConfig(opts = {}) {
+  const keepView = !!opts.keepView;
   try {
     const cfg = await call("get_config");
     configState.profiles = cfg.profiles || [];
@@ -1134,7 +1144,8 @@ async function loadConfig() {
     els.proxyPort.value = configState.proxy_port;
     els.sandboxPort.value = configState.sandbox_port;
     renderList();
-    showView("list");
+    // Focus refresh must not yank the user out of create/edit forms.
+    if (!keepView) showView("list");
   } catch (e) {
     setMsg(T("loadConfigFail", { err: resolveBackendErr(e) }));
   }
@@ -2642,7 +2653,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   await loadConfig();
   window.addEventListener("focus", () => {
     if (!busy) {
-      loadConfig().catch(() => {});
+      loadConfig({ keepView: true }).catch(() => {});
       if (!els.skillPane.hidden) loadSkills().catch(() => {});
       if (!els.mcpPane.hidden) loadMcp().catch(() => {});
     }
