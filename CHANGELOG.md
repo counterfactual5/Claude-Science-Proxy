@@ -3,6 +3,18 @@
 All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.0.0] — 2026-07-15
+
+### Added
+- **Skills「导入目录」**: Restored top-level **Import folder** / **导入目录** in the Skills `⋯` menu as a dedicated full-page form (replacing the nested “advanced” path under scan-import). Paste a known Skill folder path, inspect, and import with recursive copy of companion files (`USAGE.md`, `requirements`, scripts, etc.) into `~/.csp/skills/`.
+
+### Fixed
+- **OpenAI-compat / GLM `code 1210` hardening** (`proxy/compat/openai_chat_compat.py`): Long-session Anthropic → OpenAI Chat translation now flattens list/dict `tool_result` content to plain strings, reorders tool results to match assistant `tool_calls` order, re-files orphan tool results as user text (avoids dangling `role: tool` after Science history compaction), caps oversized single-message bodies, ensures `function.arguments` is always a JSON string, prefixes `is_error` tool results, silently drops extended-thinking blocks, and inserts placeholders for unsupported block types (image, server tools) instead of silently emptying turns.
+- **Skill import validation**: Missing root `SKILL.md` is now an inspect error (not a warning); pointing at a `SKILL.md` file hints to select the parent directory.
+
+### Changed
+- **Version alignment**: Desktop bundle, embedded web-search `SERVER_VERSION`, and builtin test assertion synced to **2.0.0**.
+
 ## [1.6.14] — 2026-07-14
 
 ### Fixed

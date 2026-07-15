@@ -86,7 +86,24 @@ impl SkillStore {
             return Err(format!("source path does not exist: {}", source.display()));
         }
         if !source.is_dir() {
-            return Err(format!("source is not a directory: {}", source.display()));
+            let name = source
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("");
+            if name.eq_ignore_ascii_case(SKILL_FILE) {
+                // Acceptance is exact `SKILL.md` only; this hint covers common
+                // casing when the user pointed at the markdown file itself.
+                return Err(format!(
+                    "path points to a Skill markdown file ({}); select the parent directory that contains {} instead",
+                    source.display(),
+                    SKILL_FILE
+                ));
+            }
+            return Err(format!(
+                "source is not a directory: {} — provide the Skill folder (the directory containing {})",
+                source.display(),
+                SKILL_FILE
+            ));
         }
 
         let mut result = InspectionResult {
@@ -113,16 +130,16 @@ impl SkillStore {
             return Ok(result);
         }
 
-        // Look for SKILL.md
+        // Require exact `SKILL.md` at the directory root (case-sensitive on disk).
         let skill_md = source.join(SKILL_FILE);
-        if skill_md.exists() {
+        if skill_md.is_file() {
             if let Ok(content) = fs::read_to_string(&skill_md) {
                 parse_skill_md(&content, &mut result);
             }
         } else {
-            result.warnings.push(format!(
-                "No {} found - using directory name as Skill name",
-                SKILL_FILE
+            result.errors.push(format!(
+                "No {} found in directory root — the Skill folder must contain {}",
+                SKILL_FILE, SKILL_FILE
             ));
             result.name = source
                 .file_name()
@@ -854,6 +871,59 @@ mod tests {
     fn inspect_nonexistent_source_errors() {
         let result = SkillStore::inspect_source(Path::new("/nonexistent/path/12345"));
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn inspect_skill_md_file_hints_parent_directory() {
+        let dir = env::temp_dir().join(format!("csp-skill-file-{}", rand_u64()));
+        fs::create_dir_all(&dir).unwrap();
+        let md = dir.join("SKILL.md");
+        fs::write(&md, "---\nname: File\n---\n").unwrap();
+        let err = SkillStore::inspect_source(&md).unwrap_err();
+        assert!(
+            err.contains("parent directory"),
+            "expected parent-dir hint, got: {err}"
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn inspect_missing_skill_md_is_invalid() {
+        let dir = env::temp_dir().join(format!("csp-skill-noskill-{}", rand_u64()));
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("helper.py"), "print(1)").unwrap();
+        let result = SkillStore::inspect_source(&dir).unwrap();
+        assert!(!result.valid);
+        assert!(
+            result.errors.iter().any(|e| e.contains("SKILL.md")),
+            "expected SKILL.md error, got: {:?}",
+            result.errors
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn import_copies_companion_files_recursively() {
+        let store = temp_store();
+        let src = env::temp_dir().join(format!("csp-skill-companions-{}", rand_u64()));
+        fs::create_dir_all(src.join("scripts")).unwrap();
+        fs::write(
+            src.join("SKILL.md"),
+            "---\nname: Companions\ndescription: with extras\n---\n# C",
+        )
+        .unwrap();
+        fs::write(src.join("USAGE.md"), "how to use").unwrap();
+        fs::write(src.join("requirements.txt"), "numpy").unwrap();
+        fs::write(src.join("scripts/run.py"), "print('hi')").unwrap();
+
+        let skill = store.import(&src).unwrap();
+        assert!(skill.store_path.join("SKILL.md").is_file());
+        assert!(skill.store_path.join("USAGE.md").is_file());
+        assert!(skill.store_path.join("requirements.txt").is_file());
+        assert!(skill.store_path.join("scripts/run.py").is_file());
+
+        let _ = fs::remove_dir_all(&src);
+        let _ = fs::remove_dir_all(&store.root);
     }
 
     #[test]

@@ -92,6 +92,7 @@
                 <div class="listhd-more">
                   <button type="button" class="btn small listhd-more-btn" id="skillMoreBtn" aria-haspopup="true" aria-expanded="false" title="更多">⋯</button>
                   <div class="pmenu listhd-menu" id="skillMenu" hidden role="menu">
+                    <button type="button" class="pmenu-item" id="skillImportBtn" role="menuitem">导入目录</button>
                     <button type="button" class="pmenu-item" id="skillDiscoverBtn" role="menuitem">扫描导入</button>
                     <button type="button" class="pmenu-item" id="skillAdoptBtn" role="menuitem">从 Science 采纳</button>
                   </div>
@@ -103,7 +104,7 @@
 
           <div class="skill-empty" id="skillEmpty" hidden>
             <p id="skillEmptyTitle">还没有 Skill。</p>
-            <p class="hint" id="skillEmptyHint">点「新建」从零创建，或在「⋯」里选「扫描导入」从本机常见 Skill 目录勾选导入。</p>
+            <p class="hint" id="skillEmptyHint">点「新建」从零创建，或在「⋯」里选「导入目录」/「扫描导入」导入本机 Skill。</p>
           </div>
 
           <div id="skillList" class="skill-list"></div>
@@ -145,29 +146,30 @@
             <button class="btn small" id="skillDiscoverImportBtn" disabled>导入所选</button>
             <button class="btn small" id="skillDiscoverCancelBtn">取消</button>
           </div>
-          <details class="adv skill-path-adv" id="skillPathAdv">
-            <summary id="skillPathAdvSummary">手动路径导入（高级）</summary>
-            <div class="adv-body">
-              <div class="form-group">
-                <label for="skillSourcePath" id="skillPathLabel">源目录路径</label>
-                <input id="skillSourcePath" type="text" placeholder="/path/to/skill-directory" autocomplete="off" spellcheck="false" />
-                <p class="hint" id="skillPathHint">含 <code>SKILL.md</code> 的目录；检查通过后复制到 <code>~/.csp/skills/</code>。</p>
-              </div>
-              <div id="skillInspectionPreview" class="inspection-preview" hidden>
-                <h4 id="skillInspPreviewTitle">检查预览</h4>
-                <div class="insp-name"><strong id="inspName"></strong></div>
-                <div class="insp-desc" id="inspDesc"></div>
-                <div class="insp-stats" id="inspStats"></div>
-                <div class="insp-reqs" id="inspReqs"></div>
-                <div class="insp-warnings" id="inspWarnings" hidden></div>
-                <div class="insp-errors" id="inspErrors" hidden></div>
-              </div>
-              <div class="row form-actions">
-                <button class="btn small" id="skillInspectBtn">检查</button>
-                <button class="btn small" id="skillImportConfirmBtn" disabled>导入</button>
-              </div>
-            </div>
-          </details>
+        </div>
+
+        <div class="sec form-sec" id="skillImportSec" hidden>
+          <label id="skillImportTitle">导入目录</label>
+          <p class="hint" id="skillImportIntro">已知 Skill 文件夹路径时，直接粘贴导入。将连同脚本和其他伴随文件一起递归复制到 <code>~/.csp/skills/</code>。</p>
+          <div class="form-group">
+            <label for="skillSourcePath" id="skillPathLabel">源目录路径</label>
+            <input id="skillSourcePath" type="text" placeholder="/path/to/skill-directory" autocomplete="off" spellcheck="false" />
+            <p class="hint" id="skillPathHint">目录根须含 <code>SKILL.md</code>（大小写敏感）；检查通过后会递归复制目录内脚本、<code>USAGE.md</code>、<code>requirements</code> 等伴随文件。请选择目录本身，不要选 <code>SKILL.md</code> 文件。</p>
+          </div>
+          <div id="skillInspectionPreview" class="inspection-preview" hidden>
+            <h4 id="skillInspPreviewTitle">检查预览</h4>
+            <div class="insp-name"><strong id="inspName"></strong></div>
+            <div class="insp-desc" id="inspDesc"></div>
+            <div class="insp-stats" id="inspStats"></div>
+            <div class="insp-reqs" id="inspReqs"></div>
+            <div class="insp-warnings" id="inspWarnings" hidden></div>
+            <div class="insp-errors" id="inspErrors" hidden></div>
+          </div>
+          <div class="row form-actions">
+            <button class="btn small" id="skillInspectBtn">检查</button>
+            <button class="btn small" id="skillImportConfirmBtn" disabled>导入</button>
+            <button class="btn small" id="skillImportCancelBtn">取消</button>
+          </div>
         </div>
 
         <div class="sec form-sec" id="skillAdoptSec" hidden>

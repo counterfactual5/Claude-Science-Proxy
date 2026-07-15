@@ -421,5 +421,181 @@ class RegistryDatedShellResolve(unittest.TestCase):
         self.assertEqual(asst["content"], "")
 
 
+class OpenAIChatCompatBoundaryCases(unittest.TestCase):
+    """GLM `code 1210` boundary cases for the Anthropic -> OpenAI Chat message
+    translation (proxy/compat/openai_chat_compat.py). Exercised through the
+    custom-openai provider (GLM Coding Plan's actual translation path)."""
+
+    def setUp(self):
+        cs.PROV = dict(cs.PROVIDERS["openai-custom"])
+        cs.PROV_NAME = "openai-custom"
+        cs.PROV["default_model"] = "glm-4.6"
+        cs.KEY = "sk-openai"
+        cs.RELAY_FORCE_MODEL = "glm-4.6"
+        cs.MODEL_REGISTRY = None
+
+    def _msgs(self, req):
+        return cs.anthropic_to_openai(req)["messages"]
+
+    def test_tool_result_list_content_flattened_to_plain_string(self):
+        # tool_result.content as a list of text blocks must collapse to a bare
+        # string — GLM rejects list/dict `tool` message content with 1210.
+        out = self._msgs({
+            "model": "claude-opus-4-8",
+            "messages": [
+                {"role": "assistant", "content": [
+                    {"type": "tool_use", "id": "call_1", "name": "lookup", "input": {"q": "x"}},
+                ]},
+                {"role": "user", "content": [
+                    {"type": "tool_result", "tool_use_id": "call_1", "content": [
+                        {"type": "text", "text": "part1 "},
+                        {"type": "text", "text": "part2"},
+                    ]},
+                ]},
+            ],
+        })
+        tool_msg = next(m for m in out if m.get("role") == "tool")
+        self.assertIsInstance(tool_msg["content"], str)
+        self.assertEqual(tool_msg["content"], "part1 part2")
+
+    def test_tool_result_non_text_nested_block_gets_placeholder_not_dropped(self):
+        # A tool_result containing only an image block must not collapse to "" —
+        # a placeholder preserves that something was there.
+        out = self._msgs({
+            "model": "claude-opus-4-8",
+            "messages": [
+                {"role": "assistant", "content": [
+                    {"type": "tool_use", "id": "call_1", "name": "screenshot", "input": {}},
+                ]},
+                {"role": "user", "content": [
+                    {"type": "tool_result", "tool_use_id": "call_1", "content": [
+                        {"type": "image", "source": {"type": "base64", "data": "AAAA"}},
+                    ]},
+                ]},
+            ],
+        })
+        tool_msg = next(m for m in out if m.get("role") == "tool")
+        self.assertIn("image omitted", tool_msg["content"])
+
+    def test_orphan_tool_result_not_emitted_as_dangling_tool_message(self):
+        # tool_use for call_1 is NOT present in this replayed history (as happens
+        # after Science compacts/summarizes a long session) — the tool_result
+        # must never surface as a `role: tool` message with an unmatched id.
+        out = self._msgs({
+            "model": "claude-opus-4-8",
+            "messages": [
+                {"role": "user", "content": [
+                    {"type": "tool_result", "tool_use_id": "call_orphan", "content": "stale result"},
+                ]},
+            ],
+        })
+        self.assertFalse(any(m.get("role") == "tool" for m in out))
+        user_msg = next(m for m in out if m.get("role") == "user")
+        self.assertIn("call_orphan", user_msg["content"])
+        self.assertIn("stale result", user_msg["content"])
+
+    def test_tool_results_reordered_to_match_assistant_call_order(self):
+        # Two parallel tool_calls; tool_results arrive content-block-order
+        # reversed relative to the assistant's tool_calls[] — must be
+        # re-sorted to match, since GLM can be strict about call/result order.
+        out = self._msgs({
+            "model": "claude-opus-4-8",
+            "messages": [
+                {"role": "assistant", "content": [
+                    {"type": "tool_use", "id": "call_1", "name": "a", "input": {}},
+                    {"type": "tool_use", "id": "call_2", "name": "b", "input": {}},
+                ]},
+                {"role": "user", "content": [
+                    {"type": "tool_result", "tool_use_id": "call_2", "content": "second"},
+                    {"type": "tool_result", "tool_use_id": "call_1", "content": "first"},
+                ]},
+            ],
+        })
+        tool_msgs = [m for m in out if m.get("role") == "tool"]
+        self.assertEqual([m["tool_call_id"] for m in tool_msgs], ["call_1", "call_2"])
+
+    def test_tool_use_arguments_always_json_string_even_when_input_missing(self):
+        # `function.arguments` must always be a JSON string (never a bare dict,
+        # and never the literal "null" from a missing/None `input`).
+        out = self._msgs({
+            "model": "claude-opus-4-8",
+            "messages": [
+                {"role": "assistant", "content": [
+                    {"type": "tool_use", "id": "call_1", "name": "noop"},
+                ]},
+            ],
+        })
+        asst = next(m for m in out if m.get("tool_calls"))
+        args = asst["tool_calls"][0]["function"]["arguments"]
+        self.assertIsInstance(args, str)
+        self.assertEqual(json.loads(args), {})
+
+    def test_unknown_block_type_keeps_message_non_empty(self):
+        # An assistant turn whose only content is a `server_tool_use` block
+        # (no text, no ordinary tool_use) must not become a fully empty
+        # message with nothing distinguishing it from a blank turn.
+        out = self._msgs({
+            "model": "claude-opus-4-8",
+            "messages": [
+                {"role": "assistant", "content": [
+                    {"type": "server_tool_use", "id": "srv_1", "name": "web_search", "input": {}},
+                ]},
+            ],
+        })
+        asst = out[-1]
+        self.assertEqual(asst["role"], "assistant")
+        self.assertNotIn("tool_calls", asst)
+        self.assertIn("omitted", asst["content"])
+
+    def test_thinking_block_silently_dropped_without_placeholder(self):
+        # Extended-thinking blocks have no OpenAI-compat slot and never own an
+        # id used for pairing, so they should vanish cleanly (no placeholder
+        # noise) rather than surface as visible dialogue text.
+        out = self._msgs({
+            "model": "claude-opus-4-8",
+            "messages": [
+                {"role": "assistant", "content": [
+                    {"type": "thinking", "thinking": "internal reasoning..."},
+                    {"type": "text", "text": "final answer"},
+                ]},
+            ],
+        })
+        asst = out[-1]
+        self.assertEqual(asst["content"], "final answer")
+
+    def test_tool_result_is_error_flag_prefixed(self):
+        out = self._msgs({
+            "model": "claude-opus-4-8",
+            "messages": [
+                {"role": "assistant", "content": [
+                    {"type": "tool_use", "id": "call_1", "name": "risky", "input": {}},
+                ]},
+                {"role": "user", "content": [
+                    {"type": "tool_result", "tool_use_id": "call_1", "content": "boom", "is_error": True},
+                ]},
+            ],
+        })
+        tool_msg = next(m for m in out if m.get("role") == "tool")
+        self.assertTrue(tool_msg["content"].startswith("[ERROR]"))
+
+    def test_oversized_tool_result_is_truncated(self):
+        from proxy.compat import openai_chat_compat as occ
+        huge = "x" * (occ._MAX_SINGLE_TEXT_CHARS + 500)
+        out = self._msgs({
+            "model": "claude-opus-4-8",
+            "messages": [
+                {"role": "assistant", "content": [
+                    {"type": "tool_use", "id": "call_1", "name": "dump", "input": {}},
+                ]},
+                {"role": "user", "content": [
+                    {"type": "tool_result", "tool_use_id": "call_1", "content": huge},
+                ]},
+            ],
+        })
+        tool_msg = next(m for m in out if m.get("role") == "tool")
+        self.assertLess(len(tool_msg["content"]), len(huge))
+        self.assertIn("truncated", tool_msg["content"])
+
+
 if __name__ == "__main__":
     unittest.main()

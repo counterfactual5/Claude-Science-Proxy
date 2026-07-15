@@ -89,7 +89,7 @@ import urllib.parse
 import urllib.request
 
 SERVER_NAME = "web-search"
-SERVER_VERSION = "1.6.14"
+SERVER_VERSION = "2.0.0"
 DEFAULT_PROTOCOL = "2025-06-18"
 USER_AGENT = "csp-web-search/1.0 (+https://github.com/; Claude Science Proxy built-in)"
 # Browser-like UA for DuckDuckGo HTML endpoints (Lite / full HTML). CSP UA

@@ -186,7 +186,7 @@ mod tests {
         assert!(WEB_SEARCH_SOURCE.contains("RETURN SHAPE"));
         // Python source escapes quotes: data[\"results\"]
         assert!(WEB_SEARCH_SOURCE.contains(r#"data[\"results\"]"#));
-        assert!(WEB_SEARCH_SOURCE.contains("SERVER_VERSION = \"1.6.14\""));
+        assert!(WEB_SEARCH_SOURCE.contains("SERVER_VERSION = \"2.0.0\""));
         assert!(WEB_SEARCH_SOURCE.contains("GENERAL_FREE_FALLBACKS"));
         assert!(WEB_SEARCH_SOURCE.contains("LITERATURE_FREE_FALLBACKS"));
         assert!(WEB_SEARCH_SOURCE.contains("do_general_web_search"));
