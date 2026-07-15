@@ -3,6 +3,12 @@
 All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.7.1] — 2026-07-15
+
+### Fixed
+- **OpenAI-custom stream idle (120s)**: Science’s idle watchdog counts yielded protocol events (`message_start`, `content_block_delta`, …), not SSE comments or `ping` (both are ignored). The buffered openai-custom path now opens `message_start` + a text block immediately, then emits empty `text_delta` keepalives while waiting for upstream—so long sessions and **Resume** no longer die at ~120s with `stream idle: no events`. Corrects the incomplete keepalive from v1.6.10.
+- **Skill scan import descriptions**: `SKILL.md` frontmatter `description: >-` / `|-` YAML block scalars are parsed fully (not just the first line).
+
 ## [1.7.0] — 2026-07-15
 
 ### Added

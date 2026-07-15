@@ -597,5 +597,66 @@ class OpenAIChatCompatBoundaryCases(unittest.TestCase):
         self.assertIn("truncated", tool_msg["content"])
 
 
+class OpenAIStreamPlaceholderReplay(unittest.TestCase):
+    """openai-custom opens a counted SSE preamble before the buffered upstream
+    completion returns; replay must continue that open text block instead of
+    emitting a second message_start."""
+
+    def _capture_replay(self, aresp, placeholder_text_open):
+        import io
+
+        class _H(cs.H):
+            def __init__(self):
+                self.wfile = io.BytesIO()
+                self._headers = []
+
+            def send_response(self, *a, **k):
+                pass
+
+            def send_header(self, k, v):
+                self._headers.append((k, v))
+
+            def end_headers(self):
+                pass
+
+        h = _H.__new__(_H)
+        h.wfile = io.BytesIO()
+        h._headers = []
+        h._replay_as_sse(aresp, headers_already_sent=True,
+                         placeholder_text_open=placeholder_text_open)
+        return h.wfile.getvalue()
+
+    def test_placeholder_text_merges_into_open_block(self):
+        raw = self._capture_replay({
+            "id": "msg_real",
+            "model": "claude-sonnet-4-6",
+            "content": [{"type": "text", "text": "hello"}],
+            "stop_reason": "end_turn",
+            "usage": {"input_tokens": 1, "output_tokens": 1},
+        }, placeholder_text_open=True)
+        self.assertNotIn(b"event: message_start", raw)
+        self.assertIn(b'"text": "hello"', raw)
+        self.assertIn(b"event: message_stop", raw)
+
+    def test_placeholder_then_tool_use_closes_empty_text_first(self):
+        raw = self._capture_replay({
+            "id": "msg_real",
+            "model": "claude-sonnet-4-6",
+            "content": [{"type": "tool_use", "id": "t1", "name": "lookup", "input": {"q": "x"}}],
+            "stop_reason": "tool_use",
+            "usage": {"input_tokens": 1, "output_tokens": 1},
+        }, placeholder_text_open=True)
+        self.assertNotIn(b"event: message_start", raw)
+        # Empty placeholder closed at index 0, tool_use starts at index 1.
+        self.assertIn(b'"index": 0', raw)
+        self.assertIn(b'"index": 1', raw)
+        self.assertIn(b'"name": "lookup"', raw)
+
+    def test_counted_keepalive_is_empty_text_delta(self):
+        from proxy.core import http_transport as ht
+        self.assertIn(b"content_block_delta", ht._COUNTED_TEXT_DELTA_KEEPALIVE)
+        self.assertIn(b'"text": ""', ht._COUNTED_TEXT_DELTA_KEEPALIVE)
+
+
 if __name__ == "__main__":
     unittest.main()

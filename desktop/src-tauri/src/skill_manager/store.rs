@@ -636,9 +636,10 @@ pub(crate) fn parse_skill_md(content: &str, result: &mut InspectionResult) {
             for line in frontmatter.lines() {
                 if let Some(name) = line.strip_prefix("name:") {
                     result.name = name.trim().trim_matches('"').to_string();
-                } else if let Some(desc) = line.strip_prefix("description:") {
-                    result.description = desc.trim().trim_matches('"').to_string();
                 }
+            }
+            if let Some(description) = parse_frontmatter_string(frontmatter, "description") {
+                result.description = description;
             }
         }
     }
@@ -654,6 +655,78 @@ pub(crate) fn parse_skill_md(content: &str, result: &mut InspectionResult) {
     if result.name.is_empty() {
         result.name = "Untitled Skill".to_string();
     }
+}
+
+/// Parse a top-level YAML string field, including folded/literal block scalars.
+///
+/// Skill descriptions commonly use `description: >-` followed by indented
+/// lines. This intentionally stays small rather than pretending to parse all of
+/// YAML; it covers the plain/quoted inline form and the `>` / `|` block forms
+/// used by SKILL.md front-matter.
+fn parse_frontmatter_string(frontmatter: &str, key: &str) -> Option<String> {
+    let lines: Vec<&str> = frontmatter.lines().collect();
+    let prefix = format!("{key}:");
+    for (index, line) in lines.iter().enumerate() {
+        let Some(raw_value) = line.strip_prefix(&prefix) else {
+            continue;
+        };
+        let value = raw_value.trim();
+        let Some(style) = value.chars().next().filter(|c| *c == '>' || *c == '|') else {
+            return Some(value.trim_matches('"').trim_matches('\'').to_string());
+        };
+        if !value[style.len_utf8()..]
+            .chars()
+            .all(|c| matches!(c, '-' | '+' | '0'..='9'))
+        {
+            return Some(value.trim_matches('"').trim_matches('\'').to_string());
+        }
+
+        let block_lines: Vec<&str> = lines[index + 1..]
+            .iter()
+            .copied()
+            .take_while(|line| line.trim().is_empty() || line.starts_with([' ', '\t']))
+            .collect();
+        let indent = block_lines
+            .iter()
+            .filter(|line| !line.trim().is_empty())
+            .map(|line| line.len() - line.trim_start().len())
+            .min()
+            .unwrap_or(0);
+        let deindented: Vec<&str> = block_lines
+            .iter()
+            .map(|line| {
+                if line.trim().is_empty() {
+                    ""
+                } else {
+                    &line[indent.min(line.len())..]
+                }
+            })
+            .collect();
+
+        let mut parsed = if style == '|' {
+            deindented.join("\n")
+        } else {
+            let mut folded = String::new();
+            for line in deindented {
+                if line.is_empty() {
+                    folded.push('\n');
+                } else {
+                    if !folded.is_empty() && !folded.ends_with('\n') {
+                        folded.push(' ');
+                    }
+                    folded.push_str(line);
+                }
+            }
+            folded
+        };
+        if value.contains('-') {
+            parsed = parsed.trim_end_matches('\n').to_string();
+        } else if !parsed.is_empty() && !parsed.ends_with('\n') {
+            parsed.push('\n');
+        }
+        return Some(parsed);
+    }
+    None
 }
 
 /// Detect Skill requirements from file/folder names.
@@ -1129,6 +1202,36 @@ mod tests {
         let _ = fs::remove_dir_all(&root_a);
         let _ = fs::remove_dir_all(&root_b);
         let _ = fs::remove_dir_all(&store.root);
+    }
+
+    #[test]
+    fn parses_yaml_block_scalar_descriptions() {
+        let mut folded = InspectionResult {
+            valid: false,
+            name: String::new(),
+            description: String::new(),
+            file_count: 0,
+            total_size_bytes: 0,
+            requirements: Vec::new(),
+            warnings: Vec::new(),
+            errors: Vec::new(),
+        };
+        parse_skill_md(
+            "---\nname: Folded\ndescription: >-\n  Split current work into small\n  reviewable PRs.\nmetadata:\n  surface: ide\n---\n",
+            &mut folded,
+        );
+        assert_eq!(
+            folded.description,
+            "Split current work into small reviewable PRs."
+        );
+
+        let mut literal = folded.clone();
+        literal.description.clear();
+        parse_skill_md(
+            "---\nname: Literal\ndescription: |-\n  First line.\n  Second line.\n---\n",
+            &mut literal,
+        );
+        assert_eq!(literal.description, "First line.\nSecond line.");
     }
 
     #[test]

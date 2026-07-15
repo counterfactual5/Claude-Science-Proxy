@@ -253,13 +253,14 @@ def open_stream(url, data, headers, attempts=4, timeout=300):
 
 
 def _open_stream_with_keepalive(write_chunk, url, data, headers):
-    """Emit SSE comment keepalives while waiting for upstream first frame (prevents client idle timeout)."""
+    """Emit SSE wire keepalives while waiting for upstream first frame."""
     return http_transport.open_stream_with_keepalive(write_chunk, url, data, headers, log)
 
 
-def _post_with_keepalive(write_chunk, url, data, headers):
-    """Emit SSE keepalives while waiting for a buffered (non-stream) upstream POST."""
-    return http_transport.post_with_keepalive(write_chunk, url, data, headers, log)
+def _post_with_keepalive(write_chunk, url, data, headers, keepalive=None):
+    """Emit counted SSE keepalives while waiting for a buffered upstream POST."""
+    return http_transport.post_with_keepalive(
+        write_chunk, url, data, headers, log, keepalive=keepalive)
 
 
 def http_get_json(url, headers, attempts=3, timeout=30):
@@ -425,9 +426,11 @@ class H(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def _sse(self, event, data):
+    def _sse(self, event, data, flush=False):
         chunk = f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n".encode()
         self.wfile.write(hex(len(chunk))[2:].encode() + b"\r\n" + chunk + b"\r\n")
+        if flush:
+            self.wfile.flush()
 
     def _sse_error_and_terminate(self, msg):
         frame = ("event: error\ndata: " + json.dumps(
@@ -436,6 +439,20 @@ class H(BaseHTTPRequestHandler):
         self.wfile.write(hex(len(frame))[2:].encode() + b"\r\n" + frame + b"\r\n")
         self.wfile.write(b"0\r\n\r\n")
         self.wfile.flush()
+
+    def _emit_openai_stream_preamble(self, model_id):
+        """Open a counted SSE shell before the buffered upstream completion returns.
+
+        Science ignores SSE comments and ``ping`` for its 120s idle watchdog; it
+        only resets on yielded protocol events. Emit ``message_start`` plus an
+        empty text block so subsequent empty ``text_delta`` keepalives count.
+        """
+        self._sse("message_start", {"type": "message_start", "message": {
+            "id": "msg_proxy_pending", "type": "message", "role": "assistant",
+            "model": model_id, "content": [], "stop_reason": None, "stop_sequence": None,
+            "usage": {"input_tokens": 0, "output_tokens": 0}}}, flush=True)
+        self._sse("content_block_start", {"type": "content_block_start", "index": 0,
+                  "content_block": {"type": "text", "text": ""}}, flush=True)
 
     def _auth_ok(self):
         runtime = current_runtime()
@@ -705,8 +722,9 @@ class H(BaseHTTPRequestHandler):
         try:
             if stream:
                 # Deliberate stream tradeoff: open the downstream SSE response before
-                # upstream TTFT, then send comment keepalives while waiting. This keeps
-                # the client from retrying long tool-heavy requests, but upstream
+                # upstream TTFT, then send wire keepalives while waiting. Native streams
+                # usually emit message_start quickly; openai-custom uses a counted
+                # preamble instead (see _handle_openai). Upstream
                 # HTTP errors after this point must be represented as SSE error frames
                 # because the HTTP status line is already committed.
                 self.send_response(200)
@@ -817,12 +835,14 @@ class H(BaseHTTPRequestHandler):
         headers = {"Authorization": f"Bearer {runtime.key}", "Content-Type": "application/json"}
         data = json.dumps(oreq).encode()
         headers_sent = False
+        placeholder_text_open = False
         try:
             if stream:
                 # Science asks for SSE; openai-custom still buffers upstream as a
-                # single JSON completion. Open the downstream SSE first and emit
-                # keepalives during TTFT so the client does not idle-timeout mid
-                # tool-result continuation (same tradeoff as Anthropic path).
+                # single JSON completion. Open the downstream SSE first, emit a
+                # counted preamble (message_start + text block), then empty
+                # text_delta keepalives during the wait. Science ignores `ping`
+                # and SSE comments for its 120s idle watchdog.
                 self.send_response(200)
                 self.send_header("Content-Type", "text/event-stream")
                 self.send_header("Cache-Control", "no-cache")
@@ -830,6 +850,8 @@ class H(BaseHTTPRequestHandler):
                 self.end_headers()
                 self.wfile.flush()
                 headers_sent = True
+                self._emit_openai_stream_preamble(model_id)
+                placeholder_text_open = True
 
                 def _wc(b):
                     if b:
@@ -845,7 +867,9 @@ class H(BaseHTTPRequestHandler):
             else:
                 aresp = openai_to_anthropic(oresp, model_id)
             if stream:
-                self._replay_as_sse(aresp, headers_already_sent=True)
+                self._replay_as_sse(
+                    aresp, headers_already_sent=True,
+                    placeholder_text_open=placeholder_text_open)
             else:
                 self._send_json(200, aresp)
             log(f"  <- {runtime.prov_name} OK (blocks={len(aresp['content'])} stop={aresp['stop_reason']})")
@@ -877,7 +901,7 @@ class H(BaseHTTPRequestHandler):
                 except BrokenPipeError:
                     pass
 
-    def _replay_as_sse(self, aresp, headers_already_sent=False):
+    def _replay_as_sse(self, aresp, headers_already_sent=False, placeholder_text_open=False):
         if not headers_already_sent:
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
@@ -885,12 +909,31 @@ class H(BaseHTTPRequestHandler):
             self.send_header("Transfer-Encoding", "chunked")
             self.end_headers()
         blocks = aresp.get("content") or [{"type": "text", "text": ""}]
-        self._sse("message_start", {"type": "message_start", "message": {
-            "id": aresp.get("id", "msg_proxy"), "type": "message", "role": "assistant",
-            "model": aresp.get("model"), "content": [], "stop_reason": None, "stop_sequence": None,
-            "usage": aresp.get("usage", {"input_tokens": 0, "output_tokens": 0})}})
-        self._sse("ping", {"type": "ping"})
-        for idx, blk in enumerate(blocks):
+        if placeholder_text_open:
+            # message_start + text block 0 already open (keepalive preamble).
+            first = blocks[0] if blocks else {"type": "text", "text": ""}
+            if first.get("type") == "tool_use":
+                self._sse("content_block_stop", {"type": "content_block_stop", "index": 0})
+                emit_blocks = blocks
+                start_idx = 1
+            else:
+                text = first.get("text", "")
+                if text:
+                    self._sse("content_block_delta", {"type": "content_block_delta", "index": 0,
+                              "delta": {"type": "text_delta", "text": text}})
+                self._sse("content_block_stop", {"type": "content_block_stop", "index": 0})
+                emit_blocks = blocks[1:]
+                start_idx = 1
+        else:
+            self._sse("message_start", {"type": "message_start", "message": {
+                "id": aresp.get("id", "msg_proxy"), "type": "message", "role": "assistant",
+                "model": aresp.get("model"), "content": [], "stop_reason": None, "stop_sequence": None,
+                "usage": aresp.get("usage", {"input_tokens": 0, "output_tokens": 0})}})
+            self._sse("ping", {"type": "ping"})
+            emit_blocks = blocks
+            start_idx = 0
+        for offset, blk in enumerate(emit_blocks):
+            idx = start_idx + offset
             if blk.get("type") == "tool_use":
                 self._sse("content_block_start", {"type": "content_block_start", "index": idx,
                           "content_block": {"type": "tool_use", "id": blk.get("id"),
@@ -909,6 +952,7 @@ class H(BaseHTTPRequestHandler):
                   "usage": {"output_tokens": aresp.get("usage", {}).get("output_tokens", 0)}})
         self._sse("message_stop", {"type": "message_stop"})
         self.wfile.write(b"0\r\n\r\n")
+        self.wfile.flush()
 
 
 if __name__ == "__main__":

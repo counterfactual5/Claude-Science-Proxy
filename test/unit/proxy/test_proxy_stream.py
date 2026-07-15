@@ -274,6 +274,10 @@ class StreamHeadersOpenBeforeUpstreamTtft(unittest.TestCase):
         cls.up_sock.close()
 
     def test_downstream_sse_keepalive_does_not_wait_for_upstream_first_byte(self):
+        # Anthropic passthrough path emits a wire comment while waiting for the
+        # first upstream frame (TCP keepalive). Science's idle watchdog needs
+        # counted protocol events; that is handled on the openai-custom buffered
+        # path via message_start + empty text_delta keepalives.
         body = b'{"model":"claude-opus-4-8","max_tokens":10,"stream":true,' \
                b'"messages":[{"role":"user","content":"hi"}]}'
         raw, elapsed = raw_post_until(

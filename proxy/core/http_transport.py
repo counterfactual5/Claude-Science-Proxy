@@ -68,8 +68,26 @@ def open_stream(url, data, headers, log_fn, attempts=4, timeout=300):
             raise
 
 
+# Science's stream-idle watchdog resets only on yielded protocol events
+# (message_start / content_block_* / message_delta). SSE comments are ignored
+# at the wire-parser layer, and `event: ping` is explicitly `continue`d in
+# Science's Anthropic SSE client — neither resets the 120s idle timer.
+#
+# For the Anthropic passthrough path we still emit a comment while waiting for
+# the first upstream frame (keeps TCP/proxies awake; real message_start usually
+# arrives quickly from a native stream). For the OpenAI-compat buffered path the
+# caller must open message_start + a text block first, then pass a counted
+# keepalive such as an empty content_block_delta text_delta.
+_WIRE_KEEPALIVE_COMMENT = b": csp-keepalive\n\n"
+_COUNTED_TEXT_DELTA_KEEPALIVE = (
+    b"event: content_block_delta\n"
+    b'data: {"type": "content_block_delta", "index": 0, '
+    b'"delta": {"type": "text_delta", "text": ""}}\n\n'
+)
+
+
 def open_stream_with_keepalive(write_chunk, url, data, headers, log_fn):
-    """Wait for upstream first frame while sending downstream SSE keepalives."""
+    """Wait for upstream first frame while sending downstream SSE wire keepalives."""
     q = queue.Queue(maxsize=1)
 
     def _open():
@@ -79,7 +97,6 @@ def open_stream_with_keepalive(write_chunk, url, data, headers, log_fn):
             q.put(("err", e))
 
     threading.Thread(target=_open, daemon=True).start()
-    keepalive = b": csp-keepalive\n\n"
     while True:
         try:
             kind, payload = q.get(timeout=1.0)
@@ -87,16 +104,20 @@ def open_stream_with_keepalive(write_chunk, url, data, headers, log_fn):
                 raise payload
             return payload
         except queue.Empty:
-            write_chunk(keepalive)
+            write_chunk(_WIRE_KEEPALIVE_COMMENT)
 
 
-def post_with_keepalive(write_chunk, url, data, headers, log_fn, attempts=4, timeout=300):
+def post_with_keepalive(write_chunk, url, data, headers, log_fn, attempts=4, timeout=300,
+                        keepalive=None):
     """Buffered POST while emitting downstream SSE keepalives (OpenAI-compat path).
 
-    openai-custom forces ``stream: false`` upstream then replays as SSE. Without
-    keepalives during long TTFT / tool-heavy completions, Science idle-times out
-    and surfaces "Connection issue — retrying…".
+    openai-custom forces ``stream: false`` upstream then replays as SSE. Default
+    keepalive is an empty ``content_block_delta`` that Science counts toward its
+    idle watchdog — the caller must already have emitted ``message_start`` and
+    opened text block index 0.
     """
+    if keepalive is None:
+        keepalive = _COUNTED_TEXT_DELTA_KEEPALIVE
     q = queue.Queue(maxsize=1)
 
     def _post():
@@ -106,7 +127,6 @@ def post_with_keepalive(write_chunk, url, data, headers, log_fn, attempts=4, tim
             q.put(("err", e))
 
     threading.Thread(target=_post, daemon=True).start()
-    keepalive = b": csp-keepalive\n\n"
     while True:
         try:
             kind, payload = q.get(timeout=1.0)

@@ -4,7 +4,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License">
-  <img src="https://img.shields.io/badge/version-1.7.0-brightgreen.svg" alt="v1.7.0">
+  <img src="https://img.shields.io/badge/version-1.7.1-brightgreen.svg" alt="v1.7.1">
   <img src="https://img.shields.io/badge/platform-macOS%20Apple%20Silicon-1d1d1f.svg" alt="macOS Apple Silicon">
   <img src="https://img.shields.io/badge/built%20with-Tauri%202-C25A34.svg" alt="Tauri 2">
 </p>
@@ -25,7 +25,7 @@ CSP is a **macOS desktop app** (Tauri) that:
 4. Verifies API keys **before** switching the active profile
 5. Manages local **Skills** and **stdio MCP connectors**, deploying enabled ones into the sandbox on launch
 
-> **v1.7.0** — Skills **Import folder** full-page UX restored; OpenAI-compat / GLM `1210` translation hardening for long sessions. See [Releases](https://github.com/counterfactual5/Claude-Science-Proxy/releases/tag/v1.7.0).
+> **v1.7.1** — OpenAI-custom long-session / Resume stream-idle fix (counted SSE keepalives); Skill `description: >-` import parsing. See [Releases](https://github.com/counterfactual5/Claude-Science-Proxy/releases/tag/v1.7.1).
 
 > **Platform:** macOS **Apple Silicon** today. The app is **not notarized** yet; on first launch, right-click → **Open**.
 
