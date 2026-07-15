@@ -3,7 +3,7 @@
 All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
-## [2.0.0] — 2026-07-15
+## [1.7.0] — 2026-07-15
 
 ### Added
 - **Skills「导入目录」**: Restored top-level **Import folder** / **导入目录** in the Skills `⋯` menu as a dedicated full-page form (replacing the nested “advanced” path under scan-import). Paste a known Skill folder path, inspect, and import with recursive copy of companion files (`USAGE.md`, `requirements`, scripts, etc.) into `~/.csp/skills/`.
@@ -13,7 +13,7 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 - **Skill import validation**: Missing root `SKILL.md` is now an inspect error (not a warning); pointing at a `SKILL.md` file hints to select the parent directory.
 
 ### Changed
-- **Version alignment**: Desktop bundle, embedded web-search `SERVER_VERSION`, and builtin test assertion synced to **2.0.0**.
+- **Version alignment**: Desktop bundle, embedded web-search `SERVER_VERSION`, and builtin test assertion synced to **1.7.0**.
 
 ## [1.6.14] — 2026-07-14
 
