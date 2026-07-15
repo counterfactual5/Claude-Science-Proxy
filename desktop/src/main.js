@@ -72,11 +72,17 @@ const I18N = {
     ports: "端口管理",
     runtimeStatus: "运行状态",
     runStatusOff: "未运行",
-    runStatusProxy: "代理运行中",
-    runStatusScience: "Science 运行中",
+    runStatusProxy: "代理运行中·Science 未启动",
+    runStatusScience: "Science 运行中·代理未启动",
     runStatusBoth: "代理+Science 运行中",
     runStatusStarting: "启动中",
     runStatusStopping: "停止中",
+    runStatusTipOff: "代理与 Science 均未运行。",
+    runStatusTipProxy: "本地代理在跑，但 Science 沙箱未启动。",
+    runStatusTipScience: "Science 沙箱在跑，但代理未启动；需（重新）启动代理后才能作为代理使用。",
+    runStatusTipBoth: "代理与 Science 沙箱均已就绪，可作为代理使用。",
+    runStatusTipStarting: "正在启动代理与 Science…",
+    runStatusTipStopping: "正在停止代理与 Science…",
     proxyPort: "代理",
     sandboxPort: "沙箱",
     startScience: "启动 Claude Science",
@@ -366,11 +372,17 @@ const I18N = {
     ports: "Ports",
     runtimeStatus: "Runtime",
     runStatusOff: "Not running",
-    runStatusProxy: "Proxy running",
-    runStatusScience: "Science running",
+    runStatusProxy: "Proxy on · Science off",
+    runStatusScience: "Science on · proxy off",
     runStatusBoth: "Proxy + Science running",
     runStatusStarting: "Starting…",
     runStatusStopping: "Stopping…",
+    runStatusTipOff: "Neither proxy nor Science is running.",
+    runStatusTipProxy: "Local proxy is up, but the Science sandbox is not.",
+    runStatusTipScience: "Science is running but the proxy is down. (Re)start the proxy before using CSP as a proxy.",
+    runStatusTipBoth: "Proxy and Science sandbox are ready to use as a proxy.",
+    runStatusTipStarting: "Starting proxy and Science…",
+    runStatusTipStopping: "Stopping proxy and Science…",
     proxyPort: "Proxy",
     sandboxPort: "Sandbox",
     startScience: "Start Claude Science",
@@ -1319,27 +1331,56 @@ let lastRuntimeLights = { proxy: "amber", sandbox: "amber" };
 let runtimePhase = null; // "starting" | "stopping" | null
 let runtimeStatusTimer = null;
 
-function runtimeStatusText() {
-  const t = S();
-  if (runtimePhase === "starting") return t.runStatusStarting;
-  if (runtimePhase === "stopping") return t.runStatusStopping;
+function runtimeStatusKind() {
+  if (runtimePhase === "starting") return "starting";
+  if (runtimePhase === "stopping") return "stopping";
   const proxyOn = lastRuntimeLights.proxy === "green";
   const scienceOn = lastRuntimeLights.sandbox === "green";
-  if (proxyOn && scienceOn) return t.runStatusBoth;
-  if (proxyOn) return t.runStatusProxy;
-  if (scienceOn) return t.runStatusScience;
-  return t.runStatusOff;
+  if (proxyOn && scienceOn) return "both";
+  if (proxyOn) return "proxy";
+  if (scienceOn) return "science";
+  return "off";
+}
+
+function runtimeStatusText(kind) {
+  const t = S();
+  switch (kind || runtimeStatusKind()) {
+    case "starting": return t.runStatusStarting;
+    case "stopping": return t.runStatusStopping;
+    case "both": return t.runStatusBoth;
+    case "proxy": return t.runStatusProxy;
+    case "science": return t.runStatusScience;
+    default: return t.runStatusOff;
+  }
+}
+
+function runtimeStatusTip(kind) {
+  const t = S();
+  switch (kind || runtimeStatusKind()) {
+    case "starting": return t.runStatusTipStarting;
+    case "stopping": return t.runStatusTipStopping;
+    case "both": return t.runStatusTipBoth;
+    case "proxy": return t.runStatusTipProxy;
+    case "science": return t.runStatusTipScience;
+    default: return t.runStatusTipOff;
+  }
 }
 
 function updateRuntimeStatusUI() {
   if (!els.runtimeStatusText) return;
-  const text = runtimeStatusText();
+  const kind = runtimeStatusKind();
+  const text = runtimeStatusText(kind);
+  const tip = runtimeStatusTip(kind);
   els.runtimeStatusText.textContent = text;
-  const proxyOn = lastRuntimeLights.proxy === "green";
-  const scienceOn = lastRuntimeLights.sandbox === "green";
-  const busyPhase = runtimePhase === "starting" || runtimePhase === "stopping";
+  els.runtimeStatusText.title = tip;
+  els.runtimeStatusText.setAttribute("aria-label", `${text}. ${tip}`);
+  const busyPhase = kind === "starting" || kind === "stopping";
+  const ready = kind === "both";
+  const warn = kind === "proxy" || kind === "science";
   els.runtimeStatusText.classList.toggle("is-busy", busyPhase);
-  els.runtimeStatusText.classList.toggle("is-running", !busyPhase && (proxyOn || scienceOn));
+  els.runtimeStatusText.classList.toggle("is-ready", ready);
+  els.runtimeStatusText.classList.toggle("is-warn", warn);
+  els.runtimeStatusText.classList.remove("is-running");
 }
 
 async function refreshRuntimeStatus() {

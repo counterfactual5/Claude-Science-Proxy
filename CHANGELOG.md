@@ -14,6 +14,7 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 - **Version alignment**: Desktop bundle, embedded web-search `SERVER_VERSION`, and builtin test assertion synced to **1.7.0**.
+- **Runtime status clarity**: One-sided proxy/Science states use compact labels, tooltips, and warn/ready styling so partial readiness is obvious.
 
 ## [1.6.14] — 2026-07-14
 
