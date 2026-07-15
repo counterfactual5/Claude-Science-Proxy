@@ -51,6 +51,20 @@ Some custom relay / OpenAI endpoints work in user `curl` but fail panel scratch 
 
 ---
 
+<a id="openai-custom-streaming"></a>
+
+## OpenAI-compatible providers: buffered streaming and long sessions
+
+**Provider paths:** `openai-custom` and `openai-responses` translate Science's Anthropic-shaped `/v1/messages` into OpenAI APIs. Science always asks for SSE, but these paths **buffer the upstream completion** (`stream: false` upstream) and **replay** the result as Anthropic SSE events.
+
+**Fixed in v1.7.1 — `stream idle: no events for 120000ms`.** Science's client runs a 120s idle watchdog that counts **yielded protocol events** (`message_start`, `content_block_delta`, …), not raw TCP bytes. SSE comment lines and `event: ping` are ignored (`ping` is explicitly skipped in Science's Anthropic SSE parser). While waiting for a slow upstream (long tool-heavy history, Resume, GLM Coding Plan with `msgs=200+`), the proxy must open `message_start` + a text block immediately and emit **empty `text_delta` keepalives** so the watchdog resets. Without that, UI shows **Connection issue — retrying…** even though the proxy is healthy. See `proxy/core/http_transport.py` (`_COUNTED_TEXT_DELTA_KEEPALIVE`) and `csp_proxy.py` (`_emit_openai_stream_preamble`). v1.6.10's earlier "SSE keepalive" note was incomplete (comments/`ping` did not count).
+
+**Still open — upstream rate limits and slowness.** GLM Coding Plan and other shared endpoints may return **HTTP 429** (`code 1313` fair-use policy) or take minutes on very long contexts. That is **not** a CSP stream-idle bug; Science may still show connection retries until the upstream accepts the request or you pause other sessions. Native Anthropic passthrough (`deepseek`, `relay` with `mode: anthropic`) uses real upstream streaming and is unaffected by this buffered-path fix.
+
+**Scope:** Applies to any profile using **Custom OpenAI** / **Custom OpenAI Responses** (including GLM when configured with an OpenAI Chat base URL). Does **not** apply to native Anthropic-compatible relays.
+
+---
+
 <a id="science-version-drift"></a>
 
 ## Science version drift

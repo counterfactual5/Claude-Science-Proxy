@@ -125,6 +125,15 @@ CSP consists of the following layers:
 - **Model Selector**: The frontend allows selecting multiple active models for a profile. A virtual registry maps up to 8 shell IDs (`claude-*`) in Science to the real upstream model names.
 - **Profile Transactions**: Activating a profile follows a strict sequence: launches a temporary scratch proxy → validates candidate connection health → switches the active ID. If verification fails, it rolls back gracefully.
 
+### Proxy streaming paths (`csp_proxy.py`)
+
+| Path | Providers | Upstream | Downstream to Science |
+|------|-----------|----------|------------------------|
+| Anthropic passthrough | `deepseek`, `relay` | Real SSE stream | Passthrough (optional DSML rewrite) |
+| Buffered OpenAI replay | `openai-custom`, `openai-responses` | Single JSON completion (`stream: false`) | Replayed Anthropic SSE |
+
+For the **buffered OpenAI** path, Science's 120s stream-idle watchdog requires **counted** SSE events while waiting for upstream TTFT. Since v1.7.1 the proxy opens `message_start` + an empty text block, then sends empty `content_block_delta` keepalives every second (`http_transport._COUNTED_TEXT_DELTA_KEEPALIVE`). SSE comments and `ping` do **not** reset the watchdog. See [`docs/known-issues.md`](known-issues.md#openai-custom-streaming).
+
 ---
 
 ## Source Directory Structure (`desktop/`)

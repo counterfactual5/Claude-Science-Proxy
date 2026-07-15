@@ -141,6 +141,7 @@ Science only accepts model IDs starting with `claude-`. CSP allocates **up to ei
 - **Anthropic-hosted cloud features** (remote/hosted MCP, directory connectors) and some cloud-only capabilities are unavailable or fast-fail — **local stdio MCP connectors are supported** via the MCP tab
 - **Hosted top-level `web_search` / `web_fetch` are unavailable** under CSP virtual login — use the built-in `web-search` MCP: `host.mcp("web-search", "csp_web_search" | "search_literature" | "fetch_url", …)` and read `data["results"]`
 - Provider quality varies for tools, long context, thinking, images, and streaming
+- **OpenAI-compatible profiles** (`openai-custom` / `openai-responses`, including GLM on OpenAI Chat URLs): long sessions and **Resume** are supported since **v1.7.1** (counted SSE keepalives); upstream **429 / fair-use** rate limits and very slow responses can still cause retries — see [known issues](./docs/known-issues.md#openai-custom-streaming)
 - **Not Apple-notarized** — manual approval on first open
 - Proxy still requires **`python3`** today
 
