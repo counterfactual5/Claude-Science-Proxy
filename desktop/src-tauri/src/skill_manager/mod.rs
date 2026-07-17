@@ -8,6 +8,7 @@ pub mod builtin;
 pub mod deploy;
 pub mod model;
 pub mod native_pick;
+pub mod science_sync;
 pub mod source_resolve;
 pub mod store;
 pub mod workspace_ingress;

@@ -3,6 +3,17 @@
 All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.8.2] — 2026-07-17
+
+### Added
+- **Sync Science skill library**: Replaces “Adopt from workspace” as the primary path. Scans `orgs/…/skills/` for CSP-managed drift (harvest back into `~/.csp/skills/`), optional new library imports, and unpublished workspace drafts. Deploy auto-harvests drift before wipe so Science Edit/chat edits are not lost.
+
+### Fixed
+- Science bundled skill `using-model-endpoint` no longer appears as a false “import” candidate during library sync.
+
+### Changed
+- **Version alignment**: Desktop bundle, Skill download `User-Agent`, and built-in web-search `SERVER_VERSION` synced to **1.8.2**.
+
 ## [1.8.1] — 2026-07-17
 
 ### Added

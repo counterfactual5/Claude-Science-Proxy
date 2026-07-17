@@ -94,7 +94,7 @@
                   <div class="pmenu listhd-menu" id="skillMenu" hidden role="menu">
                     <button type="button" class="pmenu-item" id="skillCreateBtn" role="menuitem">新建 Skill</button>
                     <button type="button" class="pmenu-item" id="skillDiscoverBtn" role="menuitem">扫描导入</button>
-                    <button type="button" class="pmenu-item" id="skillAdoptBtn" role="menuitem">从 Science 采纳</button>
+                    <button type="button" class="pmenu-item" id="skillAdoptBtn" role="menuitem">同步 Science 技能库</button>
                   </div>
                 </div>
               </div>
@@ -104,7 +104,7 @@
 
           <div class="skill-empty" id="skillEmpty" hidden>
             <p id="skillEmptyTitle">还没有 Skill。</p>
-            <p class="hint" id="skillEmptyHint">点「导入」添加本地或网络 Skill，或在「⋯」里新建 / 扫描 / 从 Science 采纳。</p>
+            <p class="hint" id="skillEmptyHint">点「导入」添加本地或网络 Skill，或在「⋯」里新建 / 扫描 / 同步 Science 技能库。</p>
           </div>
 
           <div id="skillList" class="skill-list"></div>
@@ -175,14 +175,14 @@
         </div>
 
         <div class="sec form-sec" id="skillAdoptSec" hidden>
-          <label id="skillAdoptTitle">从 Science 工作区采纳</label>
-          <p class="hint" id="skillAdoptHint">扫描沙盒内 <code>workspaces/</code> 下的 Skill 草稿（<code>*.skill.md</code>、<code>*_SKILL.md</code> 或含 <code>SKILL.md</code> 的目录），连同 <code>kernel.py</code> 等伴随文件复制到 <code>~/.csp/skills/</code>。Science 无法直接发布技能时请用此功能。</p>
+          <label id="skillAdoptTitle">同步 Science 技能库</label>
+          <p class="hint" id="skillAdoptHint">优先回收 <code>orgs/…/skills/</code> 里 Science 已改过的托管技能到 <code>~/.csp/skills/</code>；也可导入库中尚未入库的技能，或工作区未入库草稿。</p>
           <div id="skillAdoptList" class="skill-discover-list"></div>
           <div id="skillAdoptEmpty" class="skill-empty" hidden>
-            <p id="skillAdoptEmptyText">没有扫描到可采纳的 Skill 草稿。</p>
+            <p id="skillAdoptEmptyText">没有需要同步的技能。</p>
           </div>
           <div class="row form-actions">
-            <button class="btn small" id="skillAdoptConfirmBtn" disabled>采纳所选</button>
+            <button class="btn small" id="skillAdoptConfirmBtn" disabled>同步所选</button>
             <button class="btn small" id="skillAdoptCancelBtn">取消</button>
           </div>
         </div>

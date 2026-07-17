@@ -206,7 +206,7 @@ fn http_get_bytes(url: &str) -> Result<Vec<u8>, String> {
     let client = reqwest::blocking::Client::builder()
         .timeout(DOWNLOAD_TIMEOUT)
         .redirect(reqwest::redirect::Policy::limited(5))
-        .user_agent("Claude-Science-Proxy/1.8.1")
+        .user_agent("Claude-Science-Proxy/1.8.2")
         .build()
         .map_err(|e| format!("http client: {e}"))?;
     let resp = client

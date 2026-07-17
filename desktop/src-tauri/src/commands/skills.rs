@@ -6,6 +6,7 @@ use crate::run_blocking;
 use crate::runtime::sandbox_session::{redeploy_sandbox_skills, stop_running_sandbox_for_redeploy};
 use crate::skill_manager::model::{DiscoveredSkill, InspectionResult, Skill, SkillSummary};
 use crate::skill_manager::source_resolve::{self, inspect_resolved_source};
+use crate::skill_manager::science_sync::{self, ScienceSkillSyncCandidate, SyncScienceSkillsResult};
 use crate::skill_manager::store::SkillStore;
 use crate::skill_manager::workspace_ingress::{
     self, AdoptWorkspaceSkillsResult, WorkspaceSkillCandidate, WorkspaceSkillPreview,
@@ -291,6 +292,12 @@ pub async fn discover_workspace_skills() -> Result<Vec<WorkspaceSkillCandidate>,
     run_blocking(workspace_ingress::discover_workspace_skills).await
 }
 
+/// Discover Science library drift + unpublished workspace drafts for the Sync page.
+#[tauri::command]
+pub async fn discover_science_skill_sync() -> Result<Vec<ScienceSkillSyncCandidate>, String> {
+    run_blocking(science_sync::discover_science_skill_sync).await
+}
+
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PreviewWorkspaceSkillInput {
@@ -309,10 +316,24 @@ pub async fn preview_workspace_skill(
     .await
 }
 
+/// Preview a Science-library or workspace sync candidate.
+#[tauri::command]
+pub async fn preview_science_skill(
+    input: PreviewWorkspaceSkillInput,
+) -> Result<WorkspaceSkillPreview, String> {
+    run_blocking(move || science_sync::preview_science_skill(&input.key, input.file.as_deref()))
+        .await
+}
+
 /// Reveal a Science workspace Skill draft in Finder / the default app.
 #[tauri::command]
 pub async fn open_workspace_skill(input: PreviewWorkspaceSkillInput) -> Result<String, String> {
     run_blocking(move || workspace_ingress::open_workspace_skill(&input.key)).await
+}
+
+#[tauri::command]
+pub async fn open_science_skill(input: PreviewWorkspaceSkillInput) -> Result<String, String> {
+    run_blocking(move || science_sync::open_science_skill(&input.key)).await
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -331,6 +352,30 @@ pub async fn adopt_workspace_skills(
     run_blocking(move || {
         let mut result = workspace_ingress::adopt_workspace_skills(&input.keys)?;
         if !result.adopted.is_empty() && redeploy_sandbox_skills() {
+            result.needs_restart = stop_running_sandbox_for_redeploy(&app, &state)?;
+        }
+        Ok(result)
+    })
+    .await
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SyncScienceSkillsInput {
+    pub keys: Vec<String>,
+}
+
+/// Harvest / import / adopt selected Science skill sync candidates into CSP store.
+#[tauri::command]
+pub async fn sync_science_skills(
+    app: tauri::AppHandle,
+    state: State<'_, SharedAppState>,
+    input: SyncScienceSkillsInput,
+) -> Result<SyncScienceSkillsResult, String> {
+    let state = state.inner().clone();
+    run_blocking(move || {
+        let mut result = science_sync::sync_science_skills(&input.keys)?;
+        if !result.synced.is_empty() && redeploy_sandbox_skills() {
             result.needs_restart = stop_running_sandbox_for_redeploy(&app, &state)?;
         }
         Ok(result)

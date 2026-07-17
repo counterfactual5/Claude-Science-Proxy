@@ -227,6 +227,43 @@ impl SkillStore {
         Ok(skill)
     }
 
+    /// Replace the on-disk files of an existing Skill from `source`, keeping id /
+    /// enabled / source_path. Used when harvesting Science-library edits back
+    /// into `~/.csp/skills/`.
+    pub fn replace_from_source(&self, skill_id: &str, source: &Path) -> Result<Skill, String> {
+        let inspection = Self::inspect_source(source)?;
+        if !inspection.valid {
+            return Err(format!(
+                "Source validation failed: {}",
+                inspection.errors.join("; ")
+            ));
+        }
+        let mut inv = self.load_inventory()?;
+        let Some(existing) = inv.skills.get(skill_id).cloned() else {
+            return Err(format!("Skill not found: {skill_id}"));
+        };
+        let dest = existing.store_path.clone();
+        if dest.exists() {
+            fs::remove_dir_all(&dest).map_err(|e| format!("clear skill dir: {e}"))?;
+        }
+        copy_dir(source, &dest)?;
+        let skill = Skill {
+            id: existing.id,
+            name: inspection.name,
+            description: inspection.description,
+            store_path: dest,
+            source_path: existing.source_path,
+            enabled: existing.enabled,
+            size_bytes: inspection.total_size_bytes,
+            imported_at: current_iso8601(),
+            requirements: inspection.requirements,
+            builtin: existing.builtin,
+        };
+        inv.skills.insert(skill_id.to_string(), skill.clone());
+        self.save_inventory(&inv)?;
+        Ok(skill)
+    }
+
     /// Author a brand-new Skill from a `SKILL.md` `content` string.
     ///
     /// The Skill's name/description come from the content's YAML front-matter —

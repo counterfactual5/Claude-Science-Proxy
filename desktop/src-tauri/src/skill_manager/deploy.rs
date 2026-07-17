@@ -20,7 +20,7 @@ use crate::oauth_forge::real_ancestor;
 
 /// Marker file written inside each CSP-deployed Skill folder. Cleanup only removes
 /// folders containing this marker, so bundled Skills are never deleted.
-const MANAGED_MARKER: &str = ".csp_managed";
+pub(crate) const MANAGED_MARKER: &str = ".csp_managed";
 
 /// Sidecar manifest (in the skills dir) recording the signature of the last
 /// deployment, so an unchanged redeploy can be a no-op.
@@ -117,6 +117,13 @@ pub fn deploy_enabled_skills(
     {
         report.deployed = plan.into_iter().map(|(_, s)| s.name.clone()).collect();
         return Ok(report);
+    }
+
+    // Harvest Science-side edits before wipe so chat/Edit-skill changes are not lost.
+    if skills_dir.is_dir() {
+        let _ = crate::skill_manager::science_sync::harvest_drift_before_deploy(&skills_dir);
+        // Re-load sizes after harvest so the plan signature stays accurate for this pass.
+        // (Inventory may have grown; deploy still uses the in-memory `enabled` slice.)
     }
 
     // Remove only previously-managed deployments; leave bundled Skills untouched.

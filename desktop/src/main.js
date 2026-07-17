@@ -110,11 +110,11 @@ const I18N = {
     addMcp: "+ 新建",
     scanImport: "扫描导入",
     importFolder: "导入",
-    adoptFromScience: "从 Science 采纳",
+    adoptFromScience: "同步 Science 技能库",
     skillsManageTitle: "Skills 管理",
     skillApplyHint: "启用/停用的改动会在下次点击「启动 Claude Science」时生效；若沙箱正在运行，会自动重启以应用。",
     skillEmptyTitle: "还没有 Skill。",
-    skillEmptyHint: "点「导入」添加本地或网络 Skill，或在「⋯」里新建 / 扫描 / 从 Science 采纳。",
+    skillEmptyHint: "点「导入」添加本地或网络 Skill，或在「⋯」里新建 / 扫描 / 同步 Science 技能库。",
     skillDiscoverTitle: "扫描本地 Skill",
     skillDiscoverHintHtml: "从其他 Agent 软件导入。",
     skillDiscoverEmpty: "没有扫描到可导入的 Skill。",
@@ -130,19 +130,24 @@ const I18N = {
     skillImportPath: "导入",
     skillAlreadyImported: "已导入",
     skillScanning: "扫描中…",
-    skillAdoptTitle: "从 Science 工作区采纳",
-    skillAdoptHintHtml: "扫描沙盒内 <code>workspaces/</code> 下的 Skill 草稿（<code>*.skill.md</code>、<code>*_SKILL.md</code> 或含 <code>SKILL.md</code> 的目录），连同 <code>kernel.py</code> 等伴随文件复制到 <code>~/.csp/skills/</code>。Science 无法直接发布技能时请用此功能。",
-    skillAdoptEmpty: "没有扫描到可采纳的 Skill 草稿。",
-    skillAdoptConfirm: "采纳所选",
-    skillAdoptedBadge: "已采纳",
+    skillAdoptTitle: "同步 Science 技能库",
+    skillAdoptHintHtml: "优先回收 <code>orgs/…/skills/</code> 中 Science 已改过的托管技能到 <code>~/.csp/skills/</code>；也可导入库中尚未入库的技能，或工作区未入库草稿。",
+    skillAdoptEmpty: "没有需要同步的技能。",
+    skillAdoptConfirm: "同步所选",
+    skillAdoptedBadge: "可回收",
     skillAdoptPreview: "预览",
     skillAdoptPreviewTitle: "预览",
     skillAdoptOpen: "在 Finder 打开",
     skillAdoptPreviewClose: "关闭",
     skillAdoptPreviewMeta: "{file} · {chars} 字符 · {bytes}",
     skillAdoptPreviewTruncated: "（内容过长，已截断显示）",
-    skillAdoptReadoptHint: "已采纳过；再次采纳会用工作区草稿覆盖现有 Skill。",
+    skillAdoptReadoptHint: "Science 侧已有改动；同步会写回 CSP 库。",
     skillAdoptPreviewFail: "预览失败：{err}",
+    skillSyncKindHarvest: "回收更新",
+    skillSyncKindImport: "新入库",
+    skillSyncKindWorkspace: "工作区草稿",
+    skillSyncBytes: "库 {store} → Science {science}",
+    skillSynced: "已同步 Skill",
     mcpDiscoverPreview: "预览",
     mcpPreviewTitle: "MCP 配置预览",
     mcpPreviewMeta: "{name} · {source}",
@@ -161,10 +166,10 @@ const I18N = {
     skillToggledRestarting: "已更新启用状态；沙箱已停止，正在重新启动…",
     skillToggledRestarted: "已应用并重启完成",
     skillToggledRestartFail: "已更新，但重新启动失败：{err}",
-    skillAdoptedRestarting: "已采纳 Skill；沙箱已停止，正在重新启动…",
-    skillAdoptedRestarted: "已采纳并重启完成",
-    skillAdoptedRestartFail: "已采纳，但重新启动失败：{err}",
-    skillAdoptPartialFail: "部分采纳失败: {err}",
+    skillAdoptedRestarting: "已同步 Skill；沙箱已停止，正在重新启动…",
+    skillAdoptedRestarted: "已同步并重启完成",
+    skillAdoptedRestartFail: "已同步，但重新启动失败：{err}",
+    skillAdoptPartialFail: "部分同步失败: {err}",
     metaSize: "大小",
     metaImported: "导入",
     inspUnnamedSkill: "未命名 Skill",
@@ -444,11 +449,11 @@ const I18N = {
     addMcp: "+ New",
     scanImport: "Scan & import",
     importFolder: "Import",
-    adoptFromScience: "Adopt from Science",
+    adoptFromScience: "Sync Science skills",
     skillsManageTitle: "Skills",
     skillApplyHint: "Enable/disable takes effect the next time you Start Claude Science; a running sandbox restarts automatically.",
     skillEmptyTitle: "No Skills yet.",
-    skillEmptyHint: "Tap Import for a local or network Skill, or use ⋯ to create / scan / adopt from Science.",
+    skillEmptyHint: "Tap Import for a local or network Skill, or use ⋯ to create / scan / sync Science skill library.",
     skillDiscoverTitle: "Scan local Skills",
     skillDiscoverHintHtml: "Import from other agent apps.",
     skillDiscoverEmpty: "No importable Skills found.",
@@ -464,19 +469,24 @@ const I18N = {
     skillImportPath: "Import",
     skillAlreadyImported: "Imported",
     skillScanning: "Scanning…",
-    skillAdoptTitle: "Adopt from Science workspace",
-    skillAdoptHintHtml: "Scans sandbox <code>workspaces/</code> for Skill drafts (<code>*.skill.md</code>, <code>*_SKILL.md</code>, or folders with <code>SKILL.md</code>) and copies them with companion files like <code>kernel.py</code> into <code>~/.csp/skills/</code>. Use this when Science cannot publish skills directly.",
-    skillAdoptEmpty: "No adoptable Skill drafts found.",
-    skillAdoptConfirm: "Adopt selected",
-    skillAdoptedBadge: "Adopted",
+    skillAdoptTitle: "Sync Science skill library",
+    skillAdoptHintHtml: "Primarily harvest Science edits under <code>orgs/…/skills/</code> back into <code>~/.csp/skills/</code>. Can also import library skills not yet in CSP, or unpublished workspace drafts.",
+    skillAdoptEmpty: "Nothing to sync.",
+    skillAdoptConfirm: "Sync selected",
+    skillAdoptedBadge: "Harvest",
     skillAdoptPreview: "Preview",
     skillAdoptPreviewTitle: "Preview",
     skillAdoptOpen: "Reveal in Finder",
     skillAdoptPreviewClose: "Close",
     skillAdoptPreviewMeta: "{file} · {chars} chars · {bytes}",
     skillAdoptPreviewTruncated: "(truncated for display)",
-    skillAdoptReadoptHint: "Already adopted; adopting again overwrites the existing Skill with this workspace draft.",
+    skillAdoptReadoptHint: "Science copy differs; sync writes it back to the CSP store.",
     skillAdoptPreviewFail: "Preview failed: {err}",
+    skillSyncKindHarvest: "Harvest update",
+    skillSyncKindImport: "New import",
+    skillSyncKindWorkspace: "Workspace draft",
+    skillSyncBytes: "store {store} → Science {science}",
+    skillSynced: "Skills synced",
     mcpDiscoverPreview: "Preview",
     mcpPreviewTitle: "MCP config preview",
     mcpPreviewMeta: "{name} · {source}",
@@ -495,10 +505,10 @@ const I18N = {
     skillToggledRestarting: "Enable state updated; sandbox stopped, restarting…",
     skillToggledRestarted: "Applied and restarted",
     skillToggledRestartFail: "Updated, but restart failed: {err}",
-    skillAdoptedRestarting: "Skills adopted; sandbox stopped, restarting…",
-    skillAdoptedRestarted: "Adopted and restarted",
-    skillAdoptedRestartFail: "Adopted, but restart failed: {err}",
-    skillAdoptPartialFail: "Some adopts failed: {err}",
+    skillAdoptedRestarting: "Skills synced; sandbox stopped, restarting…",
+    skillAdoptedRestarted: "Synced and restarted",
+    skillAdoptedRestartFail: "Synced, but restart failed: {err}",
+    skillAdoptPartialFail: "Some syncs failed: {err}",
     metaSize: "Size",
     metaImported: "Imported",
     inspUnnamedSkill: "Unnamed Skill",
@@ -999,6 +1009,57 @@ function mockInvoke(cmd, args) {
         { name: "pdf", description: "读写 PDF", sourcePath: "/Users/me/.codex/skills/pdf", sourceLabel: "~/.codex/skills", alreadyImported: false },
         { name: "playwright", description: "浏览器自动化", sourcePath: "/Users/me/.codex/skills/playwright", sourceLabel: "~/.codex/skills", alreadyImported: true },
       ]);
+    case "discover_science_skill_sync":
+      return Promise.resolve([
+        {
+          key: "science://harvest/sk_1",
+          kind: "harvest",
+          name: "crypto-data-pro",
+          description: "Improved draft",
+          skillId: "sk_1",
+          files: ["SKILL.md", "kernel.py"],
+          warnings: ["Science library is newer/larger than CSP store"],
+          storeBytes: 2310,
+          scienceBytes: 16790,
+          alreadyImported: true,
+        },
+      ]);
+    case "preview_science_skill": {
+      const key = (args.input && args.input.key) || "";
+      const file = (args.input && args.input.file) || "SKILL.md";
+      return Promise.resolve({
+        key,
+        name: "crypto-data-pro",
+        description: "Improved",
+        workspaceId: "",
+        alreadyImported: true,
+        openPath: "/preview/science/crypto-data-pro",
+        files: [
+          { name: "SKILL.md", sizeBytes: 16790 },
+          { name: "kernel.py", sizeBytes: 39594 },
+        ],
+        activeFile: file,
+        content: "# Improved preview mock\n",
+        truncated: false,
+        charCount: 24,
+      });
+    }
+    case "open_science_skill":
+      return Promise.resolve("/preview/science/" + ((args.input && args.input.key) || ""));
+    case "sync_science_skills": {
+      const keys = (args.input && args.input.keys) || [];
+      const synced = keys.map((key, i) => ({
+        id: "sk_" + Math.random().toString(16).slice(2, 10) + i,
+        name: "Synced Skill",
+        description: "From " + key,
+        enabled: true,
+        sizeBytes: 16000,
+        importedAt: new Date().toISOString().replace(/\.\d{3}Z$/, "Z"),
+        requirements: ["python"],
+      }));
+      synced.forEach((s) => mockStore.skills.push(s));
+      return Promise.resolve({ synced, failures: [], needsRestart: false });
+    }
     case "discover_workspace_skills":
       return Promise.resolve([
         {
@@ -3147,7 +3208,7 @@ async function openPreviewOverlayPath() {
   if (!previewOverlayState) return;
   try {
     if (previewOverlayState.kind === "skill-adopt") {
-      await call("open_workspace_skill", { input: { key: previewOverlayState.key } });
+      await call("open_science_skill", { input: { key: previewOverlayState.key } });
     } else if (previewOverlayState.kind === "mcp") {
       await call("open_discovered_mcp_source", {
         input: { sourcePath: previewOverlayState.sourcePath },
@@ -3174,7 +3235,7 @@ async function openSkillAdopt() {
   els.skillAdoptConfirmBtn.disabled = true;
   showSkillView("adopt");
   try {
-    const found = (await call("discover_workspace_skills")) || [];
+    const found = (await call("discover_science_skill_sync")) || [];
     renderSkillAdopt(found);
   } catch (e) {
     els.skillAdoptList.innerHTML = "";
@@ -3188,6 +3249,12 @@ function closeSkillAdopt() {
   showSkillView("list");
 }
 
+function skillSyncKindLabel(kind) {
+  if (kind === "harvest") return S().skillSyncKindHarvest;
+  if (kind === "import") return S().skillSyncKindImport;
+  return S().skillSyncKindWorkspace;
+}
+
 function renderSkillAdopt(found) {
   if (!found.length) {
     els.skillAdoptList.innerHTML = "";
@@ -3195,7 +3262,6 @@ function renderSkillAdopt(found) {
     return;
   }
   els.skillAdoptEmpty.hidden = true;
-  const adoptedBadge = S().skillAdoptedBadge;
   const previewLabel = S().skillAdoptPreview;
   els.skillAdoptList.innerHTML = found.map((d) => {
     const files = (d.files || []).slice(0, 6).join(", ");
@@ -3203,14 +3269,22 @@ function renderSkillAdopt(found) {
     const warn = (d.warnings || []).length
       ? `<span class="skill-meta"><span>${escapeHtml(d.warnings[0])}</span></span>`
       : "";
-    const badge = d.alreadyImported ? `<span class="skill-req-tag">${escapeHtml(adoptedBadge)}</span>` : "";
+    const kindBadge = `<span class="skill-req-tag">${escapeHtml(skillSyncKindLabel(d.kind))}</span>`;
+    const checked = d.kind === "harvest" ? " checked" : "";
+    let bytes = "";
+    if (d.storeBytes != null || d.scienceBytes != null) {
+      bytes = `<span class="skill-meta"><span>${escapeHtml(T("skillSyncBytes", {
+        store: formatByteSize(d.storeBytes || 0),
+        science: formatByteSize(d.scienceBytes || 0),
+      }))}</span></span>`;
+    }
     return `
       <div class="skill-discover-row">
-        <input type="checkbox" value="${escapeHtml(d.key)}" />
+        <input type="checkbox" value="${escapeHtml(d.key)}"${checked} />
         <span class="skill-discover-main">
-          <span class="skill-name">${escapeHtml(d.name)} ${badge}</span>
+          <span class="skill-name">${escapeHtml(d.name)} ${kindBadge}</span>
           ${d.description ? `<span class="skill-desc">${escapeHtml(d.description)}</span>` : ""}
-          <span class="skill-meta"><span>workspace: ${escapeHtml(d.workspaceId || "")}</span></span>
+          ${bytes}
           ${files ? `<span class="skill-meta"><span>${escapeHtml(files)}${more}</span></span>` : ""}
           ${warn}
         </span>
@@ -3240,7 +3314,7 @@ async function loadAdoptPreview(key, file) {
   showPreviewOverlayLoading(S().skillAdoptPreviewTitle, "full");
   previewOverlayState = { kind: "skill-adopt", key };
   try {
-    const data = await call("preview_workspace_skill", {
+    const data = await call("preview_science_skill", {
       input: { key, file: file || null },
     });
     previewOverlayState = { kind: "skill-adopt", key: data.key };
@@ -3289,7 +3363,7 @@ async function adoptWorkspaceSkills() {
   if (!keys.length) return;
   setBusy(true);
   try {
-    const result = await call("adopt_workspace_skills", { input: { keys } });
+    const result = await call("sync_science_skills", { input: { keys } });
     closeSkillAdopt();
     await loadSkills();
     const failures = (result.failures || []).join("; ");
@@ -3303,6 +3377,8 @@ async function adoptWorkspaceSkills() {
       }
     } else if (failures) {
       setSkillMsg(T("skillAdoptPartialFail", { err: failures }));
+    } else {
+      setSkillMsg(S().skillSynced || S().skillImported, "info");
     }
   } catch (e) {
     setSkillMsg(resolveBackendErr(e));
