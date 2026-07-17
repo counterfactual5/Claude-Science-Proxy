@@ -9,7 +9,8 @@ use crate::runtime::provider::{
     assert_format_supported, is_native_adapter, proxy_args_for,
     reject_openai_custom_anthropic_base, relay_missing_profile_models, should_scratch_candidate,
 };
-use crate::runtime::proxy_lifecycle::start_proxy_for_profiles;
+use crate::runtime::platter::{validate_platter_entries, proxy_args_for_platter};
+use crate::runtime::proxy_lifecycle::{start_proxy_for_platter, start_proxy_for_profiles};
 use crate::runtime::system::asset_root;
 use crate::runtime::transaction::{
     decide_switch, rollback_status_key, skip_scratch_verify, SwitchOutcome,
@@ -242,9 +243,145 @@ fn restore_proxy_for_active_profile(
     cfg: &config::Config,
     trace: Option<&OperationTrace>,
 ) -> bool {
+    if cfg.is_platter_active() && !cfg.model_platter.entries.is_empty() {
+        lifecycle.bump_generation();
+        return start_proxy_for_platter(app, state, lifecycle, cfg, trace).is_ok();
+    }
     let Some(p) = cfg.active_profile() else {
         return true;
     };
     lifecycle.bump_generation();
     start_proxy_for_profiles(app, state, lifecycle, std::slice::from_ref(p), trace).is_ok()
+}
+
+/// Activate the multi-provider model platter (transactional proxy switch).
+pub(crate) fn set_active_platter_txn(
+    app: &tauri::AppHandle,
+    state: &SharedAppState,
+    lifecycle: &lifecycle::Lifecycle,
+    skip_verify: bool,
+) -> Result<Value, String> {
+    let dir = config::default_dir();
+    let cfg = config::load_from(&dir).map_err(|e| e.to_string())?;
+    validate_platter_entries(&cfg, &cfg.model_platter.entries)?;
+    let launch = proxy_args_for_platter(&cfg)?;
+    let first_profile = cfg
+        .profile_by_id(&cfg.model_platter.entries[0].profile_id)
+        .cloned()
+        .ok_or_else(|| i18n_err("errPlatterEmpty", json!({})))?;
+    // Scratch must use the first entry's real adapter (openai-custom / relay / deepseek),
+    // not the host process adapter which is always relay for platter.
+    let probe_launch = proxy_args_for(&first_profile);
+    let probe_model = cfg.model_platter.entries[0].model.clone();
+
+    let trace = OperationTrace::start(
+        OperationKind::ActivateProfile,
+        format!(
+            "platter models={} host={} probe_adapter={} skip_verify={}",
+            cfg.model_platter.entries.len(),
+            launch.adapter,
+            probe_launch.adapter,
+            skip_verify
+        ),
+    );
+
+    let native = is_native_adapter(&probe_launch.adapter);
+    let scratch_ok = if skip_scratch_verify(native, skip_verify) {
+        trace.stage(OperationStage::ScratchUpstreamProbe, "skipped_by_user");
+        true
+    } else {
+        let root = asset_root(app).ok_or_else(|| i18n_err("errProxyScriptMissing", json!({})))?;
+        let py =
+            proc::find_exe("python3").ok_or_else(|| i18n_err("errPythonMissing", json!({})))?;
+        let script = root.join("proxy/core/csp_proxy.py");
+        let res = scratch::scratch_probe(
+            &py,
+            &script,
+            &scratch::ScratchTarget {
+                provider: &probe_launch.adapter,
+                key_env: probe_launch.key_env,
+                base_url: &probe_launch.base_url,
+                key: &probe_launch.key,
+                model: Some(&probe_model),
+                relay_thinking: probe_launch.thinking_policy,
+            },
+            probe_kind_for(&probe_launch.adapter, &probe_model),
+            Some(&trace),
+        );
+        let outcome = scratch::classify(res.status);
+        trace.stage(
+            OperationStage::ScratchUpstreamProbe,
+            format!("outcome={outcome:?}"),
+        );
+        match outcome {
+            scratch::ProbeOutcome::Ok => true,
+            scratch::ProbeOutcome::Auth(code) => {
+                trace.finish(format!("rejected status={code}"));
+                return Ok(merge_hint(
+                    hint_payload("switchUpstreamAuthSwitch", json!({ "code": code })),
+                    json!({ "committed": false }),
+                ));
+            }
+            scratch::ProbeOutcome::ModelError(code) => {
+                trace.finish(format!("model_error status={code}"));
+                return Ok(merge_hint(
+                    hint_payload("switchUpstreamModelSwitch", json!({ "code": code })),
+                    json!({ "committed": false }),
+                ));
+            }
+            scratch::ProbeOutcome::Ambiguous(_)
+            | scratch::ProbeOutcome::NoResponse
+            | scratch::ProbeOutcome::Unsupported(_) => {
+                trace.finish("ambiguous can_skip=true");
+                return Ok(merge_hint(
+                    hint_payload("switchUpstreamAmbiguousSwitch", json!({})),
+                    json!({ "committed": false, "can_skip": true }),
+                ));
+            }
+        }
+    };
+
+    lifecycle.bump_generation();
+    let real_healthy =
+        scratch_ok && start_proxy_for_platter(app, state, lifecycle, &cfg, Some(&trace)).is_ok();
+
+    match decide_switch(scratch_ok, real_healthy) {
+        SwitchOutcome::Commit => {
+            if let Err(e) = config::update(&dir, |c| {
+                c.set_active_platter();
+            }) {
+                trace.stage(OperationStage::Rollback, "reason=config_write_failed");
+                let restored =
+                    restore_proxy_for_active_profile(app, state, lifecycle, &cfg, Some(&trace));
+                trace.finish(format!("error=config_write_failed restored={restored}"));
+                return Err(i18n_err(
+                    "errConfigWriteFailed",
+                    json!({
+                        "error": e.to_string(),
+                        "rollback_key": rollback_status_key(restored),
+                    }),
+                ));
+            }
+            trace.stage(OperationStage::Commit, "ok");
+            trace.finish("committed=true");
+            Ok(json!({
+                "committed": true,
+                "active_id": config::PLATTER_ACTIVE_ID,
+            }))
+        }
+        SwitchOutcome::RollbackToOld => {
+            trace.stage(OperationStage::Rollback, "reason=proxy_unhealthy");
+            let restored =
+                restore_proxy_for_active_profile(app, state, lifecycle, &cfg, Some(&trace));
+            trace.finish(format!("rollback restored={restored}"));
+            Err(i18n_err(
+                "switchProxyRollbackSwitch",
+                json!({ "rollback_key": rollback_status_key(restored) }),
+            ))
+        }
+        SwitchOutcome::AbortBeforeStart => {
+            trace.finish("aborted_before_start");
+            Err(i18n_err("switchAbortBeforeStartSwitch", json!({})))
+        }
+    }
 }

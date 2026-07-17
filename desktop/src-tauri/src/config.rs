@@ -5,7 +5,7 @@
 //!   - atomic write: temp file `O_CREAT|O_EXCL` + rename.
 //!   - profile keys stored in plaintext (user-aware); never logged; API returns masked tail only.
 //!
-//! Migrations: v1 fixed slots → v2 profiles → v3 `active_models` → v4 `active_ids` (runtime: 0–1).
+//! Migrations: v1 fixed slots → v2 profiles → v3 `active_models` → v4 `active_ids` → v5 `model_platter`.
 //! Backups: `CSP.json.v1.bak` on v1 migration; rolling `CSP.json.bak` before overwrite; rolling
 //! backup sanitized after key clear / profile delete.
 //!
@@ -44,8 +44,14 @@ pub(crate) fn validate_runtime_ports(proxy_port: u16, sandbox_port: u16) -> Resu
     Ok(())
 }
 
-/// Current config schema. Files with version >4 were written by a newer app — refuse to load.
-pub const CURRENT_SCHEMA_VERSION: u32 = 4;
+/// Current config schema. Files with version >5 were written by a newer app — refuse to load.
+pub const CURRENT_SCHEMA_VERSION: u32 = 5;
+
+/// `active_id` sentinel when the multi-provider model platter is current-effective.
+pub const PLATTER_ACTIVE_ID: &str = "__platter__";
+
+/// Science exposes at most eight virtual model shells.
+pub const MAX_PLATTER_MODELS: usize = 8;
 
 pub(crate) const CONFIG_BASENAME: &str = "CSP.json";
 const MIGRATION_BACKUP_NAME: &str = "CSP.json.v1.bak";
@@ -89,6 +95,29 @@ pub struct Profile {
     pub notes: Option<String>,
 }
 
+/// One model slot in the multi-provider platter (profile + upstream model id).
+#[derive(Serialize, Deserialize, Clone, Default, Debug, PartialEq)]
+pub struct PlatterEntry {
+    pub profile_id: String,
+    pub model: String,
+}
+
+/// Ordered cross-provider model selection for Science (max [`MAX_PLATTER_MODELS`]).
+#[derive(Serialize, Deserialize, Clone, Default, Debug, PartialEq)]
+pub struct ModelPlatter {
+    #[serde(default)]
+    pub entries: Vec<PlatterEntry>,
+}
+
+/// Whether a single provider profile or the multi platter is current-effective.
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ActiveMode {
+    #[default]
+    Profile,
+    Platter,
+}
+
 /// Top-level config. All fields have defaults so partial legacy files still deserialize.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct Config {
@@ -99,9 +128,13 @@ pub struct Config {
     /// Active profile id (legacy mirror of first `active_ids` entry).
     #[serde(default)]
     pub active_id: String,
-    /// Active profile ids (schema compat; runtime normalizes to 0 or 1 entry).
+    /// Active profile ids (schema compat; runtime normalizes to 0 or 1 entry in profile mode).
     #[serde(default)]
     pub active_ids: Vec<String>,
+    #[serde(default)]
+    pub active_mode: ActiveMode,
+    #[serde(default)]
+    pub model_platter: ModelPlatter,
     #[serde(default = "default_proxy_port")]
     pub proxy_port: u16,
     #[serde(default = "default_sandbox_port")]
@@ -121,6 +154,8 @@ impl Default for Config {
             profiles: Vec::new(),
             active_id: String::new(),
             active_ids: Vec::new(),
+            active_mode: ActiveMode::Profile,
+            model_platter: ModelPlatter::default(),
             proxy_port: default_proxy_port(),
             sandbox_port: default_sandbox_port(),
             secret: String::new(),
@@ -172,36 +207,86 @@ impl Profile {
 }
 
 impl Config {
-    /// Whether `id` is the currently active profile.
+    pub fn is_platter_active(&self) -> bool {
+        self.active_mode == ActiveMode::Platter
+    }
+
+    /// Whether `id` is the currently active profile (never true in platter mode).
     pub fn is_profile_active(&self, id: &str) -> bool {
+        if self.is_platter_active() {
+            return false;
+        }
         self.active_ids.iter().any(|x| x == id)
     }
 
     /// Remove `id` from active list (used when deleting a profile).
     pub fn deactivate_profile(&mut self, id: &str) {
         self.active_ids.retain(|x| x != id);
-        self.sync_active_id();
+        if self.active_mode == ActiveMode::Profile {
+            self.sync_active_id();
+        }
     }
 
     /// Set exactly one active profile (single-active semantics).
     pub fn set_exclusive_active(&mut self, id: &str) {
         if self.profile_by_id(id).is_some() {
+            self.active_mode = ActiveMode::Profile;
             self.active_ids = vec![id.to_string()];
             self.sync_active_id();
         }
     }
 
-    /// Keep `active_id` in sync with first `active_ids` entry (API backward compat).
-    pub fn sync_active_id(&mut self) {
-        self.active_id = self.active_ids.first().cloned().unwrap_or_default();
+    /// Activate the multi-provider platter (clears single-profile active ids).
+    pub fn set_active_platter(&mut self) {
+        self.active_mode = ActiveMode::Platter;
+        self.active_ids.clear();
+        self.sync_active_id();
     }
 
-    /// Currently active profile (0 or 1 after normalization).
+    /// Keep `active_id` in sync (profile id or [`PLATTER_ACTIVE_ID`]).
+    pub fn sync_active_id(&mut self) {
+        if self.active_mode == ActiveMode::Platter {
+            self.active_id = PLATTER_ACTIVE_ID.to_string();
+        } else {
+            self.active_id = self.active_ids.first().cloned().unwrap_or_default();
+        }
+    }
+
+    /// Currently active profile (profile mode only).
     pub fn active_profile(&self) -> Option<&Profile> {
+        if self.is_platter_active() {
+            return None;
+        }
         self.active_ids
             .first()
             .and_then(|id| self.profile_by_id(id))
     }
+
+    /// Drop invalid platter rows; cap at [`MAX_PLATTER_MODELS`].
+    pub fn normalize_platter(&mut self) {
+        let known: std::collections::HashSet<String> =
+            self.profiles.iter().map(|p| p.id.clone()).collect();
+        self.model_platter.entries.retain(|e| {
+            !e.profile_id.trim().is_empty()
+                && !e.model.trim().is_empty()
+                && known.contains(&e.profile_id)
+        });
+        if self.model_platter.entries.len() > MAX_PLATTER_MODELS {
+            self.model_platter.entries.truncate(MAX_PLATTER_MODELS);
+        }
+    }
+
+    /// Remove platter entries owned by a deleted profile.
+    pub fn remove_platter_profile(&mut self, profile_id: &str) {
+        self.model_platter
+            .entries
+            .retain(|e| e.profile_id != profile_id);
+        if self.is_platter_active() && self.model_platter.entries.is_empty() {
+            self.active_mode = ActiveMode::Profile;
+            self.sync_active_id();
+        }
+    }
+
     pub fn profile_by_id(&self, id: &str) -> Option<&Profile> {
         self.profiles.iter().find(|p| p.id == id)
     }
@@ -241,6 +326,7 @@ pub enum VersionKind {
     V2,
     V3,
     V4,
+    V5,
     TooNew(u32),
 }
 
@@ -250,7 +336,7 @@ struct VersionProbe {
     schema_version: u32,
 }
 
-/// Map raw file bytes to version kind: <2 Legacy, 2 V2, 3 V3, 4 V4, >4 TooNew.
+/// Map raw file bytes to version kind: <2 Legacy, 2 V2, 3 V3, 4 V4, 5 V5, >5 TooNew.
 pub fn detect_version(data: &[u8]) -> io::Result<VersionKind> {
     let probe: VersionProbe = serde_json::from_slice(data).map_err(|e| {
         io::Error::new(
@@ -262,7 +348,8 @@ pub fn detect_version(data: &[u8]) -> io::Result<VersionKind> {
         v if v < 2 => VersionKind::Legacy,
         2 => VersionKind::V2,
         3 => VersionKind::V3,
-        v if v == CURRENT_SCHEMA_VERSION => VersionKind::V4,
+        4 => VersionKind::V4,
+        v if v == CURRENT_SCHEMA_VERSION => VersionKind::V5,
         v => VersionKind::TooNew(v),
     })
 }
@@ -327,6 +414,8 @@ pub fn migrate_v1_to_v2(mut legacy: crate::config_legacy::ConfigV1) -> Config {
         } else {
             vec![active_id]
         },
+        active_mode: ActiveMode::Profile,
+        model_platter: ModelPlatter::default(),
         proxy_port: legacy.proxy_port,
         sandbox_port: legacy.sandbox_port,
         secret: legacy.secret,
@@ -469,7 +558,7 @@ pub fn load_from(dir: &Path) -> io::Result<Config> {
                     i18n_err("errCspJsonParse", json!({ "detail": e.to_string() })),
                 )
             })?;
-            let cfg = migrate_v3_to_v4(migrate_v2_to_v3(normalize_active(cfg)));
+            let cfg = migrate_v4_to_v5(migrate_v3_to_v4(migrate_v2_to_v3(normalize_active(cfg))));
             validate_loaded_ports(&cfg)?;
             save_to(dir, &cfg)?;
             Ok(cfg)
@@ -481,12 +570,24 @@ pub fn load_from(dir: &Path) -> io::Result<Config> {
                     i18n_err("errCspJsonParse", json!({ "detail": e.to_string() })),
                 )
             })?;
-            let cfg = migrate_v3_to_v4(normalize_active(cfg));
+            let cfg = migrate_v4_to_v5(migrate_v3_to_v4(normalize_active(cfg)));
             validate_loaded_ports(&cfg)?;
             save_to(dir, &cfg)?;
             Ok(cfg)
         }
         VersionKind::V4 => {
+            let cfg: Config = serde_json::from_slice(&data).map_err(|e| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    i18n_err("errCspJsonParse", json!({ "detail": e.to_string() })),
+                )
+            })?;
+            let cfg = migrate_v4_to_v5(normalize_active(cfg));
+            validate_loaded_ports(&cfg)?;
+            save_to(dir, &cfg)?;
+            Ok(cfg)
+        }
+        VersionKind::V5 => {
             let raw: Config = serde_json::from_slice(&data).map_err(|e| {
                 io::Error::new(
                     io::ErrorKind::InvalidData,
@@ -506,6 +607,7 @@ pub fn load_from(dir: &Path) -> io::Result<Config> {
                     )
                 })
                 .collect();
+            let before_platter_len = raw.model_platter.entries.len();
             let cfg = normalize_active(raw);
             let models_normalized =
                 cfg.profiles
@@ -516,7 +618,8 @@ pub fn load_from(dir: &Path) -> io::Result<Config> {
                     });
             validate_loaded_ports(&cfg)?;
             let folded_active = before_active_len > 1 && cfg.active_ids.len() <= 1;
-            if mode_migrated || folded_active || models_normalized {
+            let platter_normalized = cfg.model_platter.entries.len() != before_platter_len;
+            if mode_migrated || folded_active || models_normalized || platter_normalized {
                 save_to(dir, &cfg)?;
             }
             Ok(cfg)
@@ -539,8 +642,24 @@ fn normalize_active(mut cfg: Config) -> Config {
         }
         p.normalize_model_selection();
     }
+    cfg.normalize_platter();
+
+    if cfg.active_mode == ActiveMode::Platter {
+        if cfg.model_platter.entries.is_empty() {
+            cfg.active_mode = ActiveMode::Profile;
+        } else {
+            cfg.active_ids.clear();
+            cfg.sync_active_id();
+            if cfg.mode != "proxy" {
+                cfg.mode = default_mode();
+            }
+            return cfg;
+        }
+    }
+
     if cfg.active_ids.is_empty()
         && !cfg.active_id.is_empty()
+        && cfg.active_id != PLATTER_ACTIVE_ID
         && cfg.profile_by_id(&cfg.active_id).is_some()
     {
         cfg.active_ids.push(cfg.active_id.clone());
@@ -554,7 +673,10 @@ fn normalize_active(mut cfg: Config) -> Config {
     if cfg.active_ids.len() > 1 {
         cfg.active_ids.truncate(1);
     }
-    if !cfg.active_id.is_empty() && cfg.profile_by_id(&cfg.active_id).is_none() {
+    if !cfg.active_id.is_empty()
+        && cfg.active_id != PLATTER_ACTIVE_ID
+        && cfg.profile_by_id(&cfg.active_id).is_none()
+    {
         cfg.active_id.clear();
     }
     cfg.sync_active_id();
@@ -575,7 +697,7 @@ fn migrate_v2_to_v3(mut cfg: Config) -> Config {
 
 /// v3 → v4: active_id → active_ids and bump schema_version.
 fn migrate_v3_to_v4(mut cfg: Config) -> Config {
-    cfg.schema_version = CURRENT_SCHEMA_VERSION;
+    cfg.schema_version = 4;
     if cfg.active_ids.is_empty()
         && !cfg.active_id.is_empty()
         && cfg.profile_by_id(&cfg.active_id).is_some()
@@ -583,6 +705,13 @@ fn migrate_v3_to_v4(mut cfg: Config) -> Config {
         cfg.active_ids = vec![cfg.active_id.clone()];
     }
     cfg.sync_active_id();
+    cfg
+}
+
+/// v4 → v5: multi-provider model platter fields.
+fn migrate_v4_to_v5(mut cfg: Config) -> Config {
+    cfg.schema_version = CURRENT_SCHEMA_VERSION;
+    cfg.active_mode = ActiveMode::Profile;
     cfg
 }
 
@@ -674,10 +803,10 @@ mod tests {
 
     // ---------- A1: structure + accessors + new_id/now_ms ----------
     #[test]
-    fn config_default_is_v4_empty() {
+    fn config_default_is_v5_empty() {
         let c = Config::default();
         assert_eq!(c.schema_version, CURRENT_SCHEMA_VERSION);
-        assert_eq!(c.schema_version, 4);
+        assert_eq!(c.schema_version, 5);
         assert!(c.profiles.is_empty());
         assert_eq!(c.active_id, "");
         assert!(c.active_ids.is_empty());
@@ -784,7 +913,7 @@ mod tests {
         )
         .unwrap();
         let cfg = load_from(&d).unwrap();
-        assert_eq!(cfg.schema_version, 4);
+        assert_eq!(cfg.schema_version, CURRENT_SCHEMA_VERSION);
         assert_eq!(cfg.active_ids, vec!["p1"]);
         assert_eq!(cfg.active_id, "p1");
     }
@@ -901,9 +1030,15 @@ mod tests {
     }
 
     #[test]
-    fn detect_version_five_is_too_new() {
+    fn detect_version_five_is_v5() {
         let d = br#"{"schema_version":5}"#;
-        assert!(matches!(detect_version(d).unwrap(), VersionKind::TooNew(5)));
+        assert!(matches!(detect_version(d).unwrap(), VersionKind::V5));
+    }
+
+    #[test]
+    fn detect_version_six_is_too_new() {
+        let d = br#"{"schema_version":6}"#;
+        assert!(matches!(detect_version(d).unwrap(), VersionKind::TooNew(6)));
     }
     #[test]
     fn detect_version_garbage_errors() {

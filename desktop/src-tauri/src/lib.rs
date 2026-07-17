@@ -96,6 +96,8 @@ pub fn run() {
             commands::profiles::update_profile_connection,
             commands::profiles::delete_profile,
             commands::profiles::set_active_profile,
+            commands::profiles::save_model_platter,
+            commands::profiles::set_active_platter,
             commands::profiles::open_csp_json,
             commands::runtime::fetch_models,
             commands::runtime::stop_all,

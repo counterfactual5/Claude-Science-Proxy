@@ -4,6 +4,7 @@ pub(crate) mod i18n;
 pub(crate) mod model_discovery;
 pub(crate) mod model_sort;
 pub(crate) mod operation;
+pub(crate) mod platter;
 pub(crate) mod profile;
 pub(crate) mod profile_switch;
 pub(crate) mod provider;

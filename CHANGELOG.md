@@ -3,6 +3,22 @@
 All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.9.0] — 2026-07-17
+
+### Added
+- **Multi-provider · custom models**: Fixed card under「我的配置」to pick up to 8 models across saved providers. First selected model is the Science default; fast model is inferred. Mutually exclusive with single-provider「当前生效」. Schema v5 adds `model_platter` + `active_mode`.
+- **Cross-adapter platter routing**: When the platter is active, the proxy resolves each Science shell to the owning profile’s credentials (Anthropic relay, DeepSeek, or OpenAI-custom / Responses).
+
+### Fixed
+- Platter activation scratch probe uses the first entry’s real adapter (e.g. `openai-custom`), not the host `relay` process adapter — avoids false “upstream busy” failures on OpenAI endpoints.
+- Single-provider model picker hard-caps Science enables at 8; create flow no longer auto-enables eight models by default.
+
+### Changed
+- **Version alignment**: Desktop bundle, Skill download `User-Agent`, and built-in web-search `SERVER_VERSION` synced to **1.9.0**.
+
+### Docs
+- Requirements plan: `docs/plans/2026-07-17-multi-provider-model-platter.md`. Local editor LLM config scan deferred to **v2.0** (`docs/plans/2026-07-17-scan-local-editor-llm-configs.md`).
+
 ## [1.8.2] — 2026-07-17
 
 ### Added

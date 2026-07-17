@@ -95,6 +95,8 @@ class ModelRegistry:
 
     @classmethod
     def from_payload(cls, payload: dict) -> "ModelRegistry":
+        if payload.get("platter"):
+            return cls.from_platter_payload(payload)
         if payload.get("merge") and isinstance(payload.get("profiles"), list):
             return cls.merge_payloads(payload["profiles"])
         models = payload.get("models") or []
@@ -167,6 +169,47 @@ class ModelRegistry:
         reg.default_model = first_default
         reg.fast_model = first_fast or first_default
         reg.default_profile_id = first_profile
+        return reg
+
+    @classmethod
+    def from_platter_payload(cls, payload: dict) -> "ModelRegistry":
+        """Ordered cross-provider platter: first entry is default; shells assigned in user order."""
+        reg = cls()
+        entries_raw = payload.get("entries") or []
+        if not isinstance(entries_raw, list):
+            return reg
+        used_shells: set[str] = set()
+        pool_iter = iter(SHELL_POOL)
+        entries: list[RegistryEntry] = []
+        for item in entries_raw:
+            if not isinstance(item, dict):
+                continue
+            real_id = str(item.get("model") or "").strip()
+            profile_id = str(item.get("profile_id") or "").strip()
+            if not real_id:
+                continue
+            shell_id, tier = _next_shell(pool_iter, used_shells)
+            used_shells.add(shell_id)
+            prefix = str(item.get("display_prefix") or "").strip()
+            raw_display = f"{prefix}: {real_id}" if prefix else real_id
+            display = science_safe_display_name(raw_display)
+            rank = len(entries)
+            n = max(len(entries_raw) - 1, 1)
+            created = _created_at_for_rank(rank, n)
+            entries.append(
+                RegistryEntry(shell_id, real_id, display, tier, profile_id, created)
+            )
+        if not entries:
+            return reg
+        reg.entries = entries
+        reg.routes = {e.shell_id: e.real_id for e in entries}
+        reg.display_names = {e.shell_id: e.display_name for e in entries}
+        reg.profile_routes = {e.shell_id: e.profile_id for e in entries if e.profile_id}
+        default_model = str(payload.get("default_model") or "").strip() or entries[0].real_id
+        fast_model = str(payload.get("fast_model") or "").strip() or default_model
+        reg.default_model = default_model
+        reg.fast_model = fast_model
+        reg.default_profile_id = entries[0].profile_id
         return reg
 
     @classmethod

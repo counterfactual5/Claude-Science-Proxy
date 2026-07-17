@@ -29,6 +29,8 @@ pub(crate) struct ProxyLaunch {
     pub(crate) key_env: &'static str,
     pub(crate) thinking_policy: &'static str,
     pub(crate) model_registry_json: Option<String>,
+    /// Per-profile upstream credentials when multi-provider platter is active.
+    pub(crate) profile_credentials_json: Option<String>,
 }
 
 pub(crate) fn adapter_for_profile(p: &config::Profile) -> &'static str {
@@ -56,6 +58,7 @@ pub(crate) fn proxy_args_for(p: &config::Profile) -> ProxyLaunch {
         key_env,
         thinking_policy: templates::thinking_policy_for(&p.template_id),
         model_registry_json: registry,
+        profile_credentials_json: None,
     }
 }
 
@@ -85,7 +88,7 @@ pub(crate) fn proxy_fingerprint_with_runtime(
     shim_mode: &str,
 ) -> u64 {
     key_fingerprint(&format!(
-        "{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}",
+        "{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}",
         p.template_id,
         p.api_format,
         launch.adapter,
@@ -95,7 +98,8 @@ pub(crate) fn proxy_fingerprint_with_runtime(
         launch.key,
         gateway_kind,
         shim_mode,
-        launch.model_registry_json.as_deref().unwrap_or("")
+        launch.model_registry_json.as_deref().unwrap_or(""),
+        launch.profile_credentials_json.as_deref().unwrap_or("")
     ))
 }
 

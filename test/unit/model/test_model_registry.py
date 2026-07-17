@@ -123,6 +123,22 @@ class ModelRegistryTests(unittest.TestCase):
         self.assertEqual(reg.resolve("claude-opus-4-5"), "glm-4.5")
         self.assertNotIn("claude-haiku-4-4", reg.routes)
 
+    def test_from_platter_payload_preserves_order(self):
+        reg = mr.ModelRegistry.from_payload({
+            "platter": True,
+            "entries": [
+                {"profile_id": "p-glm", "model": "glm-5.2", "display_prefix": "GLM"},
+                {"profile_id": "p-kimi", "model": "kimi-k2", "display_prefix": "Kimi"},
+            ],
+            "default_model": "glm-5.2",
+            "fast_model": "kimi-k2",
+        })
+        self.assertEqual(reg.default_model, "glm-5.2")
+        self.assertEqual(reg.entries[0].real_id, "glm-5.2")
+        self.assertEqual(reg.entries[1].real_id, "kimi-k2")
+        route = reg.resolve_route("claude-sonnet-5")
+        self.assertEqual(route, ("kimi-k2", "p-kimi"))
+
 
 if __name__ == "__main__":
     unittest.main()

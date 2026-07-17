@@ -226,6 +226,21 @@ const I18N = {
     modelHintNative: "由 Science 选择器 + 内置映射自动选择（opus 深度 / haiku 快速）。",
     modelHintFixed: "勾选要在 Science 中启用的模型；列表第一个用于后台任务兜底。",
     metaManyModels: "{n} 个模型已启用",
+    platterCardTitle: "多提供商 · 自选模型",
+    platterEmptyMeta: "未选用 · 点击配置",
+    platterMeta: "{n} 个模型 · 跨 {providers} 个提供商",
+    platterDefaultBadge: "默认",
+    platterEdit: "配置",
+    platterHint: "从已保存的提供商中勾选模型（最多 {max} 个）。第一个为默认模型。",
+    platterSelectedLabel: "已选模型（顺序即优先级）",
+    platterImportBtn: "从当前生效连接导入",
+    platterSaveBtn: "保存",
+    platterActivateBtn: "设为当前生效",
+    platterCapHint: "已选 {n}/{max}",
+    errScienceModelCap: "Science 最多同时启用 {max} 个模型。",
+    errPlatterEmpty: "请至少选择一个模型。",
+    errPlatterAdapterUnsupported: "「{name}」无法加入拼盘（请先填写 API Key）。",
+    platterSaveOk: "拼盘已保存。",
     metaOneModel: "1 个模型已启用",
     metaBuiltinMap: "内置映射",
     metaNoModel: "未选模型",
@@ -565,6 +580,21 @@ const I18N = {
     modelHintNative: "Auto-mapped via Science picker + built-in routing (opus for depth, haiku for speed).",
     modelHintFixed: "Check models to enable in Science; the first is the fallback for background tasks.",
     metaManyModels: "{n} models enabled",
+    platterCardTitle: "Multi-provider · custom models",
+    platterEmptyMeta: "Not configured · tap to set up",
+    platterMeta: "{n} models · {providers} providers",
+    platterDefaultBadge: "Default",
+    platterEdit: "Configure",
+    platterHint: "Pick models from saved providers (max {max}). First selected is the default.",
+    platterSelectedLabel: "Selected models (order = priority)",
+    platterImportBtn: "Import from active connection",
+    platterSaveBtn: "Save",
+    platterActivateBtn: "Set active",
+    platterCapHint: "Selected {n}/{max}",
+    errScienceModelCap: "Science supports at most {max} models at once.",
+    errPlatterEmpty: "Select at least one model.",
+    errPlatterAdapterUnsupported: "「{name}」 cannot join the platter (API key required).",
+    platterSaveOk: "Platter saved.",
     metaOneModel: "1 model enabled",
     metaBuiltinMap: "built-in mapping",
     metaNoModel: "no model selected",
@@ -923,8 +953,10 @@ const MOCK_TEMPLATES = [
   { id: "custom", name: "Custom", api_format: "anthropic", adapter: "relay", base_url: "", base_url_editable: true, requires_model_override: true, builtin_models: [], icon: "custom", icon_color: "#6B7280" },
 ];
 const mockStore = { 
-  schema_version: 4,
+  schema_version: 5,
   active_id: "",
+  active_mode: "profile",
+  model_platter: { entries: [] },
   proxy_port: 18991,
   sandbox_port: 8990,
   profiles: [
@@ -945,6 +977,8 @@ function mockInvoke(cmd, args) {
     case "get_config":
       return Promise.resolve({
         schema_version: mockStore.schema_version, active_id: mockStore.active_id,
+        active_mode: mockStore.active_mode,
+        model_platter: mockStore.model_platter,
         proxy_port: mockStore.proxy_port, sandbox_port: mockStore.sandbox_port,
         templates: MOCK_TEMPLATES,
         profiles: mockStore.profiles.map((p) => ({ ...p })),
@@ -984,6 +1018,15 @@ function mockInvoke(cmd, args) {
       mockStore.active_id = args.id;
       return Promise.resolve({ committed: true, active_id: args.id });
     }
+    case "save_model_platter":
+      mockStore.model_platter = { entries: (args.entries || []).map((e) => ({ ...e })) };
+      return Promise.resolve(null);
+    case "set_active_platter":
+      if (!mockStore.model_platter || !mockStore.model_platter.entries.length) {
+        return Promise.reject('{"i18n":"errPlatterEmpty","vars":{}}');
+      }
+      mockStore.active_id = PLATTER_ACTIVE_ID;
+      return Promise.resolve({ committed: true, active_id: PLATTER_ACTIVE_ID });
     case "fetch_models":
       return Promise.resolve({ models: [{ id: "glm-4.6", supports_tools: true }, { id: "glm-5", supports_tools: null }], source: "live", error_kind: null, upstream_status: 200 });
     case "set_settings":
@@ -1342,7 +1385,8 @@ const els = {};
 let busy = false;
 let busyOp = null;
 // Current config snapshot (get_config result). Full keys never stored here—only masks.
-let configState = { profiles: [], templates: [], active_id: "", proxy_port: 18991, sandbox_port: 8990 };
+let configState = { profiles: [], templates: [], active_id: "", active_mode: "profile", model_platter: { entries: [] }, proxy_port: 18991, sandbox_port: 8990 };
+let platterDraft = [];
 let pendingSkipActivateId = null;   // when set_active validation is ambiguous, allow switch via "skip verify"
 
 // ── Model capability: native builtin mapping / relay multi-select fixed models ──
@@ -1387,8 +1431,9 @@ function collectCheckedModels(container) {
     .filter(Boolean);
 }
 
-function renderModelPick(container, builtin, selected, onChange) {
+function renderModelPick(container, builtin, selected, onChange, opts) {
   if (!container) return;
+  const max = (opts && opts.max) || 0;
   const candidates = [];
   for (const id of builtin || []) if (!candidates.includes(id)) candidates.push(id);
   for (const id of selected || []) if (id && !candidates.includes(id)) candidates.unshift(id);
@@ -1405,7 +1450,17 @@ function renderModelPick(container, builtin, selected, onChange) {
       escapeHtml(id) + '"' + checked + '><span class="model-pick-label">' + escapeHtml(id) + "</span></label>";
   }).join("");
   container.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
-    cb.addEventListener("change", () => { if (onChange) onChange(); });
+    cb.addEventListener("change", () => {
+      if (max > 0 && cb.checked) {
+        const n = container.querySelectorAll('input[type="checkbox"]:checked').length;
+        if (n > max) {
+          cb.checked = false;
+          setMsg(T("errScienceModelCap", { max }));
+          return;
+        }
+      }
+      if (onChange) onChange();
+    });
   });
 }
 
@@ -1430,7 +1485,7 @@ function applyModelCapability(t, ui, profileOrModel) {
   ui.hint.textContent = hints.fixed;
   if (ui.modelLabel) ui.modelLabel.textContent = S().models;
   if (ui.pick) {
-    renderModelPick(ui.pick, builtin, selected, onPickChange);
+    renderModelPick(ui.pick, builtin, selected, onPickChange, { max: MAX_SCIENCE_MODELS });
   }
   return cap;
 }
@@ -1673,6 +1728,7 @@ function showView(v) {
   els.listSec.hidden = v !== "list";
   els.wizSec.hidden = v !== "wizard";
   els.connSec.hidden = v !== "conn";
+  if (els.platterSec) els.platterSec.hidden = v !== "platter";
   // Only drive the panel form chrome when the profiles pane is active.
   if (!els.panelBody || !els.panelBody.hidden) {
     els.panel.classList.toggle("view-form", v !== "list");
@@ -1762,6 +1818,8 @@ async function loadConfig(opts = {}) {
     configState.profiles = cfg.profiles || [];
     configState.templates = cfg.templates || [];
     configState.active_id = cfg.active_id || "";
+    configState.active_mode = cfg.active_mode || "profile";
+    configState.model_platter = cfg.model_platter || { entries: [] };
     configState.proxy_port = cfg.proxy_port ?? 18991;
     configState.sandbox_port = cfg.sandbox_port ?? 8990;
     els.proxyPort.value = configState.proxy_port;
@@ -1786,6 +1844,200 @@ function profileMetaLine(p) {
   }
   if (cap === CAP.NATIVE) return T("metaBuiltinMap");
   return T("metaNoModel");
+}
+
+function isPlatterActive() {
+  return configState.active_id === PLATTER_ACTIVE_ID;
+}
+
+function platterEntries() {
+  return (configState.model_platter && configState.model_platter.entries) || [];
+}
+
+function platterModelSelected(profileId, model) {
+  return platterDraft.some((e) => e.profile_id === profileId && e.model === model);
+}
+
+function profilePlatterSupported(p) {
+  return !!(p && (typeof p.has_key === "boolean" ? p.has_key : !!p.key));
+}
+
+/** Models offered in the platter picker for a profile (upstream real ids). */
+function platterCatalogModels(p) {
+  const t = tplById(p.template_id);
+  const adapter = (t && t.adapter) || "";
+  if (adapter === "deepseek") {
+    return ["deepseek-v4-pro", "deepseek-v4-flash"];
+  }
+  const fromProfile = profileModels(p);
+  if (fromProfile.length) return fromProfile;
+  return ((t && t.builtin_models) || []).slice();
+}
+
+function renderPlatterCardHtml() {
+  const t = S();
+  const active = isPlatterActive();
+  const entries = platterEntries();
+  const n = entries.length;
+  const meta = !n
+    ? escapeHtml(t.platterEmptyMeta)
+    : escapeHtml(T("platterMeta", { n, providers: new Set(entries.map((e) => e.profile_id)).size }));
+  return (
+    '<div class="prow platter-row' + (active ? " pactive" : "") + '" data-id="' + PLATTER_ACTIVE_ID + '">' +
+      '<div class="prow-top">' +
+        '<span class="pico platter-ico" aria-hidden="true">⊞</span>' +
+        '<span class="pname">' + escapeHtml(t.platterCardTitle) + "</span>" +
+        (active ? '<span class="badge on">' + escapeHtml(S().activeBadge) + "</span>" : "") +
+      "</div>" +
+      '<div class="pmeta">' + meta + "</div>" +
+      '<div class="prow-acts">' +
+        '<div class="pmenu-wrap">' +
+          '<button type="button" class="abtn pmenu-btn" data-act="menu" aria-haspopup="true" aria-expanded="false" title="' + escapeHtml(S().menuMore) + '">⋯</button>' +
+          '<div class="pmenu" hidden role="menu">' +
+            '<button type="button" class="pmenu-item" data-act="editplatter" role="menuitem">' + escapeHtml(t.platterEdit) + "</button>" +
+          "</div>" +
+        "</div>" +
+      "</div>" +
+    "</div>"
+  );
+}
+
+function renderPlatterSelected() {
+  if (!els.platterSelectedList) return;
+  const t = S();
+  if (!platterDraft.length) {
+    els.platterSelectedList.innerHTML = '<p class="hint">' + escapeHtml(t.platterEmptyMeta) + "</p>";
+  } else {
+    els.platterSelectedList.innerHTML = platterDraft.map((e, idx) => {
+      const p = (configState.profiles || []).find((x) => x.id === e.profile_id);
+      const pname = p ? p.name : e.profile_id;
+      const def = idx === 0 ? (' <span class="badge">' + escapeHtml(t.platterDefaultBadge) + "</span>") : "";
+      return (
+        '<div class="platter-sel-item" data-idx="' + idx + '">' +
+          '<span class="platter-sel-label">' + escapeHtml(pname + " · " + e.model) + def + "</span>" +
+          '<span class="platter-sel-acts">' +
+            '<button type="button" class="btn tiny" data-platter-up="' + idx + '" ' + (idx === 0 ? "disabled" : "") + ">↑</button>" +
+            '<button type="button" class="btn tiny" data-platter-down="' + idx + '" ' + (idx === platterDraft.length - 1 ? "disabled" : "") + ">↓</button>" +
+            '<button type="button" class="btn tiny" data-platter-rm="' + idx + '">×</button>' +
+          "</span>" +
+        "</div>"
+      );
+    }).join("");
+  }
+  if (els.platterCapHint) {
+    els.platterCapHint.textContent = T("platterCapHint", { n: platterDraft.length, max: MAX_SCIENCE_MODELS });
+  }
+}
+
+function renderPlatterProviders() {
+  if (!els.platterProviderList) return;
+  const ps = (configState.profiles || []).filter((p) => profilePlatterSupported(p) && (p.has_key !== false));
+  if (!ps.length) {
+    els.platterProviderList.innerHTML = '<p class="hint">' + escapeHtml(S().emptyHint) + "</p>";
+    return;
+  }
+  els.platterProviderList.innerHTML = ps.map((p) => {
+    const models = platterCatalogModels(p);
+    if (!models.length) return "";
+    const boxes = models.map((m) => {
+      const checked = platterModelSelected(p.id, m) ? " checked" : "";
+      return '<label class="model-pick-item"><input type="checkbox" data-platter-profile="' + escapeHtml(p.id) +
+        '" data-platter-model="' + escapeHtml(m) + '"' + checked + '><span class="model-pick-label">' +
+        escapeHtml(m) + "</span></label>";
+    }).join("");
+    return '<div class="platter-provider-block"><div class="platter-provider-name">' + escapeHtml(p.name) +
+      '</div><div class="model-pick">' + boxes + "</div></div>";
+  }).join("");
+  els.platterProviderList.querySelectorAll("input[type=checkbox]").forEach((cb) => {
+    cb.addEventListener("change", () => {
+      const pid = cb.getAttribute("data-platter-profile");
+      const model = cb.getAttribute("data-platter-model");
+      if (cb.checked) {
+        if (platterDraft.length >= MAX_SCIENCE_MODELS) {
+          cb.checked = false;
+          setMsg(T("errScienceModelCap", { max: MAX_SCIENCE_MODELS }));
+          return;
+        }
+        platterDraft.push({ profile_id: pid, model });
+      } else {
+        platterDraft = platterDraft.filter((e) => !(e.profile_id === pid && e.model === model));
+      }
+      renderPlatterSelected();
+      renderPlatterProviders();
+    });
+  });
+}
+
+function openPlatterEditor() {
+  platterDraft = platterEntries().map((e) => ({ profile_id: e.profile_id, model: e.model }));
+  setMsg("");
+  if (els.platterTitle) els.platterTitle.textContent = S().platterCardTitle;
+  if (els.platterHint) els.platterHint.textContent = T("platterHint", { max: MAX_SCIENCE_MODELS });
+  if (els.platterSelectedLabel) els.platterSelectedLabel.textContent = S().platterSelectedLabel;
+  if (els.platterImportBtn) els.platterImportBtn.textContent = S().platterImportBtn;
+  if (els.platterSaveBtn) els.platterSaveBtn.textContent = S().platterSaveBtn;
+  if (els.platterActivateBtn) els.platterActivateBtn.textContent = S().platterActivateBtn;
+  if (els.platterCancelBtn) els.platterCancelBtn.textContent = S().cancel;
+  const canImport = configState.active_id && configState.active_id !== PLATTER_ACTIVE_ID;
+  if (els.platterImportRow) els.platterImportRow.hidden = !canImport;
+  renderPlatterProviders();
+  renderPlatterSelected();
+  showView("platter");
+}
+
+function importPlatterFromActive() {
+  const id = configState.active_id;
+  if (!id || id === PLATTER_ACTIVE_ID) return;
+  const p = (configState.profiles || []).find((x) => x.id === id);
+  if (!p) return;
+  platterDraft = platterCatalogModels(p).slice(0, MAX_SCIENCE_MODELS).map((m) => ({ profile_id: id, model: m }));
+  renderPlatterProviders();
+  renderPlatterSelected();
+}
+
+async function savePlatter() {
+  if (!platterDraft.length) {
+    setMsg(S().errPlatterEmpty);
+    return;
+  }
+  setBusy(true, { kind: "savePlatter" });
+  try {
+    await call("save_model_platter", { entries: platterDraft });
+    setMsg(S().platterSaveOk);
+    await loadConfig({ keepView: true });
+  } catch (e) {
+    setMsg(resolveBackendErr(e));
+  } finally {
+    setBusy(false);
+  }
+}
+
+async function activatePlatter(skipVerify) {
+  hideSkip();
+  if (!platterEntries().length && !platterDraft.length) {
+    openPlatterEditor();
+    return;
+  }
+  setBusy(true, { kind: "activatePlatter" });
+  try {
+    if (platterDraft.length) {
+      await call("save_model_platter", { entries: platterDraft });
+    }
+    const r = await call("set_active_platter", { skipVerify: !!skipVerify });
+    if (r && r.committed) {
+      setMsg("");
+      await loadConfig();
+    } else {
+      await loadConfig();
+      setMsg(resolveHint(r, "switchRejected"));
+      if (r && r.can_skip) { pendingSkipActivateId = PLATTER_ACTIVE_ID; showSkip(); }
+    }
+  } catch (e) {
+    await loadConfig();
+    setMsg(T("switchFail", { err: resolveBackendErr(e) }));
+  } finally {
+    setBusy(false);
+  }
 }
 
 function renderList() {
@@ -1823,7 +2075,7 @@ function renderList() {
         "</div>" +
       "</div>"
     );
-  }).join("");
+  }).join("") + renderPlatterCardHtml();
   syncProfileBusyState();
 }
 
@@ -1871,14 +2123,14 @@ async function discoverModelIds({ templateId, baseUrl, key, profileId, builtin }
   return fallback;
 }
 
-/** On new profile, enable first N models by default; rest via edit page or CSP.json. */
-const MAX_AUTO_ENABLE_MODELS = 8;
+const PLATTER_ACTIVE_ID = "__platter__";
+const MAX_SCIENCE_MODELS = 8;
 
 function modelsToEnableOnCreate(discoveredIds, builtin) {
   const ids = (discoveredIds || []).filter(Boolean);
   const builtins = (builtin || []).filter(Boolean);
   const candidates = ids.length ? ids : builtins;
-  return candidates.slice(0, MAX_AUTO_ENABLE_MODELS);
+  return candidates.length ? [candidates[0]] : [];
 }
 
 function applyFetchToPick(r, pickUi, selected) {
@@ -2304,6 +2556,9 @@ function wire() {
     "wizSec", "wizName", "wizPresetBtn", "wizPresetMenu", "wizBase", "wizKey", "wizSaveBtn", "wizCancelBtn",
     "connSec", "connTitle", "connName", "connBase", "connBaseHint",
     "connModelLabel", "connModelInfo", "connModelHint", "connModelPick", "connKey", "connSaveBtn", "connCancelBtn",
+    "platterSec", "platterTitle", "platterHint", "platterImportRow", "platterImportBtn",
+    "platterProviderList", "platterSelectedLabel", "platterSelectedList", "platterCapHint",
+    "platterSaveBtn", "platterActivateBtn", "platterCancelBtn",
     "tabProfiles", "tabSkills", "skillPane", "skillListSec",
     "skillCreateBtn", "skillCreateSec", "skillCreateTitle", "skillCreateName", "skillCreateDesc",
     "skillCreateBody", "skillCreateInspection", "skillCreateErrors",
@@ -2367,13 +2622,20 @@ function wire() {
         return;
       }
       if (act === "delete") { menuConfirmDelete(btn, () => doDelete(id)); return; }
+      if (act === "editplatter") { closeAllMenus(); openPlatterEditor(); return; }
       closeAllMenus();
       if (act === "editconn") openConn(id);
       return;
     }
     if (row && !e.target.closest(".pmenu-wrap")) {
       const id = row.getAttribute("data-id");
-      if (id && id !== configState.active_id) activate(id, false);
+      if (!id || id === configState.active_id) return;
+      if (id === PLATTER_ACTIVE_ID) {
+        if (!platterEntries().length) openPlatterEditor();
+        else activatePlatter(false);
+        return;
+      }
+      activate(id, false);
     }
   });
   document.addEventListener("click", (e) => {
@@ -2409,7 +2671,9 @@ function wire() {
   });
   els.skipActivateBtn.addEventListener("click", () => {
     const id = pendingSkipActivateId;
-    if (id) activate(id, true);
+    if (!id) return;
+    if (id === PLATTER_ACTIVE_ID) activatePlatter(true);
+    else activate(id, true);
   });
 
   els.wizPresetBtn.addEventListener("click", (e) => {
@@ -2434,6 +2698,36 @@ function wire() {
 
   els.connSaveBtn.addEventListener("click", connSave);
   els.connCancelBtn.addEventListener("click", cancelForm);
+  if (els.platterSaveBtn) els.platterSaveBtn.addEventListener("click", savePlatter);
+  if (els.platterActivateBtn) els.platterActivateBtn.addEventListener("click", () => activatePlatter(false));
+  if (els.platterCancelBtn) els.platterCancelBtn.addEventListener("click", cancelForm);
+  if (els.platterImportBtn) els.platterImportBtn.addEventListener("click", importPlatterFromActive);
+  if (els.platterSelectedList) {
+    els.platterSelectedList.addEventListener("click", (e) => {
+      const up = e.target.closest("[data-platter-up]");
+      const down = e.target.closest("[data-platter-down]");
+      const rm = e.target.closest("[data-platter-rm]");
+      if (up) {
+        const i = parseInt(up.getAttribute("data-platter-up"), 10);
+        if (i > 0) {
+          const t = platterDraft[i - 1]; platterDraft[i - 1] = platterDraft[i]; platterDraft[i] = t;
+          renderPlatterSelected(); renderPlatterProviders();
+        }
+      } else if (down) {
+        const i = parseInt(down.getAttribute("data-platter-down"), 10);
+        if (i >= 0 && i < platterDraft.length - 1) {
+          const t = platterDraft[i + 1]; platterDraft[i + 1] = platterDraft[i]; platterDraft[i] = t;
+          renderPlatterSelected(); renderPlatterProviders();
+        }
+      } else if (rm) {
+        const i = parseInt(rm.getAttribute("data-platter-rm"), 10);
+        if (i >= 0) {
+          platterDraft.splice(i, 1);
+          renderPlatterSelected(); renderPlatterProviders();
+        }
+      }
+    });
+  }
 
   els.oneClickBtn.addEventListener("click", oneClick);
   els.stopBtn.addEventListener("click", stopAll);

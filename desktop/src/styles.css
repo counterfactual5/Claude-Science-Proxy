@@ -786,6 +786,38 @@ select:focus {
   line-height: 1.35;
 }
 
+.platter-row .platter-ico {
+  background: var(--accent-dim, #3d3428);
+  color: var(--accent, #e8a54b);
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.platter-provider-block { margin-top: 10px; }
+.platter-provider-name {
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 6px;
+  color: var(--text-muted, #9ca3af);
+}
+.platter-selected { margin-top: 6px; }
+.platter-sel-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border, #2a2f36);
+}
+.platter-sel-label { font-size: 13px; flex: 1; min-width: 0; }
+.platter-sel-acts { display: flex; gap: 4px; flex-shrink: 0; }
+.btn.tiny {
+  padding: 2px 6px;
+  font-size: 11px;
+  min-width: 24px;
+}
+
 /* ── Accessibility: focus rings ── */
 .btn:focus-visible,
 .hero:focus-visible,

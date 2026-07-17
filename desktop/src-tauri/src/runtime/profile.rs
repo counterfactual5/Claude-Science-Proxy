@@ -111,6 +111,10 @@ pub(crate) fn build_get_config(dir: &Path) -> Result<serde_json::Value, String> 
     Ok(json!({
         "schema_version": cfg.schema_version,
         "active_id": cfg.active_id,
+        "active_mode": cfg.active_mode,
+        "model_platter": {
+            "entries": cfg.model_platter.entries,
+        },
         "profiles": profiles,
         "templates": build_list_templates(), "proxy_port": cfg.proxy_port,
         "sandbox_port": cfg.sandbox_port,
@@ -204,9 +208,24 @@ pub(crate) fn delete_profile_inner(dir: &Path, id: &str) -> Result<(), String> {
     config::update(dir, |c| {
         c.profiles.retain(|p| p.id != id);
         c.deactivate_profile(id);
+        c.remove_platter_profile(id);
     })
     .map_err(|e| e.to_string())?;
     config::drop_rolling_backup(dir);
+    Ok(())
+}
+
+pub(crate) fn save_model_platter_inner(
+    dir: &Path,
+    entries: Vec<config::PlatterEntry>,
+) -> Result<(), String> {
+    let cfg = config::load_from(dir).map_err(|e| e.to_string())?;
+    crate::runtime::platter::validate_platter_entries(&cfg, &entries)?;
+    config::update(dir, |c| {
+        c.model_platter.entries = entries;
+        c.normalize_platter();
+    })
+    .map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -623,7 +642,7 @@ mod tests {
         )
         .unwrap();
         let v = build_get_config(&d).unwrap();
-        assert_eq!(v["schema_version"], 4);
+        assert_eq!(v["schema_version"], 5);
         let arr = v["profiles"].as_array().unwrap();
         let p = arr.iter().find(|p| p["id"] == id).unwrap();
         assert!(p["key"].as_str().unwrap().ends_with("9999"));

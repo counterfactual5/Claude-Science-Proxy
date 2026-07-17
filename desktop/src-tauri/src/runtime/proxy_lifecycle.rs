@@ -5,6 +5,7 @@ use tauri::Runtime;
 
 use crate::runtime::i18n::i18n_err;
 use crate::runtime::operation::{self, OperationStage, OperationTrace, POLL_INTERVAL_MS};
+use crate::runtime::platter::{platter_fingerprint, proxy_args_for_platter};
 use crate::runtime::provider::{
     assert_format_supported, is_native_adapter, is_openai_adapter, proxy_args_for,
     proxy_args_for_active_profiles, proxy_fingerprint, ProxyLaunch,
@@ -19,6 +20,9 @@ fn formal_proxy_env(launch: &ProxyLaunch) -> Vec<(&'static str, String)> {
     let mut env = vec![(launch.key_env, launch.key.clone())];
     if let Some(reg) = &launch.model_registry_json {
         env.push(("CSP_MODEL_REGISTRY", reg.clone()));
+    }
+    if let Some(creds) = &launch.profile_credentials_json {
+        env.push(("CSP_PROFILE_CREDENTIALS", creds.clone()));
     }
     if !native {
         if is_openai_adapter(&launch.adapter) {
@@ -68,7 +72,7 @@ fn validate_profiles_for_proxy(profiles: &[config::Profile]) -> Result<(), Strin
     Ok(())
 }
 
-/// Ensure active profile(s) proxy is running and healthy.
+/// Ensure active profile or platter proxy is running and healthy.
 pub(crate) fn ensure_proxy<R: Runtime>(
     app: &tauri::AppHandle<R>,
     state: &SharedAppState,
@@ -76,10 +80,26 @@ pub(crate) fn ensure_proxy<R: Runtime>(
     trace: Option<&OperationTrace>,
 ) -> Result<(u16, String, ProxyAction), String> {
     let cfg = config::load_from(&config::default_dir()).map_err(|e| e.to_string())?;
+    if cfg.is_platter_active() && !cfg.model_platter.entries.is_empty() {
+        return start_proxy_for_platter(app, state, lifecycle, &cfg, trace);
+    }
     let Some(p) = cfg.active_profile() else {
         return Err(i18n_err("noActiveProfile", json!({})));
     };
     start_proxy_for_profiles(app, state, lifecycle, std::slice::from_ref(p), trace)
+}
+
+/// Start or reuse a proxy for the multi-provider model platter.
+pub(crate) fn start_proxy_for_platter<R: Runtime>(
+    app: &tauri::AppHandle<R>,
+    state: &SharedAppState,
+    lifecycle: &lifecycle::Lifecycle,
+    cfg: &config::Config,
+    trace: Option<&OperationTrace>,
+) -> Result<(u16, String, ProxyAction), String> {
+    let launch = proxy_args_for_platter(cfg)?;
+    let key_fp = platter_fingerprint(cfg, &launch);
+    start_proxy_with_launch(app, state, lifecycle, cfg, &launch, key_fp, 0, trace)
 }
 
 /// Start or reuse a proxy for the active profile.
@@ -93,9 +113,31 @@ pub(crate) fn start_proxy_for_profiles<R: Runtime>(
     validate_profiles_for_proxy(profiles)?;
     let launch = proxy_args_for_active_profiles(profiles)?;
     let key_fp = launch_fingerprint(profiles, &launch);
-    let dir = config::default_dir();
-    let cfg = config::load_from(&dir).map_err(|e| e.to_string())?;
+    let cfg = config::load_from(&config::default_dir()).map_err(|e| e.to_string())?;
+    start_proxy_with_launch(
+        app,
+        state,
+        lifecycle,
+        &cfg,
+        &launch,
+        key_fp,
+        profiles.len(),
+        trace,
+    )
+}
+
+fn start_proxy_with_launch<R: Runtime>(
+    app: &tauri::AppHandle<R>,
+    state: &SharedAppState,
+    lifecycle: &lifecycle::Lifecycle,
+    cfg: &config::Config,
+    launch: &ProxyLaunch,
+    key_fp: u64,
+    profile_count: usize,
+    trace: Option<&OperationTrace>,
+) -> Result<(u16, String, ProxyAction), String> {
     let port = cfg.proxy_port;
+    let dir = config::default_dir();
     let root = asset_root(app).ok_or_else(|| i18n_err("errProxyScriptMissing", json!({})))?;
     let py = proc::find_exe("python3").ok_or_else(|| i18n_err("errPythonMissing", json!({})))?;
 
@@ -147,8 +189,7 @@ pub(crate) fn start_proxy_for_profiles<R: Runtime>(
                 OperationStage::ProxySpawn,
                 format!(
                     "port={port} adapter={} profiles={}",
-                    launch.adapter,
-                    profiles.len()
+                    launch.adapter, profile_count
                 ),
             );
         }
@@ -159,7 +200,7 @@ pub(crate) fn start_proxy_for_profiles<R: Runtime>(
             .arg(port.to_string())
             .arg("--auth-token")
             .arg(&secret);
-        for (k, v) in formal_proxy_env(&launch) {
+        for (k, v) in formal_proxy_env(launch) {
             cmd.env(k, v);
         }
         cmd.stdout(Stdio::from(logf))
@@ -233,6 +274,7 @@ mod tests {
             },
             thinking_policy,
             model_registry_json: None,
+            profile_credentials_json: None,
         }
     }
 

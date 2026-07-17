@@ -76,6 +76,23 @@
           </div>
         </div>
 
+        <div class="sec" id="platterSec" hidden>
+          <label id="platterTitle">多提供商 · 自选模型</label>
+          <p class="hint" id="platterHint">从已保存的提供商中勾选模型（最多 8 个）。第一个为默认模型。</p>
+          <div id="platterImportRow" class="row" hidden>
+            <button type="button" class="btn small" id="platterImportBtn">从当前生效连接导入</button>
+          </div>
+          <div id="platterProviderList" class="platter-providers"></div>
+          <label style="margin-top:12px" id="platterSelectedLabel">已选模型（顺序即优先级）</label>
+          <div id="platterSelectedList" class="platter-selected"></div>
+          <p class="hint" id="platterCapHint"></p>
+          <div class="row" style="margin-top:12px">
+            <button type="button" class="btn small" id="platterSaveBtn">保存</button>
+            <button type="button" class="btn small" id="platterActivateBtn">设为当前生效</button>
+            <button type="button" class="btn small" id="platterCancelBtn">取消</button>
+          </div>
+        </div>
+
         <div class="sec feedback" hidden>
           <div class="msg" id="msg" role="status" aria-live="polite"></div>
         </div>

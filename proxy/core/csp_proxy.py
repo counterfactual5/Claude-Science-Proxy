@@ -147,6 +147,8 @@ RELAY_FORCE_MODEL = None
 RELAY_THINKING = None
 # Multi-model virtual registry (CSP_MODEL_REGISTRY JSON); routes by shell id instead of force override.
 MODEL_REGISTRY = None
+# Per-profile upstream credentials for multi-provider platter (CSP_PROFILE_CREDENTIALS JSON).
+PROFILE_CREDENTIALS: dict = {}
 
 @dataclass(frozen=True)
 class RuntimeState:
@@ -178,6 +180,76 @@ def current_runtime():
         shim_mode=SHIM_MODE,
         model_registry=MODEL_REGISTRY,
     )
+
+
+def _runtime_from_cred(cred: dict, base_runtime: RuntimeState) -> RuntimeState:
+    adapter = (cred.get("adapter") or "relay").strip()
+    prov = dict(PROVIDERS.get(adapter, PROVIDERS["relay"]))
+    key = (cred.get("key") or "").strip()
+    thinking = (cred.get("thinking_policy") or "").strip() or None
+    if adapter == "relay":
+        base_url = normalize_relay_base(cred.get("base_url") or "")
+        if base_url:
+            prov["url"] = base_url + "/v1/messages"
+            prov["models_url"] = base_url + "/v1/models"
+    elif adapter == "deepseek":
+        # Fixed DeepSeek Anthropic endpoint (ignore empty/custom base).
+        pass
+    elif adapter in ("openai-custom", "openai-responses"):
+        base_url = normalize_openai_base(cred.get("base_url") or "")
+        suffix = "/responses" if prov.get("api_format") == "openai_responses" else "/chat/completions"
+        if base_url:
+            prov["url"] = openai_endpoint(base_url, suffix)
+            prov["models_url"] = openai_endpoint(base_url, "/models")
+    shim = base_runtime.shim_mode
+    if adapter == "deepseek":
+        try:
+            shim = dsml_shim.shim_mode(adapter, prov)
+        except Exception:
+            shim = "off"
+    elif adapter != "deepseek":
+        shim = "off"
+    return RuntimeState(
+        prov=prov,
+        prov_name=adapter,
+        key=key,
+        auth_secret=base_runtime.auth_secret,
+        relay_models=base_runtime.relay_models,
+        relay_force_model=None,
+        relay_thinking=thinking,
+        shim_mode=shim,
+        model_registry=base_runtime.model_registry,
+    )
+
+
+def runtime_for_model(base_runtime: RuntimeState, model_name: str) -> RuntimeState:
+    registry = base_runtime.model_registry
+    if not registry or not PROFILE_CREDENTIALS:
+        return base_runtime
+    route = registry.resolve_route(model_name)
+    if not route:
+        return base_runtime
+    _real_id, profile_id = route
+    if not profile_id:
+        return base_runtime
+    cred = PROFILE_CREDENTIALS.get(profile_id)
+    if not isinstance(cred, dict):
+        return base_runtime
+    return _runtime_from_cred(cred, base_runtime)
+
+
+def load_profile_credentials():
+    global PROFILE_CREDENTIALS
+    raw = (os.environ.get("CSP_PROFILE_CREDENTIALS") or "").strip()
+    if not raw:
+        PROFILE_CREDENTIALS = {}
+        return
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        PROFILE_CREDENTIALS = {}
+        return
+    PROFILE_CREDENTIALS = parsed if isinstance(parsed, dict) else {}
 
 # ---------- CONNECT fast-fail for sandbox "Switching organization" hang ----------
 # Sandbox Science blocks on claude.ai/api/oauth/profile when the network cannot reach claude.ai.
@@ -360,8 +432,8 @@ def build_models_response(runtime=None):
 
 
 # ---------- Anthropic -> OpenAI translation ----------
-def anthropic_to_openai(req):
-    return openai_chat_compat.anthropic_to_openai(req, _provider_state(req))
+def anthropic_to_openai(req, runtime=None):
+    return openai_chat_compat.anthropic_to_openai(req, _provider_state(req, runtime))
 
 
 def map_tool_choice(tc, tools):
@@ -384,15 +456,15 @@ def map_responses_tools(tools):
     return responses_compat.map_tools(tools)
 
 
-def anthropic_to_openai_responses(req):
-    out, _metadata = anthropic_to_openai_responses_with_metadata(req)
+def anthropic_to_openai_responses(req, runtime=None):
+    out, _metadata = anthropic_to_openai_responses_with_metadata(req, runtime)
     return out
 
 
-def anthropic_to_openai_responses_with_metadata(req):
+def anthropic_to_openai_responses_with_metadata(req, runtime=None):
     return responses_compat.anthropic_to_openai_with_metadata(
         req,
-        _provider_state(req),
+        _provider_state(req, runtime),
     )
 
 
@@ -629,6 +701,8 @@ class H(BaseHTTPRequestHandler):
             except Exception:
                 pass
         runtime = current_runtime()
+        # Platter: resolve shell → owning provider before picking Anthropic vs OpenAI path.
+        runtime = runtime_for_model(runtime, areq.get("model", ""))
         if runtime.prov["mode"] == "anthropic":
             self._handle_anthropic(areq, runtime)
         else:
@@ -706,6 +780,9 @@ class H(BaseHTTPRequestHandler):
     # ---- DeepSeek / relay: native Anthropic passthrough ----
     def _handle_anthropic(self, areq, runtime=None):
         runtime = runtime or current_runtime()
+        # Already resolved in do_POST when platter credentials are present.
+        if not PROFILE_CREDENTIALS:
+            runtime = runtime_for_model(runtime, areq.get("model", ""))
         state = _provider_state(areq, runtime)
         upstream_body, ctx = anthropic_compat.transform_request(areq, state)
         stream = bool(upstream_body.get("stream"))
@@ -815,6 +892,8 @@ class H(BaseHTTPRequestHandler):
     # ---- OpenAI compatible: translate to OpenAI; non-stream may replay as SSE ----
     def _handle_openai(self, areq, runtime=None):
         runtime = runtime or current_runtime()
+        if not PROFILE_CREDENTIALS:
+            runtime = runtime_for_model(runtime, areq.get("model", ""))
         # Same standing web-access guidance as Anthropic passthrough (Science
         # always sends Anthropic-shaped /v1/messages; OpenAI translation reads
         # `system` after this inject). Idempotent via sentinel.
@@ -823,10 +902,10 @@ class H(BaseHTTPRequestHandler):
         stream = bool(areq.get("stream"))
         metadata = {"rule_ids": ()}
         if runtime.prov.get("api_format") == "openai_responses":
-            oreq, metadata = anthropic_to_openai_responses_with_metadata(areq)
+            oreq, metadata = anthropic_to_openai_responses_with_metadata(areq, runtime)
             msg_count = len(oreq.get("input") or [])
         else:
-            oreq = anthropic_to_openai(areq)
+            oreq = anthropic_to_openai(areq, runtime)
             msg_count = len(oreq.get("messages") or [])
         n_tools = len(oreq.get("tools", []))
         rules = ",".join(metadata.get("rule_ids") or ()) or "-"
@@ -971,6 +1050,7 @@ if __name__ == "__main__":
     reg_raw = (os.environ.get("CSP_MODEL_REGISTRY") or "").strip()
     if reg_raw:
         MODEL_REGISTRY = model_registry.ModelRegistry.from_json(reg_raw)
+    load_profile_credentials()
     PROV_NAME = args.provider
     PROV = PROVIDERS[PROV_NAME]
     LOG = args.log

@@ -3,10 +3,10 @@ use tauri::State;
 
 use crate::runtime::i18n::i18n_err;
 use crate::runtime::profile::{
-    build_get_config, create_profile_inner, delete_profile_inner, update_profile_connection_inner,
-    update_profile_metadata_inner, ConnectionEdit,
+    build_get_config, create_profile_inner, delete_profile_inner, save_model_platter_inner,
+    update_profile_connection_inner, update_profile_metadata_inner, ConnectionEdit,
 };
-use crate::runtime::profile_switch::{scratch_validate_candidate, set_active_profile_txn};
+use crate::runtime::profile_switch::{scratch_validate_candidate, set_active_platter_txn, set_active_profile_txn};
 use crate::runtime::provider::{
     adapter_for_profile, reject_openai_custom_anthropic_base, relay_missing_base_url,
     relay_missing_profile_models,
@@ -206,6 +206,46 @@ fn set_active_profile_inner_cmd(
     lifecycle.with_serialized(|| {
         set_active_profile_txn(&app, &state, lifecycle.as_ref(), &id, skip_verify, None)
     })
+}
+
+#[derive(serde::Deserialize)]
+pub(crate) struct PlatterEntryInput {
+    pub profile_id: String,
+    pub model: String,
+}
+
+#[tauri::command]
+pub(crate) fn save_model_platter(
+    lifecycle: State<'_, SharedLifecycle>,
+    entries: Vec<PlatterEntryInput>,
+) -> Result<(), String> {
+    lifecycle.with_serialized(|| {
+        let mapped: Vec<config::PlatterEntry> = entries
+            .into_iter()
+            .map(|e| config::PlatterEntry {
+                profile_id: e.profile_id,
+                model: e.model,
+            })
+            .collect();
+        save_model_platter_inner(&config::default_dir(), mapped)
+    })
+}
+
+#[tauri::command]
+pub(crate) async fn set_active_platter(
+    app: tauri::AppHandle,
+    state: State<'_, SharedAppState>,
+    lifecycle: State<'_, SharedLifecycle>,
+    skip_verify: bool,
+) -> Result<serde_json::Value, String> {
+    let state = state.inner().clone();
+    let lifecycle = lifecycle.inner().clone();
+    run_blocking(move || {
+        lifecycle.with_serialized(|| {
+            set_active_platter_txn(&app, &state, lifecycle.as_ref(), skip_verify)
+        })
+    })
+    .await
 }
 
 #[tauri::command]

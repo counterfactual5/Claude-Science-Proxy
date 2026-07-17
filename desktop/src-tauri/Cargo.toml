@@ -1,6 +1,6 @@
 [package]
 name = "desktop"
-version = "1.8.2"
+version = "1.9.0"
 description = "Claude Science Proxy 桌面 app（进程管家 + 配置面板）"
 authors = ["Claude Science Proxy"]
 edition = "2021"
