@@ -48,15 +48,20 @@ const SHIM_SOURCE: &str = include_str!("mcp_http_tunnel_shim.cjs");
 /// Summary of a deployment pass (launch-log observability).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct McpDeployReport {
-    /// Server names written to `local-mcp.json`.
+    /// Server names written to `local-mcp.json` (stdio only).
     pub deployed: Vec<String>,
+    /// Remote server names upserted into org `custom_mcp_servers`.
+    pub remote_deployed: Vec<String>,
+    /// Remote server names removed from the org DB.
+    pub remote_removed: Vec<String>,
     /// Directories granted read access via `user_read_paths`.
     pub granted_paths: usize,
-    /// Whether a stale `local-mcp.json` was removed (no enabled servers).
+    /// Whether a stale `local-mcp.json` was removed (no enabled stdio servers).
     pub cleared: bool,
-    /// Whether anything on disk actually changed this pass. Lets a caller decide
-    /// whether a running sandbox needs restarting for Science to re-read config.
+    /// Whether anything on disk / DB actually changed this pass.
     pub changed: bool,
+    /// Non-fatal remote-deploy note (e.g. org DB not ready yet).
+    pub remote_note: String,
 }
 
 #[derive(Serialize)]
@@ -205,11 +210,7 @@ fn deploy_command(server: &McpServer, shim_path: Option<&Path>) -> DeployCmd {
         "export NODE_OPTIONS=\"--require {shim}${{1:+ $1}}\"; shift; exec \"$@\"",
         shim = shim.display()
     );
-    let user_node_options = server
-        .env
-        .get("NODE_OPTIONS")
-        .cloned()
-        .unwrap_or_default();
+    let user_node_options = server.env.get("NODE_OPTIONS").cloned().unwrap_or_default();
     let mut bash_args = vec![
         "-c".to_string(),
         script,
@@ -235,19 +236,19 @@ fn effective_env(server: &McpServer) -> BTreeMap<String, String> {
     env
 }
 
-/// Deploy `enabled` stdio MCP servers into `<data_dir>/mcp/local-mcp.json` and
-/// grant sandbox read access to referenced absolute paths.
+/// Deploy enabled MCP servers: stdio → `local-mcp.json` + read grants; remote
+/// (sse / streamable_http) → org `custom_mcp_servers` via [`super::remote_deploy`].
 ///
 /// `data_dir` is the sandbox Science data-dir; `sandbox_root` is `$SANDBOX_HOME`;
 /// `real_science_dir` is the real `~/.claude-science` used only for the guard.
-/// Also writes the Node HTTP-tunnel shim (see module docs) into
-/// `<data_dir>/mcp/` and wraps each connector so bash re-exports `NODE_OPTIONS`
-/// before exec (Science strips that key from `local-mcp.json` env).
+/// `org_uuid` selects the org DB for remote connectors (optional — remotes are
+/// deferred when missing).
 pub(crate) fn deploy_enabled_mcp(
     enabled: &[McpServer],
     data_dir: &Path,
     sandbox_root: &Path,
     real_science_dir: &Path,
+    org_uuid: Option<&str>,
 ) -> Result<McpDeployReport, String> {
     // —— Iron-rule guards: resolve to nearest real ancestor, then reject the real
     // Science tree and anything outside the sandbox root. ——
@@ -268,12 +269,18 @@ pub(crate) fn deploy_enabled_mcp(
         ));
     }
 
+    let stdio: Vec<&McpServer> = enabled
+        .iter()
+        .filter(|s| !s.transport.is_remote())
+        .collect();
+    let stdio_owned: Vec<McpServer> = stdio.iter().map(|s| (*s).clone()).collect();
+
     let mcp_dir = data_dir.join("mcp");
     let mcp_json = mcp_dir.join(LOCAL_MCP_FILE);
     let config_toml = data_dir.join("config.toml");
     let mut report = McpDeployReport::default();
 
-    if enabled.is_empty() {
+    if stdio_owned.is_empty() {
         // Clear stale config so disabled/removed servers don't linger.
         if mcp_json.exists() {
             fs::remove_file(&mcp_json).map_err(|e| format!("remove stale local-mcp.json: {e}"))?;
@@ -282,68 +289,86 @@ pub(crate) fn deploy_enabled_mcp(
         }
         let paths_changed = set_user_read_paths(&config_toml, &[])?;
         report.changed = report.changed || paths_changed;
-        return Ok(report);
-    }
-
-    fs::create_dir_all(&mcp_dir).map_err(|e| format!("create mcp dir: {e}"))?;
-    let shim_path = write_shim(&mcp_dir);
-
-    let file = LocalMcpFile {
-        servers: enabled
-            .iter()
-            .map(|s| {
-                let cmd = deploy_command(s, shim_path.as_deref());
-                LocalMcpEntry {
-                    name: &s.name,
-                    description: &s.description,
-                    command: cmd.command,
-                    args: cmd.args,
-                    env: effective_env(s),
-                }
-            })
-            .collect(),
-    };
-    let json =
-        serde_json::to_vec_pretty(&file).map_err(|e| format!("serialize local-mcp.json: {e}"))?;
-    // Idempotent write: only touch disk when the bytes actually differ, so a
-    // reopen of an unchanged config does not look like a change.
-    let current = fs::read(&mcp_json).ok();
-    if current.as_deref() != Some(json.as_slice()) {
-        let tmp = mcp_json.with_extension("json.tmp");
-        fs::write(&tmp, &json).map_err(|e| format!("write local-mcp.json tmp: {e}"))?;
-        // `env` may hold plaintext secrets, so lock the file down (0600) to match
-        // the CSP inventory before it becomes visible under its final name.
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let _ = fs::set_permissions(&tmp, fs::Permissions::from_mode(0o600));
-        }
-        fs::rename(&tmp, &mcp_json).map_err(|e| format!("rename local-mcp.json: {e}"))?;
-        report.changed = true;
     } else {
-        // Even when content is unchanged, make sure perms are tight (e.g. a file
-        // written by an older build with a laxer umask).
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let _ = fs::set_permissions(&mcp_json, fs::Permissions::from_mode(0o600));
-        }
-    }
-    report.deployed = enabled.iter().map(|s| s.name.clone()).collect();
+        fs::create_dir_all(&mcp_dir).map_err(|e| format!("create mcp dir: {e}"))?;
+        let shim_path = write_shim(&mcp_dir);
 
-    // Grant read access for every absolute path referenced (least privilege),
-    // plus the mcp dir itself so the sandboxed child can `--require` the shim.
-    let mut read_paths = collect_read_paths(enabled);
-    if shim_path.is_some() {
-        let mcp_dir_str = mcp_dir.to_string_lossy().to_string();
-        if !read_paths.iter().any(|p| p == &mcp_dir_str) {
-            read_paths.push(mcp_dir_str);
-            read_paths.sort();
+        let file = LocalMcpFile {
+            servers: stdio_owned
+                .iter()
+                .map(|s| {
+                    let cmd = deploy_command(s, shim_path.as_deref());
+                    LocalMcpEntry {
+                        name: &s.name,
+                        description: &s.description,
+                        command: cmd.command,
+                        args: cmd.args,
+                        env: effective_env(s),
+                    }
+                })
+                .collect(),
+        };
+        let json = serde_json::to_vec_pretty(&file)
+            .map_err(|e| format!("serialize local-mcp.json: {e}"))?;
+        // Idempotent write: only touch disk when the bytes actually differ, so a
+        // reopen of an unchanged config does not look like a change.
+        let current = fs::read(&mcp_json).ok();
+        if current.as_deref() != Some(json.as_slice()) {
+            let tmp = mcp_json.with_extension("json.tmp");
+            fs::write(&tmp, &json).map_err(|e| format!("write local-mcp.json tmp: {e}"))?;
+            // `env` may hold plaintext secrets, so lock the file down (0600) to match
+            // the CSP inventory before it becomes visible under its final name.
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let _ = fs::set_permissions(&tmp, fs::Permissions::from_mode(0o600));
+            }
+            fs::rename(&tmp, &mcp_json).map_err(|e| format!("rename local-mcp.json: {e}"))?;
+            report.changed = true;
+        } else {
+            // Even when content is unchanged, make sure perms are tight (e.g. a file
+            // written by an older build with a laxer umask).
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let _ = fs::set_permissions(&mcp_json, fs::Permissions::from_mode(0o600));
+            }
+        }
+        report.deployed = stdio_owned.iter().map(|s| s.name.clone()).collect();
+
+        // Grant read access for every absolute path referenced (least privilege),
+        // plus the mcp dir itself so the sandboxed child can `--require` the shim.
+        let mut read_paths = collect_read_paths(&stdio_owned);
+        if shim_path.is_some() {
+            let mcp_dir_str = mcp_dir.to_string_lossy().to_string();
+            if !read_paths.iter().any(|p| p == &mcp_dir_str) {
+                read_paths.push(mcp_dir_str);
+                read_paths.sort();
+            }
+        }
+        report.granted_paths = read_paths.len();
+        let paths_changed = set_user_read_paths(&config_toml, &read_paths)?;
+        report.changed = report.changed || paths_changed;
+    }
+
+    // Remote (sse / streamable_http) → org DB. Non-fatal notes surface in the report.
+    match super::remote_deploy::deploy_remote_mcp(
+        enabled,
+        data_dir,
+        sandbox_root,
+        real_science_dir,
+        org_uuid,
+    ) {
+        Ok(rr) => {
+            report.remote_deployed = rr.deployed;
+            report.remote_removed = rr.removed;
+            report.changed = report.changed || rr.changed;
+            report.remote_note = rr.note;
+        }
+        Err(e) => {
+            report.remote_note = format!("remote deploy error: {e}");
         }
     }
-    report.granted_paths = read_paths.len();
-    let paths_changed = set_user_read_paths(&config_toml, &read_paths)?;
-    report.changed = report.changed || paths_changed;
 
     Ok(report)
 }
@@ -524,9 +549,12 @@ mod tests {
             id: McpServerId::new(),
             name: name.to_string(),
             description: String::new(),
+            transport: crate::mcp_manager::model::McpTransport::Stdio,
             command: command.to_string(),
             args,
             env: BTreeMap::new(),
+            url: String::new(),
+            headers: BTreeMap::new(),
             enabled: true,
             builtin: false,
             created_at: String::new(),
@@ -558,7 +586,8 @@ mod tests {
     fn writes_local_mcp_json() {
         let f = fixture();
         let servers = vec![server("demo", "python3", vec!["/opt/x/server.py".into()])];
-        let r = deploy_enabled_mcp(&servers, &f.data_dir, &f.sandbox_root, &f.real_dir).unwrap();
+        let r =
+            deploy_enabled_mcp(&servers, &f.data_dir, &f.sandbox_root, &f.real_dir, None).unwrap();
         assert_eq!(r.deployed, vec!["demo".to_string()]);
 
         let json = fs::read_to_string(f.data_dir.join("mcp").join(LOCAL_MCP_FILE)).unwrap();
@@ -580,7 +609,7 @@ mod tests {
         let f = fixture();
         let mut s = server("demo", "node", vec!["/opt/x/server.js".into()]);
         s.env.insert("NOTION_TOKEN".into(), "ntn_secret".into());
-        deploy_enabled_mcp(&[s], &f.data_dir, &f.sandbox_root, &f.real_dir).unwrap();
+        deploy_enabled_mcp(&[s], &f.data_dir, &f.sandbox_root, &f.real_dir, None).unwrap();
 
         let json = fs::read_to_string(f.data_dir.join("mcp").join(LOCAL_MCP_FILE)).unwrap();
         let v: serde_json::Value = serde_json::from_str(&json).unwrap();
@@ -612,7 +641,7 @@ mod tests {
         let mut s = server("demo", "node", vec!["/opt/x/server.js".into()]);
         s.env
             .insert("NODE_OPTIONS".into(), "--max-old-space-size=256".into());
-        deploy_enabled_mcp(&[s], &f.data_dir, &f.sandbox_root, &f.real_dir).unwrap();
+        deploy_enabled_mcp(&[s], &f.data_dir, &f.sandbox_root, &f.real_dir, None).unwrap();
 
         let json = fs::read_to_string(f.data_dir.join("mcp").join(LOCAL_MCP_FILE)).unwrap();
         let v: serde_json::Value = serde_json::from_str(&json).unwrap();
@@ -629,7 +658,7 @@ mod tests {
             "python3",
             vec!["/opt/tools/mcp/server.py".into()],
         )];
-        deploy_enabled_mcp(&servers, &f.data_dir, &f.sandbox_root, &f.real_dir).unwrap();
+        deploy_enabled_mcp(&servers, &f.data_dir, &f.sandbox_root, &f.real_dir, None).unwrap();
 
         let toml = fs::read_to_string(f.data_dir.join("config.toml")).unwrap();
         assert!(toml.contains("[sandbox]"));
@@ -647,7 +676,7 @@ mod tests {
         )
         .unwrap();
         let servers = vec![server("demo", "/usr/local/bin/mcp-server", vec![])];
-        deploy_enabled_mcp(&servers, &f.data_dir, &f.sandbox_root, &f.real_dir).unwrap();
+        deploy_enabled_mcp(&servers, &f.data_dir, &f.sandbox_root, &f.real_dir, None).unwrap();
 
         let text = fs::read_to_string(f.data_dir.join("config.toml")).unwrap();
         let parsed: toml::Table = text.parse().unwrap();
@@ -665,11 +694,11 @@ mod tests {
         )
         .unwrap();
         let servers = vec![server("demo", "python3", vec!["/opt/x/s.py".into()])];
-        deploy_enabled_mcp(&servers, &f.data_dir, &f.sandbox_root, &f.real_dir).unwrap();
+        deploy_enabled_mcp(&servers, &f.data_dir, &f.sandbox_root, &f.real_dir, None).unwrap();
         assert!(f.data_dir.join("mcp").join(LOCAL_MCP_FILE).exists());
 
         // Now disable all: json removed, our key gone, unrelated key preserved.
-        let r = deploy_enabled_mcp(&[], &f.data_dir, &f.sandbox_root, &f.real_dir).unwrap();
+        let r = deploy_enabled_mcp(&[], &f.data_dir, &f.sandbox_root, &f.real_dir, None).unwrap();
         assert!(r.cleared);
         assert!(!f.data_dir.join("mcp").join(LOCAL_MCP_FILE).exists());
         let text = fs::read_to_string(f.data_dir.join("config.toml")).unwrap();
@@ -682,10 +711,10 @@ mod tests {
     fn empty_enabled_removes_config_when_nothing_else() {
         let f = fixture();
         let servers = vec![server("demo", "python3", vec!["/opt/x/s.py".into()])];
-        deploy_enabled_mcp(&servers, &f.data_dir, &f.sandbox_root, &f.real_dir).unwrap();
+        deploy_enabled_mcp(&servers, &f.data_dir, &f.sandbox_root, &f.real_dir, None).unwrap();
         assert!(f.data_dir.join("config.toml").exists());
 
-        deploy_enabled_mcp(&[], &f.data_dir, &f.sandbox_root, &f.real_dir).unwrap();
+        deploy_enabled_mcp(&[], &f.data_dir, &f.sandbox_root, &f.real_dir, None).unwrap();
         // config.toml held only our key → removed entirely.
         assert!(!f.data_dir.join("config.toml").exists());
     }
@@ -694,9 +723,11 @@ mod tests {
     fn second_identical_deploy_reports_no_change() {
         let f = fixture();
         let servers = vec![server("demo", "python3", vec!["/opt/x/server.py".into()])];
-        let r1 = deploy_enabled_mcp(&servers, &f.data_dir, &f.sandbox_root, &f.real_dir).unwrap();
+        let r1 =
+            deploy_enabled_mcp(&servers, &f.data_dir, &f.sandbox_root, &f.real_dir, None).unwrap();
         assert!(r1.changed, "first deploy writes files");
-        let r2 = deploy_enabled_mcp(&servers, &f.data_dir, &f.sandbox_root, &f.real_dir).unwrap();
+        let r2 =
+            deploy_enabled_mcp(&servers, &f.data_dir, &f.sandbox_root, &f.real_dir, None).unwrap();
         assert!(!r2.changed, "identical redeploy is a no-op");
     }
 
@@ -707,7 +738,7 @@ mod tests {
         let f = fixture();
         let mut s = server("demo", "python3", vec!["/opt/x/server.py".into()]);
         s.env.insert("TOKEN".into(), "supersecret".into());
-        deploy_enabled_mcp(&[s], &f.data_dir, &f.sandbox_root, &f.real_dir).unwrap();
+        deploy_enabled_mcp(&[s], &f.data_dir, &f.sandbox_root, &f.real_dir, None).unwrap();
         let json = f.data_dir.join("mcp").join(LOCAL_MCP_FILE);
         let mode = fs::metadata(&json).unwrap().permissions().mode() & 0o777;
         assert_eq!(mode, 0o600, "secret-bearing local-mcp.json must be 0600");
@@ -721,7 +752,7 @@ mod tests {
         fs::write(f.data_dir.join("config.toml"), original).unwrap();
 
         // No enabled servers, twice: must be a no-op and preserve the file verbatim.
-        let r1 = deploy_enabled_mcp(&[], &f.data_dir, &f.sandbox_root, &f.real_dir).unwrap();
+        let r1 = deploy_enabled_mcp(&[], &f.data_dir, &f.sandbox_root, &f.real_dir, None).unwrap();
         assert!(!r1.changed, "no MCP + unrelated config → no change");
         let after = fs::read_to_string(f.data_dir.join("config.toml")).unwrap();
         assert_eq!(after, original, "file (and comment) left byte-for-byte");
@@ -736,9 +767,10 @@ mod tests {
         )
         .unwrap();
         let servers = vec![server("demo", "python3", vec!["/opt/x/server.py".into()])];
-        deploy_enabled_mcp(&servers, &f.data_dir, &f.sandbox_root, &f.real_dir).unwrap();
+        deploy_enabled_mcp(&servers, &f.data_dir, &f.sandbox_root, &f.real_dir, None).unwrap();
         // Second identical pass over an existing config must not report a change.
-        let r = deploy_enabled_mcp(&servers, &f.data_dir, &f.sandbox_root, &f.real_dir).unwrap();
+        let r =
+            deploy_enabled_mcp(&servers, &f.data_dir, &f.sandbox_root, &f.real_dir, None).unwrap();
         assert!(!r.changed);
     }
 
@@ -754,7 +786,7 @@ mod tests {
             "python3",
             vec![data_sub.to_string_lossy().into()],
         )];
-        deploy_enabled_mcp(&servers, &f.data_dir, &f.sandbox_root, &f.real_dir).unwrap();
+        deploy_enabled_mcp(&servers, &f.data_dir, &f.sandbox_root, &f.real_dir, None).unwrap();
 
         let toml = fs::read_to_string(f.data_dir.join("config.toml")).unwrap();
         // Grants the dir itself, NOT the broader parent.
@@ -782,15 +814,11 @@ mod tests {
             use std::os::unix::fs::PermissionsExt;
             fs::set_permissions(bin.join("node"), fs::Permissions::from_mode(0o755)).unwrap();
         }
-        symlink(
-            pkg.join("bin/cli.mjs"),
-            bin.join("notion-mcp-server"),
-        )
-        .unwrap();
+        symlink(pkg.join("bin/cli.mjs"), bin.join("notion-mcp-server")).unwrap();
 
         let shim_cmd = bin.join("notion-mcp-server").to_string_lossy().to_string();
         let servers = vec![server("notion", &shim_cmd, vec![])];
-        deploy_enabled_mcp(&servers, &f.data_dir, &f.sandbox_root, &f.real_dir).unwrap();
+        deploy_enabled_mcp(&servers, &f.data_dir, &f.sandbox_root, &f.real_dir, None).unwrap();
 
         let json = fs::read_to_string(f.data_dir.join("mcp").join(LOCAL_MCP_FILE)).unwrap();
         let v: serde_json::Value = serde_json::from_str(&json).unwrap();
@@ -822,7 +850,7 @@ mod tests {
     fn rejects_real_science_dir() {
         let f = fixture();
         let servers = vec![server("x", "python3", vec![])];
-        let r = deploy_enabled_mcp(&servers, &f.real_dir, &f.sandbox_root, &f.real_dir);
+        let r = deploy_enabled_mcp(&servers, &f.real_dir, &f.sandbox_root, &f.real_dir, None);
         assert!(r.is_err());
         assert!(r.unwrap_err().contains("real Science dir"));
     }
@@ -833,7 +861,7 @@ mod tests {
         let outside = env::temp_dir().join(format!("csp-mcp-outside-{}", uniq()));
         fs::create_dir_all(&outside).unwrap();
         let servers = vec![server("x", "python3", vec![])];
-        let r = deploy_enabled_mcp(&servers, &outside, &f.sandbox_root, &f.real_dir);
+        let r = deploy_enabled_mcp(&servers, &outside, &f.sandbox_root, &f.real_dir, None);
         assert!(r.is_err());
         assert!(r.unwrap_err().contains("outside sandbox root"));
     }

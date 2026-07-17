@@ -4,7 +4,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License">
-  <img src="https://img.shields.io/badge/version-1.7.1-brightgreen.svg" alt="v1.7.1">
+  <img src="https://img.shields.io/badge/version-1.8.1-brightgreen.svg" alt="v1.8.1">
   <img src="https://img.shields.io/badge/platform-macOS%20Apple%20Silicon-1d1d1f.svg" alt="macOS Apple Silicon">
   <img src="https://img.shields.io/badge/built%20with-Tauri%202-C25A34.svg" alt="Tauri 2">
 </p>
@@ -23,9 +23,9 @@ CSP is a **macOS desktop app** (Tauri) that:
 2. Prepares a **local launch ticket** (no copy of your real Claude login)
 3. Routes inference through a **local proxy** on `127.0.0.1`
 4. Verifies API keys **before** switching the active profile
-5. Manages local **Skills** and **stdio MCP connectors**, deploying enabled ones into the sandbox on launch
+5. Manages local **Skills** and **MCP connectors** (stdio + remote), deploying enabled ones into the sandbox on launch
 
-> **v1.7.1** — OpenAI-custom long-session / Resume stream-idle fix (counted SSE keepalives); Skill `description: >-` import parsing. See [Releases](https://github.com/counterfactual5/Claude-Science-Proxy/releases/tag/v1.7.1).
+> **v1.8.1** — Skills import from local folder / zip / URL; workspace adopt with full-screen preview; MCP remote (sse / streamable_http) + scan-and-import with config preview; expanded HOME-level scan roots (WorkBuddy, Factory, Kimi Code, MiniMax, …). See [Releases](https://github.com/counterfactual5/Claude-Science-Proxy/releases/tag/v1.8.1) · [Changelog](./CHANGELOG.md).
 
 > **Platform:** macOS **Apple Silicon** today. The app is **not notarized** yet; on first launch, right-click → **Open**.
 
@@ -67,8 +67,8 @@ Claude Science (sandbox)
 - **One-click start** — launches proxy, prepares sandbox, opens Science
 - **Real model names** in Science’s selector (not a generic `claude` / `opus` label)
 - **Multi-model per profile** — virtual registry maps up to **8** `claude-*` shell IDs to real upstream models
-- **Local Skills manager** — create, import, enable/disable, scan-and-import, or adopt Skill drafts from the Science workspace; built-in **`csp-environment`** handbook; enabled Skills deploy into the sandbox on launch
-- **Local stdio MCP manager** — add/edit or scan-and-import local MCP connectors (e.g. Notion) from other AI clients; enabled ones deploy into the sandbox on launch
+- **Local Skills manager** — create; import from folder, zip, or URL; enable/disable; scan-and-import from other agents; adopt workspace drafts with full-screen preview; built-in **`csp-environment`** handbook; enabled Skills deploy into the sandbox on launch
+- **Local MCP manager** — add/edit **stdio** or **remote** (sse / streamable_http) connectors; scan-and-import from other AI clients with JSON/TOML config preview; enabled connectors deploy into the sandbox on launch
 - **Built-in web-search MCP** — no key required for the free path: GENERAL (`csp_web_search` → DuckDuckGo IA/Lite) and LITERATURE (`search_literature` → Wikipedia / Crossref / arXiv / PubMed); optional Brave/Serper/Tavily keys; Start auto-grants provider hosts (`~/.csp/network-allowlist.json` for extras)
 
 ### For power users
@@ -138,7 +138,7 @@ Science only accepts model IDs starting with `claude-`. CSP allocates **up to ei
 
 ## Current limitations
 
-- **Anthropic-hosted cloud features** (remote/hosted MCP, directory connectors) and some cloud-only capabilities are unavailable or fast-fail — **local stdio MCP connectors are supported** via the MCP tab
+- **Anthropic-hosted cloud features** (remote/hosted MCP, directory connectors) and some cloud-only capabilities are unavailable or fast-fail — **local stdio and custom remote MCP connectors are supported** via the MCP tab
 - **Hosted top-level `web_search` / `web_fetch` are unavailable** under CSP virtual login — use the built-in `web-search` MCP: `host.mcp("web-search", "csp_web_search" | "search_literature" | "fetch_url", …)` and read `data["results"]`
 - Provider quality varies for tools, long context, thinking, images, and streaming
 - **OpenAI-compatible profiles** (`openai-custom` / `openai-responses`, including GLM on OpenAI Chat URLs): long sessions and **Resume** are supported since **v1.7.1** (counted SSE keepalives); upstream **429 / fair-use** rate limits and very slow responses can still cause retries — see [known issues](./docs/known-issues.md#openai-custom-streaming)

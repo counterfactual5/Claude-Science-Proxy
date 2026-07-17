@@ -128,7 +128,7 @@ pub struct DiscoveredSkill {
 }
 
 /// Result of a Skill source inspection (before import).
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InspectionResult {
     pub valid: bool,
@@ -139,6 +139,12 @@ pub struct InspectionResult {
     pub requirements: Vec<String>,
     pub warnings: Vec<String>,
     pub errors: Vec<String>,
+    /// Filesystem path the backend will import from (may be a temp extract dir).
+    #[serde(default)]
+    pub import_path: String,
+    /// User-facing source label (original path or URL) stored in inventory.
+    #[serde(default)]
+    pub logical_source: String,
 }
 
 #[cfg(test)]

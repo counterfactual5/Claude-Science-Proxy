@@ -46,6 +46,7 @@ body {
 
 /* ── Panel shell ── */
 .panel {
+  position: relative;
   display: flex;
   flex-direction: column;
   width: 100%;
@@ -1077,8 +1078,8 @@ select:focus-visible {
   gap: 8px;
   padding: 8px 10px;
   border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--bg-surface);
+  border-radius: 8px;
+  background: var(--surface-2, rgba(255,255,255,0.03));
   cursor: pointer;
 }
 .skill-discover-row.disabled {
@@ -1090,20 +1091,164 @@ select:focus-visible {
      blows the checkbox into a full-width bar and squeezes the label out. */
   -webkit-appearance: checkbox;
   appearance: checkbox;
-  width: 16px;
-  min-width: 16px;
-  height: 16px;
+  width: 14px;
+  height: 14px;
+  margin-top: 3px;
   flex: 0 0 auto;
-  padding: 0;
-  margin-top: 2px;
-  border-radius: 3px;
-  accent-color: var(--accent);
 }
 .skill-discover-main {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  flex: 1 1 auto;
   min-width: 0;
+}
+.skill-discover-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+.skill-discover-actions .btn {
+  white-space: nowrap;
+}
+.preview-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  background: rgba(0, 0, 0, 0.62);
+  backdrop-filter: blur(3px);
+}
+.preview-overlay--compact {
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.preview-overlay--compact .preview-overlay-panel {
+  flex: 0 1 auto;
+  width: min(520px, calc(100% - 40px));
+  max-height: min(72vh, 460px);
+  margin: 0;
+}
+.preview-overlay--compact .preview-overlay-body {
+  flex: 1 1 auto;
+  min-height: 140px;
+  max-height: 300px;
+}
+.preview-overlay[hidden] {
+  display: none !important;
+}
+.preview-overlay-panel {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  margin: 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--bg);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+}
+.preview-overlay-hd {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-elevated);
+}
+.preview-overlay-hd-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.preview-overlay-title {
+  margin: 0;
+  padding-right: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+.preview-overlay-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.preview-overlay-file {
+  width: auto;
+  min-width: 140px;
+  max-width: 220px;
+  height: 30px;
+  font-size: 11px;
+  padding: 0 8px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: var(--bg-inset);
+  color: var(--text-secondary);
+  border-radius: var(--radius-sm);
+}
+.preview-overlay-action {
+  border-color: rgba(255, 255, 255, 0.22) !important;
+  background: var(--bg-inset) !important;
+  color: var(--text-secondary) !important;
+}
+.preview-overlay-action:hover {
+  border-color: rgba(255, 255, 255, 0.34) !important;
+  background: #2F2C29 !important;
+  color: var(--text) !important;
+}
+.preview-overlay-close {
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  margin: 0;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  background: var(--bg-inset);
+  color: var(--text-secondary);
+  font-size: 18px;
+  font-weight: 500;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.preview-overlay-close:hover {
+  border-color: rgba(255, 255, 255, 0.34);
+  background: #2F2C29;
+  color: var(--text);
+}
+.preview-overlay-meta {
+  margin: 0;
+  padding: 8px 12px 0;
+  font-size: 10.5px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+.preview-overlay-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  margin: 8px 12px 12px;
+  overflow: auto;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.28);
+  border: 1px solid var(--border);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text-secondary);
 }
 
 .skill-path-adv {
@@ -1177,6 +1322,24 @@ select:focus-visible {
   box-sizing: border-box;
 }
 
+.path-input-row {
+  display: flex;
+  gap: 6px;
+  align-items: stretch;
+}
+
+.path-input-row input {
+  flex: 1;
+  min-width: 0;
+  width: auto;
+}
+
+.path-input-row .path-pick-btn {
+  flex-shrink: 0;
+  height: 30px;
+  white-space: nowrap;
+}
+
 .form-group textarea {
   width: 100%;
   padding: 6px 8px;
@@ -1199,6 +1362,23 @@ select:focus-visible {
   display: flex;
   gap: 8px;
   margin-top: 4px;
+}
+
+/* MCP form: compact to fit one page (no scrolling) — its content is short but
+   the per-field hints + default spacing pushed it past the viewport. */
+#mcpFormSec .form-group {
+  margin-bottom: 8px;
+  gap: 3px;
+}
+#mcpFormSec .hint {
+  margin-top: 3px;
+  line-height: 1.4;
+}
+#mcpFormSec textarea {
+  min-height: 46px;
+}
+#mcpFormSec .form-actions {
+  margin-top: 8px;
 }
 
 .inspection-preview {

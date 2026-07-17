@@ -117,9 +117,12 @@ pub fn build_web_search_server(python: String, script: String) -> McpServer {
         id: McpServerId::new(),
         name: BUILTIN_WEB_SEARCH_NAME.to_string(),
         description: BUILTIN_WEB_SEARCH_DESCRIPTION.to_string(),
+        transport: super::model::McpTransport::Stdio,
         command: python,
         args: vec![script],
         env,
+        url: String::new(),
+        headers: BTreeMap::new(),
         enabled: true,
         builtin: true,
         created_at: String::new(),
@@ -186,7 +189,7 @@ mod tests {
         assert!(WEB_SEARCH_SOURCE.contains("RETURN SHAPE"));
         // Python source escapes quotes: data[\"results\"]
         assert!(WEB_SEARCH_SOURCE.contains(r#"data[\"results\"]"#));
-        assert!(WEB_SEARCH_SOURCE.contains("SERVER_VERSION = \"1.7.1\""));
+        assert!(WEB_SEARCH_SOURCE.contains("SERVER_VERSION = \"1.8.1\""));
         assert!(WEB_SEARCH_SOURCE.contains("GENERAL_FREE_FALLBACKS"));
         assert!(WEB_SEARCH_SOURCE.contains("LITERATURE_FREE_FALLBACKS"));
         assert!(WEB_SEARCH_SOURCE.contains("do_general_web_search"));

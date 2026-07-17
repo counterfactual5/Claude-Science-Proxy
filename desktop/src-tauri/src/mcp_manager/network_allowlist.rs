@@ -144,10 +144,7 @@ pub fn apply_to_active_org(auth_dir: &Path) -> Result<ApplyAllowlistResult, Stri
             changed: false,
         });
     };
-    let prefs_path = auth_dir
-        .join("orgs")
-        .join(&org_uuid)
-        .join(PREFERENCES_FILE);
+    let prefs_path = auth_dir.join("orgs").join(&org_uuid).join(PREFERENCES_FILE);
     if !prefs_path.is_file() {
         // Org not initialized yet — skip; next Start after first login will apply.
         return Ok(ApplyAllowlistResult {
@@ -173,7 +170,8 @@ pub fn apply_to_active_org(auth_dir: &Path) -> Result<ApplyAllowlistResult, Stri
         });
     }
 
-    let body = serde_json::to_vec_pretty(&prefs).map_err(|e| format!("serialize preferences: {e}"))?;
+    let body =
+        serde_json::to_vec_pretty(&prefs).map_err(|e| format!("serialize preferences: {e}"))?;
     // Preserve mode if present; otherwise 0600.
     let mode = fs::metadata(&prefs_path)
         .map(|m| m.permissions().mode())
@@ -238,21 +236,15 @@ fn merge_domains_into_preferences(
     obj.insert("userAllowedDomains".into(), json!(user_domains));
 
     // approvalGrants.always.allow.network
-    let grants = obj
-        .entry("approvalGrants")
-        .or_insert_with(|| json!({}));
+    let grants = obj.entry("approvalGrants").or_insert_with(|| json!({}));
     let grants_obj = grants
         .as_object_mut()
         .ok_or_else(|| "approvalGrants must be an object".to_string())?;
-    let always = grants_obj
-        .entry("always")
-        .or_insert_with(|| json!({}));
+    let always = grants_obj.entry("always").or_insert_with(|| json!({}));
     let always_obj = always
         .as_object_mut()
         .ok_or_else(|| "approvalGrants.always must be an object".to_string())?;
-    let allow = always_obj
-        .entry("allow")
-        .or_insert_with(|| json!({}));
+    let allow = always_obj.entry("allow").or_insert_with(|| json!({}));
     let allow_obj = allow
         .as_object_mut()
         .ok_or_else(|| "approvalGrants.always.allow must be an object".to_string())?;
@@ -276,9 +268,7 @@ fn merge_domains_into_preferences(
     let origins_obj = origins
         .as_object_mut()
         .ok_or_else(|| "alwaysOrigins must be an object".to_string())?;
-    let net_origins = origins_obj
-        .entry("network")
-        .or_insert_with(|| json!({}));
+    let net_origins = origins_obj.entry("network").or_insert_with(|| json!({}));
     let net_origins_obj = net_origins
         .as_object_mut()
         .ok_or_else(|| "alwaysOrigins.network must be an object".to_string())?;

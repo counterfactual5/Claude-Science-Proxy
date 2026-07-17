@@ -1,7 +1,7 @@
 {
   "name": "desktop",
   "private": true,
-  "version": "1.7.1",
+  "version": "1.8.1",
   "type": "module",
   "scripts": {
     "tauri": "bash ../scripts/ci/clean-bundle-resources.sh && tauri"

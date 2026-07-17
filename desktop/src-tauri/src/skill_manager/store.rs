@@ -86,10 +86,7 @@ impl SkillStore {
             return Err(format!("source path does not exist: {}", source.display()));
         }
         if !source.is_dir() {
-            let name = source
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or("");
+            let name = source.file_name().and_then(|n| n.to_str()).unwrap_or("");
             if name.eq_ignore_ascii_case(SKILL_FILE) {
                 // Acceptance is exact `SKILL.md` only; this hint covers common
                 // casing when the user pointed at the markdown file itself.
@@ -115,6 +112,7 @@ impl SkillStore {
             requirements: Vec::new(),
             warnings: Vec::new(),
             errors: Vec::new(),
+            ..Default::default()
         };
 
         // Walk the source directory
@@ -247,6 +245,7 @@ impl SkillStore {
             requirements: Vec::new(),
             warnings: Vec::new(),
             errors: Vec::new(),
+            ..Default::default()
         };
         parse_skill_md(content, &mut meta);
         let name = meta.name.trim().to_string();
@@ -400,7 +399,11 @@ impl SkillStore {
         files: &[(&str, &str)],
     ) -> Result<bool, String> {
         let mut inv = self.load_inventory()?;
-        let Some(skill) = inv.skills.values_mut().find(|s| s.builtin && s.name == name) else {
+        let Some(skill) = inv
+            .skills
+            .values_mut()
+            .find(|s| s.builtin && s.name == name)
+        else {
             return Ok(false);
         };
         let dest = skill.store_path.clone();
@@ -446,8 +449,7 @@ impl SkillStore {
         };
         inv.skills.remove(&id);
         if skill.store_path.exists() {
-            fs::remove_dir_all(&skill.store_path)
-                .map_err(|e| format!("remove skill dir: {e}"))?;
+            fs::remove_dir_all(&skill.store_path).map_err(|e| format!("remove skill dir: {e}"))?;
         }
         self.save_inventory(&inv)?;
         Ok(true)
@@ -570,6 +572,7 @@ fn read_skill_meta(dir: &Path) -> (String, String) {
         requirements: Vec::new(),
         warnings: Vec::new(),
         errors: Vec::new(),
+        ..Default::default()
     };
     if let Ok(content) = fs::read_to_string(dir.join(SKILL_FILE)) {
         parse_skill_md(&content, &mut result);
@@ -1215,6 +1218,7 @@ mod tests {
             requirements: Vec::new(),
             warnings: Vec::new(),
             errors: Vec::new(),
+            ..Default::default()
         };
         parse_skill_md(
             "---\nname: Folded\ndescription: >-\n  Split current work into small\n  reviewable PRs.\nmetadata:\n  surface: ide\n---\n",
@@ -1286,12 +1290,13 @@ mod tests {
 
         // Refresh with new content: rewrites files, keeps it disabled.
         let v2 = [("SKILL.md", "v2-longer-content")];
-        let refreshed = store
-            .refresh_builtin("csp-environment", "d2", &v2)
-            .unwrap();
+        let refreshed = store.refresh_builtin("csp-environment", "d2", &v2).unwrap();
         assert!(refreshed);
         let skill = store.get(&id).unwrap().unwrap();
-        assert!(!skill.enabled, "refresh must not re-enable a disabled skill");
+        assert!(
+            !skill.enabled,
+            "refresh must not re-enable a disabled skill"
+        );
         assert_eq!(skill.description, "d2");
         let md = fs::read_to_string(skill.store_path.join("SKILL.md")).unwrap();
         assert_eq!(md, "v2-longer-content");
@@ -1369,7 +1374,10 @@ mod tests {
         store.stamp_sentinel(".seeded-csp-web-access").unwrap();
         assert!(store.list().unwrap().is_empty());
 
-        let files = [("SKILL.md", "---\nname: csp-environment\n---\nshould not seed")];
+        let files = [(
+            "SKILL.md",
+            "---\nname: csp-environment\n---\nshould not seed",
+        )];
         let migrated = store
             .seed_or_migrate_environment_skill(
                 ".seeded-csp-environment",

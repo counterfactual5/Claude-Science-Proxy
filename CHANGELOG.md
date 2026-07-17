@@ -3,6 +3,41 @@
 All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.8.1] — 2026-07-17
+
+### Added
+- **MCP 扫描预览**：扫描导入列表可预览源配置中该 server 的 JSON/TOML 片段，并以居中紧凑小窗展示（区别于 Skills 采纳的全屏预览）。
+- **从 Science 采纳全屏预览**：工作区 Skill 采纳预览改为覆盖整个窗口的全屏层，便于阅读长 `SKILL.md`。
+
+### Fixed
+- MCP 预览按钮点击无响应（事件选择器与 `data-*` 属性不匹配）。
+- 预览层「在 Finder 打开」改为 `open -R` 在 Finder 中选中路径；失败时在预览层内显示错误。
+- 预览顶栏按钮边框对比度与布局：关闭移至右上角 **×**，「打开配置文件」独立显示。
+
+### Changed
+- **MCP 编辑表单紧凑化**：缩短字段间距、文本框行数与各字段提示文案，stdio 配置尽量一页放下、少滚动。
+- **Version alignment**：桌面 bundle、Skill 下载 `User-Agent`、内置 web-search `SERVER_VERSION` 同步至 **1.8.1**。
+
+## [1.8.0] — 2026-07-16
+
+### Added
+- **Skills 统一导入**：「导入 Skill」支持本地目录、本地 `.zip`、以及 `https://` URL（直链 zip 或公开 GitHub 仓库/目录）。下载与解压在 CSP 桌面端完成。
+- **浏览**：单一「浏览」按钮直接打开原生选择器（macOS 同一面板可选 Skill 文件夹或 `.zip`）；粘贴后可直接「导入」（自动校验）。
+- **MCP 远程连接**：新建/编辑 MCP 表单支持连接类型选择——本地 stdio（command/args/env）或远程 `streamable_http` / `sse`（url + 可选 headers）。远程按 Science `custom_mcp_servers` schema 部署到 org `operon-cli.db`（非 `local-mcp.json`）；headers 经 `headers_helper` 下发。扫描导入同时识别远程条目。旧 stdio inventory 向后兼容。
+
+### Changed
+- Inspect/import API：`source` + `importPath`（inspect 返回的暂存目录，避免 URL 重复下载）。
+- 导入表单文案精简；去掉独立「检查」按钮。
+- **Skills 列表操作**：主按钮改为「导入」；手写「新建 Skill」移入 `⋯`（与导入频率更匹配）。
+- **扫描导入**：Skills / MCP 发现页说明进一步精简为「从其他 Agent 软件导入」；新增经文档核对的家目录级根——OpenClaw（`mcp.servers`）、AWS Kiro、CodeBuddy 旧版单文件、**WorkBuddy**（`~/.workbuddy/{.mcp.json,mcp.json,skills}`）、**Factory Droid**（`~/.factory/{mcp.json,skills}`）。工作区级配置（如 `.trae/mcp.json`、项目 `.cursor/mcp.json`）不在 HOME，故不扫描。远程解析同时兼容 Windsurf/Cascade 的 `serverUrl` 字段。
+- **从 Science 采纳预览**：采纳列表每项可「预览」工作区草稿正文（可切换 `SKILL.md` / 伴随文件），并支持「在 Finder 打开」；已采纳条目也会显示真实内容，便于确认是否与聊天中的改进一致。
+- **扫描根扩展**：Skills / MCP 扫描补充 Kimi Code（`~/.kimi-code/skills`、`~/.kimi-code/mcp.json`）与 MiniMax（`~/.minimax/skills`、`~/.minimax/mcp.json`）的 HOME 级默认路径。
+
+## [1.7.2] — 2026-07-16
+
+### Added
+- **Skills「导入目录」文件夹选择器**: Hybrid UX — keep the path text field and add **Choose folder** / **选择文件夹** (native macOS picker). Selected path auto-fills the input and runs inspect.
+
 ## [1.7.1] — 2026-07-15
 
 ### Fixed

@@ -124,6 +124,7 @@ CSP consists of the following layers:
 - **Provider Types**: `deepseek` connects to the native Anthropic endpoint. The other templates route through `relay`, `openai-custom`, or `openai-responses` adapters.
 - **Model Selector**: The frontend allows selecting multiple active models for a profile. A virtual registry maps up to 8 shell IDs (`claude-*`) in Science to the real upstream model names.
 - **Profile Transactions**: Activating a profile follows a strict sequence: launches a temporary scratch proxy → validates candidate connection health → switches the active ID. If verification fails, it rolls back gracefully.
+- **Desktop Skills / MCP (1.8.x)**: Skills import from folder, zip, or URL; workspace adopt with preview; MCP stdio + remote connectors with scan-and-import config preview. See [`docs/known-issues.md`](known-issues.md#skill-manager) and [`#local-mcp`](known-issues.md#local-mcp).
 
 ### Proxy streaming paths (`csp_proxy.py`)
 
@@ -162,6 +163,7 @@ Frontend code only invokes Rust commands via `invoke()`. API keys are never retu
 
 - **Config**: `get_config`, `create_profile`, `update_profile_connection`, `update_profile_metadata`, `delete_profile`, `set_active_profile`, `open_csp_json`, `set_settings`.
 - **Model Discovery**: `fetch_models` (spawns a temporary scratch proxy to query upstream `/v1/models` and returns verified model names).
+- **Skills / MCP** (desktop **1.8.x**): `discover_skills`, `import_skill` (folder / zip / URL), `discover_workspace_skills`, `preview_workspace_skill`, `adopt_workspace_skills`; `discover_mcp_servers`, `preview_discovered_mcp`, remote `sse` / `streamable_http` via `custom_mcp_servers`. Env/header secrets are masked in API responses; edit form shows `KEY=` only.
 - **Process Control**: `stop_all`, `one_click_login` (returns `{ url, action }` for launch actions).
 
 ---

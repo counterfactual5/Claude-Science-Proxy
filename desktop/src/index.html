@@ -88,11 +88,11 @@
             <label class="sec-title">Skills 管理</label>
             <div class="skill-hd-acts">
               <div class="listhd-acts-cluster">
-                <button type="button" class="btn small" id="skillCreateBtn">+ 新建</button>
+                <button type="button" class="btn small" id="skillImportBtn">导入</button>
                 <div class="listhd-more">
                   <button type="button" class="btn small listhd-more-btn" id="skillMoreBtn" aria-haspopup="true" aria-expanded="false" title="更多">⋯</button>
                   <div class="pmenu listhd-menu" id="skillMenu" hidden role="menu">
-                    <button type="button" class="pmenu-item" id="skillImportBtn" role="menuitem">导入目录</button>
+                    <button type="button" class="pmenu-item" id="skillCreateBtn" role="menuitem">新建 Skill</button>
                     <button type="button" class="pmenu-item" id="skillDiscoverBtn" role="menuitem">扫描导入</button>
                     <button type="button" class="pmenu-item" id="skillAdoptBtn" role="menuitem">从 Science 采纳</button>
                   </div>
@@ -104,7 +104,7 @@
 
           <div class="skill-empty" id="skillEmpty" hidden>
             <p id="skillEmptyTitle">还没有 Skill。</p>
-            <p class="hint" id="skillEmptyHint">点「新建」从零创建，或在「⋯」里选「导入目录」/「扫描导入」导入本机 Skill。</p>
+            <p class="hint" id="skillEmptyHint">点「导入」添加本地或网络 Skill，或在「⋯」里新建 / 扫描 / 从 Science 采纳。</p>
           </div>
 
           <div id="skillList" class="skill-list"></div>
@@ -137,7 +137,7 @@
 
         <div class="sec form-sec" id="skillDiscoverSec" hidden>
           <label id="skillDiscoverTitle">扫描本地 Skill</label>
-          <p class="hint" id="skillDiscoverHint">扫描 <code>~/.agents/skills</code>、<code>~/.codex/skills</code>、<code>~/.claude/skills</code>、<code>~/.cursor/skills</code>、<code>~/.cursor/skills-cursor</code>，以及国产 <code>~/.trae/skills</code> / <code>~/.trae-cn/skills</code>（字节）、<code>~/.codebuddy/skills</code>（腾讯），勾选后复制到 <code>~/.csp/skills/</code>。沙箱自带的科学 Skill 不在此列；Science 工作区草稿请用「从 Science 采纳」。</p>
+          <p class="hint" id="skillDiscoverHint">从其他 Agent 软件导入。</p>
           <div id="skillDiscoverList" class="skill-discover-list"></div>
           <div id="skillDiscoverEmpty" class="skill-empty" hidden>
             <p id="skillDiscoverEmptyText">没有扫描到可导入的 Skill。</p>
@@ -149,15 +149,18 @@
         </div>
 
         <div class="sec form-sec" id="skillImportSec" hidden>
-          <label id="skillImportTitle">导入目录</label>
-          <p class="hint" id="skillImportIntro">已知 Skill 文件夹路径时，直接粘贴导入。将连同脚本和其他伴随文件一起递归复制到 <code>~/.csp/skills/</code>。</p>
+          <label id="skillImportTitle">导入 Skill</label>
+          <p class="hint" id="skillImportIntro">粘贴路径 / URL，或点「浏览」选本地文件夹或 ZIP。</p>
           <div class="form-group">
-            <label for="skillSourcePath" id="skillPathLabel">源目录路径</label>
-            <input id="skillSourcePath" type="text" placeholder="/path/to/skill-directory" autocomplete="off" spellcheck="false" />
-            <p class="hint" id="skillPathHint">目录根须含 <code>SKILL.md</code>（大小写敏感）；检查通过后会递归复制目录内脚本、<code>USAGE.md</code>、<code>requirements</code> 等伴随文件。请选择目录本身，不要选 <code>SKILL.md</code> 文件。</p>
+            <label for="skillSourcePath" id="skillPathLabel">路径或 URL</label>
+            <div class="path-input-row">
+              <input id="skillSourcePath" type="text" placeholder="/path、.zip 或 https://…" autocomplete="off" spellcheck="false" />
+              <button type="button" class="btn small path-pick-btn" id="skillBrowseBtn">浏览</button>
+            </div>
+            <p class="hint" id="skillPathHint">需含 <code>SKILL.md</code>；支持公开 GitHub 目录链接。</p>
           </div>
           <div id="skillInspectionPreview" class="inspection-preview" hidden>
-            <h4 id="skillInspPreviewTitle">检查预览</h4>
+            <h4 id="skillInspPreviewTitle">预览</h4>
             <div class="insp-name"><strong id="inspName"></strong></div>
             <div class="insp-desc" id="inspDesc"></div>
             <div class="insp-stats" id="inspStats"></div>
@@ -166,7 +169,6 @@
             <div class="insp-errors" id="inspErrors" hidden></div>
           </div>
           <div class="row form-actions">
-            <button class="btn small" id="skillInspectBtn">检查</button>
             <button class="btn small" id="skillImportConfirmBtn" disabled>导入</button>
             <button class="btn small" id="skillImportCancelBtn">取消</button>
           </div>
@@ -194,7 +196,7 @@
       <div class="panel-body skill-pane" id="mcpPane" hidden>
         <div class="sec list-only" id="mcpListSec">
           <div class="skill-hd">
-            <label class="sec-title">本地 MCP 管理</label>
+            <label class="sec-title">MCP 管理</label>
             <div class="skill-hd-acts">
               <div class="listhd-acts-cluster">
                 <button type="button" class="btn small" id="mcpAddBtn">+ 新建</button>
@@ -212,38 +214,61 @@
           <p class="hint apply-hint" id="mcpApplyHint">新增/编辑/启用的改动会在下次点击「启动 Claude Science」时生效；若沙箱正在运行，会自动重启以应用。</p>
 
           <div class="skill-empty" id="mcpEmpty" hidden>
-            <p id="mcpEmptyTitle">还没有本地 MCP。</p>
-            <p class="hint" id="mcpEmptyHint">点「新建」，配置一个本地 <code>stdio</code> 连接器（command + args + env）。启用后会在启动沙箱时写入 <code>&lt;data-dir&gt;/mcp/local-mcp.json</code>。</p>
+            <p id="mcpEmptyTitle">还没有 MCP。</p>
+            <p class="hint" id="mcpEmptyHint">点「新建」，配置本地 <code>stdio</code> 或远程 HTTP/SSE 连接器。</p>
           </div>
 
           <div id="mcpList" class="skill-list"></div>
         </div>
 
         <div class="sec form-sec" id="mcpFormSec" hidden>
-          <label id="mcpFormTitle">新增本地 MCP</label>
+          <label id="mcpFormTitle">新增 MCP</label>
           <div class="form-group">
-            <label for="mcpName">名称</label>
+            <label for="mcpName" id="mcpNameLabel">名称</label>
             <input id="mcpName" type="text" placeholder="my-tools" autocomplete="off" spellcheck="false" />
-            <p class="hint">仅限字母、数字、<code>-</code> <code>_</code> <code>.</code>，作为连接器标识。</p>
+            <p class="hint" id="mcpNameHint">本地：字母/数字/<code>-</code><code>_</code><code>.</code>。远程：小写字母/数字/<code>-</code>（Science 规则）。</p>
           </div>
           <div class="form-group">
-            <label for="mcpDesc">描述（可选）</label>
+            <label for="mcpTransport" id="mcpTransportLabel">连接类型</label>
+            <select id="mcpTransport">
+              <option value="stdio">本地命令（stdio）</option>
+              <option value="streamable_http">远程 HTTP / Streamable HTTP</option>
+              <option value="sse">远程 SSE</option>
+            </select>
+            <p class="hint" id="mcpTransportHint">本地写入 <code>local-mcp.json</code>；远程写入 Science org 库 <code>custom_mcp_servers</code>（sse / streamable_http）。</p>
+          </div>
+          <div class="form-group">
+            <label for="mcpDesc" id="mcpDescLabel">描述（可选）</label>
             <input id="mcpDesc" type="text" placeholder="本地数据分析工具" autocomplete="off" spellcheck="false" />
           </div>
-          <div class="form-group">
-            <label for="mcpCommand">命令</label>
-            <input id="mcpCommand" type="text" placeholder="python3" autocomplete="off" spellcheck="false" />
-            <p class="hint">运行时命令（<code>python3</code> / <code>node</code> / <code>npx</code> …）或绝对路径。</p>
+          <div id="mcpStdioFields">
+            <div class="form-group">
+              <label for="mcpCommand" id="mcpCommandLabel">命令</label>
+              <input id="mcpCommand" type="text" placeholder="python3" autocomplete="off" spellcheck="false" />
+              <p class="hint" id="mcpCommandHint">运行时命令（<code>python3</code> / <code>node</code> / <code>npx</code> …）或绝对路径。</p>
+            </div>
+            <div class="form-group">
+              <label for="mcpArgs" id="mcpArgsLabel">参数（每行一个）</label>
+              <textarea id="mcpArgs" rows="2" placeholder="/Users/me/mcp/server.py" autocomplete="off" spellcheck="false"></textarea>
+              <p class="hint" id="mcpArgsHint">引用的绝对路径会自动加入沙箱读权限（<code>user_read_paths</code>）。</p>
+            </div>
+            <div class="form-group">
+              <label for="mcpEnv" id="mcpEnvLabel">环境变量（每行 KEY=VALUE）</label>
+              <textarea id="mcpEnv" rows="2" placeholder="API_TOKEN=sk-xxx" autocomplete="off" spellcheck="false"></textarea>
+              <p class="hint" id="mcpEnvHint">编辑时：<code>KEY=</code> 留空保留原值，删除整行则删除该变量，填新值则覆盖。密钥不会回显。</p>
+            </div>
           </div>
-          <div class="form-group">
-            <label for="mcpArgs">参数（每行一个）</label>
-            <textarea id="mcpArgs" rows="3" placeholder="/Users/me/mcp/server.py" autocomplete="off" spellcheck="false"></textarea>
-            <p class="hint">引用的绝对路径会自动加入沙箱读权限（<code>user_read_paths</code>）。</p>
-          </div>
-          <div class="form-group">
-            <label for="mcpEnv">环境变量（每行 KEY=VALUE）</label>
-            <textarea id="mcpEnv" rows="3" placeholder="API_TOKEN=sk-xxx" autocomplete="off" spellcheck="false"></textarea>
-            <p class="hint">编辑时：<code>KEY=</code> 留空保留原值，删除整行则删除该变量，填新值则覆盖。密钥不会回显。</p>
+          <div id="mcpRemoteFields" hidden>
+            <div class="form-group">
+              <label for="mcpUrl" id="mcpUrlLabel">URL</label>
+              <input id="mcpUrl" type="url" placeholder="https://mcp.example.com/mcp" autocomplete="off" spellcheck="false" />
+              <p class="hint" id="mcpUrlHint">不要把 token 写进 URL。请用下方 Headers。</p>
+            </div>
+            <div class="form-group">
+              <label for="mcpHeaders" id="mcpHeadersLabel">Headers（可选，每行 Name=Value）</label>
+              <textarea id="mcpHeaders" rows="2" placeholder="Authorization=Bearer …" autocomplete="off" spellcheck="false"></textarea>
+              <p class="hint" id="mcpHeadersHint">密钥存于本地 0600 inventory，部署为 Science <code>headers_helper</code>（shell 打印 JSON）。编辑语义与 env 相同。</p>
+            </div>
           </div>
           <div id="mcpInspection" class="inspection-preview" hidden>
             <div class="insp-warnings" id="mcpWarnings" hidden></div>
@@ -256,11 +281,11 @@
         </div>
 
         <div class="sec form-sec" id="mcpDiscoverSec" hidden>
-          <label id="mcpDiscoverTitle">扫描本地 MCP</label>
-          <p class="hint" id="mcpDiscoverHint">扫描常见 AI 客户端的 MCP 配置：Cursor、Claude Desktop、Claude Code、Codex（<code>~/.codex/config.toml</code>）、Devin Desktop（原 Windsurf）、VS Code（<code>~/Library/Application Support/Code/User/mcp.json</code>）、Zed，以及国产 Qoder / 通义灵码（阿里）、Trae / TRAE SOLO（字节）、CodeBuddy（腾讯）。识别 <code>mcpServers</code> / <code>servers</code> / <code>context_servers</code> 等键，勾选后导入为 CSP 本地 stdio MCP。仅识别本地 stdio（带 <code>command</code>）连接器；环境变量只显示 key，导入时由后端复制原值。</p>
+          <label id="mcpDiscoverTitle">扫描 MCP</label>
+          <p class="hint" id="mcpDiscoverHint">从其他 Agent 软件导入。</p>
           <div id="mcpDiscoverList" class="skill-discover-list"></div>
           <div id="mcpDiscoverEmpty" class="skill-empty" hidden>
-            <p id="mcpDiscoverEmptyText">没有扫描到可导入的本地 stdio MCP。</p>
+            <p id="mcpDiscoverEmptyText">没有扫描到可导入的 MCP。</p>
           </div>
           <div class="row form-actions">
             <button class="btn small" id="mcpDiscoverImportBtn" disabled>导入所选</button>
@@ -273,7 +298,7 @@
         </div>
       </div>
 
-      <div class="panel-foot list-only">
+      <div class="panel-foot list-only" id="sharedRuntimeFoot">
         <div class="sec runtime-status list-only" id="runtimeStatusSec">
           <div class="runtime-status-row">
             <span class="runtime-status-label" id="i18nRuntimeStatus">运行状态</span>
@@ -296,6 +321,23 @@
           <div class="subbtns">
             <button class="btn" id="stopBtn" title="停止本地代理与 Science 沙箱">停止</button>
           </div>
+        </div>
+      </div>
+
+      <div class="preview-overlay" id="previewOverlay" hidden role="dialog" aria-modal="true" aria-labelledby="previewOverlayTitle">
+        <div class="preview-overlay-panel">
+          <div class="preview-overlay-hd">
+            <div class="preview-overlay-hd-main">
+              <h2 class="preview-overlay-title" id="previewOverlayTitle">预览</h2>
+              <div class="preview-overlay-tools">
+                <select id="previewOverlayFileSelect" class="preview-overlay-file" hidden aria-label="Preview file"></select>
+                <button type="button" class="btn small preview-overlay-action" id="previewOverlayOpenBtn" hidden>在 Finder 打开</button>
+              </div>
+            </div>
+            <button type="button" class="preview-overlay-close" id="previewOverlayCloseBtn" aria-label="关闭" title="关闭">×</button>
+          </div>
+          <p class="preview-overlay-meta" id="previewOverlayMeta"></p>
+          <pre class="preview-overlay-body" id="previewOverlayBody"></pre>
         </div>
       </div>
     </div>

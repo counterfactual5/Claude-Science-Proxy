@@ -1,6 +1,6 @@
 [package]
 name = "desktop"
-version = "1.7.1"
+version = "1.8.1"
 description = "Claude Science Proxy 桌面 app（进程管家 + 配置面板）"
 authors = ["Claude Science Proxy"]
 edition = "2021"
@@ -29,6 +29,29 @@ hkdf = "0.12"
 sha2 = "0.10"
 base64 = "0.22"
 toml = "0.8"
+rfd = "0.15"
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls"] }
+zip = "2.2"
+rusqlite = { version = "0.32", features = ["bundled"] }
+
+# macOS: one NSOpenPanel that can pick a Skill folder or .zip (rfd cannot mix modes).
+[target.'cfg(target_os = "macos")'.dependencies]
+dispatch2 = "0.3"
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3", default-features = false, features = [
+    "std",
+    "NSOpenPanel",
+    "NSPanel",
+    "NSResponder",
+    "NSSavePanel",
+    "NSWindow",
+] }
+objc2-foundation = { version = "0.3", default-features = false, features = [
+    "std",
+    "NSArray",
+    "NSString",
+    "NSURL",
+] }
 
 [dev-dependencies]
 tauri = { version = "2", features = ["test"] }

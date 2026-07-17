@@ -84,9 +84,7 @@ mod tests {
         assert!(ENVIRONMENT_SKILL_MD.contains("GENERAL"));
         assert!(ENVIRONMENT_SKILL_MD.contains("LITERATURE"));
         assert!(ENVIRONMENT_SKILL_MD.contains("Wikipedia is **not** on this lane"));
-        assert!(!ENVIRONMENT_SKILL_MD.contains(
-            "duckduckgo_lite` → `wikipedia`"
-        ));
+        assert!(!ENVIRONMENT_SKILL_MD.contains("duckduckgo_lite` → `wikipedia`"));
         // Front-matter name matches the deploy folder name.
         assert!(ENVIRONMENT_SKILL_MD.contains(&format!("name: {BUILTIN_ENVIRONMENT_NAME}")));
         // Must not advertise the legacy name as the active skill.
@@ -135,7 +133,12 @@ mod tests {
 
     #[test]
     fn name_does_not_collide_with_science_bundled_skills() {
-        for reserved in ["alphafold2", "boltz", "self-awareness", "product-self-knowledge"] {
+        for reserved in [
+            "alphafold2",
+            "boltz",
+            "self-awareness",
+            "product-self-knowledge",
+        ] {
             assert_ne!(BUILTIN_ENVIRONMENT_NAME, reserved);
         }
         assert_ne!(BUILTIN_ENVIRONMENT_NAME, LEGACY_WEB_ACCESS_NAME);

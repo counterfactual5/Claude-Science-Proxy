@@ -1,4 +1,4 @@
-//! Local MCP server store — persists stdio connector definitions in
+//! MCP server store — persists stdio + remote connector definitions in
 //! `~/.csp/mcp/inventory.json` (0600). Mirrors `skill_manager::store` in spirit:
 //! a dependency-light JSON inventory that the UI lists and the deployer reads.
 
@@ -8,7 +8,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use super::model::{McpInspection, McpServer, McpServerId, McpServerSummary};
+use super::model::{McpInspection, McpServer, McpServerId, McpServerSummary, McpTransport};
 
 const STORE_DIR: &str = "mcp";
 const INVENTORY_FILE: &str = "inventory.json";
@@ -30,15 +30,18 @@ pub struct McpStore {
     root: PathBuf,
 }
 
-/// Fields accepted from the UI to create or update a server. `env` values are
-/// stored verbatim; only ever returned masked.
+/// Fields accepted from the UI to create or update a server. `env` / `headers`
+/// values are stored verbatim; only ever returned masked.
 #[derive(Clone, Debug, Default)]
 pub struct McpServerInput {
     pub name: String,
     pub description: String,
+    pub transport: McpTransport,
     pub command: String,
     pub args: Vec<String>,
     pub env: BTreeMap<String, String>,
+    pub url: String,
+    pub headers: BTreeMap<String, String>,
 }
 
 impl McpStore {
@@ -91,6 +94,27 @@ impl McpStore {
         let name = input.name.trim();
         if name.is_empty() {
             errors.push("Name is required".to_string());
+        } else if input.transport.is_remote() {
+            // Science `custom_mcp_servers` name rules (ox_): lowercase, digits,
+            // hyphens; 1–64 chars; no leading/trailing hyphen; no anthropic/claude.
+            if name.len() > 64 {
+                errors.push("Remote MCP name must be at most 64 characters".to_string());
+            }
+            if !name
+                .chars()
+                .all(|c| matches!(c, 'a'..='z' | '0'..='9' | '-'))
+            {
+                errors.push(
+                    "Remote MCP name may only contain lowercase letters, digits, and '-'"
+                        .to_string(),
+                );
+            }
+            if name.starts_with('-') || name.ends_with('-') {
+                errors.push("Remote MCP name may not start or end with '-'".to_string());
+            }
+            if name.contains("anthropic") || name.contains("claude") {
+                errors.push("Remote MCP name may not contain 'anthropic' or 'claude'".to_string());
+            }
         } else if !name
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.')
@@ -98,40 +122,12 @@ impl McpStore {
             errors.push("Name may only contain letters, digits, '-', '_' and '.'".to_string());
         }
 
-        let command = input.command.trim();
-        let command_ok = if command.is_empty() {
-            errors.push("Command is required".to_string());
-            false
-        } else if command.starts_with('/') {
-            if !PathBuf::from(command).exists() {
-                warnings.push(format!("Absolute command not found on disk: {command}"));
-            }
-            true
-        } else if KNOWN_COMMANDS.contains(&command) {
+        let command_ok = if input.transport.is_remote() {
+            inspect_remote(input, &mut warnings, &mut errors);
             true
         } else {
-            warnings.push(format!(
-                "'{command}' is not a known managed-runtime command; Science may reject it. \
-                 Use an absolute path or one of: {}",
-                KNOWN_COMMANDS.join(", ")
-            ));
-            false
+            inspect_stdio(input, &mut warnings, &mut errors)
         };
-
-        // Relative script-like args almost never work: the MCP child sandbox has no
-        // configurable cwd and only absolute paths get `user_read_paths` grants.
-        for arg in &input.args {
-            if looks_like_relative_script(arg) {
-                warnings.push(format!(
-                    "'{arg}' looks like a relative path; the sandbox has no working directory \
-                     and only absolute paths are granted read access. Use an absolute path."
-                ));
-            }
-        }
-
-        if input.env.keys().any(|k| k.trim().is_empty()) {
-            errors.push("Environment variable names cannot be empty".to_string());
-        }
 
         McpInspection {
             valid: errors.is_empty(),
@@ -159,28 +155,39 @@ impl McpStore {
 
         let now = current_iso8601();
         let id = McpServerId::new();
-        // On create there is no prior value, so empty env values are stored as-is.
-        let server = McpServer {
+        // On create there is no prior value, so empty env/header values are stored as-is.
+        let mut server = McpServer {
             id: id.clone(),
             name,
             description: input.description.trim().to_string(),
+            transport: input.transport.clone(),
             command: input.command.trim().to_string(),
             args: input.args,
             env: input.env,
+            url: input.url.trim().to_string(),
+            headers: input.headers,
             enabled: true,
             builtin: false,
             created_at: now.clone(),
             updated_at: now,
         };
+        if server.transport.is_remote() {
+            server.command.clear();
+            server.args.clear();
+            server.env.clear();
+        } else {
+            server.url.clear();
+            server.headers.clear();
+        }
         let summary = server.to_summary();
         inv.servers.insert(id.to_string(), server);
         self.save_inventory(&inv)?;
         Ok(summary)
     }
 
-    /// Update an existing server's definition (name/command/args/env/description).
+    /// Update an existing server's definition.
     ///
-    /// Env merge semantics (so the UI never has to round-trip masked secrets):
+    /// Env/header merge semantics (so the UI never has to round-trip masked secrets):
     /// - a key present with a **non-empty** value → updated;
     /// - a key present with an **empty** value → keep the previously stored value
     ///   (or empty if it never existed);
@@ -205,11 +212,24 @@ impl McpStore {
             .get_mut(id)
             .ok_or_else(|| format!("MCP server not found: {id}"))?;
         let merged_env = merge_env(&server.env, &input.env);
+        let merged_headers = merge_env(&server.headers, &input.headers);
         server.name = name;
         server.description = input.description.trim().to_string();
+        server.transport = input.transport.clone();
         server.command = input.command.trim().to_string();
         server.args = input.args;
         server.env = merged_env;
+        server.url = input.url.trim().to_string();
+        server.headers = merged_headers;
+        // Switching transport clears irrelevant fields so inventory stays tidy.
+        if server.transport.is_remote() {
+            server.command.clear();
+            server.args.clear();
+            server.env.clear();
+        } else {
+            server.url.clear();
+            server.headers.clear();
+        }
         server.updated_at = current_iso8601();
         let summary = server.to_summary();
         self.save_inventory(&inv)?;
@@ -336,6 +356,92 @@ fn merge_env(
     out
 }
 
+fn inspect_stdio(
+    input: &McpServerInput,
+    warnings: &mut Vec<String>,
+    errors: &mut Vec<String>,
+) -> bool {
+    let command = input.command.trim();
+    let command_ok = if command.is_empty() {
+        errors.push("Command is required".to_string());
+        false
+    } else if command.starts_with('/') {
+        if !PathBuf::from(command).exists() {
+            warnings.push(format!("Absolute command not found on disk: {command}"));
+        }
+        true
+    } else if KNOWN_COMMANDS.contains(&command) {
+        true
+    } else {
+        warnings.push(format!(
+            "'{command}' is not a known managed-runtime command; Science may reject it. \
+             Use an absolute path or one of: {}",
+            KNOWN_COMMANDS.join(", ")
+        ));
+        false
+    };
+
+    // Relative script-like args almost never work: the MCP child sandbox has no
+    // configurable cwd and only absolute paths get `user_read_paths` grants.
+    for arg in &input.args {
+        if looks_like_relative_script(arg) {
+            warnings.push(format!(
+                "'{arg}' looks like a relative path; the sandbox has no working directory \
+                 and only absolute paths are granted read access. Use an absolute path."
+            ));
+        }
+    }
+
+    if input.env.keys().any(|k| k.trim().is_empty()) {
+        errors.push("Environment variable names cannot be empty".to_string());
+    }
+    command_ok
+}
+
+fn inspect_remote(input: &McpServerInput, warnings: &mut Vec<String>, errors: &mut Vec<String>) {
+    let url = input.url.trim();
+    if url.is_empty() {
+        errors.push("URL is required for remote MCP".to_string());
+    } else if !(url.starts_with("https://") || url.starts_with("http://")) {
+        errors.push("URL must start with https:// or http://".to_string());
+    } else {
+        if url.starts_with("http://") {
+            warnings.push(
+                "Science marketplace plugins require https; custom remotes usually \
+                 work best over https as well."
+                    .to_string(),
+            );
+        }
+        // Detect userinfo (https://user:pass@host/...) without a full URL parser.
+        if let Some(after_scheme) = url
+            .strip_prefix("https://")
+            .or_else(|| url.strip_prefix("http://"))
+        {
+            let authority = after_scheme.split('/').next().unwrap_or("");
+            if authority.contains('@') {
+                warnings.push(
+                    "Do not put secrets in the URL (userinfo). Use Headers instead \
+                     — they are stored in the 0600 inventory and deployed via \
+                     Science headers_helper."
+                        .to_string(),
+                );
+            }
+        }
+    }
+
+    if input.headers.keys().any(|k| k.trim().is_empty()) {
+        errors.push("Header names cannot be empty".to_string());
+    }
+    if !input.headers.is_empty() {
+        warnings.push(
+            "Header values are stored in CSP's local 0600 inventory and deployed as a \
+             Science headers_helper shell snippet that prints JSON. Prefer short-lived \
+             tokens; do not paste secrets into the URL."
+                .to_string(),
+        );
+    }
+}
+
 /// True when `arg` looks like a relative filesystem path to a script/resource,
 /// which the MCP child sandbox cannot resolve (no cwd, no read grant).
 fn looks_like_relative_script(arg: &str) -> bool {
@@ -380,9 +486,25 @@ mod tests {
         McpServerInput {
             name: name.to_string(),
             description: String::new(),
+            transport: McpTransport::Stdio,
             command: command.to_string(),
             args: vec![],
             env: BTreeMap::new(),
+            url: String::new(),
+            headers: BTreeMap::new(),
+        }
+    }
+
+    fn remote_input(name: &str, url: &str) -> McpServerInput {
+        McpServerInput {
+            name: name.to_string(),
+            description: String::new(),
+            transport: McpTransport::StreamableHttp,
+            command: String::new(),
+            args: vec![],
+            env: BTreeMap::new(),
+            url: url.to_string(),
+            headers: BTreeMap::new(),
         }
     }
 
@@ -550,9 +672,12 @@ mod tests {
             id: McpServerId::new(),
             name: name.to_string(),
             description: "built-in".into(),
+            transport: McpTransport::Stdio,
             command: "python3".into(),
             args: vec!["/x/server.py".into()],
             env: BTreeMap::new(),
+            url: String::new(),
+            headers: BTreeMap::new(),
             enabled: true,
             builtin: true,
             created_at: String::new(),
@@ -602,9 +727,7 @@ mod tests {
         let mut server = builtin_server("web-search");
         server.description = "old description".into();
         server.enabled = false;
-        store
-            .seed_once(".seeded-web-search", server)
-            .unwrap();
+        store.seed_once(".seeded-web-search", server).unwrap();
         assert!(store
             .refresh_builtin("web-search", "new description")
             .unwrap());
@@ -612,7 +735,7 @@ mod tests {
         assert_eq!(list.len(), 1);
         assert_eq!(list[0].description, "new description");
         assert!(!list[0].enabled); // enabled state preserved
-        // Absent name → false, no error.
+                                   // Absent name → false, no error.
         assert!(!store.refresh_builtin("nope", "x").unwrap());
         let _ = fs::remove_dir_all(&store.root);
     }
@@ -643,5 +766,46 @@ mod tests {
         inp.args = vec!["/abs/server.py".into(), "--port".into(), "8080".into()];
         let r = McpStore::inspect(&inp);
         assert!(!r.warnings.iter().any(|w| w.contains("relative")));
+    }
+
+    #[test]
+    fn create_remote_http_roundtrip() {
+        let store = temp_store();
+        let mut inp = remote_input("remote-demo", "https://mcp.example.com/mcp");
+        inp.headers
+            .insert("Authorization".into(), "Bearer secret-abcd".into());
+        let s = store.create(inp).unwrap();
+        assert_eq!(s.transport, McpTransport::StreamableHttp);
+        assert_eq!(s.url, "https://mcp.example.com/mcp");
+        assert!(s.command.is_empty());
+        assert_eq!(s.headers.get("Authorization").unwrap(), "••••abcd");
+        let _ = fs::remove_dir_all(&store.root);
+    }
+
+    #[test]
+    fn inspect_remote_requires_url_and_strict_name() {
+        let mut bad = remote_input("Bad_Name", "");
+        let r = McpStore::inspect(&bad);
+        assert!(!r.valid);
+        assert!(r.errors.iter().any(|e| e.contains("URL")));
+        assert!(r.errors.iter().any(|e| e.contains("lowercase")));
+
+        bad = remote_input("ok-name", "https://mcp.example.com/sse");
+        bad.transport = McpTransport::Sse;
+        let r = McpStore::inspect(&bad);
+        assert!(r.valid);
+    }
+
+    #[test]
+    fn update_stdio_to_remote_clears_command() {
+        let store = temp_store();
+        let s = store.create(input("flip", "python3")).unwrap();
+        let out = store
+            .update(&s.id, remote_input("flip", "https://mcp.example.com/mcp"))
+            .unwrap();
+        assert_eq!(out.transport, McpTransport::StreamableHttp);
+        assert!(out.command.is_empty());
+        assert_eq!(out.url, "https://mcp.example.com/mcp");
+        let _ = fs::remove_dir_all(&store.root);
     }
 }

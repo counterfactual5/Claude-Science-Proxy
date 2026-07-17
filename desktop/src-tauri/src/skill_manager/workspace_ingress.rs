@@ -43,6 +43,35 @@ pub struct AdoptWorkspaceSkillsResult {
     pub needs_restart: bool,
 }
 
+/// One file in a workspace Skill draft (for the adopt preview file picker).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceSkillPreviewFile {
+    pub name: String,
+    pub size_bytes: u64,
+}
+
+/// In-app preview of a Science workspace Skill draft before adopt.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceSkillPreview {
+    pub key: String,
+    pub name: String,
+    pub description: String,
+    pub workspace_id: String,
+    pub already_imported: bool,
+    /// Absolute path opened by "Reveal" (folder for dir candidates, document for file).
+    pub open_path: String,
+    pub files: Vec<WorkspaceSkillPreviewFile>,
+    pub active_file: String,
+    pub content: String,
+    pub truncated: bool,
+    pub char_count: usize,
+}
+
+/// Cap preview body so a huge `kernel.py` cannot freeze the WebView.
+const MAX_PREVIEW_CHARS: usize = 200_000;
+
 #[derive(Deserialize)]
 struct ActiveOrg {
     org_uuid: String,
@@ -59,10 +88,7 @@ pub fn discover_workspace_skills() -> Result<Vec<WorkspaceSkillCandidate>, Strin
     let Some(org_uuid) = read_org_uuid(&auth_dir) else {
         return Ok(Vec::new());
     };
-    let workspaces_dir = auth_dir
-        .join("orgs")
-        .join(&org_uuid)
-        .join("workspaces");
+    let workspaces_dir = auth_dir.join("orgs").join(&org_uuid).join("workspaces");
     if !workspaces_dir.is_dir() {
         return Ok(Vec::new());
     }
@@ -71,8 +97,8 @@ pub fn discover_workspace_skills() -> Result<Vec<WorkspaceSkillCandidate>, Strin
     let imported_keys = workspace_source_keys(&store)?;
 
     let mut out = Vec::new();
-    let workspace_entries = fs::read_dir(&workspaces_dir)
-        .map_err(|e| format!("read workspaces dir: {e}"))?;
+    let workspace_entries =
+        fs::read_dir(&workspaces_dir).map_err(|e| format!("read workspaces dir: {e}"))?;
     let mut workspace_count = 0usize;
     for ws_entry in workspace_entries.flatten() {
         if workspace_count >= MAX_WORKSPACES {
@@ -89,19 +115,172 @@ pub fn discover_workspace_skills() -> Result<Vec<WorkspaceSkillCandidate>, Strin
             continue;
         }
         workspace_count += 1;
-        scan_workspace_dir(
-            &ws_path,
-            workspace_id,
-            &org_uuid,
-            &imported_keys,
-            &mut out,
-        )?;
+        scan_workspace_dir(&ws_path, workspace_id, &org_uuid, &imported_keys, &mut out)?;
         if out.len() > MAX_CANDIDATES {
             return Err("workspace Skill candidate count exceeds 256 limit".to_string());
         }
     }
     out.sort_by_key(|c| c.name.to_lowercase());
     Ok(out)
+}
+
+/// Load a workspace Skill draft for in-app preview (SKILL.md by default).
+pub fn preview_workspace_skill(
+    key: &str,
+    file: Option<&str>,
+) -> Result<WorkspaceSkillPreview, String> {
+    let auth_dir = science_auth_dir();
+    let org_uuid = read_org_uuid(&auth_dir).ok_or_else(|| {
+        "active-org.json missing or invalid; start Science once first".to_string()
+    })?;
+    let (workspace_id, kind) = parse_workspace_key(key, &org_uuid)?;
+    let ws_dir = auth_dir
+        .join("orgs")
+        .join(&org_uuid)
+        .join("workspaces")
+        .join(&workspace_id);
+    if !ws_dir.is_dir() || is_symlink(&ws_dir) {
+        return Err("workspace directory not found".to_string());
+    }
+
+    let store = SkillStore::open()?;
+    let imported_keys = workspace_source_keys(&store)?;
+    let already_imported = imported_keys.contains(key);
+
+    let (root, open_path, files, default_file, name, description) = match &kind {
+        CandidateKind::Dir { rel } => {
+            let source = if rel == "." {
+                ws_dir.clone()
+            } else {
+                ws_dir.join(rel)
+            };
+            if !source.is_dir() || is_symlink(&source) {
+                return Err("skill directory not found".to_string());
+            }
+            let skill_md = source.join(SKILL_FILE);
+            if !skill_md.is_file() {
+                return Err(format!("{SKILL_FILE} missing in skill directory"));
+            }
+            let content = read_bounded_file(&skill_md, MAX_SKILL_MD_SIZE)?;
+            let (name, description) = skill_meta_from_bytes(&content);
+            let mut rel_files = Vec::new();
+            collect_relative_files(&source, &source, &mut rel_files)?;
+            let files = preview_file_entries(&source, &rel_files);
+            (
+                source.clone(),
+                source,
+                files,
+                SKILL_FILE.to_string(),
+                name,
+                description,
+            )
+        }
+        CandidateKind::File { filename } => {
+            let doc = ws_dir.join(filename);
+            if !doc.is_file() || is_symlink(&doc) {
+                return Err("skill document not found".to_string());
+            }
+            let content = read_bounded_file(&doc, MAX_SKILL_MD_SIZE)?;
+            let (name, description) = skill_meta_from_bytes(&content);
+            let mut names = vec![filename.clone()];
+            for c in companion_files(&ws_dir, filename)? {
+                names.push(c);
+            }
+            let files = preview_file_entries(&ws_dir, &names);
+            (
+                ws_dir.clone(),
+                doc,
+                files,
+                filename.clone(),
+                name,
+                description,
+            )
+        }
+    };
+
+    let requested = file
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or(default_file.as_str());
+    let active_file = if files.iter().any(|f| f.name == requested) {
+        requested.to_string()
+    } else {
+        default_file.clone()
+    };
+    if !is_safe_preview_rel(&active_file) {
+        return Err("invalid preview file path".to_string());
+    }
+    let read_path = root.join(&active_file);
+    if !read_path.is_file() || is_symlink(&read_path) {
+        return Err(format!("preview file not found: {active_file}"));
+    }
+    let raw = read_bounded_file(&read_path, MAX_SKILL_MD_SIZE.max(512 * 1024))?;
+    let text = String::from_utf8_lossy(&raw).into_owned();
+    let char_count = text.chars().count();
+    let (content, truncated) = if char_count > MAX_PREVIEW_CHARS {
+        (
+            text.chars().take(MAX_PREVIEW_CHARS).collect::<String>()
+                + "\n\n… [preview truncated]",
+            true,
+        )
+    } else {
+        (text, false)
+    };
+
+    Ok(WorkspaceSkillPreview {
+        key: key.to_string(),
+        name,
+        description,
+        workspace_id,
+        already_imported,
+        open_path: open_path.display().to_string(),
+        files,
+        active_file,
+        content,
+        truncated,
+        char_count,
+    })
+}
+
+/// Reveal the workspace Skill draft in Finder.
+pub fn open_workspace_skill(key: &str) -> Result<String, String> {
+    let preview = preview_workspace_skill(key, None)?;
+    let path = PathBuf::from(&preview.open_path);
+    crate::runtime::system::reveal_path_in_finder(&path)?;
+    Ok(preview.open_path)
+}
+
+fn preview_file_entries(root: &Path, names: &[String]) -> Vec<WorkspaceSkillPreviewFile> {
+    let mut out = Vec::new();
+    let mut seen = std::collections::BTreeSet::new();
+    for name in names {
+        // Skip "foo.skill.md → SKILL.md" display labels from file candidates.
+        let disk_name = name.split(" → ").next().unwrap_or(name);
+        if !seen.insert(disk_name.to_string()) {
+            continue;
+        }
+        if !is_safe_preview_rel(disk_name) {
+            continue;
+        }
+        let p = root.join(disk_name);
+        if !p.is_file() || is_symlink(&p) {
+            continue;
+        }
+        let size_bytes = fs::metadata(&p).map(|m| m.len()).unwrap_or(0);
+        out.push(WorkspaceSkillPreviewFile {
+            name: disk_name.to_string(),
+            size_bytes,
+        });
+    }
+    out
+}
+
+fn is_safe_preview_rel(name: &str) -> bool {
+    !name.is_empty()
+        && !name.starts_with('/')
+        && !name.contains("..")
+        && !name.contains('\\')
+        && name.len() <= 255
 }
 
 /// Stage and import one or more workspace drafts, then redeploy into the sandbox.
@@ -115,8 +294,9 @@ pub fn adopt_workspace_skills(keys: &[String]) -> Result<AdoptWorkspaceSkillsRes
     }
     let store = SkillStore::open()?;
     let auth_dir = science_auth_dir();
-    let org_uuid = read_org_uuid(&auth_dir)
-        .ok_or_else(|| "active-org.json missing or invalid; start Science once first".to_string())?;
+    let org_uuid = read_org_uuid(&auth_dir).ok_or_else(|| {
+        "active-org.json missing or invalid; start Science once first".to_string()
+    })?;
 
     let mut adopted = Vec::new();
     let mut failures = Vec::new();
@@ -275,7 +455,13 @@ fn push_dir_candidate(
     let skill_md = source.join(SKILL_FILE);
     let content = read_bounded_file(&skill_md, MAX_SKILL_MD_SIZE)?;
     let (name, description) = skill_meta_from_bytes(&content);
-    let key = workspace_key(org_uuid, workspace_id, &CandidateKind::Dir { rel: rel.to_string() });
+    let key = workspace_key(
+        org_uuid,
+        workspace_id,
+        &CandidateKind::Dir {
+            rel: rel.to_string(),
+        },
+    );
     // `collect_relative_files` already includes SKILL.md (it walks the whole
     // directory), so do not pre-seed it or the UI list shows SKILL.md twice.
     let mut files = Vec::new();
@@ -403,11 +589,7 @@ fn companion_warnings_for_files(files: &[String]) -> Vec<String> {
     warnings
 }
 
-fn collect_relative_files(
-    root: &Path,
-    dir: &Path,
-    files: &mut Vec<String>,
-) -> Result<(), String> {
+fn collect_relative_files(root: &Path, dir: &Path, files: &mut Vec<String>) -> Result<(), String> {
     for entry in fs::read_dir(dir).map_err(|e| format!("read dir: {e}"))? {
         let entry = match entry {
             Ok(e) => e,
@@ -455,7 +637,10 @@ fn copy_tree_bounded(src: &Path, dst: &Path, depth: u32) -> Result<(), String> {
         if ft.is_dir() {
             copy_tree_bounded(&from, &to, depth + 1)?;
         } else if ft.is_file() {
-            let len = entry.metadata().map_err(|e| format!("metadata: {e}"))?.len();
+            let len = entry
+                .metadata()
+                .map_err(|e| format!("metadata: {e}"))?
+                .len();
             if len > MAX_SKILL_MD_SIZE {
                 return Err(format!("file too large: {}", from.display()));
             }
@@ -504,6 +689,7 @@ fn skill_meta_from_bytes(content: &[u8]) -> (String, String) {
         requirements: Vec::new(),
         warnings: Vec::new(),
         errors: Vec::new(),
+        ..Default::default()
     };
     parse_skill_md(&text, &mut result);
     if result.name.is_empty() {

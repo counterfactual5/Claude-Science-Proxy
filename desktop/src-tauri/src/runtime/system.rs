@@ -180,6 +180,22 @@ pub(crate) fn open_path_in_default_app(path: &Path) -> Result<(), String> {
     Ok(())
 }
 
+/// Reveal a path in Finder (macOS `open -R`) so the folder/file is selected.
+pub(crate) fn reveal_path_in_finder(path: &Path) -> Result<(), String> {
+    let st = Command::new("open")
+        .arg("-R")
+        .arg(path)
+        .status()
+        .map_err(|e| i18n_err("errOpenEditorFailed", json!({ "error": e.to_string() })))?;
+    if !st.success() {
+        return Err(i18n_err(
+            "errOpenCommandFailed",
+            json!({ "code": format!("{:?}", st.code()) }),
+        ));
+    }
+    Ok(())
+}
+
 /// Open a URL with the system browser (macOS `open`) and verify exit status.
 pub(crate) fn open_in_browser(url: &str) -> Result<(), String> {
     let st = Command::new("open")

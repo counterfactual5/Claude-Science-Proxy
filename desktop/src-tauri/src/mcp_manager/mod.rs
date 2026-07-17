@@ -1,20 +1,25 @@
-//! Local MCP Manager — custom stdio connectors for the isolated Science sandbox.
+//! Local MCP Manager — custom stdio + remote HTTP/SSE connectors for the
+//! isolated Science sandbox.
 //!
-//! First phase: local **stdio** MCP servers only (`command` + `args` + `env`).
-//! Definitions live in `~/.csp/mcp/inventory.json`; enabled ones are written to
-//! the sandbox's `<data-dir>/mcp/local-mcp.json` before launch, with sandbox read
-//! grants merged into `<data-dir>/config.toml`. No remote HTTP/SSE, no marketplace.
+//! - **stdio** definitions deploy to `<data-dir>/mcp/local-mcp.json` with
+//!   sandbox read grants in `<data-dir>/config.toml`.
+//! - **sse / streamable_http** definitions deploy to the org
+//!   `operon-cli.db` `custom_mcp_servers` table (Science's actual remote schema).
+//! Inventory: `~/.csp/mcp/inventory.json`.
 
 pub mod builtin;
 pub mod deploy;
 pub mod model;
 pub mod network_allowlist;
+pub mod remote_deploy;
 pub mod store;
 
 #[allow(unused_imports)]
 pub(crate) use deploy::deploy_enabled_mcp;
 #[allow(unused_imports)]
 pub use model::{McpServer, McpServerId, McpServerSummary};
+#[allow(unused_imports)]
+pub(crate) use remote_deploy::deploy_remote_mcp;
 #[allow(unused_imports)]
 pub use store::McpStore;
 

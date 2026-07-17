@@ -53,7 +53,7 @@ pub(crate) fn one_click_login<R: Runtime>(
             let org_uuid = read_sandbox_org_uuid(&auth_dir);
             let (_, skill_changed) =
                 deploy_sandbox_skills(&auth_dir, &sbx_home, org_uuid.as_deref());
-            let (_, mcp_changed) = deploy_sandbox_mcp(&auth_dir, &sbx_home);
+            let (_, mcp_changed) = deploy_sandbox_mcp(&auth_dir, &sbx_home, org_uuid.as_deref());
             if !skill_changed && !mcp_changed {
                 let url = sandbox_url(sport);
                 {
@@ -95,11 +95,12 @@ pub(crate) fn one_click_login<R: Runtime>(
     // sandbox or into the real `~/.claude-science`.
     let (skill_report, _) = deploy_sandbox_skills(&auth_dir, &sbx_home, Some(&forged.org_uuid));
 
-    // Deploy enabled local stdio MCP servers into the sandbox
-    // (`<data-dir>/mcp/local-mcp.json` + `[sandbox] user_read_paths` in
-    // `config.toml`, confirmed against a live sandbox). Same iron-rule guards as
-    // Skills: only ever writes under the sandbox, never the real `~/.claude-science`.
-    let (mcp_report, _) = deploy_sandbox_mcp(&auth_dir, &sbx_home);
+    // Deploy enabled MCP servers into the sandbox:
+    // - stdio → `<data-dir>/mcp/local-mcp.json` + `[sandbox] user_read_paths`
+    // - sse / streamable_http → org `operon-cli.db` `custom_mcp_servers`
+    // Same iron-rule guards as Skills: only ever writes under the sandbox, never
+    // the real `~/.claude-science`.
+    let (mcp_report, _) = deploy_sandbox_mcp(&auth_dir, &sbx_home, Some(&forged.org_uuid));
 
     let launch = root.join("scripts/sandbox/launch-virtual-sandbox.sh");
     if !launch.is_file() {
@@ -267,11 +268,11 @@ pub(crate) fn deploy_sandbox_skills(
     }
 }
 
-/// Deploy enabled local stdio MCP servers into the sandbox. Returns a
-/// redaction-safe log summary and whether anything on disk changed (for restart
-/// decisions). Never fails the launch: any error is reported and the sandbox
-/// still starts.
-fn deploy_sandbox_mcp(auth_dir: &Path, sbx_home: &Path) -> (String, bool) {
+/// Deploy enabled MCP servers (stdio + remote) into the sandbox. Returns a
+/// redaction-safe log summary and whether anything on disk/DB changed (for
+/// restart decisions). Never fails the launch: any error is reported and the
+/// sandbox still starts.
+fn deploy_sandbox_mcp(auth_dir: &Path, sbx_home: &Path, org_uuid: Option<&str>) -> (String, bool) {
     let real_science = std::env::var_os("HOME")
         .map(|h| PathBuf::from(h).join(".claude-science"))
         .unwrap_or_else(|| PathBuf::from("/nonexistent/.claude-science"));
@@ -301,8 +302,8 @@ fn deploy_sandbox_mcp(auth_dir: &Path, sbx_home: &Path) -> (String, bool) {
         };
         script_rewritten = rewritten;
         let script_str = script.to_string_lossy().into_owned();
-        let python = builtin::resolve_sandbox_python(sbx_home)
-            .map(|p| p.to_string_lossy().into_owned());
+        let python =
+            builtin::resolve_sandbox_python(sbx_home).map(|p| p.to_string_lossy().into_owned());
         for s in enabled.iter_mut().filter(|s| s.builtin) {
             if s.name == builtin::BUILTIN_WEB_SEARCH_NAME {
                 s.description = builtin::BUILTIN_WEB_SEARCH_DESCRIPTION.to_string();
@@ -319,26 +320,33 @@ fn deploy_sandbox_mcp(auth_dir: &Path, sbx_home: &Path) -> (String, bool) {
     let (allowlist_report, allowlist_changed) =
         crate::mcp_manager::network_allowlist::apply_best_effort(auth_dir);
 
-    match crate::mcp_manager::deploy_enabled_mcp(&enabled, auth_dir, sbx_home, &real_science) {
+    match crate::mcp_manager::deploy_enabled_mcp(
+        &enabled,
+        auth_dir,
+        sbx_home,
+        &real_science,
+        org_uuid,
+    ) {
         Ok(r) => {
             let changed = r.changed || script_rewritten || allowlist_changed;
             (
                 format!(
-                    "deploy: servers={:?} granted_paths={} cleared={} changed={} script_rewritten={}; {}",
+                    "deploy: servers={:?} remote={:?} remote_removed={:?} granted_paths={} cleared={} changed={} script_rewritten={}; remote_note={}; {}",
                     r.deployed,
+                    r.remote_deployed,
+                    r.remote_removed,
                     r.granted_paths,
                     r.cleared,
                     changed,
                     script_rewritten,
+                    if r.remote_note.is_empty() { "-" } else { &r.remote_note },
                     allowlist_report
                 ),
                 changed,
             )
         }
         Err(e) => (
-            format!(
-                "deploy error (sandbox launch continues): {e}; {allowlist_report}"
-            ),
+            format!("deploy error (sandbox launch continues): {e}; {allowlist_report}"),
             allowlist_changed,
         ),
     }
@@ -404,10 +412,7 @@ fn cleanup_legacy_root_skills(auth_dir: &Path) -> usize {
     let mut removed = 0;
     for entry in entries.flatten() {
         let p = entry.path();
-        if p.is_dir()
-            && p.join(".csp_managed").is_file()
-            && std::fs::remove_dir_all(&p).is_ok()
-        {
+        if p.is_dir() && p.join(".csp_managed").is_file() && std::fs::remove_dir_all(&p).is_ok() {
             removed += 1;
         }
     }
@@ -423,12 +428,13 @@ pub(crate) fn redeploy_sandbox_skills() -> bool {
     changed
 }
 
-/// Redeploy enabled local MCP servers into the sandbox data-dir. Returns whether
-/// disk changed (mirrors [`redeploy_sandbox_skills`]).
+/// Redeploy enabled MCP servers into the sandbox data-dir. Returns whether
+/// disk/DB changed (mirrors [`redeploy_sandbox_skills`]).
 pub(crate) fn redeploy_sandbox_mcp() -> bool {
     let sbx_home = sandbox_home();
     let auth_dir = sbx_home.join(".claude-science");
-    let (_, changed) = deploy_sandbox_mcp(&auth_dir, &sbx_home);
+    let org_uuid = read_sandbox_org_uuid(&auth_dir);
+    let (_, changed) = deploy_sandbox_mcp(&auth_dir, &sbx_home, org_uuid.as_deref());
     changed
 }
 

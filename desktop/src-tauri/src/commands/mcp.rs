@@ -9,11 +9,11 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::mcp_manager::model::{DiscoveredMcpServer, McpInspection, McpServerSummary};
-use crate::mcp_manager::store::{McpServerInput, McpStore};
-use crate::runtime::sandbox_session::{
-    redeploy_sandbox_mcp, stop_running_sandbox_for_redeploy,
+use crate::mcp_manager::model::{
+    DiscoveredMcpServer, McpInspection, McpServerSummary, McpTransport,
 };
+use crate::mcp_manager::store::{McpServerInput, McpStore};
+use crate::runtime::sandbox_session::{redeploy_sandbox_mcp, stop_running_sandbox_for_redeploy};
 use crate::{config, run_blocking, SharedAppState};
 use tauri::State;
 
@@ -23,21 +23,37 @@ pub struct McpServerInputDto {
     pub name: String,
     #[serde(default)]
     pub description: String,
+    /// `stdio` | `sse` | `streamable_http` (also accepts `http` → streamable_http).
+    #[serde(default)]
+    pub transport: Option<String>,
+    #[serde(default)]
     pub command: String,
     #[serde(default)]
     pub args: Vec<String>,
     #[serde(default)]
     pub env: BTreeMap<String, String>,
+    #[serde(default)]
+    pub url: String,
+    #[serde(default)]
+    pub headers: BTreeMap<String, String>,
 }
 
 impl From<McpServerInputDto> for McpServerInput {
     fn from(d: McpServerInputDto) -> Self {
+        let transport = d
+            .transport
+            .as_deref()
+            .and_then(McpTransport::parse)
+            .unwrap_or(McpTransport::Stdio);
         McpServerInput {
             name: d.name,
             description: d.description,
+            transport,
             command: d.command,
             args: d.args,
             env: d.env,
+            url: d.url,
+            headers: d.headers,
         }
     }
 }
@@ -87,10 +103,10 @@ pub async fn open_network_allowlist_json() -> Result<String, String> {
 
 /// A JSON config file that may hold local stdio MCP definitions, plus the object
 /// key the servers live under. Three shapes are seen in the wild:
-/// - `mcpServers` — Cursor, Claude Desktop, Claude Code, Devin Desktop (Windsurf),
-///   and the domestic tools Qoder / 通义灵码 (Alibaba), Trae / TRAE SOLO
-///   (ByteDance), and CodeBuddy (Tencent).
-/// - `servers` — VS Code.
+/// - `mcpServers` — Cursor, Claude Desktop, Claude Code, Devin Desktop / Windsurf,
+///   Google Antigravity / Gemini, Continue, and the domestic tools Qoder /
+///   通义灵码 (Alibaba), Trae / TRAE SOLO (ByteDance), and CodeBuddy (Tencent).
+/// - `servers` — VS Code / Insiders.
 /// - `context_servers` — Zed.
 ///
 /// Codex CLI is handled separately (TOML `[mcp_servers.*]`), not via this list.
@@ -126,15 +142,27 @@ const MCP_SOURCES: &[McpSource] = &[
         key: "mcpServers",
     },
     // Devin Desktop (the June 2026 rebrand of Windsurf, formerly Codeium). The
-    // global MCP config moved up out of the `windsurf/` subfolder.
+    // global MCP config moved up out of the `windsurf/` subfolder; keep the
+    // legacy path too for older installs.
     McpSource {
         rel_path: ".codeium/mcp_config.json",
         label: "Devin Desktop",
         key: "mcpServers",
     },
     McpSource {
+        rel_path: ".codeium/windsurf/mcp_config.json",
+        label: "Windsurf",
+        key: "mcpServers",
+    },
+    // VS Code / Insiders — user-scope `mcp.json` (`servers` key, not mcpServers).
+    McpSource {
         rel_path: "Library/Application Support/Code/User/mcp.json",
         label: "VS Code",
+        key: "servers",
+    },
+    McpSource {
+        rel_path: "Library/Application Support/Code - Insiders/User/mcp.json",
+        label: "VS Code Insiders",
         key: "servers",
     },
     // Zed uses `context_servers` instead of `mcpServers`.
@@ -143,9 +171,44 @@ const MCP_SOURCES: &[McpSource] = &[
         label: "Zed",
         key: "context_servers",
     },
+    // Continue — global/home config (workspace copies live under `<repo>/.continue/`).
+    McpSource {
+        rel_path: ".continue/mcpServers/mcp.json",
+        label: "Continue",
+        key: "mcpServers",
+    },
+    // Kimi Code — user MCP config (default: ~/.kimi-code/mcp.json).
+    McpSource {
+        rel_path: ".kimi-code/mcp.json",
+        label: "Kimi Code",
+        key: "mcpServers",
+    },
+    // MiniMax CLI / agent tools — default external-tool config (default:
+    // ~/.minimax/mcp.json). Some clients use `servers`, others `mcpServers`.
+    McpSource {
+        rel_path: ".minimax/mcp.json",
+        label: "MiniMax",
+        key: "mcpServers",
+    },
+    McpSource {
+        rel_path: ".minimax/mcp.json",
+        label: "MiniMax",
+        key: "servers",
+    },
+    // Google Antigravity / Gemini CLI — both use mcpServers.
+    McpSource {
+        rel_path: ".gemini/antigravity/mcp_config.json",
+        label: "Antigravity",
+        key: "mcpServers",
+    },
+    McpSource {
+        rel_path: ".gemini/config/mcp_config.json",
+        label: "Gemini",
+        key: "mcpServers",
+    },
     // --- Domestic (China) agents / IDEs. All confirmed to use the `mcpServers`
-    // key with the same `{ command, args, env }` stdio shape. Remote/SSE entries
-    // (`type`/`url`, no `command`) are ignored by discover_source as usual. ---
+    // key with stdio `{ command, args, env }` and/or remote `{ url, type|transport,
+    // headers }` shapes. ---
     // Alibaba Qoder / Tongyi Lingma family — CLI / IDE user scope uses
     // `~/.qoder/settings.json`; IDE app data uses
     // `<app>/SharedClientCache/mcp.json`.
@@ -195,8 +258,8 @@ const MCP_SOURCES: &[McpSource] = &[
         label: "TRAE SOLO CN",
         key: "mcpServers",
     },
-    // Tencent CodeBuddy — user-scope MCP under `~/.codebuddy/`. `.mcp.json` is the
-    // current recommended path; `mcp.json` is the deprecated fallback.
+    // Tencent CodeBuddy — CLI under `~/.codebuddy/`; IDE app data mirrors Trae's
+    // `<app>/User/mcp.json` layout when present.
     McpSource {
         rel_path: ".codebuddy/.mcp.json",
         label: "CodeBuddy",
@@ -205,6 +268,56 @@ const MCP_SOURCES: &[McpSource] = &[
     McpSource {
         rel_path: ".codebuddy/mcp.json",
         label: "CodeBuddy",
+        key: "mcpServers",
+    },
+    McpSource {
+        rel_path: "Library/Application Support/CodeBuddy/User/mcp.json",
+        label: "CodeBuddy",
+        key: "mcpServers",
+    },
+    McpSource {
+        rel_path: "Library/Application Support/CodeBuddy CN/User/mcp.json",
+        label: "CodeBuddy CN",
+        key: "mcpServers",
+    },
+    // --- Verified additional roots (docs-checked 2026-07). Only paths that are
+    // real *user/home*-scope MCP files are listed; project-scope files like
+    // `.trae/mcp.json`, `.kiro/settings/mcp.json` (workspace), `.cursor/mcp.json`
+    // (project) live in repos, not HOME, so they are intentionally excluded. ---
+    // OpenClaw — `mcp.servers` nested under ~/.openclaw/openclaw.json (JSON5).
+    McpSource {
+        rel_path: ".openclaw/openclaw.json",
+        label: "OpenClaw",
+        key: "mcp.servers",
+    },
+    // AWS Kiro — user scope (kiro.dev/docs/mcp/configuration): ~/.kiro/settings/mcp.json.
+    McpSource {
+        rel_path: ".kiro/settings/mcp.json",
+        label: "Kiro",
+        key: "mcpServers",
+    },
+    // Tencent CodeBuddy — legacy single-file user config (docs: ~/.codebuddy.json).
+    McpSource {
+        rel_path: ".codebuddy.json",
+        label: "CodeBuddy",
+        key: "mcpServers",
+    },
+    // Tencent WorkBuddy (desktop / VS Code extension). Distinct from CodeBuddy:
+    // user MCP is ~/.workbuddy/mcp.json (and recommended ~/.workbuddy/.mcp.json).
+    McpSource {
+        rel_path: ".workbuddy/.mcp.json",
+        label: "WorkBuddy",
+        key: "mcpServers",
+    },
+    McpSource {
+        rel_path: ".workbuddy/mcp.json",
+        label: "WorkBuddy",
+        key: "mcpServers",
+    },
+    // Factory Droid (factory.ai / VS Code + CLI) — user MCP: ~/.factory/mcp.json.
+    McpSource {
+        rel_path: ".factory/mcp.json",
+        label: "Factory",
         key: "mcpServers",
     },
 ];
@@ -256,6 +369,31 @@ pub struct ImportDiscoveredMcpServerInput {
     pub name: String,
 }
 
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PreviewDiscoveredMcpInput {
+    pub source_path: String,
+    pub name: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiscoveredMcpPreview {
+    pub name: String,
+    pub source_path: String,
+    pub content: String,
+    pub truncated: bool,
+    pub char_count: usize,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct OpenDiscoveredMcpSourceInput {
+    pub source_path: String,
+}
+
+const MAX_MCP_PREVIEW_CHARS: usize = 200_000;
+
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct McpActionResult {
@@ -296,6 +434,28 @@ pub async fn import_discovered_mcp_server(
             server: summary,
             needs_restart,
         })
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn preview_discovered_mcp(
+    input: PreviewDiscoveredMcpInput,
+) -> Result<DiscoveredMcpPreview, String> {
+    run_blocking(move || preview_discovered_mcp_server(&input.source_path, &input.name)).await
+}
+
+#[tauri::command]
+pub async fn open_discovered_mcp_source(
+    input: OpenDiscoveredMcpSourceInput,
+) -> Result<String, String> {
+    run_blocking(move || {
+        let path = PathBuf::from(&input.source_path);
+        if !path.is_file() {
+            return Err(format!("source config not found: {}", input.source_path));
+        }
+        crate::runtime::system::reveal_path_in_finder(&path)?;
+        Ok(path.display().to_string())
     })
     .await
 }
@@ -425,21 +585,17 @@ fn discover_source(
     let source_path = path.to_string_lossy().to_string();
     for (name, value) in servers {
         let Some(input) = parse_server(name, value) else {
-            continue; // remote (no command) or malformed → skip
+            continue; // malformed → skip
         };
         if !seen.insert((source_path.clone(), input.name.clone())) {
             continue;
         }
-        out.push(DiscoveredMcpServer {
-            env_keys: input.env.keys().cloned().collect(),
-            description: input.description.clone(),
-            command: input.command.clone(),
-            args: input.args.clone(),
-            already_imported: existing_names.contains(&input.name),
-            name: input.name,
-            source_label: label.to_string(),
-            source_path: source_path.clone(),
-        });
+        out.push(discovered_from_input(
+            input,
+            label,
+            &source_path,
+            existing_names,
+        ));
     }
     Ok(())
 }
@@ -452,36 +608,185 @@ fn read_source_server(path: &Path, server_name: &str) -> Result<Option<McpServer
     let Some(root) = read_jsonc(path)? else {
         return Ok(None);
     };
-    for key in SERVER_KEYS {
-        if let Some(value) = root
-            .get(*key)
-            .and_then(Value::as_object)
-            .and_then(|servers| servers.get(server_name))
-        {
-            return Ok(parse_server(server_name, value));
+    // Prefer nested OpenClaw-style `mcp.servers`, then flat keys.
+    for key in ["mcp.servers"]
+        .into_iter()
+        .chain(SERVER_KEYS.iter().copied())
+    {
+        if let Some(servers) = server_map(&root, key) {
+            if let Some(value) = servers.get(server_name) {
+                return Ok(parse_server(server_name, value));
+            }
         }
     }
     Ok(None)
 }
 
+fn find_server_value_in_root<'a>(root: &'a Value, server_name: &str) -> Option<&'a Value> {
+    for key in ["mcp.servers"]
+        .into_iter()
+        .chain(SERVER_KEYS.iter().copied())
+    {
+        if let Some(servers) = server_map(root, key) {
+            if let Some(value) = servers.get(server_name) {
+                return Some(value);
+            }
+        }
+    }
+    None
+}
+
+fn preview_discovered_mcp_server(
+    source_path: &str,
+    server_name: &str,
+) -> Result<DiscoveredMcpPreview, String> {
+    let path = PathBuf::from(source_path);
+    if !path.is_file() {
+        return Err(format!("source config not found: {source_path}"));
+    }
+
+    let content = if path.extension().and_then(|e| e.to_str()) == Some("toml") {
+        let text = fs::read_to_string(&path)
+            .map_err(|e| format!("read MCP source {}: {e}", path.display()))?;
+        let root = text
+            .parse::<toml::Table>()
+            .map_err(|e| format!("parse MCP source {}: {e}", path.display()))?;
+        let value = root
+            .get("mcp_servers")
+            .and_then(toml::Value::as_table)
+            .and_then(|servers| servers.get(server_name))
+            .ok_or_else(|| format!("server '{server_name}' not found in {}", path.display()))?;
+        toml::to_string_pretty(value).map_err(|e| format!("format MCP preview: {e}"))?
+    } else {
+        let root = read_jsonc(&path)?.ok_or_else(|| format!("empty MCP source: {}", path.display()))?;
+        let value = find_server_value_in_root(&root, server_name).ok_or_else(|| {
+            format!(
+                "server '{server_name}' not found in {}",
+                path.display()
+            )
+        })?;
+        serde_json::to_string_pretty(value).map_err(|e| format!("format MCP preview: {e}"))?
+    };
+
+    let char_count = content.chars().count();
+    let (content, truncated) = if char_count > MAX_MCP_PREVIEW_CHARS {
+        (
+            content.chars().take(MAX_MCP_PREVIEW_CHARS).collect(),
+            true,
+        )
+    } else {
+        (content, false)
+    };
+
+    Ok(DiscoveredMcpPreview {
+        name: server_name.to_string(),
+        source_path: source_path.to_string(),
+        content,
+        truncated,
+        char_count,
+    })
+}
+
 /// Locate the server map, trying the source's declared key first then the
-/// known alternates.
+/// known alternates. Dotted keys (e.g. `mcp.servers`) walk nested objects.
 fn server_map<'a>(
     root: &'a Value,
     primary_key: &str,
 ) -> Option<&'a serde_json::Map<String, Value>> {
-    if let Some(m) = root.get(primary_key).and_then(Value::as_object) {
+    if let Some(m) = lookup_object_path(root, primary_key) {
         return Some(m);
     }
     SERVER_KEYS
         .iter()
-        .find_map(|k| root.get(*k).and_then(Value::as_object))
+        .find_map(|k| lookup_object_path(root, k))
 }
 
-/// Parse one server entry into an importable input. Returns `None` for remote
-/// connectors (no `command`) or malformed entries.
+fn lookup_object_path<'a>(
+    root: &'a Value,
+    path: &str,
+) -> Option<&'a serde_json::Map<String, Value>> {
+    let mut cur = root;
+    for seg in path.split('.') {
+        cur = cur.get(seg)?;
+    }
+    cur.as_object()
+}
+
+fn discovered_from_input(
+    input: McpServerInput,
+    label: &str,
+    source_path: &str,
+    existing_names: &std::collections::BTreeSet<String>,
+) -> DiscoveredMcpServer {
+    DiscoveredMcpServer {
+        env_keys: input.env.keys().cloned().collect(),
+        header_keys: input.headers.keys().cloned().collect(),
+        description: input.description.clone(),
+        transport: input.transport.clone(),
+        command: input.command.clone(),
+        args: input.args.clone(),
+        url: input.url.clone(),
+        already_imported: existing_names.contains(&input.name),
+        name: input.name,
+        source_label: label.to_string(),
+        source_path: source_path.to_string(),
+    }
+}
+
+/// Parse one server entry into an importable input. Supports stdio
+/// (`command` + `args` + `env`) and remote (`url` + optional `type`/`transport`
+/// + `headers`). Returns `None` when neither shape is present.
 fn parse_server(name: &str, value: &Value) -> Option<McpServerInput> {
     let obj = value.as_object()?;
+    let description = obj
+        .get("description")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_string();
+
+    // Prefer explicit remote markers, then fall back to command (stdio).
+    // Windsurf/Cascade uses `serverUrl` instead of `url` for remote servers.
+    let url = obj
+        .get("url")
+        .or_else(|| obj.get("serverUrl"))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(ToString::to_string);
+    let type_hint = obj
+        .get("type")
+        .or_else(|| obj.get("transport"))
+        .and_then(Value::as_str)
+        .and_then(McpTransport::parse);
+
+    if let Some(url) = url {
+        // Remote entry (Cursor / Claude Desktop / VS Code / …).
+        let transport = match type_hint {
+            Some(McpTransport::Stdio) => McpTransport::StreamableHttp, // url wins
+            Some(t) => t,
+            None => McpTransport::StreamableHttp,
+        };
+        let headers = obj
+            .get("headers")
+            .and_then(Value::as_object)
+            .map(|m| {
+                m.iter()
+                    .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
+                    .collect()
+            })
+            .unwrap_or_default();
+        return Some(McpServerInput {
+            name: sanitize_discovered_name(name, true),
+            description,
+            transport,
+            command: String::new(),
+            args: vec![],
+            env: BTreeMap::new(),
+            url,
+            headers,
+        });
+    }
+
     let command = obj.get("command")?.as_str()?.trim().to_string();
     if command.is_empty() {
         return None;
@@ -504,16 +809,135 @@ fn parse_server(name: &str, value: &Value) -> Option<McpServerInput> {
         })
         .unwrap_or_default();
     Some(McpServerInput {
-        name: name.to_string(),
-        description: obj
-            .get("description")
-            .and_then(Value::as_str)
-            .unwrap_or("")
-            .to_string(),
+        name: sanitize_discovered_name(name, false),
+        description,
+        transport: McpTransport::Stdio,
         command,
         args,
         env,
+        url: String::new(),
+        headers: BTreeMap::new(),
     })
+}
+
+/// Parse one `[mcp_servers.<name>]` table. Supports stdio and remote
+/// (`url` / `bearer_token_env_var`).
+fn parse_codex_toml_server(name: &str, value: &toml::Value) -> Option<McpServerInput> {
+    let table = value.as_table()?;
+    let description = table
+        .get("description")
+        .and_then(toml::Value::as_str)
+        .unwrap_or("")
+        .to_string();
+
+    if let Some(url) = table
+        .get("url")
+        .and_then(toml::Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        let transport = table
+            .get("transport")
+            .or_else(|| table.get("type"))
+            .and_then(toml::Value::as_str)
+            .and_then(McpTransport::parse)
+            .unwrap_or(McpTransport::StreamableHttp);
+        let mut headers = BTreeMap::new();
+        // Codex stores the bearer token env *name*; we cannot resolve the value
+        // here — surface the header key so the user can fill it after import.
+        if table.get("bearer_token_env_var").is_some() {
+            headers.insert("Authorization".to_string(), String::new());
+        }
+        if let Some(hdrs) = table.get("http_headers").and_then(toml::Value::as_table) {
+            for (k, v) in hdrs {
+                if let Some(s) = v.as_str() {
+                    headers.insert(k.clone(), s.to_string());
+                }
+            }
+        }
+        return Some(McpServerInput {
+            name: sanitize_discovered_name(name, true),
+            description,
+            transport: if transport.is_remote() {
+                transport
+            } else {
+                McpTransport::StreamableHttp
+            },
+            command: String::new(),
+            args: vec![],
+            env: BTreeMap::new(),
+            url: url.to_string(),
+            headers,
+        });
+    }
+
+    let command = table.get("command")?.as_str()?.trim().to_string();
+    if command.is_empty() {
+        return None;
+    }
+    let args = table
+        .get("args")
+        .and_then(toml::Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|v| v.as_str().map(ToString::to_string))
+                .collect()
+        })
+        .unwrap_or_default();
+    let env = table
+        .get("env")
+        .and_then(toml::Value::as_table)
+        .map(|m| {
+            m.iter()
+                .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
+                .collect()
+        })
+        .unwrap_or_default();
+    Some(McpServerInput {
+        name: sanitize_discovered_name(name, false),
+        description,
+        transport: McpTransport::Stdio,
+        command,
+        args,
+        env,
+        url: String::new(),
+        headers: BTreeMap::new(),
+    })
+}
+
+/// Soft-sanitize a discovered name. Remote Science rules are strict (lowercase
+/// + hyphens); we lowercase and map invalid chars to `-` so import can succeed
+/// with a warning-free inspect when possible. Stdio keeps the original name
+/// when it already matches CSP's looser charset.
+fn sanitize_discovered_name(name: &str, remote: bool) -> String {
+    let trimmed = name.trim();
+    if !remote {
+        return trimmed.to_string();
+    }
+    let mut out: String = trimmed
+        .chars()
+        .map(|c| {
+            let l = c.to_ascii_lowercase();
+            if matches!(l, 'a'..='z' | '0'..='9' | '-') {
+                l
+            } else {
+                '-'
+            }
+        })
+        .collect();
+    while out.starts_with('-') {
+        out.remove(0);
+    }
+    while out.ends_with('-') {
+        out.pop();
+    }
+    if out.is_empty() {
+        "imported-mcp".to_string()
+    } else {
+        out.truncate(64);
+        out
+    }
 }
 
 /// Discover Codex CLI stdio MCP servers from `~/.codex/config.toml`
@@ -541,21 +965,17 @@ fn discover_codex_toml(
     let source_path = path.to_string_lossy().to_string();
     for (name, value) in servers {
         let Some(input) = parse_codex_toml_server(name, value) else {
-            continue; // remote (url only) or malformed → skip
+            continue; // malformed → skip
         };
         if !seen.insert((source_path.clone(), input.name.clone())) {
             continue;
         }
-        out.push(DiscoveredMcpServer {
-            env_keys: input.env.keys().cloned().collect(),
-            description: input.description.clone(),
-            command: input.command.clone(),
-            args: input.args.clone(),
-            already_imported: existing_names.contains(&input.name),
-            name: input.name,
-            source_label: label.to_string(),
-            source_path: source_path.clone(),
-        });
+        out.push(discovered_from_input(
+            input,
+            label,
+            &source_path,
+            existing_names,
+        ));
     }
 }
 
@@ -567,46 +987,6 @@ fn read_codex_toml_server(path: &Path, server_name: &str) -> Option<McpServerInp
         .and_then(toml::Value::as_table)
         .and_then(|servers| servers.get(server_name))?;
     parse_codex_toml_server(server_name, value)
-}
-
-/// Parse one `[mcp_servers.<name>]` table. Returns `None` for remote servers
-/// (no `command`, e.g. `url`-based) or malformed entries.
-fn parse_codex_toml_server(name: &str, value: &toml::Value) -> Option<McpServerInput> {
-    let table = value.as_table()?;
-    let command = table.get("command")?.as_str()?.trim().to_string();
-    if command.is_empty() {
-        return None;
-    }
-    let args = table
-        .get("args")
-        .and_then(toml::Value::as_array)
-        .map(|items| {
-            items
-                .iter()
-                .filter_map(|v| v.as_str().map(ToString::to_string))
-                .collect()
-        })
-        .unwrap_or_default();
-    let env = table
-        .get("env")
-        .and_then(toml::Value::as_table)
-        .map(|m| {
-            m.iter()
-                .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
-                .collect()
-        })
-        .unwrap_or_default();
-    Some(McpServerInput {
-        name: name.to_string(),
-        description: table
-            .get("description")
-            .and_then(toml::Value::as_str)
-            .unwrap_or("")
-            .to_string(),
-        command,
-        args,
-        env,
-    })
 }
 
 fn read_jsonc(path: &Path) -> Result<Option<Value>, String> {
@@ -730,6 +1110,20 @@ mod tests {
     }
 
     #[test]
+    fn server_map_reads_nested_mcp_servers() {
+        let root = json!({
+            "mcp": {
+                "servers": {
+                    "docs": { "command": "npx", "args": ["-y", "x"] }
+                }
+            }
+        });
+        let map = server_map(&root, "mcp.servers").unwrap();
+        assert!(map.contains_key("docs"));
+        assert!(server_map(&root, "mcpServers").is_none());
+    }
+
+    #[test]
     fn parse_server_reads_mcp_servers_shape() {
         let v = json!({
             "command": "/usr/bin/notion",
@@ -749,7 +1143,10 @@ mod tests {
     #[test]
     fn parse_server_skips_remote_without_command() {
         let v = json!({ "url": "https://mcp.example.com/sse", "type": "sse" });
-        assert!(parse_server("remote", &v).is_none());
+        let input = parse_server("remote", &v).unwrap();
+        assert_eq!(input.transport, McpTransport::Sse);
+        assert_eq!(input.url, "https://mcp.example.com/sse");
+        assert!(input.command.is_empty());
     }
 
     #[test]
@@ -781,7 +1178,7 @@ API_KEY = "secret"
     }
 
     #[test]
-    fn parse_codex_toml_server_skips_remote() {
+    fn parse_codex_toml_server_reads_remote() {
         let toml_src = r#"
 [mcp_servers.figma]
 url = "https://mcp.figma.com/mcp"
@@ -793,7 +1190,26 @@ bearer_token_env_var = "FIGMA_TOKEN"
             .and_then(toml::Value::as_table)
             .and_then(|t| t.get("figma"))
             .unwrap();
-        assert!(parse_codex_toml_server("figma", v).is_none());
+        let input = parse_codex_toml_server("figma", v).unwrap();
+        assert_eq!(input.transport, McpTransport::StreamableHttp);
+        assert_eq!(input.url, "https://mcp.figma.com/mcp");
+        assert!(input.headers.contains_key("Authorization"));
+    }
+
+    #[test]
+    fn parse_server_http_type_maps_to_streamable() {
+        let v = json!({
+            "type": "http",
+            "url": "https://example.com/mcp",
+            "headers": { "Authorization": "Bearer x" }
+        });
+        let input = parse_server("My Server", &v).unwrap();
+        assert_eq!(input.transport, McpTransport::StreamableHttp);
+        assert_eq!(input.name, "my-server"); // sanitized
+        assert_eq!(
+            input.headers.get("Authorization").map(String::as_str),
+            Some("Bearer x")
+        );
     }
 
     #[test]
@@ -802,5 +1218,16 @@ bearer_token_env_var = "FIGMA_TOKEN"
         assert!(server_map(&ctx, "context_servers").is_some());
         // Wrong primary key still finds the alternate.
         assert!(server_map(&ctx, "mcpServers").is_some());
+    }
+
+    #[test]
+    fn find_server_value_in_root_finds_mcp_servers_key() {
+        let root = json!({
+            "mcpServers": {
+                "notion": { "command": "notion-mcp", "args": [] }
+            }
+        });
+        let v = find_server_value_in_root(&root, "notion").unwrap();
+        assert_eq!(v["command"], "notion-mcp");
     }
 }

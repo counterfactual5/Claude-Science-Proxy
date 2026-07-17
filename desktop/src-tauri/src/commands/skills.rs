@@ -3,13 +3,12 @@
 use std::path::PathBuf;
 
 use crate::run_blocking;
-use crate::runtime::sandbox_session::{
-    redeploy_sandbox_skills, stop_running_sandbox_for_redeploy,
-};
+use crate::runtime::sandbox_session::{redeploy_sandbox_skills, stop_running_sandbox_for_redeploy};
 use crate::skill_manager::model::{DiscoveredSkill, InspectionResult, Skill, SkillSummary};
+use crate::skill_manager::source_resolve::{self, inspect_resolved_source};
 use crate::skill_manager::store::SkillStore;
 use crate::skill_manager::workspace_ingress::{
-    self, AdoptWorkspaceSkillsResult, WorkspaceSkillCandidate,
+    self, AdoptWorkspaceSkillsResult, WorkspaceSkillCandidate, WorkspaceSkillPreview,
 };
 use crate::SharedAppState;
 use serde::{Deserialize, Serialize};
@@ -27,17 +26,35 @@ pub async fn list_skills() -> Result<Vec<SkillSummary>, String> {
 /// Known roots (relative to `$HOME`) where local agent Skills commonly live.
 /// The sandbox's own `~/.claude-science/skills` is deliberately excluded — those
 /// are Science's bundled skills and importing them would be meaningless/unsafe.
-/// Each entry is scanned for immediate subfolders containing a `SKILL.md`.
+/// Each entry is scanned for immediate subfolders containing a `SKILL.md`
+/// (same shape everywhere — no recursive HOME walk).
 const DISCOVERY_ROOTS: &[&str] = &[
     ".agents/skills",
     ".codex/skills",
     ".claude/skills",
     ".cursor/skills",
     ".cursor/skills-cursor", // Cursor-managed / synced Skills
+    // Kimi Code — user level skills (default: ~/.kimi-code/skills).
+    ".kimi-code/skills",
+    // MiniMax CLI / agents — default skills root (default: ~/.minimax/skills).
+    ".minimax/skills",
+    // Google Antigravity / Gemini — global user Skills (docs: ~/.gemini/config/skills).
+    ".gemini/config/skills",
+    // Windsurf Cascade — user/global Skills root (workspace uses .windsurf/skills/).
+    ".windsurf/skills",
+    // OpenClaw (ex-Moltbot / Clawdbot) — ClawHub-installed Skills.
+    ".openclaw/skills",
+    // AWS Kiro — empty on fresh installs; same SKILL.md folder layout when used.
+    ".kiro/skills",
     // Domestic (China) agents / IDEs that also use the `SKILL.md` folder layout.
-    ".trae/skills",        // ByteDance Trae (international)
-    ".trae-cn/skills",     // ByteDance Trae CN
-    ".codebuddy/skills",   // Tencent CodeBuddy
+    ".trae/skills",      // ByteDance Trae (international)
+    ".trae-cn/skills",   // ByteDance Trae CN
+    ".codebuddy/skills", // Tencent CodeBuddy
+    // Tencent WorkBuddy (desktop / VS Code extension) — user skills live under
+    // ~/.workbuddy/skills (distinct from CodeBuddy's ~/.codebuddy/skills).
+    ".workbuddy/skills",
+    // Factory Droid (factory.ai) — personal skills: ~/.factory/skills.
+    ".factory/skills",
 ];
 
 #[tauri::command]
@@ -59,21 +76,29 @@ pub async fn discover_skills() -> Result<Vec<DiscoveredSkill>, String> {
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct InspectSkillSourceInput {
-    pub source_path: String,
+    pub source: String,
 }
 
 #[tauri::command]
 pub async fn inspect_skill_source(
     input: InspectSkillSourceInput,
 ) -> Result<InspectionResult, String> {
-    let source = PathBuf::from(input.source_path);
-    run_blocking(move || SkillStore::inspect_source(&source)).await
+    let source = input.source;
+    run_blocking(move || {
+        let (mut inspection, resolved) = inspect_resolved_source(&source)?;
+        inspection.import_path = resolved.import_root.display().to_string();
+        inspection.logical_source = resolved.logical_source;
+        Ok(inspection)
+    })
+    .await
 }
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ImportSkillInput {
-    pub source_path: String,
+    /// Resolved directory from inspect (`importPath`); falls back to `source` when empty.
+    pub import_path: Option<String>,
+    pub source: String,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -90,11 +115,14 @@ pub async fn import_skill(
     state: State<'_, SharedAppState>,
     input: ImportSkillInput,
 ) -> Result<SkillActionResult, String> {
-    let source = PathBuf::from(input.source_path);
+    let import_path = input.import_path;
+    let source = input.source;
     let state = state.inner().clone();
     run_blocking(move || {
         let store = SkillStore::open()?;
-        let skill = store.import(&source)?;
+        let resolved = source_resolve::resolve_for_import(import_path.as_deref(), &source)?;
+        let skill = store
+            .import_with_logical_source(&resolved.import_root, Some(&resolved.logical_source))?;
         let mut needs_restart = false;
         // Imports land enabled; redeploy so a running sandbox can pick them up.
         if skill.enabled && redeploy_sandbox_skills() {
@@ -227,9 +255,33 @@ pub async fn open_skill_file(input: OpenSkillInput) -> Result<String, String> {
             .get(&input.skill_id)?
             .ok_or_else(|| "skill not found".to_string())?;
         let md = skill.store_path.join("SKILL.md");
-        let target = if md.is_file() { md } else { skill.store_path.clone() };
+        let target = if md.is_file() {
+            md
+        } else {
+            skill.store_path.clone()
+        };
         crate::runtime::system::open_path_in_default_app(&target)?;
         Ok(target.display().to_string())
+    })
+    .await
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PickSkillSourceInput {
+    pub title: Option<String>,
+}
+
+/// Native chooser for a Skill folder or `.zip` (one panel on macOS).
+#[tauri::command]
+pub async fn pick_skill_source(input: PickSkillSourceInput) -> Result<Option<String>, String> {
+    let title = input
+        .title
+        .filter(|t| !t.trim().is_empty())
+        .unwrap_or_else(|| "Select Skill folder or zip".to_string());
+    run_blocking(move || {
+        let path = crate::skill_manager::native_pick::pick_skill_source(&title);
+        Ok(path.map(|p| p.to_string_lossy().into_owned()))
     })
     .await
 }
@@ -237,6 +289,30 @@ pub async fn open_skill_file(input: OpenSkillInput) -> Result<String, String> {
 #[tauri::command]
 pub async fn discover_workspace_skills() -> Result<Vec<WorkspaceSkillCandidate>, String> {
     run_blocking(workspace_ingress::discover_workspace_skills).await
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PreviewWorkspaceSkillInput {
+    pub key: String,
+    pub file: Option<String>,
+}
+
+/// Read a Science workspace Skill draft for the adopt-page preview panel.
+#[tauri::command]
+pub async fn preview_workspace_skill(
+    input: PreviewWorkspaceSkillInput,
+) -> Result<WorkspaceSkillPreview, String> {
+    run_blocking(move || {
+        workspace_ingress::preview_workspace_skill(&input.key, input.file.as_deref())
+    })
+    .await
+}
+
+/// Reveal a Science workspace Skill draft in Finder / the default app.
+#[tauri::command]
+pub async fn open_workspace_skill(input: PreviewWorkspaceSkillInput) -> Result<String, String> {
+    run_blocking(move || workspace_ingress::open_workspace_skill(&input.key)).await
 }
 
 #[derive(Clone, Debug, Deserialize)]

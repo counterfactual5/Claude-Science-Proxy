@@ -1,11 +1,17 @@
-//! Local MCP (stdio connector) data models.
+//! MCP connector data models (stdio + remote HTTP/SSE).
 //!
-//! First-phase scope: local **stdio** MCP servers only. Confirmed against a live
-//! Claude Science sandbox — user stdio connectors are read from
-//! `<data-dir>/mcp/local-mcp.json` with the shape
-//! `{ "servers": [ { name, command, args, env, description? } ] }` and surface as
-//! `source: "local-stdio"`. There is **no `cwd`** in Science's local schema, so we
-//! do not model one. No remote HTTP/SSE, no marketplace catalog in this phase.
+//! Confirmed against Claude Science `0.1.17-dev`:
+//! - **Local stdio** → `<data-dir>/mcp/local-mcp.json` shape
+//!   `{ "servers": [ { name, command, args, env, description? } ] }`, source
+//!   `local-stdio`. No `cwd`.
+//! - **Remote custom** → org DB table `custom_mcp_servers` with
+//!   `transport ∈ {sse, streamable_http}`, `url`, optional `headers_helper`
+//!   (shell command printing a JSON object of string headers), source `custom`.
+//!   Plugin marketplace also uses `type: http|sse` → mapped to
+//!   `streamable_http|sse`, but CSP does not write marketplace plugins.
+//!
+//! Inventory stores both kinds; deploy routes stdio → `local-mcp.json` and
+//! remote → the org `operon-cli.db`.
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -58,25 +64,73 @@ impl std::fmt::Display for McpServerId {
     }
 }
 
-/// A local stdio MCP server entry stored in the CSP inventory.
+/// Connection transport. Matches Science's connector `transport` enum for the
+/// values we can deploy (`stdio` via local-mcp.json; `sse` /
+/// `streamable_http` via `custom_mcp_servers`).
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum McpTransport {
+    #[default]
+    Stdio,
+    Sse,
+    StreamableHttp,
+}
+
+impl McpTransport {
+    #[allow(dead_code)]
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Stdio => "stdio",
+            Self::Sse => "sse",
+            Self::StreamableHttp => "streamable_http",
+        }
+    }
+
+    pub fn is_remote(&self) -> bool {
+        matches!(self, Self::Sse | Self::StreamableHttp)
+    }
+
+    /// Parse Science / client transport labels (`http` → streamable_http).
+    pub fn parse(s: &str) -> Option<Self> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "stdio" | "local" | "local-stdio" => Some(Self::Stdio),
+            "sse" => Some(Self::Sse),
+            "streamable_http" | "streamable-http" | "http" => Some(Self::StreamableHttp),
+            _ => None,
+        }
+    }
+}
+
+/// An MCP server entry stored in the CSP inventory.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct McpServer {
     pub id: McpServerId,
-    /// Connector name. Also the `local-mcp.json` server key after sanitization.
+    /// Connector name. Also the `local-mcp.json` / `custom_mcp_servers` key.
     pub name: String,
     /// Optional human-readable description (surfaced by Science).
     #[serde(default)]
     pub description: String,
-    /// Executable: `node`, `npx`, `npm`, `python`, `python3`, `pip`, `pip3`, or an
-    /// absolute path (Science's managed-runtime command whitelist).
+    /// Connection type. Absent in pre-1.8.0 inventory → deserializes as `stdio`.
+    #[serde(default)]
+    pub transport: McpTransport,
+    /// Stdio executable (ignored for remote).
+    #[serde(default)]
     pub command: String,
     #[serde(default)]
     pub args: Vec<String>,
-    /// Environment overrides. Stored in plaintext (local, 0600 inventory); only ever
-    /// returned to the UI masked.
+    /// Stdio environment overrides. Stored in plaintext (local, 0600 inventory);
+    /// only ever returned to the UI masked.
     #[serde(default)]
     pub env: BTreeMap<String, String>,
+    /// Remote endpoint URL (ignored for stdio).
+    #[serde(default)]
+    pub url: String,
+    /// Optional HTTP headers for remote transports. Stored like `env` (0600,
+    /// UI-masked). Deployed as Science `headers_helper` (shell → JSON object),
+    /// not as a static headers column (custom MCP table has no headers map).
+    #[serde(default)]
+    pub headers: BTreeMap<String, String>,
     pub enabled: bool,
     /// True for connectors CSP seeds and manages itself (e.g. the bundled
     /// `web-search` server). The command/args of a built-in are re-resolved at
@@ -90,10 +144,15 @@ pub struct McpServer {
 }
 
 impl McpServer {
-    /// Build a UI-facing summary with env values masked (keys preserved).
+    /// Build a UI-facing summary with env/header values masked (keys preserved).
     pub fn to_summary(&self) -> McpServerSummary {
         let env: BTreeMap<String, String> = self
             .env
+            .iter()
+            .map(|(k, v)| (k.clone(), crate::config::mask(v)))
+            .collect();
+        let headers: BTreeMap<String, String> = self
+            .headers
             .iter()
             .map(|(k, v)| (k.clone(), crate::config::mask(v)))
             .collect();
@@ -101,9 +160,12 @@ impl McpServer {
             id: self.id.to_string(),
             name: self.name.clone(),
             description: self.description.clone(),
+            transport: self.transport.clone(),
             command: self.command.clone(),
             args: self.args.clone(),
             env,
+            url: self.url.clone(),
+            headers,
             enabled: self.enabled,
             builtin: self.builtin,
             created_at: self.created_at.clone(),
@@ -112,16 +174,22 @@ impl McpServer {
     }
 }
 
-/// UI-facing summary. `env` values are masked; keys are shown verbatim.
+/// UI-facing summary. `env` / `headers` values are masked; keys are shown verbatim.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct McpServerSummary {
     pub id: String,
     pub name: String,
     pub description: String,
+    #[serde(default)]
+    pub transport: McpTransport,
     pub command: String,
     pub args: Vec<String>,
     pub env: BTreeMap<String, String>,
+    #[serde(default)]
+    pub url: String,
+    #[serde(default)]
+    pub headers: BTreeMap<String, String>,
     pub enabled: bool,
     #[serde(default)]
     pub builtin: bool,
@@ -129,7 +197,7 @@ pub struct McpServerSummary {
     pub updated_at: String,
 }
 
-/// A local stdio MCP server discovered from another client config.
+/// An MCP server discovered from another client config.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DiscoveredMcpServer {
@@ -137,12 +205,23 @@ pub struct DiscoveredMcpServer {
     pub name: String,
     /// Optional human-readable description.
     pub description: String,
-    /// Executable command.
+    #[serde(default)]
+    pub transport: McpTransport,
+    /// Executable command (stdio).
+    #[serde(default)]
     pub command: String,
     /// Stdio command arguments.
+    #[serde(default)]
     pub args: Vec<String>,
     /// Environment variable names only. Values stay backend-only until import.
+    #[serde(default)]
     pub env_keys: Vec<String>,
+    /// Remote URL when transport is SSE / streamable HTTP.
+    #[serde(default)]
+    pub url: String,
+    /// Header names only for remote entries.
+    #[serde(default)]
+    pub header_keys: Vec<String>,
     /// Human-readable origin label (e.g. `Zed ~/.config/zed/settings.json`).
     pub source_label: String,
     /// Absolute source config path.
@@ -151,12 +230,13 @@ pub struct DiscoveredMcpServer {
     pub already_imported: bool,
 }
 
-/// Result of validating a proposed stdio MCP server (before create/update).
+/// Result of validating a proposed MCP server (before create/update).
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct McpInspection {
     pub valid: bool,
     /// Whether `command` is on the managed-runtime whitelist or an absolute path.
+    /// Always `true` for remote transports (no local command).
     pub command_ok: bool,
     pub warnings: Vec<String>,
     pub errors: Vec<String>,
@@ -191,16 +271,24 @@ mod tests {
     }
 
     #[test]
-    fn summary_masks_env_values() {
+    fn summary_masks_env_and_header_values() {
         let mut env = BTreeMap::new();
         env.insert("API_TOKEN".to_string(), "sk-secret-tail1234".to_string());
+        let mut headers = BTreeMap::new();
+        headers.insert(
+            "Authorization".to_string(),
+            "Bearer secret-tail9999".to_string(),
+        );
         let srv = McpServer {
             id: McpServerId::new(),
             name: "demo".into(),
             description: String::new(),
-            command: "python3".into(),
+            transport: McpTransport::StreamableHttp,
+            command: String::new(),
             args: vec![],
             env,
+            url: "https://mcp.example.com/mcp".into(),
+            headers,
             enabled: true,
             builtin: false,
             created_at: String::new(),
@@ -210,5 +298,38 @@ mod tests {
         let masked = sum.env.get("API_TOKEN").unwrap();
         assert!(!masked.contains("secret"));
         assert!(masked.starts_with("••••"));
+        let h = sum.headers.get("Authorization").unwrap();
+        assert!(!h.contains("secret"));
+        assert!(h.starts_with("••••"));
+    }
+
+    #[test]
+    fn legacy_inventory_without_transport_deserializes_as_stdio() {
+        let json = r#"{
+            "id": "mcp_0123456789abcdef0123456789abcdef",
+            "name": "legacy",
+            "description": "",
+            "command": "python3",
+            "args": [],
+            "env": {},
+            "enabled": true,
+            "createdAt": "t0",
+            "updatedAt": "t0"
+        }"#;
+        let srv: McpServer = serde_json::from_str(json).unwrap();
+        assert_eq!(srv.transport, McpTransport::Stdio);
+        assert!(srv.url.is_empty());
+        assert!(srv.headers.is_empty());
+    }
+
+    #[test]
+    fn transport_parse_maps_http_alias() {
+        assert_eq!(
+            McpTransport::parse("http"),
+            Some(McpTransport::StreamableHttp)
+        );
+        assert_eq!(McpTransport::parse("SSE"), Some(McpTransport::Sse));
+        assert_eq!(McpTransport::parse("stdio"), Some(McpTransport::Stdio));
+        assert!(McpTransport::parse("websocket").is_none());
     }
 }

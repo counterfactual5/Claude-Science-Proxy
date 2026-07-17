@@ -106,25 +106,27 @@ const I18N = {
     menuMore: "更多",
     descExpand: "更多",
     descCollapse: "收起",
-    createSkill: "+ 新建",
+    createSkill: "新建 Skill",
     addMcp: "+ 新建",
     scanImport: "扫描导入",
-    importFolder: "导入目录",
+    importFolder: "导入",
     adoptFromScience: "从 Science 采纳",
     skillsManageTitle: "Skills 管理",
     skillApplyHint: "启用/停用的改动会在下次点击「启动 Claude Science」时生效；若沙箱正在运行，会自动重启以应用。",
     skillEmptyTitle: "还没有 Skill。",
-    skillEmptyHint: "点「新建」从零创建，或在「⋯」里选「导入目录」/「扫描导入」导入本机 Skill。",
+    skillEmptyHint: "点「导入」添加本地或网络 Skill，或在「⋯」里新建 / 扫描 / 从 Science 采纳。",
     skillDiscoverTitle: "扫描本地 Skill",
-    skillDiscoverHintHtml: "扫描 <code>~/.agents/skills</code>、<code>~/.codex/skills</code>、<code>~/.claude/skills</code>、<code>~/.cursor/skills</code>、<code>~/.cursor/skills-cursor</code>，以及国产 <code>~/.trae/skills</code> / <code>~/.trae-cn/skills</code>（字节）、<code>~/.codebuddy/skills</code>（腾讯），勾选后复制到 <code>~/.csp/skills/</code>。沙箱自带的科学 Skill 不在此列；Science 工作区草稿请用「从 Science 采纳」。",
+    skillDiscoverHintHtml: "从其他 Agent 软件导入。",
     skillDiscoverEmpty: "没有扫描到可导入的 Skill。",
     skillDiscoverImport: "导入所选",
-    skillImportTitle: "导入目录",
-    skillImportIntroHtml: "已知 Skill 文件夹路径时，直接粘贴导入。将连同脚本和其他伴随文件一起递归复制到 <code>~/.csp/skills/</code>。",
-    skillPathLabel: "源目录路径",
-    skillPathHintHtml: "目录根须含 <code>SKILL.md</code>（大小写敏感）；检查通过后会递归复制目录内脚本、<code>USAGE.md</code>、<code>requirements</code> 等伴随文件。请选择目录本身，不要选 <code>SKILL.md</code> 文件。",
-    skillInspPreviewTitle: "检查预览",
-    skillInspect: "检查",
+    skillImportTitle: "导入 Skill",
+    skillImportIntroHtml: "粘贴路径 / URL，或点「浏览」选本地文件夹或 ZIP。",
+    skillPathLabel: "路径或 URL",
+    skillPathPlaceholder: "/path、.zip 或 https://…",
+    skillBrowse: "浏览",
+    skillPickTitle: "选择 Skill 文件夹或 ZIP 包",
+    skillPathHintHtml: "需含 <code>SKILL.md</code>；支持公开 GitHub 目录链接。",
+    skillInspPreviewTitle: "预览",
     skillImportPath: "导入",
     skillAlreadyImported: "已导入",
     skillScanning: "扫描中…",
@@ -133,6 +135,19 @@ const I18N = {
     skillAdoptEmpty: "没有扫描到可采纳的 Skill 草稿。",
     skillAdoptConfirm: "采纳所选",
     skillAdoptedBadge: "已采纳",
+    skillAdoptPreview: "预览",
+    skillAdoptPreviewTitle: "预览",
+    skillAdoptOpen: "在 Finder 打开",
+    skillAdoptPreviewClose: "关闭",
+    skillAdoptPreviewMeta: "{file} · {chars} 字符 · {bytes}",
+    skillAdoptPreviewTruncated: "（内容过长，已截断显示）",
+    skillAdoptReadoptHint: "已采纳过；再次采纳会用工作区草稿覆盖现有 Skill。",
+    skillAdoptPreviewFail: "预览失败：{err}",
+    mcpDiscoverPreview: "预览",
+    mcpPreviewTitle: "MCP 配置预览",
+    mcpPreviewMeta: "{name} · {source}",
+    mcpPreviewFail: "预览失败：{err}",
+    mcpPreviewOpen: "打开配置文件",
     skillCreateTitle: "新建 Skill",
     skillCreated: "已新建 Skill",
     skillCreatedRestarting: "已新建 Skill；沙箱已停止，正在重新启动…",
@@ -159,15 +174,34 @@ const I18N = {
     inspNone: "无",
     inspWarningsPrefix: "警告: {msg}",
     inspErrorsPrefix: "错误: {msg}",
-    mcpManageTitle: "本地 MCP 管理",
+    mcpManageTitle: "MCP 管理",
     mcpApplyHint: "新增/编辑/启用的改动会在下次点击「启动 Claude Science」时生效；若沙箱正在运行，会自动重启以应用。",
-    mcpEmptyTitle: "还没有本地 MCP。",
-    mcpEmptyHintHtml: "点「新建」，配置一个本地 <code>stdio</code> 连接器（command + args + env）。启用后会在启动沙箱时写入 <code>&lt;data-dir&gt;/mcp/local-mcp.json</code>。",
-    mcpFormTitleNew: "新增本地 MCP",
-    mcpFormTitleEdit: "编辑本地 MCP",
-    mcpDiscoverTitle: "扫描本地 MCP",
-    mcpDiscoverHintHtml: "扫描常见 AI 客户端的 MCP 配置：Cursor、Claude Desktop、Claude Code、Codex（<code>~/.codex/config.toml</code>）、Devin Desktop（原 Windsurf）、VS Code（<code>~/Library/Application Support/Code/User/mcp.json</code>）、Zed，以及国产 Qoder / 通义灵码（阿里）、Trae / TRAE SOLO（字节）、CodeBuddy（腾讯）。识别 <code>mcpServers</code> / <code>servers</code> / <code>context_servers</code> 等键，勾选后导入为 CSP 本地 stdio MCP。仅识别本地 stdio（带 <code>command</code>）连接器；环境变量只显示 key，导入时由后端复制原值。",
-    mcpDiscoverEmpty: "没有扫描到可导入的本地 stdio MCP。",
+    mcpEmptyTitle: "还没有 MCP。",
+    mcpEmptyHintHtml: "点「新建」，配置本地 <code>stdio</code>（command/args/env）或远程 HTTP/SSE（url/headers）。stdio 写入 <code>local-mcp.json</code>；远程写入 org 库 <code>custom_mcp_servers</code>。",
+    mcpFormTitleNew: "新增 MCP",
+    mcpFormTitleEdit: "编辑 MCP",
+    mcpTransportLabel: "连接类型",
+    mcpTransportHintHtml: "本地→<code>local-mcp.json</code>；远程→Science <code>custom_mcp_servers</code>。",
+    mcpTransportStdio: "本地命令（stdio）",
+    mcpTransportHttp: "远程 HTTP / Streamable HTTP",
+    mcpTransportSse: "远程 SSE",
+    mcpNameHintHtml: "本地：字母/数字/<code>-_.</code>；远程：小写字母/数字/<code>-</code>。",
+    mcpUrlLabel: "URL",
+    mcpUrlHintHtml: "不要把 token 写进 URL，请用下方 Headers。",
+    mcpHeadersLabel: "Headers（可选，每行 Name=Value）",
+    mcpHeadersHintHtml: "密钥本地 0600 保存，部署为 <code>headers_helper</code>；编辑语义同 env。",
+    mcpCommandLabel: "命令",
+    mcpCommandHintHtml: "命令（<code>python3</code>/<code>node</code>/<code>npx</code>…）或绝对路径。",
+    mcpArgsLabel: "参数（每行一个）",
+    mcpArgsHintHtml: "绝对路径会自动加入沙箱读权限。",
+    mcpEnvLabel: "环境变量（每行 KEY=VALUE）",
+    mcpEnvHintHtml: "编辑时 <code>KEY=</code> 留空保留原值，删行删除，新值覆盖。",
+    mcpDiscoverTitle: "扫描 MCP",
+    mcpDiscoverHintHtml: "从其他 Agent 软件导入。",
+    mcpDiscoverEmpty: "没有扫描到可导入的 MCP。",
+    mcpBadgeStdio: "stdio",
+    mcpBadgeHttp: "HTTP",
+    mcpBadgeSse: "SSE",
     mcpDiscoverImport: "导入所选",
     mcpScanning: "扫描中…",
     mcpNetworkAllowlist: "网络授权配置",
@@ -406,25 +440,27 @@ const I18N = {
     menuMore: "More",
     descExpand: "More",
     descCollapse: "Less",
-    createSkill: "+ New",
+    createSkill: "New Skill",
     addMcp: "+ New",
     scanImport: "Scan & import",
-    importFolder: "Import folder",
+    importFolder: "Import",
     adoptFromScience: "Adopt from Science",
     skillsManageTitle: "Skills",
     skillApplyHint: "Enable/disable takes effect the next time you Start Claude Science; a running sandbox restarts automatically.",
     skillEmptyTitle: "No Skills yet.",
-    skillEmptyHint: "Tap New to author one, or use ⋯ → Import folder / Scan & import for local Skills.",
+    skillEmptyHint: "Tap Import for a local or network Skill, or use ⋯ to create / scan / adopt from Science.",
     skillDiscoverTitle: "Scan local Skills",
-    skillDiscoverHintHtml: "Scans <code>~/.agents/skills</code>, <code>~/.codex/skills</code>, <code>~/.claude/skills</code>, <code>~/.cursor/skills</code>, <code>~/.cursor/skills-cursor</code>, plus domestic <code>~/.trae/skills</code> / <code>~/.trae-cn/skills</code> (ByteDance) and <code>~/.codebuddy/skills</code> (Tencent). Checked items copy into <code>~/.csp/skills/</code>. Science-bundled sandbox Skills are excluded; use Adopt from Science for workspace drafts.",
+    skillDiscoverHintHtml: "Import from other agent apps.",
     skillDiscoverEmpty: "No importable Skills found.",
     skillDiscoverImport: "Import selected",
-    skillImportTitle: "Import folder",
-    skillImportIntroHtml: "Paste a known Skill folder path to import. Scripts and other companion files are copied recursively into <code>~/.csp/skills/</code>.",
-    skillPathLabel: "Source directory",
-    skillPathHintHtml: "Directory root must contain <code>SKILL.md</code> (case-sensitive). After inspect passes, scripts, <code>USAGE.md</code>, <code>requirements</code>, and other companion files are copied recursively. Select the folder itself, not the <code>SKILL.md</code> file.",
-    skillInspPreviewTitle: "Inspect preview",
-    skillInspect: "Inspect",
+    skillImportTitle: "Import Skill",
+    skillImportIntroHtml: "Paste a path / URL, or use Browse for a local folder or ZIP.",
+    skillPathLabel: "Path or URL",
+    skillPathPlaceholder: "/path, .zip, or https://…",
+    skillBrowse: "Browse",
+    skillPickTitle: "Select Skill folder or zip",
+    skillPathHintHtml: "Must contain <code>SKILL.md</code>; public GitHub tree URLs work.",
+    skillInspPreviewTitle: "Preview",
     skillImportPath: "Import",
     skillAlreadyImported: "Imported",
     skillScanning: "Scanning…",
@@ -433,6 +469,19 @@ const I18N = {
     skillAdoptEmpty: "No adoptable Skill drafts found.",
     skillAdoptConfirm: "Adopt selected",
     skillAdoptedBadge: "Adopted",
+    skillAdoptPreview: "Preview",
+    skillAdoptPreviewTitle: "Preview",
+    skillAdoptOpen: "Reveal in Finder",
+    skillAdoptPreviewClose: "Close",
+    skillAdoptPreviewMeta: "{file} · {chars} chars · {bytes}",
+    skillAdoptPreviewTruncated: "(truncated for display)",
+    skillAdoptReadoptHint: "Already adopted; adopting again overwrites the existing Skill with this workspace draft.",
+    skillAdoptPreviewFail: "Preview failed: {err}",
+    mcpDiscoverPreview: "Preview",
+    mcpPreviewTitle: "MCP config preview",
+    mcpPreviewMeta: "{name} · {source}",
+    mcpPreviewFail: "Preview failed: {err}",
+    mcpPreviewOpen: "Open config file",
     skillCreateTitle: "New Skill",
     skillCreated: "Skill created",
     skillCreatedRestarting: "Skill created; sandbox stopped, restarting…",
@@ -459,15 +508,34 @@ const I18N = {
     inspNone: "none",
     inspWarningsPrefix: "Warnings: {msg}",
     inspErrorsPrefix: "Errors: {msg}",
-    mcpManageTitle: "Local MCP",
+    mcpManageTitle: "MCP",
     mcpApplyHint: "Create/edit/enable changes apply the next time you Start Claude Science; a running sandbox restarts automatically.",
-    mcpEmptyTitle: "No local MCP yet.",
-    mcpEmptyHintHtml: "Tap New to add a local <code>stdio</code> connector (command + args + env). When enabled, it is written to <code>&lt;data-dir&gt;/mcp/local-mcp.json</code> on sandbox start.",
-    mcpFormTitleNew: "New local MCP",
-    mcpFormTitleEdit: "Edit local MCP",
-    mcpDiscoverTitle: "Scan local MCP",
-    mcpDiscoverHintHtml: "Scans common AI client MCP configs: Cursor, Claude Desktop, Claude Code, Codex (<code>~/.codex/config.toml</code>), Devin Desktop (ex-Windsurf), VS Code (<code>~/Library/Application Support/Code/User/mcp.json</code>), Zed, plus domestic Qoder / Tongyi Lingma (Alibaba), Trae / TRAE SOLO (ByteDance), CodeBuddy (Tencent). Recognizes <code>mcpServers</code> / <code>servers</code> / <code>context_servers</code>. Checked items import as CSP local stdio MCP. Only local stdio (with <code>command</code>) connectors; env shows keys only, values are copied by the backend on import.",
-    mcpDiscoverEmpty: "No importable local stdio MCP found.",
+    mcpEmptyTitle: "No MCP yet.",
+    mcpEmptyHintHtml: "Tap New to add a local <code>stdio</code> (command/args/env) or remote HTTP/SSE (url/headers) connector. Stdio writes <code>local-mcp.json</code>; remote writes org DB <code>custom_mcp_servers</code>.",
+    mcpFormTitleNew: "New MCP",
+    mcpFormTitleEdit: "Edit MCP",
+    mcpTransportLabel: "Connection type",
+    mcpTransportHintHtml: "Local→<code>local-mcp.json</code>; remote→Science <code>custom_mcp_servers</code>.",
+    mcpTransportStdio: "Local command (stdio)",
+    mcpTransportHttp: "Remote HTTP / Streamable HTTP",
+    mcpTransportSse: "Remote SSE",
+    mcpNameHintHtml: "Local: letters/digits/<code>-_.</code>; remote: lowercase letters/digits/<code>-</code>.",
+    mcpUrlLabel: "URL",
+    mcpUrlHintHtml: "Do not put tokens in the URL; use Headers below.",
+    mcpHeadersLabel: "Headers (optional, one Name=Value per line)",
+    mcpHeadersHintHtml: "Secrets stay local (0600), deploy as <code>headers_helper</code>; edit semantics match env.",
+    mcpCommandLabel: "Command",
+    mcpCommandHintHtml: "Command (<code>python3</code>/<code>node</code>/<code>npx</code>…) or an absolute path.",
+    mcpArgsLabel: "Args (one per line)",
+    mcpArgsHintHtml: "Absolute paths get sandbox read access.",
+    mcpEnvLabel: "Environment (one KEY=VALUE per line)",
+    mcpEnvHintHtml: "On edit: blank <code>KEY=</code> keeps value, delete line to remove, new value overwrites.",
+    mcpDiscoverTitle: "Scan MCP",
+    mcpDiscoverHintHtml: "Import from other agent apps.",
+    mcpDiscoverEmpty: "No importable MCP found.",
+    mcpBadgeStdio: "stdio",
+    mcpBadgeHttp: "HTTP",
+    mcpBadgeSse: "SSE",
     mcpDiscoverImport: "Import selected",
     mcpScanning: "Scanning…",
     mcpNetworkAllowlist: "Network allowlist",
@@ -777,9 +845,10 @@ function applyEditionUI() {
   if (els.skillImportTitle) els.skillImportTitle.textContent = t.skillImportTitle;
   if (els.skillImportIntro) els.skillImportIntro.innerHTML = t.skillImportIntroHtml;
   if (els.skillPathLabel) els.skillPathLabel.textContent = t.skillPathLabel;
+  if (els.skillSourcePath) els.skillSourcePath.placeholder = t.skillPathPlaceholder;
+  if (els.skillBrowseBtn) els.skillBrowseBtn.textContent = t.skillBrowse;
   if (els.skillPathHint) els.skillPathHint.innerHTML = t.skillPathHintHtml;
   if (els.skillInspPreviewTitle) els.skillInspPreviewTitle.textContent = t.skillInspPreviewTitle;
-  if (els.skillInspectBtn) els.skillInspectBtn.textContent = t.skillInspect;
   if (els.skillImportConfirmBtn) els.skillImportConfirmBtn.textContent = t.skillImportPath;
   if (els.skillImportCancelBtn) els.skillImportCancelBtn.textContent = t.cancel;
   if (els.skillAdoptTitle) els.skillAdoptTitle.textContent = t.skillAdoptTitle;
@@ -787,12 +856,36 @@ function applyEditionUI() {
   if (els.skillAdoptEmptyText) els.skillAdoptEmptyText.textContent = t.skillAdoptEmpty;
   if (els.skillAdoptConfirmBtn) els.skillAdoptConfirmBtn.textContent = t.skillAdoptConfirm;
   if (els.skillAdoptCancelBtn) els.skillAdoptCancelBtn.textContent = t.cancel;
+  if (els.previewOverlayCloseBtn) {
+    els.previewOverlayCloseBtn.setAttribute("aria-label", t.skillAdoptPreviewClose);
+    els.previewOverlayCloseBtn.title = t.skillAdoptPreviewClose;
+  }
+  if (els.previewOverlayOpenBtn) els.previewOverlayOpenBtn.textContent = t.skillAdoptOpen;
   const mcpTitle = document.querySelector("#mcpListSec > .skill-hd > .sec-title");
   if (mcpTitle) mcpTitle.textContent = t.mcpManageTitle;
   if (els.mcpApplyHint) els.mcpApplyHint.textContent = t.mcpApplyHint;
   if (els.mcpEmptyTitle) els.mcpEmptyTitle.textContent = t.mcpEmptyTitle;
   if (els.mcpEmptyHint) els.mcpEmptyHint.innerHTML = t.mcpEmptyHintHtml;
   if (els.mcpFormTitle) els.mcpFormTitle.textContent = t.mcpFormTitleNew;
+  if (els.mcpTransportLabel) els.mcpTransportLabel.textContent = t.mcpTransportLabel;
+  if (els.mcpTransportHint) els.mcpTransportHint.innerHTML = t.mcpTransportHintHtml;
+  if (els.mcpTransport) {
+    const opts = els.mcpTransport.options;
+    if (opts[0]) opts[0].textContent = t.mcpTransportStdio;
+    if (opts[1]) opts[1].textContent = t.mcpTransportHttp;
+    if (opts[2]) opts[2].textContent = t.mcpTransportSse;
+  }
+  if (els.mcpNameHint) els.mcpNameHint.innerHTML = t.mcpNameHintHtml;
+  if (els.mcpCommandLabel) els.mcpCommandLabel.textContent = t.mcpCommandLabel;
+  if (els.mcpCommandHint) els.mcpCommandHint.innerHTML = t.mcpCommandHintHtml;
+  if (els.mcpArgsLabel) els.mcpArgsLabel.textContent = t.mcpArgsLabel;
+  if (els.mcpArgsHint) els.mcpArgsHint.innerHTML = t.mcpArgsHintHtml;
+  if (els.mcpEnvLabel) els.mcpEnvLabel.textContent = t.mcpEnvLabel;
+  if (els.mcpEnvHint) els.mcpEnvHint.innerHTML = t.mcpEnvHintHtml;
+  if (els.mcpUrlLabel) els.mcpUrlLabel.textContent = t.mcpUrlLabel;
+  if (els.mcpUrlHint) els.mcpUrlHint.innerHTML = t.mcpUrlHintHtml;
+  if (els.mcpHeadersLabel) els.mcpHeadersLabel.textContent = t.mcpHeadersLabel;
+  if (els.mcpHeadersHint) els.mcpHeadersHint.innerHTML = t.mcpHeadersHintHtml;
   if (els.mcpSaveBtn) els.mcpSaveBtn.textContent = t.save;
   if (els.mcpCancelBtn) els.mcpCancelBtn.textContent = t.cancel;
   if (els.mcpDiscoverTitle) els.mcpDiscoverTitle.textContent = t.mcpDiscoverTitle;
@@ -831,8 +924,8 @@ const mockStore = {
     { id: "sk_1", name: "AlphaFold Database Fetch & Analyze", description: "Retrieve and analyze AlphaFold predicted structures for a protein.", enabled: true, sizeBytes: 12450, importedAt: "2026-07-12T02:30:00Z", requirements: ["python"] }
   ],
   mcpServers: [
-    { id: "mcp_0000000000000000", name: "web-search", description: "Local web + literature search (no API key required). GENERAL csp_web_search → duckduckgo_ia/lite (wikipedia NOT on GENERAL); LITERATURE search_literature → wikipedia/Crossref/arXiv/PubMed. Optional BRAVE_SEARCH_API_KEY / SERPER_API_KEY / TAVILY_API_KEY improve quality only. Never call native Anthropic web_search.", command: "python3", args: ["/Users/me/.csp/sandbox/home/.claude-science/mcp/csp-web-search-server.py"], env: { BRAVE_SEARCH_API_KEY: "", SERPER_API_KEY: "", TAVILY_API_KEY: "" }, enabled: true, builtin: true, createdAt: "2026-07-12T02:30:00Z", updatedAt: "2026-07-12T02:30:00Z" },
-    { id: "mcp_0000000000000001", name: "local-fs", description: "本地文件系统工具", command: "python3", args: ["/Users/me/mcp/fs_server.py"], env: { API_TOKEN: "••••1234" }, enabled: true, builtin: false, createdAt: "2026-07-12T02:30:00Z", updatedAt: "2026-07-12T02:30:00Z" }
+    { id: "mcp_0000000000000000", name: "web-search", description: "Local web + literature search (no API key required). GENERAL csp_web_search → duckduckgo_ia/lite (wikipedia NOT on GENERAL); LITERATURE search_literature → wikipedia/Crossref/arXiv/PubMed. Optional BRAVE_SEARCH_API_KEY / SERPER_API_KEY / TAVILY_API_KEY improve quality only. Never call native Anthropic web_search.", transport: "stdio", command: "python3", args: ["/Users/me/.csp/sandbox/home/.claude-science/mcp/csp-web-search-server.py"], env: { BRAVE_SEARCH_API_KEY: "", SERPER_API_KEY: "", TAVILY_API_KEY: "" }, url: "", headers: {}, enabled: true, builtin: true, createdAt: "2026-07-12T02:30:00Z", updatedAt: "2026-07-12T02:30:00Z" },
+    { id: "mcp_0000000000000001", name: "local-fs", description: "本地文件系统工具", transport: "stdio", command: "python3", args: ["/Users/me/mcp/fs_server.py"], env: { API_TOKEN: "••••1234" }, url: "", headers: {}, enabled: true, builtin: false, createdAt: "2026-07-12T02:30:00Z", updatedAt: "2026-07-12T02:30:00Z" }
   ],
 };
 function mockMask(k) { return k ? "••••" + String(k).slice(-4) : ""; }
@@ -918,6 +1011,28 @@ function mockInvoke(cmd, args) {
           alreadyImported: false,
         },
       ]);
+    case "preview_workspace_skill": {
+      const key = (args.input && args.input.key) || "";
+      const file = (args.input && args.input.file) || "SKILL.md";
+      return Promise.resolve({
+        key,
+        name: "crypto-data-v2",
+        description: "Enhanced crypto skill draft",
+        workspaceId: "ws1",
+        alreadyImported: false,
+        openPath: "/preview/workspace/crypto-data-v2",
+        files: [
+          { name: "SKILL.md", sizeBytes: 1878 },
+          { name: "kernel.py", sizeBytes: 39514 },
+        ],
+        activeFile: file,
+        content: "---\nname: crypto-data-v2\ndescription: preview mock\n---\n\n# Preview\nMock SKILL.md body for browser preview.",
+        truncated: false,
+        charCount: 96,
+      });
+    }
+    case "open_workspace_skill":
+      return Promise.resolve("/preview/workspace/" + ((args.input && args.input.key) || ""));
     case "adopt_workspace_skills": {
       const keys = (args.input && args.input.keys) || [];
       const adopted = keys.map((key, i) => ({
@@ -932,32 +1047,36 @@ function mockInvoke(cmd, args) {
       adopted.forEach((s) => mockStore.skills.push(s));
       return Promise.resolve({ adopted, failures: [], needsRestart: false });
     }
+    case "pick_skill_source":
+      return Promise.resolve("/Users/me/.agents/skills/demo-skill");
     case "inspect_skill_source": {
-      const path = (args.input && args.input.sourcePath) || "";
-      const valid = path.length > 0;
+      const source = (args.input && args.input.source) || (args.input && args.input.sourcePath) || "";
+      const valid = source.length > 0;
       if (!valid) {
-        return Promise.reject("Invalid path supplied");
+        return Promise.reject("Invalid source supplied");
       }
       return Promise.resolve({
         valid,
         name: "Local Skill",
-        description: "Inspected skill from path: " + path,
+        description: "Inspected skill from: " + source,
         fileCount: 3,
         totalSizeBytes: 89000,
         requirements: ["python", "mcp"],
         warnings: [],
         errors: [],
+        importPath: source.startsWith("http") ? "/tmp/mock-extracted-skill" : source,
+        logicalSource: source,
       });
     }
     case "import_skill": {
-      const path = (args.input && args.input.sourcePath) || "";
+      const source = (args.input && args.input.source) || (args.input && args.input.sourcePath) || "";
       const id = "sk_" + Math.random().toString(16).slice(2, 10);
       const newSkill = {
         id,
         name: "Imported Skill",
-        description: "Skill imported from: " + path,
+        description: "Skill imported from: " + source,
         storePath: "/mock/store/" + id,
-        sourcePath: path,
+        sourcePath: source,
         enabled: true,
         sizeBytes: 89000,
         importedAt: new Date().toISOString().replace(/\.\d{3}Z$/, "Z"),
@@ -1031,6 +1150,27 @@ function mockInvoke(cmd, args) {
           alreadyImported: false,
         },
       ]);
+    case "preview_discovered_mcp": {
+      const input = args.input || {};
+      const name = input.name || "notion-mcp-v1";
+      return Promise.resolve({
+        name,
+        sourcePath: input.sourcePath || "/Users/me/.cursor/mcp.json",
+        content: JSON.stringify(
+          {
+            command: "/Users/me/.local/node/bin/notion-mcp",
+            args: ["--transport", "stdio"],
+            env: { NOTION_TOKEN: "••••" },
+          },
+          null,
+          2
+        ),
+        truncated: false,
+        charCount: 120,
+      });
+    }
+    case "open_discovered_mcp_source":
+      return Promise.resolve((args.input && args.input.sourcePath) || "/preview/mcp.json");
     case "import_discovered_mcp_server": {
       const found = {
         name: args.input.name,
@@ -1048,12 +1188,21 @@ function mockInvoke(cmd, args) {
     case "inspect_mcp_server": {
       const inp = args.input || {};
       const errors = [];
+      const transport = inp.transport || "stdio";
+      const remote = transport === "sse" || transport === "streamable_http";
       if (!inp.name) errors.push("Name is required");
-      if (!inp.command) errors.push("Command is required");
+      if (remote) {
+        if (!inp.url) errors.push("URL is required for remote MCP");
+      } else if (!inp.command) {
+        errors.push("Command is required");
+      }
       const known = ["node", "npm", "npx", "python", "python3", "pip", "pip3", "uv", "uvx", "deno", "bun", "bunx"];
-      const commandOk = !!inp.command && (inp.command.startsWith("/") || known.includes(inp.command));
+      const commandOk = remote || (!!inp.command && (inp.command.startsWith("/") || known.includes(inp.command)));
       const warnings = [];
-      if (inp.command && !commandOk) warnings.push(`'${inp.command}' 不在受管运行时白名单，Science 可能拒绝。`);
+      if (!remote && inp.command && !commandOk) warnings.push(`'${inp.command}' 不在受管运行时白名单，Science 可能拒绝。`);
+      if (remote && inp.headers && Object.keys(inp.headers).length) {
+        warnings.push("Header values are stored in CSP's local 0600 inventory and deployed as a Science headers_helper.");
+      }
       const exts = [".py", ".js", ".mjs", ".cjs", ".ts", ".rb", ".sh", ".jar", ".json"];
       (inp.args || []).forEach((a) => {
         const t = String(a).trim();
@@ -1069,7 +1218,22 @@ function mockInvoke(cmd, args) {
       const now = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
       const env = {};
       Object.entries(inp.env || {}).forEach(([k, v]) => (env[k] = mockMask(v)));
-      const srv = { id, name: inp.name, description: inp.description || "", command: inp.command, args: inp.args || [], env, enabled: true, createdAt: now, updatedAt: now };
+      const headers = {};
+      Object.entries(inp.headers || {}).forEach(([k, v]) => (headers[k] = mockMask(v)));
+      const srv = {
+        id,
+        name: inp.name,
+        description: inp.description || "",
+        transport: inp.transport || "stdio",
+        command: inp.command || "",
+        args: inp.args || [],
+        env,
+        url: inp.url || "",
+        headers,
+        enabled: true,
+        createdAt: now,
+        updatedAt: now,
+      };
       mockStore.mcpServers.push(srv);
       return Promise.resolve({ server: srv, needsRestart: false });
     }
@@ -1077,14 +1241,26 @@ function mockInvoke(cmd, args) {
       const s = mockStore.mcpServers.find((x) => x.id === args.input.serverId);
       if (!s) return Promise.reject("MCP server not found");
       const inp = args.input.server || {};
-      s.name = inp.name; s.description = inp.description || ""; s.command = inp.command; s.args = inp.args || [];
+      s.name = inp.name;
+      s.description = inp.description || "";
+      s.transport = inp.transport || "stdio";
+      s.command = inp.command || "";
+      s.args = inp.args || [];
+      s.url = inp.url || "";
       // Mirror backend env-merge: empty value keeps old, absent key deletes.
       const env = {};
       Object.entries(inp.env || {}).forEach(([k, v]) => {
         if (v === "") { if (s.env && s.env[k] != null) env[k] = s.env[k]; }
         else env[k] = mockMask(v);
       });
-      s.env = env; s.updatedAt = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
+      s.env = env;
+      const headers = {};
+      Object.entries(inp.headers || {}).forEach(([k, v]) => {
+        if (v === "") { if (s.headers && s.headers[k] != null) headers[k] = s.headers[k]; }
+        else headers[k] = mockMask(v);
+      });
+      s.headers = headers;
+      s.updatedAt = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
       return Promise.resolve({ server: s, needsRestart: false });
     }
     case "set_mcp_server_enabled": {
@@ -1313,7 +1489,7 @@ function setBusy(on, op) {
     els.proxyPort, els.sandboxPort,
     // Skill / MCP manager actions: prevent concurrent mutations racing a running op.
     els.skillCreateBtn, els.skillCreateSaveBtn, els.skillCreateCancelBtn,
-    els.skillMoreBtn, els.skillInspectBtn, els.skillImportConfirmBtn, els.skillImportCancelBtn,
+    els.skillMoreBtn, els.skillBrowseBtn, els.skillImportConfirmBtn, els.skillImportCancelBtn,
     els.skillImportBtn, els.skillDiscoverBtn, els.skillDiscoverImportBtn, els.skillDiscoverCancelBtn,
     els.skillAdoptBtn, els.skillAdoptConfirmBtn, els.skillAdoptCancelBtn,
     els.mcpMoreBtn, els.mcpJsonBtn, els.mcpNetworkAllowlistBtn, els.mcpDiscoverBtn, els.mcpDiscoverImportBtn, els.mcpDiscoverCancelBtn,
@@ -1413,21 +1589,34 @@ function escapeHtml(s) {
   );
 }
 
+/** Collapse whitespace and cap length for one-line discover card details. */
+function truncateOneLine(s, max) {
+  const t = String(s == null ? "" : s).replace(/\s+/g, " ").trim();
+  if (!max || t.length <= max) return t;
+  return `${t.slice(0, Math.max(0, max - 1))}…`;
+}
+
 function tplById(id) {
   return (configState.templates || []).find((t) => t.id === id) || null;
+}
+
+// Shared footer (runtime status + ports): visible on any tab's list view, hidden in wizard/forms.
+function updateSharedRuntimeFooter() {
+  const show = !els.panel.classList.contains("view-form");
+  if (els.runtimeStatusSec) els.runtimeStatusSec.hidden = !show;
+  if (els.advSec) els.advSec.hidden = !show;
 }
 
 // ── View switching: list / new wizard / connection edit. One form visible at a time (list hidden to reduce height). ──
 function showView(v) {
   els.listSec.hidden = v !== "list";
-  els.advSec.hidden = v !== "list";
-  if (els.runtimeStatusSec) els.runtimeStatusSec.hidden = v !== "list";
   els.wizSec.hidden = v !== "wizard";
   els.connSec.hidden = v !== "conn";
   // Only drive the panel form chrome when the profiles pane is active.
   if (!els.panelBody || !els.panelBody.hidden) {
     els.panel.classList.toggle("view-form", v !== "list");
   }
+  updateSharedRuntimeFooter();
   if (v === "list") {
     hideSkip();
     closeWizPresetMenu();
@@ -1450,6 +1639,7 @@ function showSkillView(v) {
     els.skillPane.classList.toggle("pane-form", !list);
     if (!els.skillPane.hidden) els.panel.classList.toggle("view-form", !list);
   }
+  updateSharedRuntimeFooter();
   if (list) closeMenu(els.skillMenu, els.skillMoreBtn);
 }
 
@@ -1463,6 +1653,7 @@ function showMcpView(v) {
     els.mcpPane.classList.toggle("pane-form", !list);
     if (!els.mcpPane.hidden) els.panel.classList.toggle("view-form", !list);
   }
+  updateSharedRuntimeFooter();
   if (list) closeMenu(els.mcpMenu, els.mcpMoreBtn);
 }
 
@@ -2063,17 +2254,27 @@ function wire() {
     "skillDiscoverImportBtn", "skillDiscoverCancelBtn",
     "skillImportBtn", "skillImportSec", "skillImportTitle", "skillImportIntro",
     "skillPathLabel", "skillPathHint",
-    "skillSourcePath", "skillInspectionPreview", "skillInspPreviewTitle",
+    "skillSourcePath", "skillBrowseBtn",
+    "skillInspectionPreview", "skillInspPreviewTitle",
     "inspName", "inspDesc", "inspStats", "inspReqs", "inspWarnings", "inspErrors",
-    "skillInspectBtn", "skillImportConfirmBtn", "skillImportCancelBtn",
+    "skillImportConfirmBtn", "skillImportCancelBtn",
     "skillAdoptBtn", "skillAdoptSec", "skillAdoptTitle", "skillAdoptHint",
     "skillAdoptList", "skillAdoptEmpty", "skillAdoptEmptyText",
     "skillAdoptConfirmBtn", "skillAdoptCancelBtn",
+    "previewOverlay", "previewOverlayTitle", "previewOverlayMeta", "previewOverlayBody",
+    "previewOverlayFileSelect", "previewOverlayOpenBtn", "previewOverlayCloseBtn",
     "tabMcp", "mcpPane", "mcpListSec", "mcpAddBtn", "mcpMoreBtn", "mcpMenu", "mcpEmpty", "mcpEmptyTitle", "mcpEmptyHint",
     "mcpApplyHint", "mcpList", "mcpMsg",
     "mcpJsonBtn", "mcpNetworkAllowlistBtn", "mcpDiscoverBtn", "mcpDiscoverSec", "mcpDiscoverTitle", "mcpDiscoverHint",
     "mcpDiscoverList", "mcpDiscoverEmpty", "mcpDiscoverEmptyText", "mcpDiscoverImportBtn", "mcpDiscoverCancelBtn",
-    "mcpFormSec", "mcpFormTitle", "mcpName", "mcpDesc", "mcpCommand", "mcpArgs", "mcpEnv",
+    "mcpFormSec", "mcpFormTitle", "mcpName", "mcpNameHint", "mcpDesc",
+    "mcpTransport", "mcpTransportLabel", "mcpTransportHint",
+    "mcpStdioFields", "mcpRemoteFields",
+    "mcpCommand", "mcpCommandLabel", "mcpCommandHint",
+    "mcpArgs", "mcpArgsLabel", "mcpArgsHint",
+    "mcpEnv", "mcpEnvLabel", "mcpEnvHint",
+    "mcpUrl", "mcpUrlLabel", "mcpUrlHint",
+    "mcpHeaders", "mcpHeadersLabel", "mcpHeadersHint",
     "mcpInspection", "mcpWarnings", "mcpErrors", "mcpSaveBtn", "mcpCancelBtn",
   ].forEach((id) => (els[id] = $(id)));
   els.panel = document.querySelector(".panel");
@@ -2208,13 +2409,30 @@ function wire() {
   els.mcpDiscoverList.addEventListener("change", (e) => {
     if (e.target && e.target.type === "checkbox") refreshMcpDiscoverGate();
   });
+  els.mcpDiscoverList.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-mcp-preview-source]");
+    if (!btn) return;
+    e.preventDefault();
+    e.stopPropagation();
+    loadMcpDiscoverPreview(
+      btn.getAttribute("data-mcp-preview-source"),
+      btn.getAttribute("data-mcp-preview-name"),
+      btn.getAttribute("data-mcp-preview-label")
+    );
+  });
   els.mcpAddBtn.addEventListener("click", () => openMcpForm());
   els.mcpSaveBtn.addEventListener("click", saveMcpServer);
   els.mcpCancelBtn.addEventListener("click", closeMcpForm);
   // Editing any field invalidates a prior warning acknowledgement.
-  [els.mcpName, els.mcpDesc, els.mcpCommand, els.mcpArgs, els.mcpEnv].forEach((el) =>
-    el.addEventListener("input", () => { mcpWarnAck = false; })
+  [els.mcpName, els.mcpDesc, els.mcpCommand, els.mcpArgs, els.mcpEnv, els.mcpUrl, els.mcpHeaders].forEach((el) =>
+    el && el.addEventListener("input", () => { mcpWarnAck = false; })
   );
+  if (els.mcpTransport) {
+    els.mcpTransport.addEventListener("change", () => {
+      mcpWarnAck = false;
+      syncMcpTransportFields();
+    });
+  }
   els.mcpList.addEventListener("click", (e) => {
     if (busy) return;
     if (handleDescToggleClick(e)) return;
@@ -2255,7 +2473,9 @@ function wire() {
   els.skillCreateName.addEventListener("input", syncSkillCreateBody);
   els.skillCreateDesc.addEventListener("input", syncSkillCreateBody);
   els.skillCreateBody.addEventListener("input", () => { skillBodyDirty = true; });
-  els.skillInspectBtn.addEventListener("click", inspectSkillSource);
+  els.skillBrowseBtn.addEventListener("click", () => {
+    pickSkillSource();
+  });
   els.skillImportConfirmBtn.addEventListener("click", importSkillConfirm);
   els.skillImportCancelBtn.addEventListener("click", closeSkillImport);
   els.skillImportBtn.addEventListener("click", openSkillImport);
@@ -2265,14 +2485,39 @@ function wire() {
   els.skillAdoptBtn.addEventListener("click", openSkillAdopt);
   els.skillAdoptCancelBtn.addEventListener("click", closeSkillAdopt);
   els.skillAdoptConfirmBtn.addEventListener("click", adoptWorkspaceSkills);
+  if (els.previewOverlayCloseBtn) {
+    els.previewOverlayCloseBtn.addEventListener("click", closePreviewOverlay);
+  }
+  if (els.previewOverlayOpenBtn) {
+    els.previewOverlayOpenBtn.addEventListener("click", openPreviewOverlayPath);
+  }
+  if (els.previewOverlayFileSelect) {
+    els.previewOverlayFileSelect.addEventListener("change", () => {
+      if (!previewOverlayState || previewOverlayState.kind !== "skill-adopt") return;
+      loadAdoptPreview(previewOverlayState.key, els.previewOverlayFileSelect.value);
+    });
+  }
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && els.previewOverlay && !els.previewOverlay.hidden) {
+      closePreviewOverlay();
+    }
+  });
   els.skillDiscoverList.addEventListener("change", (e) => {
     if (e.target && e.target.type === "checkbox") refreshDiscoverGate();
   });
   els.skillAdoptList.addEventListener("change", (e) => {
     if (e.target && e.target.type === "checkbox") refreshAdoptGate();
   });
+  els.skillAdoptList.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-adopt-preview]");
+    if (!btn) return;
+    e.preventDefault();
+    e.stopPropagation();
+    loadAdoptPreview(btn.getAttribute("data-adopt-preview"));
+  });
   els.skillSourcePath.addEventListener("input", () => {
-    els.skillImportConfirmBtn.disabled = true;
+    skillResolvedImport = { source: "", importPath: "" };
+    els.skillImportConfirmBtn.disabled = !els.skillSourcePath.value.trim();
     els.skillInspectionPreview.hidden = true;
   });
 
@@ -2330,8 +2575,6 @@ function switchTab(tab) {
   els.panelBody.hidden = !isProfiles;
   els.skillPane.hidden = tab !== "skills";
   els.mcpPane.hidden = tab !== "mcp";
-  els.advSec.hidden = !isProfiles;
-  if (els.runtimeStatusSec) els.runtimeStatusSec.hidden = !isProfiles;
 
   // Reset every tab's sub-view so leaving a form never leaves view-form stuck.
   showSkillView("list");
@@ -2339,13 +2582,14 @@ function switchTab(tab) {
   if (isProfiles) {
     showView("list");
   } else {
-    // Clear profile form state without re-showing ports/status on Skills/MCP.
+    // Clear profile form state; shared footer stays on list chrome via showSkillView/showMcpView.
     els.listSec.hidden = false;
     els.wizSec.hidden = true;
     els.connSec.hidden = true;
     closeWizPresetMenu();
     hideSkip();
     els.panel.classList.remove("view-form");
+    updateSharedRuntimeFooter();
   }
 
   if (tab === "skills") loadSkills();
@@ -2636,9 +2880,12 @@ async function saveNewSkill() {
   }
 }
 
-// ── Skill path import (full-page form from ⋯ → Import folder) ──
+// ── Skill path import (full-page form from ⋯ → Import) ──
+let skillResolvedImport = { source: "", importPath: "" };
+
 function resetSkillPathImport() {
   if (els.skillSourcePath) els.skillSourcePath.value = "";
+  skillResolvedImport = { source: "", importPath: "" };
   if (els.skillImportConfirmBtn) els.skillImportConfirmBtn.disabled = true;
   if (els.skillInspectionPreview) els.skillInspectionPreview.hidden = true;
 }
@@ -2655,13 +2902,32 @@ function closeSkillImport() {
   showSkillView("list");
 }
 
-async function inspectSkillSource() {
-  const path = els.skillSourcePath.value.trim();
-  if (!path) return;
-  setBusy(true);
+async function pickSkillSource() {
+  if (busy) return;
+  try {
+    const path = await call("pick_skill_source", {
+      input: { title: T("skillPickTitle") },
+    });
+    if (!path) return;
+    els.skillSourcePath.value = path;
+    await inspectSkillSource();
+  } catch (e) {
+    setSkillMsg(resolveBackendErr(e), "error");
+  }
+}
+
+async function inspectSkillSource(opts) {
+  const skipBusy = opts && opts.skipBusy;
+  const source = els.skillSourcePath.value.trim();
+  if (!source) return false;
+  if (!skipBusy) setBusy(true);
   let canImport = false;
   try {
-    const data = await call("inspect_skill_source", { input: { sourcePath: path } });
+    const data = await call("inspect_skill_source", { input: { source } });
+    skillResolvedImport = {
+      source: data.logicalSource || source,
+      importPath: data.importPath || "",
+    };
     els.inspName.textContent = data.name || S().inspUnnamedSkill;
     els.inspDesc.textContent = data.description || S().inspNoDesc;
     els.inspStats.textContent = T("inspFileCountSize", {
@@ -2671,14 +2937,14 @@ async function inspectSkillSource() {
     els.inspReqs.textContent = T("inspRequirements", {
       reqs: (data.requirements || []).join(", ") || S().inspNone,
     });
-    
+
     if (data.warnings && data.warnings.length) {
       els.inspWarnings.hidden = false;
       els.inspWarnings.textContent = T("inspWarningsPrefix", { msg: data.warnings.join("; ") });
     } else {
       els.inspWarnings.hidden = true;
     }
-    
+
     if (data.errors && data.errors.length) {
       els.inspErrors.hidden = false;
       els.inspErrors.textContent = T("inspErrorsPrefix", { msg: data.errors.join("; ") });
@@ -2699,18 +2965,29 @@ async function inspectSkillSource() {
     els.skillInspectionPreview.hidden = false;
     canImport = false;
   } finally {
-    setBusy(false);
-    // setBusy(false) clears disabled on all action buttons; restore inspect gate.
+    if (!skipBusy) setBusy(false);
     if (els.skillImportConfirmBtn) els.skillImportConfirmBtn.disabled = !canImport;
   }
+  return canImport;
 }
 
 async function importSkillConfirm() {
-  const path = els.skillSourcePath.value.trim();
-  if (!path) return;
+  const source = els.skillSourcePath.value.trim();
+  if (!source) return;
   setBusy(true);
   try {
-    const result = await call("import_skill", { input: { sourcePath: path } });
+    const already =
+      skillResolvedImport.source === source && !!skillResolvedImport.importPath;
+    if (!already) {
+      const ok = await inspectSkillSource({ skipBusy: true });
+      if (!ok) return;
+    }
+    const result = await call("import_skill", {
+      input: {
+        source: skillResolvedImport.source || source,
+        importPath: skillResolvedImport.importPath || undefined,
+      },
+    });
     closeSkillImport();
     await loadSkills();
     if (result && result.needsRestart) {
@@ -2729,7 +3006,11 @@ async function importSkillConfirm() {
     els.inspErrors.textContent = resolveBackendErr(e);
     els.skillInspectionPreview.hidden = false;
   } finally {
+    const ready =
+      skillResolvedImport.source === els.skillSourcePath.value.trim() &&
+      !!skillResolvedImport.importPath;
     setBusy(false);
+    if (els.skillImportConfirmBtn) els.skillImportConfirmBtn.disabled = !ready;
   }
 }
 
@@ -2796,7 +3077,7 @@ async function importDiscoveredSkills() {
   try {
     for (const p of paths) {
       try {
-        const result = await call("import_skill", { input: { sourcePath: p } });
+        const result = await call("import_skill", { input: { source: p } });
         if (result && result.needsRestart) needsRestart = true;
       } catch (e) {
         failures.push(`${p}: ${resolveBackendErr(e)}`);
@@ -2828,9 +3109,66 @@ async function importDiscoveredSkills() {
 }
 
 // ── Science Workspace Skill Adopt ──
+let previewOverlayState = null;
+
+function closePreviewOverlay() {
+  previewOverlayState = null;
+  if (els.previewOverlay) {
+    els.previewOverlay.hidden = true;
+    els.previewOverlay.classList.remove("preview-overlay--compact");
+  }
+  if (els.previewOverlayBody) els.previewOverlayBody.textContent = "";
+  if (els.previewOverlayMeta) els.previewOverlayMeta.textContent = "";
+  if (els.previewOverlayFileSelect) {
+    els.previewOverlayFileSelect.innerHTML = "";
+    els.previewOverlayFileSelect.hidden = true;
+  }
+  if (els.previewOverlayOpenBtn) els.previewOverlayOpenBtn.hidden = true;
+}
+
+function setPreviewOverlayLayout(layout) {
+  if (!els.previewOverlay) return;
+  els.previewOverlay.classList.toggle("preview-overlay--compact", layout === "compact");
+}
+
+function showPreviewOverlayLoading(title, layout = "full") {
+  setPreviewOverlayLayout(layout);
+  if (els.previewOverlayTitle) {
+    els.previewOverlayTitle.textContent = title || S().skillAdoptPreviewTitle;
+  }
+  if (els.previewOverlayMeta) els.previewOverlayMeta.textContent = "";
+  if (els.previewOverlayBody) els.previewOverlayBody.textContent = S().skillScanning;
+  if (els.previewOverlayFileSelect) els.previewOverlayFileSelect.hidden = true;
+  if (els.previewOverlayOpenBtn) els.previewOverlayOpenBtn.hidden = true;
+  if (els.previewOverlay) els.previewOverlay.hidden = false;
+}
+
+async function openPreviewOverlayPath() {
+  if (!previewOverlayState) return;
+  try {
+    if (previewOverlayState.kind === "skill-adopt") {
+      await call("open_workspace_skill", { input: { key: previewOverlayState.key } });
+    } else if (previewOverlayState.kind === "mcp") {
+      await call("open_discovered_mcp_source", {
+        input: { sourcePath: previewOverlayState.sourcePath },
+      });
+    }
+  } catch (e) {
+    const err = resolveBackendErr(e);
+    const msg =
+      previewOverlayState?.kind === "mcp"
+        ? T("mcpPreviewFail", { err })
+        : T("skillAdoptPreviewFail", { err });
+    if (els.previewOverlayMeta) els.previewOverlayMeta.textContent = msg;
+    if (previewOverlayState?.kind === "mcp") setMcpMsg(msg);
+    else setSkillMsg(msg);
+  }
+}
+
 async function openSkillAdopt() {
   closeMenu(els.skillMenu, els.skillMoreBtn);
   if (busy) return;
+  closePreviewOverlay();
   els.skillAdoptList.innerHTML = `<p class="hint">${escapeHtml(S().skillScanning)}</p>`;
   els.skillAdoptEmpty.hidden = true;
   els.skillAdoptConfirmBtn.disabled = true;
@@ -2846,6 +3184,7 @@ async function openSkillAdopt() {
 }
 
 function closeSkillAdopt() {
+  closePreviewOverlay();
   showSkillView("list");
 }
 
@@ -2857,6 +3196,7 @@ function renderSkillAdopt(found) {
   }
   els.skillAdoptEmpty.hidden = true;
   const adoptedBadge = S().skillAdoptedBadge;
+  const previewLabel = S().skillAdoptPreview;
   els.skillAdoptList.innerHTML = found.map((d) => {
     const files = (d.files || []).slice(0, 6).join(", ");
     const more = (d.files || []).length > 6 ? ` +${d.files.length - 6}` : "";
@@ -2865,7 +3205,7 @@ function renderSkillAdopt(found) {
       : "";
     const badge = d.alreadyImported ? `<span class="skill-req-tag">${escapeHtml(adoptedBadge)}</span>` : "";
     return `
-      <label class="skill-discover-row">
+      <div class="skill-discover-row">
         <input type="checkbox" value="${escapeHtml(d.key)}" />
         <span class="skill-discover-main">
           <span class="skill-name">${escapeHtml(d.name)} ${badge}</span>
@@ -2874,7 +3214,10 @@ function renderSkillAdopt(found) {
           ${files ? `<span class="skill-meta"><span>${escapeHtml(files)}${more}</span></span>` : ""}
           ${warn}
         </span>
-      </label>
+        <span class="skill-discover-actions">
+          <button type="button" class="btn small" data-adopt-preview="${escapeHtml(d.key)}">${escapeHtml(previewLabel)}</button>
+        </span>
+      </div>
     `;
   }).join("");
   refreshAdoptGate();
@@ -2883,6 +3226,60 @@ function renderSkillAdopt(found) {
 function refreshAdoptGate() {
   const checked = els.skillAdoptList.querySelectorAll("input[type=checkbox]:checked");
   els.skillAdoptConfirmBtn.disabled = busy || checked.length === 0;
+}
+
+function formatByteSize(n) {
+  const v = Number(n) || 0;
+  if (v < 1024) return `${v} B`;
+  if (v < 1024 * 1024) return `${(v / 1024).toFixed(1)} KB`;
+  return `${(v / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+async function loadAdoptPreview(key, file) {
+  if (!key || busy) return;
+  showPreviewOverlayLoading(S().skillAdoptPreviewTitle, "full");
+  previewOverlayState = { kind: "skill-adopt", key };
+  try {
+    const data = await call("preview_workspace_skill", {
+      input: { key, file: file || null },
+    });
+    previewOverlayState = { kind: "skill-adopt", key: data.key };
+    const files = data.files || [];
+    if (files.length > 1 && els.previewOverlayFileSelect) {
+      els.previewOverlayFileSelect.hidden = false;
+      els.previewOverlayFileSelect.innerHTML = files.map((f) => {
+        const selected = f.name === data.activeFile ? " selected" : "";
+        return `<option value="${escapeHtml(f.name)}"${selected}>${escapeHtml(f.name)} (${formatByteSize(f.sizeBytes)})</option>`;
+      }).join("");
+    } else if (els.previewOverlayFileSelect) {
+      els.previewOverlayFileSelect.hidden = true;
+      els.previewOverlayFileSelect.innerHTML = "";
+    }
+    if (els.previewOverlayOpenBtn) {
+      els.previewOverlayOpenBtn.hidden = false;
+      els.previewOverlayOpenBtn.textContent = S().skillAdoptOpen;
+    }
+    if (els.previewOverlayTitle) {
+      els.previewOverlayTitle.textContent = `${S().skillAdoptPreviewTitle} · ${data.name || ""}`;
+    }
+    let meta = T("skillAdoptPreviewMeta", {
+      file: data.activeFile || "",
+      chars: String(data.charCount ?? 0),
+      bytes: formatByteSize((files.find((f) => f.name === data.activeFile)?.sizeBytes) || 0),
+    });
+    if (data.truncated) meta += " " + S().skillAdoptPreviewTruncated;
+    if (data.alreadyImported) meta += " · " + S().skillAdoptReadoptHint;
+    if (els.previewOverlayMeta) els.previewOverlayMeta.textContent = meta;
+    if (els.previewOverlayBody) els.previewOverlayBody.textContent = data.content || "";
+    if (els.previewOverlay) els.previewOverlay.hidden = false;
+  } catch (e) {
+    if (els.previewOverlayBody) els.previewOverlayBody.textContent = "";
+    if (els.previewOverlayMeta) {
+      els.previewOverlayMeta.textContent = T("skillAdoptPreviewFail", {
+        err: resolveBackendErr(e),
+      });
+    }
+  }
 }
 
 async function adoptWorkspaceSkills() {
@@ -2924,6 +3321,7 @@ let mcpWarnAck = false;
 async function openMcpDiscover() {
   closeMenu(els.mcpMenu, els.mcpMoreBtn);
   if (busy) return;
+  closePreviewOverlay();
   els.mcpDiscoverList.innerHTML = `<p class="hint">${escapeHtml(S().mcpScanning)}</p>`;
   els.mcpDiscoverEmpty.hidden = true;
   els.mcpDiscoverImportBtn.disabled = true;
@@ -2939,6 +3337,7 @@ async function openMcpDiscover() {
 }
 
 function closeMcpDiscover() {
+  closePreviewOverlay();
   showMcpView("list");
 }
 
@@ -2950,27 +3349,76 @@ function renderMcpDiscover(found) {
   }
   els.mcpDiscoverEmpty.hidden = true;
   const importedBadge = S().skillAlreadyImported;
+  const previewLabel = S().mcpDiscoverPreview;
   els.mcpDiscoverList.innerHTML = found.map((d) => {
     const disabled = d.alreadyImported ? " disabled" : "";
     const badge = d.alreadyImported ? `<span class="skill-req-tag">${escapeHtml(importedBadge)}</span>` : "";
-    const env = (d.envKeys || []).length
-      ? `<span class="skill-meta"><span>env: ${escapeHtml((d.envKeys || []).join(", "))}</span></span>`
+    const transport = d.transport || "stdio";
+    const isRemote = transport === "sse" || transport === "streamable_http";
+    const transportBadge = isRemote
+      ? (transport === "sse" ? S().mcpBadgeSse : S().mcpBadgeHttp)
+      : S().mcpBadgeStdio;
+    const envKeys = isRemote ? (d.headerKeys || []) : (d.envKeys || []);
+    const env = envKeys.length
+      ? `<span class="skill-meta"><span>${isRemote ? "headers" : "env"}: ${envKeys.length}</span></span>`
       : "";
-    const args = (d.args || []).length ? ` ${escapeHtml((d.args || []).join(" "))}` : "";
+    const rawDetail = isRemote
+      ? (d.url || "")
+      : `${d.command || ""}${(d.args || []).length ? ` ${(d.args || []).join(" ")}` : ""}`;
+    const detail = escapeHtml(truncateOneLine(rawDetail, 96));
     return `
-      <label class="skill-discover-row${d.alreadyImported ? " disabled" : ""}">
+      <div class="skill-discover-row${d.alreadyImported ? " disabled" : ""}">
         <input type="checkbox" data-source-path="${escapeHtml(d.sourcePath)}" value="${escapeHtml(d.name)}"${disabled} />
         <span class="skill-discover-main">
-          <span class="skill-name">${escapeHtml(d.name)} ${badge}</span>
-          ${d.description ? `<span class="skill-desc">${escapeHtml(d.description)}</span>` : ""}
-          <span class="mcp-cmd">${escapeHtml(d.command)}${args}</span>
+          <span class="skill-name">${escapeHtml(d.name)} ${badge} <span class="badge">${escapeHtml(transportBadge)}</span></span>
+          ${detail ? `<span class="mcp-cmd">${detail}</span>` : ""}
           ${env}
           <span class="skill-meta"><span>${escapeHtml(d.sourceLabel)}</span></span>
         </span>
-      </label>
+        <span class="skill-discover-actions">
+          <button type="button" class="btn small"
+            data-mcp-preview-source="${escapeHtml(d.sourcePath)}"
+            data-mcp-preview-name="${escapeHtml(d.name)}"
+            data-mcp-preview-label="${escapeHtml(d.sourceLabel)}">${escapeHtml(previewLabel)}</button>
+        </span>
+      </div>
     `;
   }).join("");
   refreshMcpDiscoverGate();
+}
+
+async function loadMcpDiscoverPreview(sourcePath, name, sourceLabel) {
+  if (!sourcePath || !name || busy) return;
+  showPreviewOverlayLoading(S().mcpPreviewTitle, "compact");
+  previewOverlayState = { kind: "mcp", sourcePath, name };
+  if (els.previewOverlayOpenBtn) {
+    els.previewOverlayOpenBtn.hidden = false;
+    els.previewOverlayOpenBtn.textContent = S().mcpPreviewOpen;
+  }
+  try {
+    const data = await call("preview_discovered_mcp", {
+      input: { sourcePath, name },
+    });
+    previewOverlayState = { kind: "mcp", sourcePath: data.sourcePath, name: data.name };
+    if (els.previewOverlayTitle) {
+      els.previewOverlayTitle.textContent = `${S().mcpPreviewTitle} · ${data.name || ""}`;
+    }
+    let meta = T("mcpPreviewMeta", {
+      name: data.name || "",
+      source: sourceLabel || "",
+    });
+    if (data.truncated) meta += " " + S().skillAdoptPreviewTruncated;
+    if (els.previewOverlayMeta) els.previewOverlayMeta.textContent = meta;
+    if (els.previewOverlayBody) els.previewOverlayBody.textContent = data.content || "";
+    if (els.previewOverlay) els.previewOverlay.hidden = false;
+  } catch (e) {
+    if (els.previewOverlayBody) els.previewOverlayBody.textContent = "";
+    if (els.previewOverlayMeta) {
+      els.previewOverlayMeta.textContent = T("mcpPreviewFail", {
+        err: resolveBackendErr(e),
+      });
+    }
+  }
 }
 
 function refreshMcpDiscoverGate() {
@@ -3046,15 +3494,23 @@ function renderMcp(list) {
   els.mcpList.innerHTML = list.map((s) => {
     const enabledClass = s.enabled ? "" : " disabled";
     const checked = s.enabled ? " checked" : "";
-    const cmdLine = escapeHtml([s.command, ...(s.args || [])].join(" "));
-    const envKeys = Object.keys(s.env || {});
-    const envTags = envKeys.map((k) => `<span class="skill-req-tag" title="${escapeHtml(k)}">${escapeHtml(k)}</span>`).join("");
+    const transport = (s.transport || "stdio");
+    const isRemote = transport === "sse" || transport === "streamable_http";
+    const badge = isRemote
+      ? (transport === "sse" ? S().mcpBadgeSse : S().mcpBadgeHttp)
+      : S().mcpBadgeStdio;
+    const cmdLine = isRemote
+      ? escapeHtml(s.url || "")
+      : escapeHtml([s.command, ...(s.args || [])].join(" "));
+    const secretKeys = Object.keys(isRemote ? (s.headers || {}) : (s.env || {}));
+    const envTags = secretKeys.map((k) => `<span class="skill-req-tag" title="${escapeHtml(k)}">${escapeHtml(k)}</span>`).join("");
     return `
       <div class="skill-row${enabledClass}" data-id="${escapeHtml(s.id)}" data-name="${escapeHtml(s.name)}">
         <div class="skill-row-top">
           <div class="skill-title-group">
             <input type="checkbox"${checked} />
             <span class="skill-name" title="${escapeHtml(s.name)}">${escapeHtml(s.name)}</span>
+            <span class="badge">${escapeHtml(badge)}</span>
             ${s.builtin ? `<span class="badge on" title="${escapeHtml(S().mcpBuiltinHint)}">${escapeHtml(S().mcpBuiltinBadge)}</span>` : ""}
           </div>
           <div class="pmenu-wrap">
@@ -3121,17 +3577,33 @@ function openMcpForm(id) {
   els.mcpFormTitle.textContent = s ? S().mcpFormTitleEdit : S().mcpFormTitleNew;
   els.mcpName.value = s ? s.name : "";
   els.mcpDesc.value = s ? (s.description || "") : "";
-  els.mcpCommand.value = s ? s.command : "";
+  const transport = (s && s.transport) || "stdio";
+  if (els.mcpTransport) els.mcpTransport.value = transport;
+  els.mcpCommand.value = s ? (s.command || "") : "";
   els.mcpArgs.value = s ? (s.args || []).join("\n") : "";
-  // Env values are returned masked; on edit we show keys with blank values so the
-  // user re-enters secrets intentionally (never round-trip a masked value).
+  // Env/header values are returned masked; on edit we show keys with blank values
+  // so the user re-enters secrets intentionally (never round-trip a masked value).
   els.mcpEnv.value = s ? Object.keys(s.env || {}).map((k) => `${k}=`).join("\n") : "";
+  if (els.mcpUrl) els.mcpUrl.value = s ? (s.url || "") : "";
+  if (els.mcpHeaders) {
+    els.mcpHeaders.value = s
+      ? Object.keys(s.headers || {}).map((k) => `${k}=`).join("\n")
+      : "";
+  }
   els.mcpInspection.hidden = true;
   els.mcpWarnings.hidden = true;
   els.mcpErrors.hidden = true;
   mcpWarnAck = false;
+  syncMcpTransportFields();
   showMcpView("form");
   els.mcpName.focus();
+}
+
+function syncMcpTransportFields() {
+  const transport = (els.mcpTransport && els.mcpTransport.value) || "stdio";
+  const remote = transport === "sse" || transport === "streamable_http";
+  if (els.mcpStdioFields) els.mcpStdioFields.hidden = remote;
+  if (els.mcpRemoteFields) els.mcpRemoteFields.hidden = !remote;
 }
 
 function closeMcpForm() {
@@ -3158,14 +3630,23 @@ function parseEnvLines(text) {
   return env;
 }
 
-async function saveMcpServer() {
-  const input = {
+function collectMcpInput() {
+  const transport = (els.mcpTransport && els.mcpTransport.value) || "stdio";
+  const remote = transport === "sse" || transport === "streamable_http";
+  return {
     name: els.mcpName.value.trim(),
     description: els.mcpDesc.value.trim(),
-    command: els.mcpCommand.value.trim(),
-    args: parseArgsLines(els.mcpArgs.value),
-    env: parseEnvLines(els.mcpEnv.value),
+    transport,
+    command: remote ? "" : els.mcpCommand.value.trim(),
+    args: remote ? [] : parseArgsLines(els.mcpArgs.value),
+    env: remote ? {} : parseEnvLines(els.mcpEnv.value),
+    url: remote ? (els.mcpUrl ? els.mcpUrl.value.trim() : "") : "",
+    headers: remote ? parseEnvLines(els.mcpHeaders ? els.mcpHeaders.value : "") : {},
   };
+}
+
+async function saveMcpServer() {
+  const input = collectMcpInput();
   els.mcpWarnings.hidden = true;
   els.mcpErrors.hidden = true;
   els.mcpInspection.hidden = true;
