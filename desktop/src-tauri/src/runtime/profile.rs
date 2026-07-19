@@ -268,13 +268,12 @@ pub(crate) fn update_profile_connection_inner(
                 p.model = m.to_string();
             }
             if let Some(models) = active_models {
-                let mut sorted: Vec<String> = models
+                // Keep caller order (UI pin order / import source order); no re-sort.
+                p.active_models = models
                     .iter()
                     .map(|s| s.trim().to_string())
                     .filter(|s| !s.is_empty())
                     .collect();
-                model_sort::sort_model_ids(&mut sorted);
-                p.active_models = sorted;
             }
             if let Some(d) = default_model {
                 p.default_model = d.to_string();
@@ -361,13 +360,12 @@ impl ConnectionEdit {
             p.model = m.clone();
         }
         if let Some(models) = &self.active_models {
-            let mut sorted: Vec<String> = models
+            // Keep caller order (UI pin order / import source order); no re-sort.
+            p.active_models = models
                 .iter()
                 .map(|s| s.trim().to_string())
                 .filter(|s| !s.is_empty())
                 .collect();
-            model_sort::sort_model_ids(&mut sorted);
-            p.active_models = sorted;
         }
         if let Some(d) = &self.default_model {
             p.default_model = d.clone();

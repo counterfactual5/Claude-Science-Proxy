@@ -22,8 +22,6 @@
   --radius: 10px;
   --radius-sm: 8px;
   --radius-lg: 12px;
-  --prow-slot: 94px;
-  --list-slots: 3;
 }
 
 * { box-sizing: border-box; }
@@ -88,7 +86,7 @@ body {
 
 .panel.view-form .panel-foot { display: none; }
 
-.list-sec { flex: 0 0 auto; display: flex; flex-direction: column; }
+.list-sec { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
 .list-sec[hidden] { display: none !important; }
 
 /* ── Brand / header ── */
@@ -388,15 +386,90 @@ select:focus {
   font-size: 11.5px;
   color: var(--text-muted);
   line-height: 1.55;
-  max-height: 64px;
+  max-height: 96px;
   overflow: auto;
   white-space: pre-wrap;
   -webkit-user-select: text;
   user-select: text;
 }
 
-.msg.err { color: var(--red); }
-.msg.ok { color: var(--green); }
+.msg.err,
+.msg.ok,
+.msg.info,
+.msg.warn {
+  position: relative;
+  padding: 8px 10px 8px 30px;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(224, 107, 107, 0.32);
+  background: rgba(224, 107, 107, 0.09);
+  color: var(--text-secondary);
+}
+
+.msg.err::before,
+.msg.ok::before,
+.msg.info::before,
+.msg.warn::before {
+  content: "!";
+  position: absolute;
+  left: 10px;
+  top: 9px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--red);
+  color: var(--bg);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 14px;
+  text-align: center;
+}
+
+.msg.ok {
+  border-color: rgba(91, 174, 122, 0.32);
+  background: rgba(91, 174, 122, 0.09);
+}
+
+.msg.ok::before {
+  content: "✓";
+  background: var(--green);
+}
+
+/* Neutral notice (progress like "restarting…"): calm gray, not alarming. */
+.msg.info {
+  border-color: rgba(139, 148, 158, 0.32);
+  background: rgba(139, 148, 158, 0.09);
+}
+
+.msg.info::before {
+  content: "i";
+  background: #8b949e;
+}
+
+/* Warning (action done, but with a caveat): yellow, distinct from errors. */
+.msg.warn {
+  border-color: rgba(212, 167, 68, 0.38);
+  background: rgba(212, 167, 68, 0.1);
+}
+
+.msg.warn::before {
+  content: "!";
+  background: #d4a744;
+}
+
+/* "Activate anyway" escape hatch: lives inside the feedback alert, styled as
+   a warning-outline action so it reads as part of the error card. */
+.skip-btn {
+  margin-top: 8px;
+  width: 100%;
+  border-color: rgba(224, 107, 107, 0.4);
+  background: transparent;
+  color: var(--red);
+}
+
+.skip-btn:hover {
+  background: rgba(224, 107, 107, 0.12);
+  border-color: var(--red);
+}
 
 .hint {
   font-size: 10.5px;
@@ -506,8 +579,12 @@ select:focus {
 /* ── Profile list ── */
 #profileList {
   margin-top: 10px;
-  flex: 0 0 auto;
-  height: calc(var(--list-slots) * var(--prow-slot) + (var(--list-slots) - 1) * 8px);
+  /* Fill the pane and only scroll when cards overflow. A fixed slot height
+     clipped taller cards (badges wrap → >94px) while space sat empty below.
+     min-height must stay 0: a slot-based floor kept the list from shrinking
+     when the feedback card appeared, so cards painted over the message. */
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
@@ -726,6 +803,9 @@ select:focus {
 .panel.view-form .list-only { display: none !important; }
 
 .feedback {
+  /* Normal flow, never squeezed: the list above shrinks and scrolls instead.
+     When empty the section carries `hidden`, so it takes no space at all. */
+  flex: 0 0 auto;
   border-top: 1px solid var(--border);
   background: var(--bg);
 }
@@ -746,6 +826,28 @@ select:focus {
   flex-direction: column;
   gap: 6px;
   margin-top: 6px;
+}
+
+.model-pick-search {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.model-pick-search input[type="search"] {
+  height: 30px;
+  font-size: 12.5px;
+  padding: 4px 10px;
+}
+.model-pick-search-empty {
+  font-size: 12px;
+  color: var(--text-muted);
+  padding: 2px 2px 0;
+}
+
+/* `display: flex` below beats the bare `hidden` attribute (UA sheet), which
+   would leave search-filtered items visible. Force `hidden` to win. */
+.model-pick-item[hidden] {
+  display: none !important;
 }
 
 .model-pick-item {
@@ -801,6 +903,36 @@ select:focus {
   margin-bottom: 6px;
   color: var(--text-muted, #9ca3af);
 }
+/* Catalog rows (upstream models not yet enabled): visually secondary until picked. */
+.model-pick-item.model-pick-catalog {
+  border-style: dashed;
+  background: transparent;
+}
+.model-pick-item.model-pick-catalog .model-pick-label {
+  color: var(--text-muted);
+}
+.platter-browse-btn { margin-top: 6px; }
+.platter-catalog-hint,
+.platter-catalog-err {
+  display: block;
+  margin-top: 6px;
+  font-size: 11.5px;
+}
+.platter-catalog-err { color: var(--red, #e06b6b); }
+.platter-manual {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+  align-items: center;
+}
+.platter-manual input[type="text"] {
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  font-size: 12px;
+  padding: 3px 8px;
+}
+
 .platter-selected { margin-top: 6px; }
 .platter-sel-item {
   display: flex;
@@ -1104,6 +1236,26 @@ select:focus-visible {
   overflow-y: auto;
   margin: 10px 0;
 }
+
+/* Discover / adopt pages stretch to the window bottom — let the result list
+   flex into that space (inner scroll) instead of capping at 420px and leaving
+   dead space under the action row. */
+#profileDiscoverSec,
+#skillDiscoverSec,
+#skillAdoptSec,
+#mcpDiscoverSec {
+  display: flex;
+  flex-direction: column;
+}
+
+#profileDiscoverSec .skill-discover-list,
+#skillDiscoverSec .skill-discover-list,
+#skillAdoptSec .skill-discover-list,
+#mcpDiscoverSec .skill-discover-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none;
+}
 .skill-discover-row {
   display: flex;
   align-items: flex-start;
@@ -1285,6 +1437,23 @@ select:focus-visible {
 
 .skill-path-adv {
   margin-top: 14px;
+}
+
+/* Name + status badge on one line: the name text truncates, the badge never
+   does (otherwise long provider names swallow the key-status tag). */
+.skill-name-flex {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.skill-name-flex .skill-name-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.skill-name-flex .skill-req-tag {
+  flex: 0 0 auto;
 }
 
 .skill-req-tag {

@@ -15,7 +15,7 @@ use crate::runtime::system::asset_root;
 use crate::runtime::transaction::{
     decide_switch, rollback_status_key, skip_scratch_verify, SwitchOutcome,
 };
-use crate::{config, lifecycle, proc, scratch, SharedAppState};
+use crate::{config, lifecycle, lock, proc, scratch, SharedAppState};
 
 fn switch_ctx(is_edit: bool) -> &'static str {
     if is_edit {
@@ -252,6 +252,28 @@ fn restore_proxy_for_active_profile(
     };
     lifecycle.bump_generation();
     start_proxy_for_profiles(app, state, lifecycle, std::slice::from_ref(p), trace).is_ok()
+}
+
+/// If platter is active and a formal proxy is running, bump generation and restart
+/// with the current on-disk platter (registry + credentials). Returns whether a
+/// reload was attempted and succeeded.
+pub(crate) fn reload_active_platter_proxy(
+    app: &tauri::AppHandle,
+    state: &SharedAppState,
+    lifecycle: &lifecycle::Lifecycle,
+) -> Result<bool, String> {
+    let cfg = config::load_from(&config::default_dir()).map_err(|e| e.to_string())?;
+    if !cfg.is_platter_active() || cfg.model_platter.entries.is_empty() {
+        return Ok(false);
+    }
+    let proxy_running = lock(state).proxy.is_some();
+    if !proxy_running {
+        return Ok(false);
+    }
+    validate_platter_entries(&cfg, &cfg.model_platter.entries)?;
+    lifecycle.bump_generation();
+    start_proxy_for_platter(app, state, lifecycle, &cfg, None)?;
+    Ok(true)
 }
 
 /// Activate the multi-provider model platter (transactional proxy switch).

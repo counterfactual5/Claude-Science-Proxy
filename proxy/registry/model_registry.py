@@ -288,10 +288,19 @@ class ModelRegistry:
                 )
             kind = FALLBACK_SHELLS.get(candidate)
             if kind == "fast" and self.fast_model:
-                return self.fast_model, self.default_profile_id
+                return self.fast_model, self._profile_for_real_model(self.fast_model)
             if kind == "default" and self.default_model:
-                return self.default_model, self.default_profile_id
+                return self.default_model, self._profile_for_real_model(self.default_model)
         return None
+
+    def _profile_for_real_model(self, real_id: str) -> str:
+        """Owning profile for a real upstream model id (platter FALLBACK-safe)."""
+        if not real_id:
+            return self.default_profile_id
+        for e in self.entries:
+            if e.real_id == real_id and e.profile_id:
+                return e.profile_id
+        return self.default_profile_id
 
     def models_response(self):
         data = [{

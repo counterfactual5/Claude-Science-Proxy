@@ -39,12 +39,24 @@ const DISCOVERY_ROOTS: &[&str] = &[
     ".kimi-code/skills",
     // MiniMax CLI / agents — default skills root (default: ~/.minimax/skills).
     ".minimax/skills",
-    // Google Antigravity / Gemini — global user Skills (docs: ~/.gemini/config/skills).
-    ".gemini/config/skills",
+    // Google Antigravity / Gemini — each product variant has its own global
+    // Skills dir (Antigravity 2.0 hub / IDE / CLI + shared), all SKILL.md layout:
+    ".gemini/config/skills",          // Antigravity 2.0 — seen by all variants
+    ".gemini/antigravity/skills",     // Antigravity IDE
+    ".gemini/antigravity-cli/skills", // Antigravity CLI
+    ".gemini/skills",                 // shared (CLI + IDE)
     // Windsurf Cascade — user/global Skills root (workspace uses .windsurf/skills/).
     ".windsurf/skills",
-    // OpenClaw (ex-Moltbot / Clawdbot) — ClawHub-installed Skills.
+    // OpenClaw (ex-Moltbot / Clawdbot) — ClawHub-installed Skills, plus the
+    // default agent workspace root (docs: workspace `<ws>/skills` has highest
+    // precedence; default workspace is ~/.openclaw/workspace).
     ".openclaw/skills",
+    ".openclaw/workspace/skills",
+    // Tencent QClaw (小龙虾) — OpenClaw wrapper with its own state dir ~/.qclaw.
+    // User skills + ClawHub-installed skills + default workspace skills.
+    ".qclaw/skills",
+    ".qclaw/skillhub-skills",
+    ".qclaw/workspace/skills",
     // AWS Kiro — empty on fresh installs; same SKILL.md folder layout when used.
     ".kiro/skills",
     // Domestic (China) agents / IDEs that also use the `SKILL.md` folder layout.
@@ -56,6 +68,16 @@ const DISCOVERY_ROOTS: &[&str] = &[
     ".workbuddy/skills",
     // Factory Droid (factory.ai) — personal skills: ~/.factory/skills.
     ".factory/skills",
+    // OpenCode — global Agent Skills (agentskills.io spec): ~/.config/opencode/skills.
+    ".config/opencode/skills",
+    // Qwen Code — personal skills: ~/.qwen/skills (iFlow mirrors the same layout).
+    ".qwen/skills",
+    ".iflow/skills",
+    // Alibaba Qoder / Qoder CN (通义灵码 series) — personal skills: ~/.qoder/skills.
+    ".qoder/skills",
+    // Alibaba QoderWork (desktop work agent) — all skills live in ~/.qoderwork/skills.
+    ".qoderwork/skills",
+    // Note: Cline / Kimi / Zed / Warp resolve to the shared ~/.agents/skills root above.
 ];
 
 #[tauri::command]

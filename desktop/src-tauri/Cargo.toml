@@ -1,6 +1,6 @@
 [package]
 name = "desktop"
-version = "1.9.0"
+version = "2.0.0"
 description = "Claude Science Proxy 桌面 app（进程管家 + 配置面板）"
 authors = ["Claude Science Proxy"]
 edition = "2021"
@@ -29,6 +29,7 @@ hkdf = "0.12"
 sha2 = "0.10"
 base64 = "0.22"
 toml = "0.8"
+serde_yaml = "0.9"
 rfd = "0.15"
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls"] }
 zip = "2.2"

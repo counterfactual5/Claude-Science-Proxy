@@ -139,6 +139,24 @@ class ModelRegistryTests(unittest.TestCase):
         route = reg.resolve_route("claude-sonnet-5")
         self.assertEqual(route, ("kimi-k2", "p-kimi"))
 
+    def test_platter_fallback_uses_fast_model_profile(self):
+        """≤2 models: haiku shell not in routes; FALLBACK must use fast entry's profile."""
+        reg = mr.ModelRegistry.from_payload({
+            "platter": True,
+            "entries": [
+                {"profile_id": "p-glm", "model": "glm-5.2", "display_prefix": "GLM"},
+                {"profile_id": "p-moon", "model": "kimi-k2", "display_prefix": "Moon"},
+            ],
+            "default_model": "glm-5.2",
+            "fast_model": "kimi-k2",
+        })
+        self.assertEqual(len(reg.routes), 2)
+        self.assertNotIn("claude-haiku-4-5", reg.routes)
+        route = reg.resolve_route("claude-haiku-4-5")
+        self.assertEqual(route, ("kimi-k2", "p-moon"))
+        dated = reg.resolve_route("claude-haiku-4-5-20251001")
+        self.assertEqual(dated, ("kimi-k2", "p-moon"))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -69,6 +69,8 @@ const I18N = {
     confirmDeleteShort: "确认删除？",
     openFolder: "打开文件夹",
     models: "启用模型",
+    modelPickSearch: "搜索模型…",
+    modelPickSearchEmpty: "没有匹配的模型",
     ports: "端口管理",
     runtimeStatus: "运行状态",
     runStatusOff: "未运行",
@@ -109,7 +111,7 @@ const I18N = {
     createSkill: "新建 Skill",
     addMcp: "+ 新建",
     scanImport: "扫描导入",
-    importFolder: "导入",
+    importFolder: "手动导入",
     adoptFromScience: "同步 Science 技能库",
     skillsManageTitle: "Skills 管理",
     skillApplyHint: "启用/停用的改动会在下次点击「启动 Claude Science」时生效；若沙箱正在运行，会自动重启以应用。",
@@ -237,10 +239,36 @@ const I18N = {
     platterSaveBtn: "保存",
     platterActivateBtn: "设为当前生效",
     platterCapHint: "已选 {n}/{max}",
+    platterBrowseAll: "浏览全部模型",
+    platterCatalogLoading: "正在获取模型目录…",
+    platterCatalogUnsupported: "该端点不支持模型目录（/v1/models）。",
+    platterCatalogNetworkErr: "获取模型目录失败（网络/上游繁忙）。",
+    platterCatalogEmpty: "目录中没有更多可添加的模型。",
+    platterManualPlaceholder: "手动输入模型 ID",
+    platterManualAdd: "添加",
     errScienceModelCap: "Science 最多同时启用 {max} 个模型。",
     errPlatterEmpty: "请至少选择一个模型。",
     errPlatterAdapterUnsupported: "「{name}」无法加入拼盘（请先填写 API Key）。",
     platterSaveOk: "拼盘已保存。",
+    platterSaveReloaded: "拼盘已保存，代理已按新配置重启。",
+    profileDiscoverBtn: "扫描导入",
+    profileDiscoverTitle: "扫描本地 LLM",
+    profileDiscoverHintHtml: "扫描 Agent/编码软件里的本地自定义 LLM（Zed、Continue、OpenCode、OpenClaw / QClaw、Factory、Cline、Aider、Codex、Qwen Code、iFlow、Crush，以及 Cursor / Claude Code / Trae（含 TRAE SOLO）的自定义 endpoint）。仅账号登录、无自定义 endpoint 的模型不会出现。",
+    profileDiscoverEmpty: "没有扫描到可导入的提供商。",
+    profileDiscoverImport: "导入所选",
+    profileDiscoverScanning: "正在扫描…",
+    profileDiscoverPreview: "预览",
+    profileDiscoverNeedsKey: "需补 Key",
+    profileDiscoverKeyEnv: "Key 来自环境变量",
+    profileDiscoverKeyConfig: "Key 已自动读取",
+    profileDiscoverKeyKeychain: "Key 来自钥匙串",
+    profileDiscoverModelCount: "{n} 个模型",
+    profileDiscoverImportOk: "已导入 {ok} 个；跳过 {skip} 个（相同 URL + Key 的配置已存在）。",
+    profileDiscoverImportOkOnly: "已导入 {ok} 个。",
+    profileDiscoverImportSkipOnly: "跳过 {skip} 个（相同 URL + Key 的配置已存在）。",
+    profileDiscoverImportFail: "{n} 个导入失败（{err}）。",
+    profileDiscoverNeedsKeyHint: "部分导入项缺少 API Key，请在编辑里补全。",
+    errEditorLlmNotFound: "未找到提供商「{name}」。",
     metaOneModel: "1 个模型已启用",
     metaBuiltinMap: "内置映射",
     metaNoModel: "未选模型",
@@ -423,6 +451,8 @@ const I18N = {
     confirmDeleteShort: "Confirm delete?",
     openFolder: "Open folder",
     models: "Enabled models",
+    modelPickSearch: "Search models…",
+    modelPickSearchEmpty: "No matching models",
     ports: "Ports",
     runtimeStatus: "Runtime",
     runStatusOff: "Not running",
@@ -463,7 +493,7 @@ const I18N = {
     createSkill: "New Skill",
     addMcp: "+ New",
     scanImport: "Scan & import",
-    importFolder: "Import",
+    importFolder: "Manual import",
     adoptFromScience: "Sync Science skills",
     skillsManageTitle: "Skills",
     skillApplyHint: "Enable/disable takes effect the next time you Start Claude Science; a running sandbox restarts automatically.",
@@ -591,10 +621,36 @@ const I18N = {
     platterSaveBtn: "Save",
     platterActivateBtn: "Set active",
     platterCapHint: "Selected {n}/{max}",
+    platterBrowseAll: "Browse all models",
+    platterCatalogLoading: "Fetching model catalog…",
+    platterCatalogUnsupported: "This endpoint does not support /v1/models.",
+    platterCatalogNetworkErr: "Failed to fetch model catalog (network/upstream busy).",
+    platterCatalogEmpty: "No more models to add from the catalog.",
+    platterManualPlaceholder: "Enter model ID manually",
+    platterManualAdd: "Add",
     errScienceModelCap: "Science supports at most {max} models at once.",
     errPlatterEmpty: "Select at least one model.",
     errPlatterAdapterUnsupported: "「{name}」 cannot join the platter (API key required).",
     platterSaveOk: "Platter saved.",
+    platterSaveReloaded: "Platter saved; proxy restarted with the new config.",
+    profileDiscoverBtn: "Scan & import",
+    profileDiscoverTitle: "Scan local LLMs",
+    profileDiscoverHintHtml: "Scan local custom LLMs from agent/coding apps (Zed, Continue, OpenCode, OpenClaw / QClaw, Factory, Cline, Aider, Codex, Qwen Code, iFlow, Crush, plus custom endpoints in Cursor / Claude Code / Trae incl. TRAE SOLO). Only models with account login and no custom endpoint won't appear.",
+    profileDiscoverEmpty: "No importable providers found.",
+    profileDiscoverImport: "Import selected",
+    profileDiscoverScanning: "Scanning…",
+    profileDiscoverPreview: "Preview",
+    profileDiscoverNeedsKey: "Needs key",
+    profileDiscoverKeyEnv: "Key from env",
+    profileDiscoverKeyConfig: "Key auto-read",
+    profileDiscoverKeyKeychain: "Key from Keychain",
+    profileDiscoverModelCount: "{n} models",
+    profileDiscoverImportOk: "Imported {ok}; skipped {skip} (same URL + key already exists).",
+    profileDiscoverImportOkOnly: "Imported {ok}.",
+    profileDiscoverImportSkipOnly: "Skipped {skip} (same URL + key already exists).",
+    profileDiscoverImportFail: "{n} import(s) failed ({err}).",
+    profileDiscoverNeedsKeyHint: "Some imports need an API key — edit the profile to add one.",
+    errEditorLlmNotFound: "Provider 「{name}」 not found.",
     metaOneModel: "1 model enabled",
     metaBuiltinMap: "built-in mapping",
     metaNoModel: "no model selected",
@@ -857,6 +913,12 @@ function applyEditionUI() {
   if (els.stopBtn) { els.stopBtn.textContent = t.stop; els.stopBtn.title = t.stopTitle; }
   updateRuntimeStatusUI();
   if (els.editCspJsonBtn) els.editCspJsonBtn.textContent = t.editCspJson;
+  if (els.profileDiscoverBtn) els.profileDiscoverBtn.textContent = t.profileDiscoverBtn;
+  if (els.profileDiscoverTitle) els.profileDiscoverTitle.textContent = t.profileDiscoverTitle;
+  if (els.profileDiscoverHint) els.profileDiscoverHint.innerHTML = t.profileDiscoverHintHtml;
+  if (els.profileDiscoverEmptyText) els.profileDiscoverEmptyText.textContent = t.profileDiscoverEmpty;
+  if (els.profileDiscoverImportBtn) els.profileDiscoverImportBtn.textContent = t.profileDiscoverImport;
+  if (els.profileDiscoverCancelBtn) els.profileDiscoverCancelBtn.textContent = t.cancel;
   if (els.skipActivateBtn) els.skipActivateBtn.textContent = t.skipActivate;
   if (els.listhdMoreBtn) els.listhdMoreBtn.title = t.menuMore;
   if (els.skillCreateBtn) els.skillCreateBtn.textContent = t.createSkill;
@@ -1005,6 +1067,7 @@ function mockInvoke(cmd, args) {
       if (!p) return Promise.reject("找不到 profile：" + args.id);
       if (args.baseUrl != null) p.base_url = args.baseUrl;
       if (args.model != null) p.model = args.model;
+      if (args.activeModels != null) p.active_models = args.activeModels.slice();
       if (args.key) p.key = mockMask(args.key);
       return Promise.resolve({ validated: true });
     }
@@ -1020,13 +1083,63 @@ function mockInvoke(cmd, args) {
     }
     case "save_model_platter":
       mockStore.model_platter = { entries: (args.entries || []).map((e) => ({ ...e })) };
-      return Promise.resolve(null);
+      return Promise.resolve({ proxy_reloaded: false });
     case "set_active_platter":
       if (!mockStore.model_platter || !mockStore.model_platter.entries.length) {
         return Promise.reject('{"i18n":"errPlatterEmpty","vars":{}}');
       }
       mockStore.active_id = PLATTER_ACTIVE_ID;
+      mockStore.active_mode = "platter";
       return Promise.resolve({ committed: true, active_id: PLATTER_ACTIVE_ID });
+    case "discover_editor_llm_providers":
+      return Promise.resolve([
+        {
+          id: "Zed|Demo-Moon",
+          name: "Demo-Moon",
+          sourceLabel: "Zed",
+          sourcePath: "/tmp/zed-settings.json",
+          apiUrl: "https://api.moonshot.cn/v1",
+          models: ["kimi-k2", "kimi-k2-turbo"],
+          alreadyImported: false,
+          hasKey: false,
+          needsKey: true,
+        },
+        {
+          id: "Continue|Moonshot Chat",
+          name: "Moonshot Chat",
+          sourceLabel: "Continue",
+          sourcePath: "/tmp/.continue/config.yaml",
+          apiUrl: "https://api.moonshot.cn/v1",
+          models: ["kimi-k2"],
+          alreadyImported: false,
+          hasKey: true,
+          needsKey: false,
+        },
+      ]);
+    case "preview_discovered_editor_llm":
+      return Promise.resolve({
+        name: args.name,
+        sourceLabel: "Zed",
+        sourcePath: args.sourcePath,
+        config: { api_url: "https://api.moonshot.cn/v1", available_models: [{ name: "kimi-k2" }] },
+      });
+    case "import_discovered_editor_llm": {
+      const id = "p-" + Math.random().toString(16).slice(2, 10);
+      mockStore.profiles.push({
+        id,
+        name: args.name || "Imported",
+        template_id: "custom-openai",
+        api_format: "openai_chat",
+        base_url: "https://api.moonshot.cn/v1",
+        model: "kimi-k2",
+        active_models: ["kimi-k2"],
+        key: "",
+        icon: "openai",
+        icon_color: "#10A37F",
+        notes: "",
+      });
+      return Promise.resolve({ skipped: false, id, needsKey: true, hasKey: false });
+    }
     case "fetch_models":
       return Promise.resolve({ models: [{ id: "glm-4.6", supports_tools: true }, { id: "glm-5", supports_tools: null }], source: "live", error_kind: null, upstream_status: 200 });
     case "set_settings":
@@ -1431,20 +1544,32 @@ function collectCheckedModels(container) {
     .filter(Boolean);
 }
 
+const MODEL_PICK_SEARCH_MIN = 9;
+
 function renderModelPick(container, builtin, selected, onChange, opts) {
   if (!container) return;
   const max = (opts && opts.max) || 0;
+  const sel = (selected || []).filter(Boolean);
+  // Enabled models pinned on top in their configured order, then the rest of the pool.
   const candidates = [];
+  for (const id of sel) if (!candidates.includes(id)) candidates.push(id);
   for (const id of builtin || []) if (!candidates.includes(id)) candidates.push(id);
-  for (const id of selected || []) if (id && !candidates.includes(id)) candidates.unshift(id);
   if (!candidates.length) {
     container.hidden = true;
     container.innerHTML = "";
     return;
   }
   container.hidden = false;
-  const selSet = new Set(selected && selected.length ? selected : candidates);
-  container.innerHTML = candidates.map((id) => {
+  const selSet = new Set(sel.length ? sel : candidates);
+  // Preserve an in-progress filter across re-renders (e.g. after model fetch).
+  const prevSearch = container.querySelector(".model-pick-search input");
+  const prevFilter = prevSearch ? prevSearch.value : "";
+  const searchHtml = candidates.length >= MODEL_PICK_SEARCH_MIN
+    ? '<div class="model-pick-search"><input type="search" placeholder="' +
+      escapeHtml(S().modelPickSearch) + '" value="' + escapeHtml(prevFilter) + '">' +
+      '<span class="model-pick-search-empty" hidden>' + escapeHtml(S().modelPickSearchEmpty) + "</span></div>"
+    : "";
+  container.innerHTML = searchHtml + candidates.map((id) => {
     const checked = selSet.has(id) ? " checked" : "";
     return '<label class="model-pick-item"><input type="checkbox" data-model="' +
       escapeHtml(id) + '"' + checked + '><span class="model-pick-label">' + escapeHtml(id) + "</span></label>";
@@ -1462,6 +1587,24 @@ function renderModelPick(container, builtin, selected, onChange, opts) {
       if (onChange) onChange();
     });
   });
+  const search = container.querySelector(".model-pick-search input");
+  if (search) {
+    const applyFilter = () => {
+      const q = search.value.trim().toLowerCase();
+      let visible = 0;
+      container.querySelectorAll(".model-pick-item").forEach((item) => {
+        const cb = item.querySelector("input[data-model]");
+        const id = (cb && cb.getAttribute("data-model")) || "";
+        const show = !q || id.toLowerCase().includes(q);
+        item.hidden = !show;
+        if (show) visible += 1;
+      });
+      const empty = container.querySelector(".model-pick-search-empty");
+      if (empty) empty.hidden = visible > 0;
+    };
+    search.addEventListener("input", applyFilter);
+    if (prevFilter) applyFilter();
+  }
 }
 
 // native: read-only hint; relay: checkbox multi-select.
@@ -1490,13 +1633,16 @@ function applyModelCapability(t, ui, profileOrModel) {
   return cap;
 }
 
-function setMsg(text) {
-  // Feedback area shows errors only; success/progress/neutral messages take no space.
+function setMsg(text, kind = "err") {
   const t = text ? String(text) : "";
   els.msg.textContent = t;
-  els.msg.className = "msg" + (t ? " err" : "");
-  els.msg.parentElement.hidden = !t;
-  if (t && els.panel && els.panel.classList.contains("view-form")) {
+  els.msg.className = "msg" + (t ? ` ${kind}` : "");
+  els.msg.hidden = !t;
+  // Keep the section visible while the "activate anyway" escape hatch is shown.
+  els.msg.parentElement.hidden = !t && els.skipActivateBtn.hidden;
+  // Only yank the viewport for errors — info/ok toasts must not jump the form
+  // (e.g. platter catalog picks already show their result in the selected list).
+  if (t && kind === "err" && els.panel && els.panel.classList.contains("view-form")) {
     els.msg.scrollIntoView({ block: "nearest" });
   }
 }
@@ -1559,12 +1705,16 @@ function closeHeaderMenus() {
 function positionProfileMenu(menu, btn) {
   menu.classList.remove("pmenu-up");
   menu.hidden = false;
-  // Resolve the actual scroll container the button lives in. Skill/MCP rows
-  // scroll inside `.skill-list`; Profile rows scroll inside `.panel-body`.
+  // Resolve the actual scroll container the button lives in — the element with
+  // `overflow-y: auto` that clips the menu. Skill/MCP rows scroll inside
+  // `.skill-list`; Profile rows scroll inside `#profileList` (NOT `.panel-body`,
+  // whose bottom extends past the list into the feedback area, so measuring
+  // against it under-reports clipping and bottom cards fail to flip the menu up).
   // Using a stale `els.panelBody` (the hidden Profiles pane) yielded a zero-height
   // rect on other tabs, forcing the menu to wrongly flip up and hide under the header.
   const scrollEl =
     btn.closest(".skill-list") ||
+    btn.closest("#profileList") ||
     btn.closest(".panel-body") ||
     els.panelBody ||
     els.profileList;
@@ -1601,6 +1751,7 @@ function setBusy(on, op) {
     els.wizSaveBtn, els.wizCancelBtn,
     els.connSaveBtn, els.connCancelBtn,
     els.skipActivateBtn,
+    els.profileDiscoverBtn, els.profileDiscoverImportBtn, els.profileDiscoverCancelBtn,
     // Disable port inputs while busy: changing ports mid-operation races in-flight work (P1-c frontend).
     els.proxyPort, els.sandboxPort,
     // Skill / MCP manager actions: prevent concurrent mutations racing a running op.
@@ -1729,20 +1880,163 @@ function showView(v) {
   els.wizSec.hidden = v !== "wizard";
   els.connSec.hidden = v !== "conn";
   if (els.platterSec) els.platterSec.hidden = v !== "platter";
+  if (els.profileDiscoverSec) els.profileDiscoverSec.hidden = v !== "discover";
   // Only drive the panel form chrome when the profiles pane is active.
   if (!els.panelBody || !els.panelBody.hidden) {
     els.panel.classList.toggle("view-form", v !== "list");
   }
   updateSharedRuntimeFooter();
-  if (v === "list") {
-    hideSkip();
-    closeWizPresetMenu();
-    // Drop stale errors (e.g. a one-off "fetch models 401") so they don't
-    // linger on the profile list after create/edit succeeded with builtins.
-    setMsg("");
-  }
+  // Drop stale feedback on every view change (e.g. a switch-verify error
+  // raised on the list must not linger on the discover/wizard/platter views).
+  hideSkip();
+  setMsg("");
+  if (v === "list") closeWizPresetMenu();
 }
 function cancelForm() { showView("list"); }
+
+async function openProfileDiscover() {
+  closeListhdMenu();
+  if (busy) return;
+  closePreviewOverlay();
+  if (els.profileDiscoverList) {
+    els.profileDiscoverList.innerHTML = `<p class="hint">${escapeHtml(S().profileDiscoverScanning)}</p>`;
+  }
+  if (els.profileDiscoverEmpty) els.profileDiscoverEmpty.hidden = true;
+  if (els.profileDiscoverImportBtn) els.profileDiscoverImportBtn.disabled = true;
+  showView("discover");
+  try {
+    const found = (await call("discover_editor_llm_providers")) || [];
+    renderProfileDiscover(found);
+  } catch (e) {
+    if (els.profileDiscoverList) els.profileDiscoverList.innerHTML = "";
+    if (els.profileDiscoverEmpty) els.profileDiscoverEmpty.hidden = false;
+    setMsg(resolveBackendErr(e));
+  }
+}
+
+function closeProfileDiscover() {
+  closePreviewOverlay();
+  showView("list");
+}
+
+function renderProfileDiscover(found) {
+  if (!els.profileDiscoverList) return;
+  if (!found.length) {
+    els.profileDiscoverList.innerHTML = "";
+    if (els.profileDiscoverEmpty) els.profileDiscoverEmpty.hidden = false;
+    refreshProfileDiscoverGate();
+    return;
+  }
+  if (els.profileDiscoverEmpty) els.profileDiscoverEmpty.hidden = true;
+  const importedBadge = S().skillAlreadyImported;
+  const needsKeyBadge = S().profileDiscoverNeedsKey;
+  const previewLabel = S().profileDiscoverPreview;
+  els.profileDiscoverList.innerHTML = found.map((d) => {
+    const disabled = d.alreadyImported ? " disabled" : "";
+    let badge = "";
+    if (d.alreadyImported) {
+      badge = `<span class="skill-req-tag">${escapeHtml(importedBadge)}</span>`;
+    } else if (d.needsKey) {
+      badge = `<span class="skill-req-tag">${escapeHtml(needsKeyBadge)}</span>`;
+    } else if (d.keySource === "env") {
+      badge = `<span class="skill-req-tag">${escapeHtml(S().profileDiscoverKeyEnv)}</span>`;
+    } else if (d.keySource === "config") {
+      badge = `<span class="skill-req-tag">${escapeHtml(S().profileDiscoverKeyConfig)}</span>`;
+    } else if (d.keySource === "keychain") {
+      badge = `<span class="skill-req-tag">${escapeHtml(S().profileDiscoverKeyKeychain)}</span>`;
+    }
+    const models = T("profileDiscoverModelCount", { n: (d.models || []).length });
+    const detail = escapeHtml(truncateOneLine(d.apiUrl || "", 96));
+    return `
+      <label class="skill-discover-row${d.alreadyImported ? " disabled" : ""}">
+        <input type="checkbox" data-source-path="${escapeHtml(d.sourcePath)}" value="${escapeHtml(d.name)}"${disabled} />
+        <span class="skill-discover-main">
+          <span class="skill-name skill-name-flex"><span class="skill-name-text">${escapeHtml(d.name)}</span>${badge}</span>
+          ${detail ? `<span class="mcp-cmd">${detail}</span>` : ""}
+          <span class="skill-meta"><span>${escapeHtml(d.sourceLabel)}</span><span>${escapeHtml(models)}</span></span>
+        </span>
+        <span class="skill-discover-actions">
+          <button type="button" class="btn small"
+            data-llm-preview-source="${escapeHtml(d.sourcePath)}"
+            data-llm-preview-name="${escapeHtml(d.name)}"
+            data-llm-preview-label="${escapeHtml(d.sourceLabel)}">${escapeHtml(previewLabel)}</button>
+        </span>
+      </label>
+    `;
+  }).join("");
+  refreshProfileDiscoverGate();
+}
+
+function refreshProfileDiscoverGate() {
+  if (!els.profileDiscoverImportBtn || !els.profileDiscoverList) return;
+  const n = els.profileDiscoverList.querySelectorAll("input[type=checkbox]:checked:not(:disabled)").length;
+  els.profileDiscoverImportBtn.disabled = n === 0 || busy;
+}
+
+async function loadProfileDiscoverPreview(sourcePath, name, sourceLabel) {
+  if (!sourcePath || !name || busy) return;
+  showPreviewOverlayLoading(S().profileDiscoverPreview, "compact");
+  previewOverlayState = { kind: "editor-llm", sourcePath, name };
+  if (els.previewOverlayOpenBtn) els.previewOverlayOpenBtn.hidden = true;
+  try {
+    const data = await call("preview_discovered_editor_llm", { sourcePath, name });
+    if (els.previewOverlayTitle) {
+      els.previewOverlayTitle.textContent = `${S().profileDiscoverPreview} · ${data.name || name}`;
+    }
+    if (els.previewOverlayMeta) {
+      els.previewOverlayMeta.textContent = `${data.name || name} · ${sourceLabel || data.sourceLabel || ""}`;
+    }
+    const body = JSON.stringify(data.config || data, null, 2);
+    if (els.previewOverlayBody) els.previewOverlayBody.textContent = body;
+  } catch (e) {
+    if (els.previewOverlayBody) els.previewOverlayBody.textContent = resolveBackendErr(e);
+  }
+}
+
+async function importDiscoveredEditorLlms() {
+  if (!els.profileDiscoverList || busy) return;
+  const boxes = [...els.profileDiscoverList.querySelectorAll("input[type=checkbox]:checked:not(:disabled)")];
+  if (!boxes.length) return;
+  setBusy(true, { kind: "importEditorLlm" });
+  let ok = 0;
+  let skip = 0;
+  let needsKey = false;
+  const failed = [];
+  try {
+    // Per-item errors must not abort the batch (an early failure would silently
+    // drop the remaining selections).
+    for (const box of boxes) {
+      try {
+        const res = await call("import_discovered_editor_llm", {
+          sourcePath: box.getAttribute("data-source-path"),
+          name: box.value,
+        });
+        if (res && res.skipped) skip += 1;
+        else {
+          ok += 1;
+          if (res && res.needsKey) needsKey = true;
+        }
+      } catch (e) {
+        failed.push(`${box.value}: ${resolveBackendErr(e)}`);
+      }
+    }
+    await loadConfig({ keepView: true });
+    let msg = "";
+    if (ok && skip) msg = T("profileDiscoverImportOk", { ok, skip });
+    else if (ok) msg = T("profileDiscoverImportOkOnly", { ok });
+    else if (skip) msg = T("profileDiscoverImportSkipOnly", { skip });
+    if (needsKey) msg = (msg ? msg + " " : "") + S().profileDiscoverNeedsKeyHint;
+    if (failed.length) {
+      msg = (msg ? msg + " " : "") + T("profileDiscoverImportFail", { n: failed.length, err: failed[0] });
+    }
+    // Order matters: showView clears stale feedback, so set the message after.
+    showView("list");
+    // Green check for a clean import; red only when something actually failed.
+    setMsg(msg, failed.length ? "err" : "ok");
+  } finally {
+    setBusy(false);
+  }
+}
 
 // Skill tab: list / create / import / discover / adopt (full-page panels, same chrome as config wizard).
 function showSkillView(v) {
@@ -1757,6 +2051,8 @@ function showSkillView(v) {
     if (!els.skillPane.hidden) els.panel.classList.toggle("view-form", !list);
   }
   updateSharedRuntimeFooter();
+  // Drop stale feedback on every sub-view change (same rationale as showView).
+  setSkillMsg("");
   if (list) closeMenu(els.skillMenu, els.skillMoreBtn);
 }
 
@@ -1771,11 +2067,19 @@ function showMcpView(v) {
     if (!els.mcpPane.hidden) els.panel.classList.toggle("view-form", !list);
   }
   updateSharedRuntimeFooter();
+  setMcpMsg("");
   if (list) closeMenu(els.mcpMenu, els.mcpMoreBtn);
 }
 
-function showSkip() { els.skipActivateBtn.hidden = false; }
-function hideSkip() { els.skipActivateBtn.hidden = true; pendingSkipActivateId = null; }
+function showSkip() {
+  els.skipActivateBtn.hidden = false;
+  els.msg.parentElement.hidden = false;
+}
+function hideSkip() {
+  els.skipActivateBtn.hidden = true;
+  pendingSkipActivateId = null;
+  if (!els.msg.textContent) els.msg.parentElement.hidden = true;
+}
 
 // Dangerous ops "click again to confirm" (avoid window.confirm; unreliable in Tauri webview).
 // Two-step delete for overflow-menu items: the first click relabels the button
@@ -1929,47 +2233,224 @@ function renderPlatterSelected() {
   }
 }
 
+// Per-profile "browse all models" catalog state for the platter picker.
+// pid → { status: "idle"|"loading"|"ok"|"err", ids: [], errText: "" }
+let platterCatalogState = {};
+
+function platterCatalogFor(pid) {
+  return platterCatalogState[pid] || { status: "idle", ids: [], errText: "" };
+}
+
+function platterPickItemHtml(pid, model, opts) {
+  const checked = platterModelSelected(pid, model) ? " checked" : "";
+  const catalog = opts && opts.catalog;
+  return '<label class="model-pick-item' + (catalog ? " model-pick-catalog" : "") +
+    '"><input type="checkbox" data-platter-profile="' + escapeHtml(pid) +
+    '" data-platter-model="' + escapeHtml(model) + '"' + (catalog ? ' data-platter-from-catalog="1"' : "") +
+    checked + '><span class="model-pick-label">' + escapeHtml(model) + "</span></label>";
+}
+
 function renderPlatterProviders() {
   if (!els.platterProviderList) return;
+  const box = els.platterProviderList;
+  const t = S();
+  const scrollTop = box.scrollTop;
   const ps = (configState.profiles || []).filter((p) => profilePlatterSupported(p) && (p.has_key !== false));
   if (!ps.length) {
-    els.platterProviderList.innerHTML = '<p class="hint">' + escapeHtml(S().emptyHint) + "</p>";
+    box.innerHTML = '<p class="hint">' + escapeHtml(S().emptyHint) + "</p>";
     return;
   }
-  els.platterProviderList.innerHTML = ps.map((p) => {
-    const models = platterCatalogModels(p);
-    if (!models.length) return "";
-    const boxes = models.map((m) => {
-      const checked = platterModelSelected(p.id, m) ? " checked" : "";
-      return '<label class="model-pick-item"><input type="checkbox" data-platter-profile="' + escapeHtml(p.id) +
-        '" data-platter-model="' + escapeHtml(m) + '"' + checked + '><span class="model-pick-label">' +
-        escapeHtml(m) + "</span></label>";
-    }).join("");
-    return '<div class="platter-provider-block"><div class="platter-provider-name">' + escapeHtml(p.name) +
-      '</div><div class="model-pick">' + boxes + "</div></div>";
+  // Preserve an in-progress filter across re-renders (catalog load, model enable).
+  const prevSearch = box.querySelector(".model-pick-search input");
+  const prevFilter = prevSearch ? prevSearch.value : "";
+  const blocks = ps.map((p) => {
+    const enabled = platterCatalogModels(p);
+    const cat = platterCatalogFor(p.id);
+    // Catalog extras: models present upstream but not yet enabled on the profile.
+    // Draft picks outside the enabled list (catalog/manual adds that could not be
+    // synced) must render too, or they would be invisible and unsearchable here.
+    const extras = [];
+    for (const e of platterDraft) {
+      if (e.profile_id === p.id && !enabled.includes(e.model)) extras.push(e.model);
+    }
+    if (cat.status === "ok") {
+      for (const m of cat.ids) {
+        if (!enabled.includes(m) && !extras.includes(m)) extras.push(m);
+      }
+    }
+    if (!enabled.length && !extras.length && cat.status === "idle") return "";
+    const boxes = enabled.map((m) => platterPickItemHtml(p.id, m)).join("") +
+      extras.map((m) => platterPickItemHtml(p.id, m, { catalog: true })).join("");
+    let foot = "";
+    if (cat.status === "idle") {
+      foot = '<button type="button" class="btn tiny platter-browse-btn" data-platter-browse="' + escapeHtml(p.id) + '">' +
+        escapeHtml(t.platterBrowseAll) + "</button>";
+    } else if (cat.status === "loading") {
+      foot = '<span class="hint platter-catalog-hint">' + escapeHtml(t.platterCatalogLoading) + "</span>";
+    } else if (cat.status === "ok" && !extras.length) {
+      foot = '<span class="hint platter-catalog-hint">' + escapeHtml(t.platterCatalogEmpty) + "</span>";
+    } else if (cat.status === "err") {
+      foot = '<span class="hint platter-catalog-err">' + escapeHtml(cat.errText) + "</span>" +
+        '<div class="platter-manual"><input type="text" data-platter-manual="' + escapeHtml(p.id) +
+        '" placeholder="' + escapeHtml(t.platterManualPlaceholder) + '" autocomplete="off" spellcheck="false">' +
+        '<button type="button" class="btn tiny" data-platter-manual-add="' + escapeHtml(p.id) + '">' +
+        escapeHtml(t.platterManualAdd) + "</button></div>";
+    }
+    return '<div class="platter-provider-block" data-platter-block="' + escapeHtml(p.id) + '">' +
+      '<div class="platter-provider-name">' + escapeHtml(p.name) + "</div>" +
+      '<div class="model-pick">' + boxes + "</div>" + foot + "</div>";
   }).join("");
-  els.platterProviderList.querySelectorAll("input[type=checkbox]").forEach((cb) => {
+  // Always show search here: besides filtering, typing pulls the providers'
+  // full catalogs, so it must be reachable even with only a few enabled models.
+  const searchHtml =
+    '<div class="model-pick-search"><input type="search" placeholder="' +
+    escapeHtml(t.modelPickSearch) + '" value="' + escapeHtml(prevFilter) + '">' +
+    '<span class="model-pick-search-empty" hidden>' + escapeHtml(t.modelPickSearchEmpty) + "</span></div>";
+  box.innerHTML = searchHtml + blocks;
+  box.querySelectorAll("input[type=checkbox]").forEach((cb) => {
     cb.addEventListener("change", () => {
       const pid = cb.getAttribute("data-platter-profile");
       const model = cb.getAttribute("data-platter-model");
-      if (cb.checked) {
-        if (platterDraft.length >= MAX_SCIENCE_MODELS) {
-          cb.checked = false;
-          setMsg(T("errScienceModelCap", { max: MAX_SCIENCE_MODELS }));
-          return;
-        }
-        platterDraft.push({ profile_id: pid, model });
-      } else {
+      if (!cb.checked) {
         platterDraft = platterDraft.filter((e) => !(e.profile_id === pid && e.model === model));
+        renderPlatterSelected();
+        renderPlatterProviders();
+        return;
       }
+      if (platterDraft.length >= MAX_SCIENCE_MODELS) {
+        cb.checked = false;
+        setMsg(T("errScienceModelCap", { max: MAX_SCIENCE_MODELS }));
+        return;
+      }
+      // Catalog picks and enabled models behave the same: selection only touches
+      // the platter draft, never the profile's own enabled list (providers stay
+      // independent).
+      platterDraft.push({ profile_id: pid, model });
       renderPlatterSelected();
       renderPlatterProviders();
     });
   });
+  box.querySelectorAll("[data-platter-browse]").forEach((btn) => {
+    btn.addEventListener("click", () => browsePlatterCatalog(btn.getAttribute("data-platter-browse")));
+  });
+  box.querySelectorAll("[data-platter-manual-add]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const pid = btn.getAttribute("data-platter-manual-add");
+      const input = box.querySelector('input[data-platter-manual="' + pid.replace(/"/g, '\\"') + '"]');
+      const model = input ? input.value.trim() : "";
+      if (model) enablePlatterCatalogModel(pid, model);
+    });
+  });
+  box.querySelectorAll("input[data-platter-manual]").forEach((input) => {
+    input.addEventListener("keydown", (ev) => {
+      if (ev.key !== "Enter") return;
+      ev.preventDefault();
+      const model = input.value.trim();
+      if (model) enablePlatterCatalogModel(input.getAttribute("data-platter-manual"), model);
+    });
+  });
+  const search = box.querySelector(".model-pick-search input");
+  if (search) {
+    const applyFilter = () => {
+      const q = search.value.trim().toLowerCase();
+      // Search must reach models that are not enabled yet: the first query
+      // lazily pulls every provider's full catalog (cached per editor session),
+      // so picking doesn't require browsing each provider by hand.
+      if (q) {
+        const idle = ps.filter((p) => platterCatalogFor(p.id).status === "idle");
+        if (idle.length) {
+          idle.forEach((p) => browsePlatterCatalog(p.id));
+          return; // each load re-renders; the preserved query re-applies the filter
+        }
+      }
+      let visible = 0;
+      box.querySelectorAll(".platter-provider-block").forEach((block) => {
+        let blockVisible = 0;
+        block.querySelectorAll(".model-pick-item").forEach((item) => {
+          const cbEl = item.querySelector("input[data-platter-model]");
+          const id = (cbEl && cbEl.getAttribute("data-platter-model")) || "";
+          const show = !q || id.toLowerCase().includes(q);
+          item.hidden = !show;
+          if (show) blockVisible += 1;
+        });
+        // While filtering, collapse groups with no match (footer entries stay in matched groups).
+        block.hidden = !!q && blockVisible === 0;
+        visible += blockVisible;
+      });
+      const empty = box.querySelector(".model-pick-search-empty");
+      if (empty) {
+        const loading = q && ps.some((p) => platterCatalogFor(p.id).status === "loading");
+        empty.textContent = loading ? t.platterCatalogLoading : t.modelPickSearchEmpty;
+        empty.hidden = visible > 0;
+      }
+    };
+    search.addEventListener("input", applyFilter);
+    // Catalog loads re-render mid-typing; give focus (and the caret) back so
+    // the user keeps typing without clicking into the box again.
+    if (prevSearch && document.activeElement === prevSearch) {
+      search.focus();
+      const end = search.value.length;
+      try { search.setSelectionRange(end, end); } catch (_) { /* type=search quirk */ }
+    }
+    if (prevFilter) applyFilter();
+  }
+  // Rebuilding via innerHTML resets scroll; restore so a checkbox toggle
+  // doesn't yank the list away from where the user was looking.
+  box.scrollTop = scrollTop;
+}
+
+/** Load the upstream /v1/models catalog for one profile (stored key reused backend-side). */
+async function browsePlatterCatalog(pid) {
+  const p = (configState.profiles || []).find((x) => x.id === pid);
+  if (!p) return;
+  platterCatalogState[pid] = { status: "loading", ids: [], errText: "" };
+  renderPlatterProviders();
+  let next;
+  try {
+    const t = tplById(p.template_id);
+    const r = await call("fetch_models", {
+      req: {
+        template_id: p.template_id,
+        api_format: p.api_format || (t ? t.api_format : ""),
+        base_url: p.base_url || "",
+        key: "",
+        profile_id: p.id,
+      },
+    });
+    const ids = ((r && r.models) || []).map((m) => m.id).filter(Boolean);
+    if (r && r.source === "live" && ids.length) {
+      next = { status: "ok", ids, errText: "" };
+    } else {
+      const key = r && r.error_kind === "network" ? "platterCatalogNetworkErr" : "platterCatalogUnsupported";
+      next = { status: "err", ids: [], errText: S()[key] };
+    }
+  } catch (e) {
+    next = { status: "err", ids: [], errText: resolveBackendErr(e) };
+  }
+  platterCatalogState[pid] = next;
+  renderPlatterProviders();
+}
+
+/** Catalog/manual pick: select into the platter draft only. The profile's own
+ *  enabled list is never touched — providers stay independent. */
+function enablePlatterCatalogModel(pid, model) {
+  const p = (configState.profiles || []).find((x) => x.id === pid);
+  if (!p || !model) return;
+  if (!platterModelSelected(pid, model)) {
+    if (platterDraft.length >= MAX_SCIENCE_MODELS) {
+      setMsg(T("errScienceModelCap", { max: MAX_SCIENCE_MODELS }));
+      renderPlatterProviders();
+      return;
+    }
+    platterDraft.push({ profile_id: pid, model });
+  }
+  renderPlatterSelected();
+  renderPlatterProviders();
 }
 
 function openPlatterEditor() {
   platterDraft = platterEntries().map((e) => ({ profile_id: e.profile_id, model: e.model }));
+  platterCatalogState = {}; // fresh session: collapse previously browsed catalogs
   setMsg("");
   if (els.platterTitle) els.platterTitle.textContent = S().platterCardTitle;
   if (els.platterHint) els.platterHint.textContent = T("platterHint", { max: MAX_SCIENCE_MODELS });
@@ -2002,8 +2483,8 @@ async function savePlatter() {
   }
   setBusy(true, { kind: "savePlatter" });
   try {
-    await call("save_model_platter", { entries: platterDraft });
-    setMsg(S().platterSaveOk);
+    const res = await call("save_model_platter", { entries: platterDraft });
+    setMsg(res && res.proxy_reloaded ? S().platterSaveReloaded : S().platterSaveOk, "ok");
     await loadConfig({ keepView: true });
   } catch (e) {
     setMsg(resolveBackendErr(e));
@@ -2550,7 +3031,7 @@ function wire() {
   [
     "oneClickBtn", "stopBtn",
     "msg", "proxyPort", "sandboxPort", "advSec", "runtimeStatusSec", "runtimeStatusText", "i18nRuntimeStatus",
-    "listSec", "profileList", "newBtn", "listhdMoreBtn", "listhdMenu", "editCspJsonBtn", "skipActivateBtn",
+    "listSec", "profileList", "newBtn", "listhdMoreBtn", "listhdMenu", "editCspJsonBtn", "profileDiscoverBtn", "skipActivateBtn",
     "i18nMyConfigs", "i18nLabelProvider", "i18nLabelBase", "i18nLabelKey",
     "i18nConnName", "i18nConnBase", "i18nConnKey", "i18nPorts", "i18nProxyPort", "i18nSandboxPort",
     "wizSec", "wizName", "wizPresetBtn", "wizPresetMenu", "wizBase", "wizKey", "wizSaveBtn", "wizCancelBtn",
@@ -2559,6 +3040,8 @@ function wire() {
     "platterSec", "platterTitle", "platterHint", "platterImportRow", "platterImportBtn",
     "platterProviderList", "platterSelectedLabel", "platterSelectedList", "platterCapHint",
     "platterSaveBtn", "platterActivateBtn", "platterCancelBtn",
+    "profileDiscoverSec", "profileDiscoverTitle", "profileDiscoverHint", "profileDiscoverList",
+    "profileDiscoverEmpty", "profileDiscoverEmptyText", "profileDiscoverImportBtn", "profileDiscoverCancelBtn",
     "tabProfiles", "tabSkills", "skillPane", "skillListSec",
     "skillCreateBtn", "skillCreateSec", "skillCreateTitle", "skillCreateName", "skillCreateDesc",
     "skillCreateBody", "skillCreateInspection", "skillCreateErrors",
@@ -2669,6 +3152,33 @@ function wire() {
       setMsg(T("openCspFail", { err: resolveBackendErr(e) }));
     }
   });
+  if (els.profileDiscoverBtn) {
+    els.profileDiscoverBtn.addEventListener("click", () => {
+      if (busy) return;
+      openProfileDiscover();
+    });
+  }
+  if (els.profileDiscoverCancelBtn) {
+    els.profileDiscoverCancelBtn.addEventListener("click", closeProfileDiscover);
+  }
+  if (els.profileDiscoverImportBtn) {
+    els.profileDiscoverImportBtn.addEventListener("click", importDiscoveredEditorLlms);
+  }
+  if (els.profileDiscoverList) {
+    els.profileDiscoverList.addEventListener("change", () => refreshProfileDiscoverGate());
+    els.profileDiscoverList.addEventListener("click", (e) => {
+      const btn = e.target.closest("[data-llm-preview-name]");
+      if (!btn) return;
+      // Row is a <label>; without this the button click would also toggle the checkbox.
+      e.preventDefault();
+      e.stopPropagation();
+      loadProfileDiscoverPreview(
+        btn.getAttribute("data-llm-preview-source"),
+        btn.getAttribute("data-llm-preview-name"),
+        btn.getAttribute("data-llm-preview-label")
+      );
+    });
+  }
   els.skipActivateBtn.addEventListener("click", () => {
     const id = pendingSkipActivateId;
     if (!id) return;
@@ -2860,10 +3370,18 @@ function wire() {
   els.skillDiscoverList.addEventListener("change", (e) => {
     if (e.target && e.target.type === "checkbox") refreshDiscoverGate();
   });
+  // Expand/collapse long descriptions without toggling the row checkbox.
+  els.skillDiscoverList.addEventListener("click", (e) => {
+    if (handleDescToggleClick(e)) e.stopPropagation();
+  });
   els.skillAdoptList.addEventListener("change", (e) => {
     if (e.target && e.target.type === "checkbox") refreshAdoptGate();
   });
   els.skillAdoptList.addEventListener("click", (e) => {
+    if (handleDescToggleClick(e)) {
+      e.stopPropagation();
+      return;
+    }
     const btn = e.target.closest("[data-adopt-preview]");
     if (!btn) return;
     e.preventDefault();
@@ -2963,7 +3481,7 @@ async function loadSkills() {
 
 function setSkillMsg(text, kind = "err") {
   const t = text ? String(text) : "";
-  const cls = kind === "err" ? "err" : "ok";
+  const cls = kind === "ok" || kind === "info" || kind === "warn" ? kind : "err";
   els.skillMsg.textContent = t;
   els.skillMsg.className = "msg" + (t ? " " + cls : "");
   els.skillMsg.parentElement.hidden = !t;
@@ -3108,7 +3626,7 @@ async function toggleSkill(id, enabled) {
       setSkillMsg(T("skillToggledRestarting"), "info");
       try {
         await call("one_click_login");
-        setSkillMsg(T("skillToggledRestarted"), "info");
+        setSkillMsg(T("skillToggledRestarted"), "ok");
       } catch (e) {
         setSkillMsg(T("skillToggledRestartFail", { err: resolveBackendErr(e) }));
       }
@@ -3219,12 +3737,12 @@ async function saveNewSkill() {
       setSkillMsg(T("skillCreatedRestarting"), "info");
       try {
         await call("one_click_login");
-        setSkillMsg(T("skillCreatedRestarted"), "info");
+        setSkillMsg(T("skillCreatedRestarted"), "ok");
       } catch (e) {
         setSkillMsg(T("skillCreatedRestartFail", { err: resolveBackendErr(e) }));
       }
     } else {
-      setSkillMsg(T("skillCreated"), "info");
+      setSkillMsg(T("skillCreated"), "ok");
     }
   } catch (e) {
     els.skillCreateInspection.hidden = false;
@@ -3267,7 +3785,7 @@ async function pickSkillSource() {
     els.skillSourcePath.value = path;
     await inspectSkillSource();
   } catch (e) {
-    setSkillMsg(resolveBackendErr(e), "error");
+    setSkillMsg(resolveBackendErr(e));
   }
 }
 
@@ -3349,12 +3867,12 @@ async function importSkillConfirm() {
       setSkillMsg(T("skillImportedRestarting"), "info");
       try {
         await call("one_click_login");
-        setSkillMsg(T("skillImportedRestarted"), "info");
+        setSkillMsg(T("skillImportedRestarted"), "ok");
       } catch (e) {
         setSkillMsg(T("skillImportedRestartFail", { err: resolveBackendErr(e) }));
       }
     } else {
-      setSkillMsg(T("skillImported"), "info");
+      setSkillMsg(T("skillImported"), "ok");
     }
   } catch (e) {
     els.inspErrors.hidden = false;
@@ -3407,12 +3925,13 @@ function renderDiscover(found) {
         <input type="checkbox" value="${escapeHtml(d.sourcePath)}"${disabled} />
         <span class="skill-discover-main">
           <span class="skill-name">${escapeHtml(d.name)} ${badge}</span>
-          ${d.description ? `<span class="skill-desc">${escapeHtml(d.description)}</span>` : ""}
+          ${skillDescHtml(d.description)}
           <span class="skill-meta"><span>${escapeHtml(d.sourceLabel)}</span></span>
         </span>
       </label>
     `;
   }).join("");
+  refreshDescToggles(els.skillDiscoverList);
   refreshDiscoverGate();
 }
 
@@ -3448,7 +3967,7 @@ async function importDiscoveredSkills() {
           failures.length
             ? T("skillImportPartialFail", { err: failures.join("; ") })
             : T("skillImportedRestarted"),
-          failures.length ? "err" : "info"
+          failures.length ? "err" : "ok"
         );
       } catch (e) {
         setSkillMsg(T("skillImportedRestartFail", { err: resolveBackendErr(e) }));
@@ -3456,7 +3975,7 @@ async function importDiscoveredSkills() {
     } else if (failures.length) {
       setSkillMsg(T("skillImportPartialFail", { err: failures.join("; ") }));
     } else {
-      setSkillMsg(T("skillImported"), "info");
+      setSkillMsg(T("skillImported"), "ok");
     }
   } finally {
     setBusy(false);
@@ -3577,7 +4096,7 @@ function renderSkillAdopt(found) {
         <input type="checkbox" value="${escapeHtml(d.key)}"${checked} />
         <span class="skill-discover-main">
           <span class="skill-name">${escapeHtml(d.name)} ${kindBadge}</span>
-          ${d.description ? `<span class="skill-desc">${escapeHtml(d.description)}</span>` : ""}
+          ${skillDescHtml(d.description)}
           ${bytes}
           ${files ? `<span class="skill-meta"><span>${escapeHtml(files)}${more}</span></span>` : ""}
           ${warn}
@@ -3588,6 +4107,7 @@ function renderSkillAdopt(found) {
       </div>
     `;
   }).join("");
+  refreshDescToggles(els.skillAdoptList);
   refreshAdoptGate();
 }
 
@@ -3665,14 +4185,14 @@ async function adoptWorkspaceSkills() {
       setSkillMsg(T("skillAdoptedRestarting"), "info");
       try {
         await call("one_click_login");
-        setSkillMsg(T("skillAdoptedRestarted"), "info");
+        setSkillMsg(T("skillAdoptedRestarted"), "ok");
       } catch (e) {
         setSkillMsg(T("skillAdoptedRestartFail", { err: resolveBackendErr(e) }));
       }
     } else if (failures) {
       setSkillMsg(T("skillAdoptPartialFail", { err: failures }));
     } else {
-      setSkillMsg(S().skillSynced || S().skillImported, "info");
+      setSkillMsg(S().skillSynced || S().skillImported, "ok");
     }
   } catch (e) {
     setSkillMsg(resolveBackendErr(e));
@@ -3823,7 +4343,7 @@ async function importDiscoveredMcpServers() {
           failures.length
             ? T("mcpImportPartialFail", { err: failures.join("; ") })
             : T("mcpImportedRestarted"),
-          failures.length ? "err" : "info"
+          failures.length ? "err" : "ok"
         );
       } catch (e) {
         setMcpMsg(T("mcpImportedRestartFail", { err: resolveBackendErr(e) }));
@@ -3848,7 +4368,7 @@ async function loadMcp() {
 
 function setMcpMsg(text, kind = "err") {
   const t = text ? String(text) : "";
-  const cls = kind === "err" ? "err" : "ok";
+  const cls = kind === "ok" || kind === "info" || kind === "warn" ? kind : "err";
   els.mcpMsg.textContent = t;
   els.mcpMsg.className = "msg" + (t ? " " + cls : "");
   els.mcpMsg.parentElement.hidden = !t;
@@ -3911,7 +4431,7 @@ async function toggleMcpServer(id, enabled) {
       setMcpMsg(T("mcpToggledRestarting"), "info");
       try {
         await call("one_click_login");
-        setMcpMsg(T("mcpToggledRestarted"), "info");
+        setMcpMsg(T("mcpToggledRestarted"), "ok");
       } catch (e) {
         setMcpMsg(T("mcpToggledRestartFail", { err: resolveBackendErr(e) }));
       }
@@ -4061,7 +4581,7 @@ async function saveMcpServer() {
       setMcpMsg(T("mcpSavedRestarting"), "info");
       try {
         await call("one_click_login");
-        setMcpMsg(T("mcpSavedRestarted"), "info");
+        setMcpMsg(T("mcpSavedRestarted"), "ok");
       } catch (e) {
         setMcpMsg(T("mcpSavedRestartFail", { err: resolveBackendErr(e) }));
       }

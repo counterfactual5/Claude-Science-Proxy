@@ -55,7 +55,7 @@ DeepSeek 原生 Anthropic 端点          --provider deepseek
 - **发布态 / 待办**：仓库
   [github.com/counterfactual5/Claude-Science-Proxy](https://github.com/counterfactual5/Claude-Science-Proxy)；
   欢迎 issue 与 PR。桌面 app 在 `desktop/`（Tauri 正常窗口进程管家）。
-  **当前 Latest 版本以 GitHub Releases / [`CHANGELOG.md`](CHANGELOG.md) 为准**（桌面端 **1.9.0**：多提供商自选模型拼盘 + v1.8.2 Science 技能库同步）。
+  **当前 Latest 版本以 GitHub Releases / [`CHANGELOG.md`](CHANGELOG.md) 为准**（桌面端 **2.0.0**：Zed LLM 扫描导入 + 拼盘热重载/FALLBACK 修复 + v1.9 多提供商拼盘）。
 - **对外文案（脱敏）**：用户**可见**文案不露骨，别直说「越过 / 绕过登录」；
   主按钮用「一键开始」类中性说法。技术**内部**文档描述机制时可仍用「越过门票」。
 - **默认 provider**：DeepSeek（原生 Anthropic 透传）。模型映射与选择器 id 见

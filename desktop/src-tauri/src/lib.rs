@@ -133,6 +133,9 @@ pub fn run() {
             commands::mcp::update_mcp_server,
             commands::mcp::set_mcp_server_enabled,
             commands::mcp::remove_mcp_server,
+            commands::editor_llm::discover_editor_llm_providers,
+            commands::editor_llm::preview_discovered_editor_llm,
+            commands::editor_llm::import_discovered_editor_llm,
         ])
         .setup(|app| {
             // Normal desktop app: Dock icon, standard lifecycle. Window in tauri.conf.json has

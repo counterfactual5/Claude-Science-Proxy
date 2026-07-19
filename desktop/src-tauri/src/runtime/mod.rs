@@ -1,6 +1,8 @@
 pub(crate) mod capability_catalog;
 pub(crate) mod diagnostics;
 pub(crate) mod i18n;
+pub(crate) mod editor_llm_sources;
+pub(crate) mod jsonc;
 pub(crate) mod model_discovery;
 pub(crate) mod model_sort;
 pub(crate) mod operation;

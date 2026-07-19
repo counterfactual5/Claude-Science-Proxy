@@ -6,7 +6,10 @@ use crate::runtime::profile::{
     build_get_config, create_profile_inner, delete_profile_inner, save_model_platter_inner,
     update_profile_connection_inner, update_profile_metadata_inner, ConnectionEdit,
 };
-use crate::runtime::profile_switch::{scratch_validate_candidate, set_active_platter_txn, set_active_profile_txn};
+use crate::runtime::profile_switch::{
+    reload_active_platter_proxy, scratch_validate_candidate, set_active_platter_txn,
+    set_active_profile_txn,
+};
 use crate::runtime::provider::{
     adapter_for_profile, reject_openai_custom_anthropic_base, relay_missing_base_url,
     relay_missing_profile_models,
@@ -52,7 +55,8 @@ pub(crate) fn update_profile_metadata(
     })
 }
 
-/// Delete profile via lifecycle. If it was active: clear active, bump generation, stop proxy.
+/// Delete profile via lifecycle. If it was active or a platter member while
+/// platter is active: clear/adjust active, bump generation, stop proxy.
 #[tauri::command]
 pub(crate) fn delete_profile(
     state: State<'_, SharedAppState>,
@@ -61,11 +65,11 @@ pub(crate) fn delete_profile(
 ) -> Result<(), String> {
     lifecycle.with_serialized(|| {
         let dir = config::default_dir();
-        let was_active = config::load_from(&dir)
-            .map(|c| c.is_profile_active(&id))
-            .unwrap_or(false);
+        let cfg = config::load_from(&dir).map_err(|e| e.to_string())?;
+        let was_active = cfg.is_profile_active(&id);
+        let in_active_platter = cfg.uses_platter_profile(&id);
         delete_profile_inner(&dir, &id)?;
-        if was_active {
+        if was_active || in_active_platter {
             lifecycle.bump_generation();
             let mut st = lock(state.inner());
             st.stop_proxy();
@@ -164,6 +168,23 @@ fn update_profile_connection_inner_cmd(
                 return Err(i18n_err("errConnValidateFailed", serde_json::json!({})));
             }
             Ok(json!({ "validated": true }))
+        } else if cfg.uses_platter_profile(&id) {
+            // Platter member while platter is active: persist then reload proxy.
+            // Auth/ModelError already Err from scratch; Ambiguous → save unverified + reload.
+            let validated = scratch_validate_candidate(&app, &candidate)?;
+            update_profile_connection_inner(
+                &dir,
+                &id,
+                base_url.as_deref(),
+                api_format.as_deref(),
+                model.as_deref(),
+                active_models.as_deref(),
+                default_model.as_deref(),
+                key.as_deref(),
+            )?;
+            let proxy_reloaded =
+                reload_active_platter_proxy(&app, &state, lifecycle.as_ref())?;
+            Ok(json!({ "validated": validated, "proxy_reloaded": proxy_reloaded }))
         } else {
             // Non-active: scratch upstream verify; explicit reject blocks, else best-effort save + validated flag.
             let validated = scratch_validate_candidate(&app, &candidate)?;
@@ -216,9 +237,11 @@ pub(crate) struct PlatterEntryInput {
 
 #[tauri::command]
 pub(crate) fn save_model_platter(
+    app: tauri::AppHandle,
+    state: State<'_, SharedAppState>,
     lifecycle: State<'_, SharedLifecycle>,
     entries: Vec<PlatterEntryInput>,
-) -> Result<(), String> {
+) -> Result<serde_json::Value, String> {
     lifecycle.with_serialized(|| {
         let mapped: Vec<config::PlatterEntry> = entries
             .into_iter()
@@ -227,7 +250,17 @@ pub(crate) fn save_model_platter(
                 model: e.model,
             })
             .collect();
-        save_model_platter_inner(&config::default_dir(), mapped)
+        let dir = config::default_dir();
+        let was_platter = config::load_from(&dir)
+            .map(|c| c.is_platter_active())
+            .unwrap_or(false);
+        save_model_platter_inner(&dir, mapped)?;
+        let proxy_reloaded = if was_platter {
+            reload_active_platter_proxy(&app, state.inner(), lifecycle.as_ref())?
+        } else {
+            false
+        };
+        Ok(json!({ "proxy_reloaded": proxy_reloaded }))
     })
 }
 

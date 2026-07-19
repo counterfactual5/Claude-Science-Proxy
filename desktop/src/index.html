@@ -30,6 +30,7 @@
                 <div class="listhd-more">
                   <button type="button" class="btn small listhd-more-btn" id="listhdMoreBtn" aria-haspopup="true" aria-expanded="false" title="更多">⋯</button>
                   <div class="pmenu listhd-menu" id="listhdMenu" hidden role="menu">
+                    <button type="button" class="pmenu-item" id="profileDiscoverBtn" role="menuitem">扫描导入</button>
                     <button type="button" class="pmenu-item" id="editCspJsonBtn" role="menuitem">Edit CSP.json</button>
                   </div>
                 </div>
@@ -37,7 +38,6 @@
             </div>
           </div>
           <div id="profileList"></div>
-          <button class="btn small" id="skipActivateBtn" hidden style="margin-top:8px;width:100%">校验没过，仍要启用这条</button>
         </div>
 
         <div class="sec" id="wizSec" hidden>
@@ -93,8 +93,22 @@
           </div>
         </div>
 
+        <div class="sec form-sec" id="profileDiscoverSec" hidden>
+          <label id="profileDiscoverTitle">扫描本地 LLM</label>
+          <p class="hint" id="profileDiscoverHint">扫描 Agent/编码软件里的本地自定义 LLM（Zed、Continue、OpenCode、OpenClaw、Factory、Cline、Aider、Codex）。Cursor/Claude Code 等账号侧模型不会出现。</p>
+          <div id="profileDiscoverList" class="skill-discover-list"></div>
+          <div id="profileDiscoverEmpty" class="skill-empty" hidden>
+            <p id="profileDiscoverEmptyText">没有扫描到可导入的提供商。</p>
+          </div>
+          <div class="row form-actions">
+            <button class="btn small" id="profileDiscoverImportBtn" disabled>导入所选</button>
+            <button class="btn small" id="profileDiscoverCancelBtn">取消</button>
+          </div>
+        </div>
+
         <div class="sec feedback" hidden>
           <div class="msg" id="msg" role="status" aria-live="polite"></div>
+          <button class="btn small skip-btn" id="skipActivateBtn" hidden>校验没过，仍要启用这条</button>
         </div>
       </div>
 

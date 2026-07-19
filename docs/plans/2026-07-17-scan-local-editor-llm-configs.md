@@ -3,7 +3,7 @@ title: Scan local editor LLM configs
 date: 2026-07-17
 type: unified-plan
 artifact_readiness: requirements-only
-status: draft
+status: implemented
 target_release: v2.0.0
 ---
 

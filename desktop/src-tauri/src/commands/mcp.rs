@@ -13,6 +13,7 @@ use crate::mcp_manager::model::{
     DiscoveredMcpServer, McpInspection, McpServerSummary, McpTransport,
 };
 use crate::mcp_manager::store::{McpServerInput, McpStore};
+use crate::runtime::jsonc::read_jsonc;
 use crate::runtime::sandbox_session::{redeploy_sandbox_mcp, stop_running_sandbox_for_redeploy};
 use crate::{config, run_blocking, SharedAppState};
 use tauri::State;
@@ -237,6 +238,19 @@ const MCP_SOURCES: &[McpSource] = &[
         label: "QoderWork CN",
         key: "mcpServers",
     },
+    // QoderWork desktop / CLI state dir is ~/.qoderwork (Claude Code-derived):
+    // `.qoder.json` mirrors `~/.claude.json` (user-level `mcpServers`);
+    // `settings.json` is the documented user config (hooks etc.).
+    McpSource {
+        rel_path: ".qoderwork/.qoder.json",
+        label: "QoderWork",
+        key: "mcpServers",
+    },
+    McpSource {
+        rel_path: ".qoderwork/settings.json",
+        label: "QoderWork",
+        key: "mcpServers",
+    },
     // ByteDance Trae family — global MCP under `<app>/User/mcp.json`.
     McpSource {
         rel_path: "Library/Application Support/Trae/User/mcp.json",
@@ -290,6 +304,13 @@ const MCP_SOURCES: &[McpSource] = &[
         label: "OpenClaw",
         key: "mcp.servers",
     },
+    // Tencent QClaw (小龙虾) — desktop wrapper around OpenClaw; identical config
+    // schema under its own state dir ~/.qclaw.
+    McpSource {
+        rel_path: ".qclaw/openclaw.json",
+        label: "QClaw",
+        key: "mcp.servers",
+    },
     // AWS Kiro — user scope (kiro.dev/docs/mcp/configuration): ~/.kiro/settings/mcp.json.
     McpSource {
         rel_path: ".kiro/settings/mcp.json",
@@ -318,6 +339,81 @@ const MCP_SOURCES: &[McpSource] = &[
     McpSource {
         rel_path: ".factory/mcp.json",
         label: "Factory",
+        key: "mcpServers",
+    },
+    // OpenCode — `mcp` in ~/.config/opencode/opencode.json(c). v2 nests under
+    // `mcp.servers`; v1 puts names directly under `mcp` (both keys probed).
+    // Server shape uses `command` as an array + `environment` (handled in parse_server).
+    McpSource {
+        rel_path: ".config/opencode/opencode.json",
+        label: "OpenCode",
+        key: "mcp.servers",
+    },
+    McpSource {
+        rel_path: ".config/opencode/opencode.jsonc",
+        label: "OpenCode",
+        key: "mcp.servers",
+    },
+    // Crush (Charm) — `mcp` map in ~/.config/crush/crush.json.
+    McpSource {
+        rel_path: ".config/crush/crush.json",
+        label: "Crush",
+        key: "mcp",
+    },
+    // Qwen Code / iFlow CLI — `mcpServers` in their settings.json (gemini-family).
+    McpSource {
+        rel_path: ".qwen/settings.json",
+        label: "Qwen Code",
+        key: "mcpServers",
+    },
+    McpSource {
+        rel_path: ".iflow/settings.json",
+        label: "iFlow",
+        key: "mcpServers",
+    },
+    // Cline VS Code extension — `mcpServers` in per-editor globalStorage.
+    // The extension id (saoudrizwan.claude-dev) is stable across host editors.
+    McpSource {
+        rel_path: "Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json",
+        label: "Cline",
+        key: "mcpServers",
+    },
+    McpSource {
+        rel_path: "Library/Application Support/Cursor/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json",
+        label: "Cline",
+        key: "mcpServers",
+    },
+    McpSource {
+        rel_path: "Library/Application Support/Windsurf/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json",
+        label: "Cline",
+        key: "mcpServers",
+    },
+    McpSource {
+        rel_path: "Library/Application Support/Code - Insiders/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json",
+        label: "Cline",
+        key: "mcpServers",
+    },
+    // Baidu 文心快码 Comate / Zulu — user MCP: ~/.comate/mcp.json (+ experimental
+    // ~/.comate/mcp.local.json). Env values may use $COMATE.ENV.* placeholders.
+    McpSource {
+        rel_path: ".comate/mcp.json",
+        label: "Comate",
+        key: "mcpServers",
+    },
+    McpSource {
+        rel_path: ".comate/mcp.local.json",
+        label: "Comate",
+        key: "mcpServers",
+    },
+    // Alibaba 通义灵码 Lingma (Qoder CN series) — global MCP config.
+    McpSource {
+        rel_path: "Library/Application Support/Lingma/mcp-config.json",
+        label: "Lingma",
+        key: "mcpServers",
+    },
+    McpSource {
+        rel_path: ".config/lingma/mcp-config.json",
+        label: "Lingma",
         key: "mcpServers",
     },
 ];
@@ -560,7 +656,15 @@ pub async fn remove_mcp_server(input: RemoveMcpServerInput) -> Result<(), String
 /// Keys under which a config file might store its stdio MCP map. We probe the
 /// source's declared key first, then the alternates, so a client that migrates
 /// its schema still surfaces.
-const SERVER_KEYS: &[&str] = &["mcpServers", "context_servers", "servers"];
+// `mcp.servers` is tried before the bare `mcp` so OpenCode v2's nested map is
+// not mis-read as a single server; `mcp` covers OpenCode v1 + Crush flat maps.
+const SERVER_KEYS: &[&str] = &[
+    "mcpServers",
+    "context_servers",
+    "servers",
+    "mcp.servers",
+    "mcp",
+];
 
 fn discover_source(
     path: &Path,
@@ -787,20 +891,39 @@ fn parse_server(name: &str, value: &Value) -> Option<McpServerInput> {
         });
     }
 
-    let command = obj.get("command")?.as_str()?.trim().to_string();
+    // `command` is a string for most clients, but OpenCode uses an array whose
+    // first element is the executable and the rest are args.
+    let (command, mut args) = match obj.get("command") {
+        Some(Value::String(s)) => (s.trim().to_string(), Vec::new()),
+        Some(Value::Array(items)) => {
+            let parts: Vec<String> = items
+                .iter()
+                .filter_map(|v| v.as_str().map(|s| s.trim().to_string()))
+                .filter(|s| !s.is_empty())
+                .collect();
+            let mut it = parts.into_iter();
+            let cmd = it.next()?;
+            (cmd, it.collect())
+        }
+        _ => return None,
+    };
     if command.is_empty() {
         return None;
     }
-    let args = match obj.get("args") {
-        Some(Value::Array(items)) => items
-            .iter()
-            .filter_map(|v| v.as_str().map(ToString::to_string))
-            .collect(),
-        Some(Value::String(s)) => split_shell_like(s),
-        _ => Vec::new(),
+    // Merge any explicit `args` after command-array leftovers.
+    match obj.get("args") {
+        Some(Value::Array(items)) => args.extend(
+            items
+                .iter()
+                .filter_map(|v| v.as_str().map(ToString::to_string)),
+        ),
+        Some(Value::String(s)) => args.extend(split_shell_like(s)),
+        _ => {}
     };
+    // Cursor/Claude use `env`; OpenCode uses `environment`.
     let env = obj
         .get("env")
+        .or_else(|| obj.get("environment"))
         .and_then(Value::as_object)
         .map(|m| {
             m.iter()
@@ -989,103 +1112,6 @@ fn read_codex_toml_server(path: &Path, server_name: &str) -> Option<McpServerInp
     parse_codex_toml_server(server_name, value)
 }
 
-fn read_jsonc(path: &Path) -> Result<Option<Value>, String> {
-    let text = match fs::read_to_string(path) {
-        Ok(t) => t,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(e) => return Err(format!("read MCP source {}: {e}", path.display())),
-    };
-    let json = strip_jsonc(&text);
-    serde_json::from_str(&json)
-        .map(Some)
-        .map_err(|e| format!("parse MCP source {}: {e}", path.display()))
-}
-
-fn strip_jsonc(input: &str) -> String {
-    let mut out = String::with_capacity(input.len());
-    let mut chars = input.chars().peekable();
-    let mut in_string = false;
-    let mut escaped = false;
-    while let Some(c) = chars.next() {
-        if in_string {
-            out.push(c);
-            if escaped {
-                escaped = false;
-            } else if c == '\\' {
-                escaped = true;
-            } else if c == '"' {
-                in_string = false;
-            }
-            continue;
-        }
-
-        if c == '"' {
-            in_string = true;
-            out.push(c);
-            continue;
-        }
-        if c == '/' && chars.peek() == Some(&'/') {
-            chars.next();
-            for nc in chars.by_ref() {
-                if nc == '\n' {
-                    out.push('\n');
-                    break;
-                }
-            }
-            continue;
-        }
-        if c == '/' && chars.peek() == Some(&'*') {
-            chars.next();
-            let mut prev = '\0';
-            for nc in chars.by_ref() {
-                if prev == '*' && nc == '/' {
-                    break;
-                }
-                prev = nc;
-            }
-            continue;
-        }
-        out.push(c);
-    }
-    remove_trailing_commas(&out)
-}
-
-fn remove_trailing_commas(input: &str) -> String {
-    let mut out = String::with_capacity(input.len());
-    let mut chars = input.chars().peekable();
-    let mut in_string = false;
-    let mut escaped = false;
-    while let Some(c) = chars.next() {
-        if in_string {
-            out.push(c);
-            if escaped {
-                escaped = false;
-            } else if c == '\\' {
-                escaped = true;
-            } else if c == '"' {
-                in_string = false;
-            }
-            continue;
-        }
-        if c == '"' {
-            in_string = true;
-            out.push(c);
-            continue;
-        }
-        if c == ',' {
-            let mut look = chars.clone();
-            while matches!(look.peek(), Some(ch) if ch.is_whitespace()) {
-                look.next();
-            }
-            if matches!(look.peek(), Some('}' | ']')) {
-                continue;
-            }
-        }
-        out.push(c);
-    }
-    out
-}
-
 fn split_shell_like(s: &str) -> Vec<String> {
     // Good enough for UI-entered args such as `--transport stdio`; quoted paths can
     // still be edited manually after import.
@@ -1095,6 +1121,7 @@ fn split_shell_like(s: &str) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::runtime::jsonc::strip_jsonc;
     use serde_json::json;
 
     #[test]
@@ -1120,7 +1147,10 @@ mod tests {
         });
         let map = server_map(&root, "mcp.servers").unwrap();
         assert!(map.contains_key("docs"));
-        assert!(server_map(&root, "mcpServers").is_none());
+        // `mcp.servers` / `mcp` are now part of the fallback probe, so even a
+        // mismatched primary key resolves the nested map (OpenCode/OpenClaw).
+        let via_fallback = server_map(&root, "mcpServers").unwrap();
+        assert!(via_fallback.contains_key("docs"));
     }
 
     #[test]
@@ -1154,6 +1184,37 @@ mod tests {
         let v = json!({ "command": "python3", "args": "server.py --port 9" });
         let input = parse_server("x", &v).unwrap();
         assert_eq!(input.args, vec!["server.py", "--port", "9"]);
+    }
+
+    #[test]
+    fn parse_server_opencode_command_array_and_environment() {
+        // OpenCode: command is an array (exe + args) and env key is `environment`.
+        let v = json!({
+            "type": "local",
+            "command": ["npx", "-y", "@modelcontextprotocol/server-everything"],
+            "environment": { "LOG_LEVEL": "info" },
+            "enabled": true
+        });
+        let input = parse_server("everything", &v).unwrap();
+        assert_eq!(input.command, "npx");
+        assert_eq!(
+            input.args,
+            vec!["-y", "@modelcontextprotocol/server-everything"]
+        );
+        assert_eq!(input.transport, McpTransport::Stdio);
+        assert_eq!(input.env.get("LOG_LEVEL").map(String::as_str), Some("info"));
+    }
+
+    #[test]
+    fn server_map_finds_opencode_nested_and_flat() {
+        // v2 nested mcp.servers.<name>
+        let v2 = json!({ "mcp": { "servers": { "a": { "command": ["x"] } } } });
+        let m = server_map(&v2, "mcp.servers").unwrap();
+        assert!(m.contains_key("a"));
+        // v1 flat mcp.<name>
+        let v1 = json!({ "mcp": { "b": { "command": ["y"] } } });
+        let m = server_map(&v1, "mcp.servers").unwrap();
+        assert!(m.contains_key("b"));
     }
 
     #[test]

@@ -192,17 +192,28 @@ impl Profile {
         self.effective_models().first().cloned().unwrap_or_default()
     }
 
-    /// Sort active models (newest first) and align default/model with the flagship entry.
+    /// Dedupe active models while keeping their stored (source/config) order, and
+    /// align default/model with an entry from the list. Never reorders: the order
+    /// reflects what the user configured or imported (e.g. Zed's available_models).
+    /// Shell-mapping code that needs newest-first sorts its own copy internally.
     pub fn normalize_model_selection(&mut self) {
-        let mut models = self.effective_models();
+        let mut models: Vec<String> = Vec::new();
+        for m in self.effective_models() {
+            if !models.contains(&m) {
+                models.push(m);
+            }
+        }
         if models.is_empty() {
             return;
         }
-        crate::runtime::model_sort::sort_model_ids(&mut models);
-        self.active_models = models.clone();
-        let flagship = models[0].clone();
-        self.default_model = flagship.clone();
-        self.model = flagship;
+        let default = if models.contains(&self.default_model) {
+            self.default_model.clone()
+        } else {
+            models[0].clone()
+        };
+        self.active_models = models;
+        self.default_model = default.clone();
+        self.model = default;
     }
 }
 
@@ -217,6 +228,16 @@ impl Config {
             return false;
         }
         self.active_ids.iter().any(|x| x == id)
+    }
+
+    /// Whether platter mode is active and `id` appears in platter entries.
+    pub fn uses_platter_profile(&self, id: &str) -> bool {
+        self.is_platter_active()
+            && self
+                .model_platter
+                .entries
+                .iter()
+                .any(|e| e.profile_id == id)
     }
 
     /// Remove `id` from active list (used when deleting a profile).
@@ -799,6 +820,39 @@ mod tests {
 
     fn mode_of(p: &Path) -> u32 {
         fs::metadata(p).unwrap().permissions().mode() & 0o777
+    }
+
+    // ---------- normalize_model_selection keeps source/config order ----------
+    #[test]
+    fn normalize_keeps_active_models_order_and_valid_default() {
+        // Import-source order (e.g. Zed available_models) must survive normalize.
+        let mut p = Profile {
+            active_models: vec![
+                "stepfun-ai/step-3.7-flash".into(),
+                "minimaxai/minimax-m3".into(),
+                "z-ai/glm-5.2".into(),
+                "z-ai/glm-5.2".into(), // dupe collapses, order kept
+            ],
+            default_model: "z-ai/glm-5.2".into(),
+            ..Default::default()
+        };
+        p.normalize_model_selection();
+        assert_eq!(
+            p.active_models,
+            vec![
+                "stepfun-ai/step-3.7-flash".to_string(),
+                "minimaxai/minimax-m3".to_string(),
+                "z-ai/glm-5.2".to_string(),
+            ]
+        );
+        // Existing default stays when still in the list.
+        assert_eq!(p.default_model, "z-ai/glm-5.2");
+        assert_eq!(p.model, "z-ai/glm-5.2");
+        // Default falls back to the first entry when missing from the list.
+        p.default_model = "gone".into();
+        p.normalize_model_selection();
+        assert_eq!(p.default_model, "stepfun-ai/step-3.7-flash");
+        assert_eq!(p.model, "stepfun-ai/step-3.7-flash");
     }
 
     // ---------- A1: structure + accessors + new_id/now_ms ----------
