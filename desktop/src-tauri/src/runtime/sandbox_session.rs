@@ -1,3 +1,5 @@
+use std::fs;
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::Duration;
@@ -101,6 +103,35 @@ pub(crate) fn one_click_login<R: Runtime>(
     // Same iron-rule guards as Skills: only ever writes under the sandbox, never
     // the real `~/.claude-science`.
     let (mcp_report, _) = deploy_sandbox_mcp(&auth_dir, &sbx_home, Some(&forged.org_uuid));
+
+    // SSH config bridge: create `.ssh/config` in the sandbox HOME with an
+    // `Include` directive pointing to the real user's `~/.ssh/config`. This lets
+    // sandbox Science (git clone over SSH, MCP via SSH, etc.) resolve hosts and
+    // identity files exactly as the real user would, WITHOUT copying keys or
+    // config — the Include is read-only at the OS level. Fail-soft: if the real
+    // config doesn't exist or the sandbox .ssh/ can't be created, log and
+    // continue (SSH-dependent features just won't work, which is non-fatal).
+    let real_ssh_config = std::env::var_os("HOME")
+        .map(|h| PathBuf::from(h).join(".ssh").join("config"))
+        .filter(|p| p.is_file());
+    if let Some(real_config) = real_ssh_config {
+        let sbx_ssh_dir = sbx_home.join(".ssh");
+        let sbx_ssh_config = sbx_ssh_dir.join("config");
+        let _ = fs::create_dir_all(&sbx_ssh_dir);
+        let include_line = format!("Include {}\n", real_config.display());
+        match fs::write(&sbx_ssh_config, include_line) {
+            Ok(_) => {
+                let _ = fs::set_permissions(
+                    &sbx_ssh_config,
+                    fs::Permissions::from_mode(0o600),
+                );
+                let _ = fs::set_permissions(&sbx_ssh_dir, fs::Permissions::from_mode(0o700));
+            }
+            Err(e) => {
+                eprintln!("SSH config bridge skipped (non-fatal): {e}");
+            }
+        }
+    }
 
     let launch = root.join("scripts/sandbox/launch-virtual-sandbox.sh");
     if !launch.is_file() {

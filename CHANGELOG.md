@@ -3,6 +3,20 @@
 All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.2.0] — 2026-07-21
+
+### Added
+- **SSH config Include bridge**: Sandbox init now creates `~/.ssh/config` (0600) inside the sandbox HOME with an `Include` directive pointing to the real user's `~/.ssh/config`. This lets sandbox Science resolve SSH hosts / identity files exactly as the real user would — git clone over SSH, MCP via SSH, etc. — without copying keys or config. Fail-soft: if the real config doesn't exist or the sandbox `.ssh/` can't be created, the step is skipped (non-fatal).
+
+### Fixed
+- **Kimi K3 relay orphan tool blocks**: When Science replays multi-turn history after a failed tool call, orphan `tool_use` blocks (no matching `tool_result`) and orphan `tool_result` blocks (no matching `tool_use`) are now cleaned up before forwarding to Kimi on the relay path. Orphan `tool_result` is downgraded to a text block (content preserved as context); trailing orphan `tool_use` is removed. This prevents Kimi's `temporarily unavailable` loops caused by incomplete tool-call sequences.
+- **Gemini `role: "model"` normalization**: Gemini sometimes returns `role: "model"` in assistant messages; `anthropic_to_openai` now normalizes it to `"assistant"` so strict OpenAI-compat endpoints don't 400.
+- **Gemini/Grok safety finish_reason**: Non-standard `finish_reason` values (Gemini's `safety` / `recitaction` / `other`, Grok's `content_filter`) are no longer silently mapped to `end_turn`. A visible `[Content filtered by upstream: <reason>]` marker is appended to the response text so the user knows the upstream filtered or truncated.
+
+### Changed
+- **Strict model routing**: When the platter is active (registry + credentials present) and Science sends an unknown shell ID that is neither a registered route nor a known `FALLBACK_SHELL`, the proxy now returns HTTP 400 with a clear error message instead of silently falling back to `default_model`. This prevents the user from unknowingly using the wrong model after a Science update adds new shell IDs. To restore the old behavior, add the shell to the platter editor or `FALLBACK_SHELLS`.
+- Version alignment (desktop bundle + Cargo + built-in web-search `SERVER_VERSION`) → **2.2.0**.
+
 ## [2.1.0] — 2026-07-21
 
 ### Added

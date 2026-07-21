@@ -409,6 +409,93 @@ def _filter_upstream_tools(upstream, target_model, provider, rule_ids=None):
                 _degrade_missing_tool_choice(upstream)
 
 
+def _strip_orphan_tool_blocks(messages):
+    """Remove orphan tool_use/tool_result blocks from relay (Anthropic-native) messages.
+
+    After a failed tool call (e.g. Kimi K3 multi-turn reasoning + tool_use failure),
+    Science may replay history with a tool_use block whose tool_result was never
+    produced, or a tool_result whose tool_use fell outside the replayed window.
+    Sending these orphans to Kimi/relay causes repeated `temporarily unavailable`
+    because the model sees an incomplete tool-call sequence.
+
+    Strategy: track tool_use IDs declared in each assistant turn. A tool_result
+    whose tool_use_id is not in any preceding turn is downgraded to a text block
+    (preserving its content as context). A trailing tool_use with no matching
+    tool_result in a subsequent user turn is removed entirely — the model would
+    try to continue from a phantom tool call.
+    """
+    if not isinstance(messages, list):
+        return messages
+    known_tool_ids = set()
+    for msg in messages:
+        if not isinstance(msg, dict):
+            continue
+        content = msg.get("content")
+        if not isinstance(content, list):
+            continue
+        new_blocks = []
+        for blk in content:
+            if not isinstance(blk, dict):
+                new_blocks.append(blk)
+                continue
+            t = blk.get("type")
+            if t == "tool_use":
+                new_blocks.append(blk)
+                known_tool_ids.add(blk.get("id"))
+            elif t == "tool_result":
+                call_id = blk.get("tool_use_id")
+                if call_id and call_id in known_tool_ids:
+                    new_blocks.append(blk)
+                else:
+                    # Orphan tool_result: downgrade to text so content is not lost
+                    raw = blk.get("content")
+                    if isinstance(raw, str):
+                        text = raw
+                    elif isinstance(raw, list):
+                        text = " ".join(
+                            b.get("text", "") if isinstance(b, dict) else str(b)
+                            for b in raw
+                        )
+                    else:
+                        text = str(raw) if raw else ""
+                    label = call_id or "unknown"
+                    new_blocks.append({
+                        "type": "text",
+                        "text": f"[tool_result for {label} (orphaned, "
+                                f"omitted from replay)]: {text}",
+                    })
+            else:
+                new_blocks.append(blk)
+        msg["content"] = new_blocks
+
+    # Second pass: remove trailing tool_use blocks in the last assistant message
+    # that have no matching tool_result in any subsequent user message.
+    # (Already-processed tool_results are now text, so any remaining tool_use
+    # IDs in the last message with no follower are orphans.)
+    if messages:
+        last = messages[-1]
+        if isinstance(last, dict) and last.get("role") == "assistant":
+            content = last.get("content")
+            if isinstance(content, list):
+                # Collect tool_use IDs in the last message
+                last_tool_ids = {
+                    blk.get("id") for blk in content
+                    if isinstance(blk, dict) and blk.get("type") == "tool_use"
+                }
+                if last_tool_ids:
+                    # Check if any subsequent message has a matching tool_result
+                    # (there are none after the last message, so all are orphans)
+                    has_result = False
+                    # If there are messages after this one (there shouldn't be
+                    # if it's truly the last), check them; otherwise strip.
+                    last["content"] = [
+                        blk for blk in content
+                        if not (isinstance(blk, dict) and blk.get("type") == "tool_use"
+                                and blk.get("id") in last_tool_ids)
+                    ] or [{"type": "text", "text": ""}]
+    return messages
+
+
 def transform_request(body, state):
     """(body, ProviderState) -> (upstream_body, Ctx). Pure function: no network, no global reads.
     Equivalent to legacy _handle_anthropic :695-702 + :714-718."""
@@ -432,6 +519,10 @@ def transform_request(body, state):
         _append_rule_id(rule_ids, provider_policy.RULE_PROVIDER_KIMI_RELAY_THINKING_ENABLED)
     upstream = dict(body)
     upstream["model"] = target
+    # Relay (Anthropic-native) path: strip orphan tool_use/tool_result blocks
+    # that pollute multi-turn conversations after failed tool calls (Kimi K3 fix).
+    if state.prov_name == "relay":
+        upstream["messages"] = _strip_orphan_tool_blocks(upstream.get("messages", []))
     if upstream.get("max_tokens"):
         upstream["max_tokens"] = provider_policy.clamp_max_tokens(
             upstream["max_tokens"], target, state)

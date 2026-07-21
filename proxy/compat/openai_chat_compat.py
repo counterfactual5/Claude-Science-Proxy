@@ -126,6 +126,10 @@ def anthropic_to_openai(req, state):
 
     for m in req.get("messages", []):
         role = m.get("role")
+        # Gemini sometimes returns "model" instead of "assistant" — normalize
+        # so OpenAI-compat endpoints that strictly validate roles don't 400.
+        if role == "model":
+            role = "assistant"
         content = m.get("content")
         if isinstance(content, str):
             msgs.append({"role": role, "content": content})
@@ -254,10 +258,21 @@ def openai_to_anthropic(resp, model_id):
             "input": args,
         })
     fr = choice.get("finish_reason")
+    # Gemini may return SAFETY / RECITATION / OTHER — map non-standard
+    # reasons to end_turn but flag content filtering so the user is aware,
+    # rather than silently masking a safety stop as a normal completion.
     stop = {"stop": "end_turn", "length": "max_tokens", "tool_calls": "tool_use"}.get(
         fr,
         "end_turn",
     )
+    if fr and fr not in ("stop", "length", "tool_calls"):
+        # Non-standard finish reason (e.g. Gemini's "safety", "recitation",
+        # Grok's "content_filter"). Append a visible marker so the user
+        # knows the upstream filtered or truncated the response.
+        if blocks and blocks[-1].get("type") == "text":
+            blocks[-1]["text"] += f"\n\n[Content filtered by upstream: {fr}]"
+        else:
+            blocks.append({"type": "text", "text": f"[Content filtered by upstream: {fr}]"})
     usage = resp.get("usage", {})
     return {
         "id": resp.get("id", "msg_proxy"),

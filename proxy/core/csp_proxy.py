@@ -735,7 +735,25 @@ class H(BaseHTTPRequestHandler):
                 pass
         runtime = current_runtime()
         # Platter: resolve shell → owning provider before picking Anthropic vs OpenAI path.
-        runtime = runtime_for_model(runtime, areq.get("model", ""))
+        # Strict routing: when the platter is active (registry + credentials present)
+        # but the requested shell ID is neither a registered route nor a known
+        # FALLBACK shell, fail explicitly instead of silently routing to default_model.
+        # This prevents the user from unknowingly using the wrong model when Science
+        # sends an unexpected shell ID (e.g. after a Science update adds new models).
+        shell_id = areq.get("model", "")
+        if runtime.model_registry and PROFILE_CREDENTIALS:
+            route = runtime.model_registry.resolve_route(shell_id)
+            if not route and shell_id:
+                from proxy.registry.model_registry import FALLBACK_SHELLS
+                if FALLBACK_SHELLS.get(shell_id) is None:
+                    log(f"POST /v1/messages  REJECT unknown shell '{shell_id}' "
+                        f"(platter active, not in routes or FALLBACK_SHELLS)")
+                    self._send_json(400, {"type": "error", "error": {
+                        "type": "invalid_request_error",
+                        "message": f"Model '{shell_id}' is not configured in the active platter. "
+                                   f"Add it via the platter editor, or use a configured model."}})
+                    return
+        runtime = runtime_for_model(runtime, shell_id)
         if runtime.prov["mode"] == "anthropic":
             self._handle_anthropic(areq, runtime)
         else:
