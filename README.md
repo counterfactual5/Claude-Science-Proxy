@@ -67,9 +67,9 @@ Claude Science (sandbox)
 - **One-click start** — launches proxy, prepares sandbox, opens Science
 - **Real model names** in Science’s selector (not a generic `claude` / `opus` label)
 - **Multi-model per profile** — virtual registry maps up to **8** `claude-*` shell IDs to real upstream models
-- **Local Skills manager** — create; import from folder, zip, or URL; enable/disable; scan-and-import from other agents; sync Science skill library (harvest edits, full-screen preview); built-in **`csp-environment`** handbook; enabled Skills deploy into the sandbox on launch
+- **Local Skills manager** — create; import from folder, zip, or URL; enable/disable; scan-and-import from other agents (**searchable** list; already-owned skills keep-by-default); sync Science skill library (harvest edits, full-screen preview); built-in **`csp-environment`** handbook; enabled Skills deploy into the sandbox on launch
 - **Local MCP manager** — add/edit **stdio** or **remote** (sse / streamable_http) connectors; scan-and-import from other AI clients with JSON/TOML config preview; enabled connectors deploy into the sandbox on launch
-- **Built-in web-search MCP** — no key required for the free path: GENERAL (`csp_web_search` → DuckDuckGo IA/Lite) and LITERATURE (`search_literature` → Wikipedia / Crossref / arXiv / PubMed); optional Brave/Serper/Tavily keys; Start auto-grants provider hosts (`~/.csp/network-allowlist.json` for extras)
+- **Built-in web-search MCP** — no key required for the free path: GENERAL (`csp_web_search` → DuckDuckGo IA/Lite) and LITERATURE (`search_literature` → Wikipedia / Crossref / arXiv / PubMed); optional Brave/Serper/Tavily keys; Start auto-grants search providers **plus a curated common-egress set**; extras via MCP **待批准出网域名** or `~/.csp/network-allowlist.json`
 
 ### For power users
 

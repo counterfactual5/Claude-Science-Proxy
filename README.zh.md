@@ -68,9 +68,9 @@ Claude Science sandbox
 - 点击一条配置切换为当前生效前会先验证 Key；失败不会悄悄切换到坏配置。
 - 点击「启动 Claude Science」会自动启动代理、准备隔离环境、打开 Science。
 - Science 顶部模型选择器会显示你选择的真实模型名，而不是笼统的 `claude` 或 `opus`。单条生效配置可启用多个模型（虚拟注册表分配壳 ID），Science 里可切换使用。
-- 本地 **Skills 管理**：新建；从目录 / zip / URL 导入；启用/停用；从其它 Agent 扫描导入；**同步 Science 技能库**（回收 Edit/对话改动，全屏预览）；内置 **`csp-environment`** 环境手册；启用的 Skill 会在启动时部署进沙盒。
+- 内置 **web-search MCP**：免密钥可用（GENERAL：`csp_web_search` → DuckDuckGo IA/Lite；LITERATURE：`search_literature` → Wikipedia / Crossref / arXiv / PubMed）；可选 Brave/Serper/Tavily；启动时自动写入检索域名与**常见出网域名**预授权；额外主机走 MCP **待批准出网域名** 或 `~/.csp/network-allowlist.json`。
+- 本地 **Skills 管理**：新建；从目录 / zip / URL 导入；启用/停用；从其它 Agent **扫描导入**（可搜索；已有同名默认保留）；**同步 Science 技能库**（回收 Edit/对话改动，全屏预览）；内置 **`csp-environment`** 环境手册；启用的 Skill 会在启动时部署进沙盒。
 - 本地 **MCP 管理**：新增/编辑 **stdio** 或**远程**（sse / streamable_http）连接器；从其它 AI 客户端「扫描导入」（可预览 JSON/TOML 配置片段）；启用的连接器会在启动时部署进沙盒。
-- 内置 **web-search MCP**：免密钥可用（GENERAL：`csp_web_search` → DuckDuckGo IA/Lite；LITERATURE：`search_literature` → Wikipedia / Crossref / arXiv / PubMed）；可选 Brave/Serper/Tavily；启动时自动写入网络授权（扩展见 `~/.csp/network-allowlist.json`）。
 
 **给进阶用户**
 
