@@ -559,11 +559,18 @@ impl SkillStore {
     /// Results are de-duplicated by canonical source path and sorted by name.
     pub fn discover(&self, roots: &[(PathBuf, String)]) -> Result<Vec<DiscoveredSkill>, String> {
         let inv = self.load_inventory()?;
-        // Canonical source paths already in the inventory.
-        let imported: std::collections::BTreeSet<PathBuf> = inv
+        // Same source path OR same skill name → treat as already owned so the
+        // import UI can default to "keep existing" (skip) instead of re-import.
+        let imported_paths: std::collections::BTreeSet<PathBuf> = inv
             .skills
             .values()
             .map(|s| fs::canonicalize(&s.source_path).unwrap_or_else(|_| s.source_path.clone()))
+            .collect();
+        let imported_names: std::collections::BTreeSet<String> = inv
+            .skills
+            .values()
+            .map(|s| s.name.trim().to_lowercase())
+            .filter(|n| !n.is_empty())
             .collect();
 
         let mut seen: std::collections::BTreeSet<PathBuf> = std::collections::BTreeSet::new();
@@ -583,12 +590,15 @@ impl SkillStore {
                     continue; // same dir reachable via two roots
                 }
                 let (name, description) = read_skill_meta(&dir);
+                let name_key = name.trim().to_lowercase();
+                let already_imported = imported_paths.contains(&canonical)
+                    || (!name_key.is_empty() && imported_names.contains(&name_key));
                 out.push(DiscoveredSkill {
                     name,
                     description,
                     source_path: dir.to_string_lossy().to_string(),
                     source_label: label.clone(),
-                    already_imported: imported.contains(&canonical),
+                    already_imported,
                 });
             }
         }
@@ -1239,6 +1249,39 @@ mod tests {
         assert!(!beta.already_imported, "beta not imported");
         assert_eq!(alpha.description, "A");
 
+        let _ = fs::remove_dir_all(&root_a);
+        let _ = fs::remove_dir_all(&root_b);
+        let _ = fs::remove_dir_all(&store.root);
+    }
+
+    #[test]
+    fn discover_marks_same_name_from_other_root_as_imported() {
+        let store = temp_store();
+        let root_a = env::temp_dir().join(format!("csp-disc-name-a-{}", rand_u64()));
+        let root_b = env::temp_dir().join(format!("csp-disc-name-b-{}", rand_u64()));
+        let sk_a = root_a.join("alpha");
+        let sk_b = root_b.join("alpha-copy");
+        fs::create_dir_all(&sk_a).unwrap();
+        fs::create_dir_all(&sk_b).unwrap();
+        fs::write(
+            sk_a.join("SKILL.md"),
+            "---\nname: SharedName\ndescription: A\n---\n",
+        )
+        .unwrap();
+        fs::write(
+            sk_b.join("SKILL.md"),
+            "---\nname: SharedName\ndescription: B\n---\n",
+        )
+        .unwrap();
+        store.import(&sk_a).unwrap();
+        let found = store
+            .discover(&[(root_b.clone(), "~/b".to_string())])
+            .unwrap();
+        assert_eq!(found.len(), 1);
+        assert!(
+            found[0].already_imported,
+            "same name from another root should be owned"
+        );
         let _ = fs::remove_dir_all(&root_a);
         let _ = fs::remove_dir_all(&root_b);
         let _ = fs::remove_dir_all(&store.root);

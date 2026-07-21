@@ -4,7 +4,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License">
-  <img src="https://img.shields.io/badge/version-2.0.0-brightgreen.svg" alt="v2.0.0">
+  <img src="https://img.shields.io/badge/version-2.1.0-brightgreen.svg" alt="v2.1.0">
   <img src="https://img.shields.io/badge/platform-macOS%20Apple%20Silicon-1d1d1f.svg" alt="macOS Apple Silicon">
   <img src="https://img.shields.io/badge/built%20with-Tauri%202-C25A34.svg" alt="Tauri 2">
 </p>
@@ -25,7 +25,7 @@ CSP is a **macOS desktop app** (Tauri) that:
 4. Verifies API keys **before** switching the active profile
 5. Manages local **Skills** and **MCP connectors** (stdio + remote), deploying enabled ones into the sandbox on launch
 
-> **v2.0.0** — Scan local editor/agent LLM configs (Zed, OpenClaw/QClaw, Trae/TRAE SOLO, Cursor, Claude Code, …) into CSP; platter "browse all models" + full-catalog search; model-order preservation; platter hot-reload + FALLBACK profile fix. See [Releases](https://github.com/counterfactual5/Claude-Science-Proxy/releases/tag/v2.0.0) · [Changelog](./CHANGELOG.md).
+> **v2.1.0** — Network pending approval + common egress pre-grants; Fake-IP egress status; Skill discover search & more scan roots; Science rolling-compact tool strip. See [Releases](https://github.com/counterfactual5/Claude-Science-Proxy/releases/tag/v2.1.0) · [Changelog](./CHANGELOG.md).
 
 > **Platform:** macOS **Apple Silicon** today. The app is **not notarized** yet; on first launch, right-click → **Open**.
 

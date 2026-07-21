@@ -468,6 +468,39 @@ def anthropic_to_openai_responses_with_metadata(req, runtime=None):
     )
 
 
+def _map_upstream_http_error(code, detail):
+    """Map upstream HTTP failures to a Science-facing status + Anthropic error body.
+
+    GLM ``code 1261`` / Prompt-too-long is a permanent request rejection — return
+    HTTP 400 ``invalid_request_error`` so Science is less likely to treat it as a
+    transient 502 and spin empty retries. Auth / rate-limit codes stay passthrough.
+    """
+    detail = detail or ""
+    compact = detail.replace(" ", "")
+    lowered = detail.lower()
+    prompt_too_long = (
+        '"code":"1261"' in compact
+        or '"code":1261' in compact
+        or "prompt 超长" in lowered
+        or "context_length_exceeded" in lowered
+        or "maximum context length" in lowered
+        or "prompt is too long" in lowered
+        or "prompt too long" in lowered
+        or ("1261" in detail and ("超长" in detail or "prompt" in lowered))
+    )
+    if prompt_too_long:
+        msg = (
+            "Upstream rejected the request: prompt/context too long "
+            "(e.g. GLM code 1261). Claude Science rolling-compact may still be "
+            "running or may have failed to apply a summary — start a new chat if "
+            f"retries continue. Upstream detail: {detail[:240]}"
+        )
+        return 400, "invalid_request_error", msg
+    if code in (401, 403, 429):
+        return code, "api_error", f"upstream {code}: {detail}"
+    return 502, "api_error", f"upstream {code}: {detail}"
+
+
 def openai_to_anthropic(resp, model_id):
     return openai_chat_compat.openai_to_anthropic(resp, model_id)
 
@@ -784,6 +817,9 @@ class H(BaseHTTPRequestHandler):
         if not PROFILE_CREDENTIALS:
             runtime = runtime_for_model(runtime, areq.get("model", ""))
         state = _provider_state(areq, runtime)
+        if anthropic_compat.is_science_rolling_compact(areq):
+            log(f"  .. Science rolling-compact/summarizer: strip tools "
+                f"(had {len(areq.get('tools') or [])}) tool_choice=none")
         upstream_body, ctx = anthropic_compat.transform_request(areq, state)
         stream = bool(upstream_body.get("stream"))
         n_tools = len(upstream_body.get("tools") or [])
@@ -868,14 +904,13 @@ class H(BaseHTTPRequestHandler):
         except urllib.error.HTTPError as e:
             detail = e.read().decode("utf-8", "replace")[:400]
             log(f"  !! 上游 HTTP {e.code}: {detail}")
+            status, err_type, msg = _map_upstream_http_error(e.code, detail)
             if not headers_sent:
-                # Pass through upstream 401/403/429; normalize other errors to 502.
-                code = e.code if e.code in (401, 403, 429) else 502
-                self._send_json(code, {"type": "error", "error": {
-                    "type": "api_error", "message": f"upstream {e.code}: {detail}"}})
+                self._send_json(status, {"type": "error", "error": {
+                    "type": err_type, "message": msg}})
             else:
                 try:
-                    self._sse_error_and_terminate(f"upstream {e.code}: {detail}")
+                    self._sse_error_and_terminate(msg)
                 except Exception:
                     pass
         except Exception as e:
@@ -896,8 +931,15 @@ class H(BaseHTTPRequestHandler):
             runtime = runtime_for_model(runtime, areq.get("model", ""))
         # Same standing web-access guidance as Anthropic passthrough (Science
         # always sends Anthropic-shaped /v1/messages; OpenAI translation reads
-        # `system` after this inject). Idempotent via sentinel.
-        areq = anthropic_compat.inject_csp_web_access_guidance(areq)
+        # `system` after this inject). Idempotent via sentinel. Summarizer /
+        # rolling-compact forks skip inject and strip tools instead.
+        if anthropic_compat.is_science_rolling_compact(areq):
+            n_before = len(areq.get("tools") or [])
+            areq = anthropic_compat.prepare_inbound_messages_request(areq)
+            log(f"  .. Science rolling-compact/summarizer: strip tools "
+                f"(had {n_before}) tool_choice=none")
+        else:
+            areq = anthropic_compat.prepare_inbound_messages_request(areq)
         model_id = areq.get("model", "claude-sonnet-5")
         stream = bool(areq.get("stream"))
         metadata = {"rule_ids": ()}
@@ -955,16 +997,15 @@ class H(BaseHTTPRequestHandler):
         except urllib.error.HTTPError as e:
             detail = e.read().decode("utf-8", "replace")[:400]
             log(f"  !! 上游 HTTP {e.code}: {detail}")
-            # Keep upstream 401/403/429 on OpenAI path so verify_key can surface bad keys.
-            code = e.code if e.code in (401, 403, 429) else 502
+            status, err_type, msg = _map_upstream_http_error(e.code, detail)
             if headers_sent:
                 try:
-                    self._sse_error_and_terminate(f"upstream {e.code}: {detail}")
+                    self._sse_error_and_terminate(msg)
                 except BrokenPipeError:
                     pass
             else:
-                self._send_json(code, {"type": "error", "error": {"type": "api_error",
-                                       "message": f"upstream {e.code}: {detail}"}})
+                self._send_json(status, {"type": "error", "error": {
+                    "type": err_type, "message": msg}})
         except BrokenPipeError:
             log("  !! 代理异常: [Errno 32] Broken pipe")
         except Exception as e:
@@ -976,7 +1017,8 @@ class H(BaseHTTPRequestHandler):
                     pass
             else:
                 try:
-                    self._send_json(502, {"type": "error", "error": {"type": "api_error", "message": str(e)}})
+                    self._send_json(502, {"type": "error", "error": {
+                        "type": "api_error", "message": str(e)}})
                 except BrokenPipeError:
                     pass
 

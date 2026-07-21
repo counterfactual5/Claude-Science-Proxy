@@ -102,6 +102,84 @@ pub async fn open_network_allowlist_json() -> Result<String, String> {
     .await
 }
 
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NetworkPendingList {
+    pub domains: Vec<String>,
+}
+
+/// Pending egress hosts queued by MCP CONNECT denials (and manual queue).
+#[tauri::command]
+pub async fn list_network_pending() -> Result<NetworkPendingList, String> {
+    run_blocking(|| {
+        let domains = crate::mcp_manager::network_allowlist::list_pending_domains()?;
+        Ok(NetworkPendingList { domains })
+    })
+    .await
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct NetworkDomainsDto {
+    pub domains: Vec<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NetworkApproveResponse {
+    pub approved: Vec<String>,
+    pub added_to_allowlist: Vec<String>,
+    pub pending_remaining: Vec<String>,
+    pub prefs_changed: bool,
+    pub needs_restart: bool,
+}
+
+fn sandbox_auth_dir() -> PathBuf {
+    crate::runtime::science::sandbox_home().join(".claude-science")
+}
+
+/// Approve hostnames: write allowlist, merge into org preferences, clear pending.
+/// Stops a running sandbox so the frontend can `one_click_login` (Operon reload).
+#[tauri::command]
+pub async fn approve_network_domains(
+    app: tauri::AppHandle,
+    state: State<'_, SharedAppState>,
+    body: NetworkDomainsDto,
+) -> Result<NetworkApproveResponse, String> {
+    let domains = body.domains;
+    let state = state.inner().clone();
+    run_blocking(move || {
+        let auth_dir = sandbox_auth_dir();
+        let result =
+            crate::mcp_manager::network_allowlist::approve_domains(&auth_dir, &domains)?;
+        let prefs_changed = result.apply.changed || !result.added_to_allowlist.is_empty();
+        let needs_restart = if prefs_changed {
+            stop_running_sandbox_for_redeploy(&app, &state)?
+        } else {
+            false
+        };
+        Ok(NetworkApproveResponse {
+            approved: result.approved,
+            added_to_allowlist: result.added_to_allowlist,
+            pending_remaining: result.pending_remaining,
+            prefs_changed,
+            needs_restart,
+        })
+    })
+    .await
+}
+
+/// Dismiss pending hostnames without granting them.
+#[tauri::command]
+pub async fn dismiss_network_pending(body: NetworkDomainsDto) -> Result<NetworkPendingList, String> {
+    run_blocking(move || {
+        let domains =
+            crate::mcp_manager::network_allowlist::dismiss_pending_domains(&body.domains)?;
+        Ok(NetworkPendingList { domains })
+    })
+    .await
+}
+
 /// A JSON config file that may hold local stdio MCP definitions, plus the object
 /// key the servers live under. Three shapes are seen in the wild:
 /// - `mcpServers` — Cursor, Claude Desktop, Claude Code, Devin Desktop / Windsurf,

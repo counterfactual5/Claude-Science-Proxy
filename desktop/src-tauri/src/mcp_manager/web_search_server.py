@@ -89,7 +89,7 @@ import urllib.parse
 import urllib.request
 
 SERVER_NAME = "web-search"
-SERVER_VERSION = "2.0.0"
+SERVER_VERSION = "2.1.0"
 DEFAULT_PROTOCOL = "2025-06-18"
 USER_AGENT = "csp-web-search/1.0 (+https://github.com/; Claude Science Proxy built-in)"
 # Browser-like UA for DuckDuckGo HTML endpoints (Lite / full HTML). CSP UA
@@ -170,7 +170,7 @@ def http_request(method, url, headers=None, params=None, data=None, timeout=HTTP
             )
             return resp.status_code, resp.text
         except Exception as exc:  # network/proxy/TLS error
-            raise HttpError(str(exc))
+            raise HttpError(_friendly_proxy_error(exc, url))
 
     # urllib fallback — trust_env proxies are picked up automatically.
     req = urllib.request.Request(url, data=body, headers=headers, method=method)
@@ -185,7 +185,117 @@ def http_request(method, url, headers=None, params=None, data=None, timeout=HTTP
             text = ""
         return exc.code, text
     except Exception as exc:
-        raise HttpError(str(exc))
+        raise HttpError(_friendly_proxy_error(exc, url))
+
+
+# Operon MCP children may write /private/tmp; real ~/.csp is often not writable.
+_PENDING_PATHS = [
+    os.environ.get("CSP_NETWORK_PENDING", "").strip(),
+    "/private/tmp/csp-network-pending.json",
+]
+
+
+def _hostname_from_url(url):
+    try:
+        host = (urllib.parse.urlparse(url).hostname or "").strip().lower()
+    except Exception:
+        return ""
+    if host.startswith("[") and host.endswith("]"):
+        host = host[1:-1]
+    return host
+
+
+def _hostname_from_exc(msg):
+    m = re.search(r"host=['\"]([^'\"]+)['\"]", msg, re.I)
+    if m:
+        return m.group(1).strip().lower()
+    m = re.search(r"CONNECT\s+([A-Za-z0-9.-]+):", msg, re.I)
+    if m:
+        return m.group(1).strip().lower()
+    return ""
+
+
+def _valid_pending_host(host):
+    if not host or len(host) > 253:
+        return False
+    if host.startswith(".") or host.endswith(".") or ".." in host:
+        return False
+    if "/" in host or "\\" in host or ":" in host or " " in host:
+        return False
+    return all(c.isalnum() or c in ".-" for c in host)
+
+
+def _record_pending_host(host):
+    """Best-effort: queue hostname for CSP desktop approval UI."""
+    host = (host or "").strip().lower()
+    if not _valid_pending_host(host):
+        return
+    body = {
+        "version": 1,
+        "domains": [host],
+        "updatedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    }
+    for path in _PENDING_PATHS:
+        if not path:
+            continue
+        try:
+            existing = []
+            if os.path.isfile(path):
+                try:
+                    with open(path, "r", encoding="utf-8") as fp:
+                        data = json.load(fp)
+                    existing = list(data.get("domains") or [])
+                except Exception:
+                    existing = []
+            domains = sorted(set(
+                d.strip().lower() for d in existing + [host]
+                if _valid_pending_host(d.strip().lower())
+            ))
+            body["domains"] = domains
+            tmp = path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as fp:
+                json.dump(body, fp, indent=2)
+                fp.write("\n")
+            os.replace(tmp, path)
+            return
+        except Exception:
+            continue
+
+
+def _friendly_proxy_error(exc, url=None):
+    """Annotate Operon CONNECT tunnel denials only (not remote HTTP 403)."""
+    msg = str(exc)
+    low = msg.lower()
+    # ProxyError / "Tunnel connection failed" = Operon refused CONNECT.
+    # Do NOT treat remote-site HTTP 403 (e.g. Cloudflare) as proxy failure.
+    if "tunnel connection failed" in low or (
+        "unable to connect to proxy" in low and "403" in msg
+    ):
+        host = _hostname_from_url(url) or _hostname_from_exc(msg)
+        if host:
+            _record_pending_host(host)
+        host_bit = (" host=%s" % host) if host else ""
+        return (
+            "%s — Science Operon denied CONNECT%s (not a remote-site HTTP 403). "
+            "Usually the hostname is not on the egress allowlist. Open Claude "
+            "Science Proxy → MCP → 待批准出网域名, approve it, then Stop → Start. "
+            "Less often: Clash Fake-IP DNS (198.18.x / fdfe:…) — use redir-host."
+            % (msg, host_bit)
+        )
+    return msg
+
+
+def _cloudflare_challenge(status, text):
+    """True when the response is a Cloudflare browser-challenge interstitial."""
+    if status != 403 and status != 503:
+        return False
+    low = (text or "")[:4000].lower()
+    return (
+        "just a moment" in low
+        or "cf-browser-verification" in low
+        or "challenge-platform" in low
+        or "_cf_chl_opt" in low
+    )
 
 
 def http_json(method, url, headers=None, params=None, data=None, timeout=HTTP_TIMEOUT):
@@ -913,6 +1023,14 @@ def do_fetch_url(args, env):
     except Exception:
         max_chars = 8000
     status, text = http_request("GET", url)
+    if _cloudflare_challenge(status, text):
+        raise HttpError(
+            "HTTP %d fetching %s — site blocked automated fetch "
+            "(Cloudflare challenge). Proxy CONNECT succeeded; this is not "
+            "Fake-IP/Operon. Use search snippets, another mirror, or open "
+            "the URL in a browser."
+            % (status, url)
+        )
     if status >= 400:
         raise HttpError("HTTP %d fetching %s" % (status, url))
     return {"url": url, "status": status,

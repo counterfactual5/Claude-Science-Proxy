@@ -77,6 +77,14 @@ const DISCOVERY_ROOTS: &[&str] = &[
     ".qoder/skills",
     // Alibaba QoderWork (desktop work agent) — all skills live in ~/.qoderwork/skills.
     ".qoderwork/skills",
+    // QoderWork CN variant (separate state dir from international QoderWork).
+    ".qoderworkcn/skills",
+    // Other local agents that also use the SKILL.md folder layout.
+    ".eigent/skills",
+    ".grok/skills",
+    ".mavis/skills",
+    ".stepfun/skills",
+    ".corust-agent/skills",
     // Note: Cline / Kimi / Zed / Warp resolve to the shared ~/.agents/skills root above.
 ];
 

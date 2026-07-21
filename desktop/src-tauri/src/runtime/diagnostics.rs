@@ -24,6 +24,7 @@ pub(crate) fn status_response_for_config_error(error: &dyn std::fmt::Display) ->
             proxy_ok: false,
             sandbox_ok: false,
             upstream_ok: false,
+            egress_ok: false,
         }),
         serde_json::Value::Null,
         "",
@@ -32,6 +33,12 @@ pub(crate) fn status_response_for_config_error(error: &dyn std::fmt::Display) ->
         science_diagnostics(ScienceDiagnosticsInput {
             sandbox_port: 0,
             sandbox_ok: false,
+        }),
+        egress_diagnostics(&crate::proc::EgressDnsProbe {
+            ok: false,
+            fake_ip: false,
+            host: String::new(),
+            sample: String::new(),
         }),
         Some(config_last_error_json(error)),
     )
@@ -92,10 +99,12 @@ pub(crate) fn runtime_status_snapshot(state: &SharedAppState) -> serde_json::Val
         .as_ref()
         .map(|e| proc::tcp_reachable(&e.host, e.port, operation::STATUS_UPSTREAM_TIMEOUT_MS))
         .unwrap_or(false);
+    let egress = proc::egress_dns_probe();
     let lights = status_lights(StatusProbeInput {
         proxy_ok,
         sandbox_ok,
         upstream_ok,
+        egress_ok: egress.ok,
     });
     let shim_mode = current_shim_mode_for_adapter(&adapter);
     build_status_response(
@@ -108,6 +117,7 @@ pub(crate) fn runtime_status_snapshot(state: &SharedAppState) -> serde_json::Val
             sandbox_port: sport,
             sandbox_ok,
         }),
+        egress_diagnostics(&egress),
         None,
     )
 }
@@ -116,6 +126,7 @@ pub(crate) struct StatusProbeInput {
     pub(crate) proxy_ok: bool,
     pub(crate) sandbox_ok: bool,
     pub(crate) upstream_ok: bool,
+    pub(crate) egress_ok: bool,
 }
 
 pub(crate) struct ScienceDiagnosticsInput {
@@ -128,6 +139,7 @@ pub(crate) struct StatusLights {
     pub(crate) proxy: &'static str,
     pub(crate) sandbox: &'static str,
     pub(crate) upstream: &'static str,
+    pub(crate) egress: &'static str,
 }
 
 fn light(ok: bool) -> &'static str {
@@ -144,6 +156,7 @@ pub(crate) fn status_lights(input: StatusProbeInput) -> StatusLights {
         proxy: light(input.proxy_ok),
         sandbox: light(input.sandbox_ok),
         upstream: light(input.upstream_ok),
+        egress: light(input.egress_ok),
     }
 }
 
@@ -174,6 +187,21 @@ pub(crate) fn science_diagnostics(input: ScienceDiagnosticsInput) -> serde_json:
     })
 }
 
+pub(crate) fn egress_diagnostics(probe: &crate::proc::EgressDnsProbe) -> serde_json::Value {
+    json!({
+        "schema_version": 1,
+        "health": light(probe.ok),
+        "fake_ip": probe.fake_ip,
+        "host": if probe.host.is_empty() { serde_json::Value::Null } else { json!(probe.host) },
+        "sample": if probe.sample.is_empty() { serde_json::Value::Null } else { json!(probe.sample) },
+        "note": if probe.fake_ip {
+            "System DNS returned Fake-IP/private ranges; Science Operon denies CONNECT with 403 (private/reserved range). Disable VPN/Clash Fake-IP (or bypass Claude Science), then Stop → Start."
+        } else {
+            "DNS probe did not see Fake-IP/private ranges for egress sample hosts."
+        },
+    })
+}
+
 pub(crate) fn build_status_response(
     lights: StatusLights,
     active_profile: serde_json::Value,
@@ -181,12 +209,14 @@ pub(crate) fn build_status_response(
     shim_mode: &str,
     catalog: serde_json::Value,
     science: serde_json::Value,
+    egress: serde_json::Value,
     last_error: Option<serde_json::Value>,
 ) -> serde_json::Value {
     json!({
         "proxy": lights.proxy,
         "sandbox": lights.sandbox,
         "upstream": lights.upstream,
+        "egress": lights.egress,
         "active_profile": active_profile,
         "runtime": {
             "gateway_kind": gateway_kind,
@@ -194,6 +224,7 @@ pub(crate) fn build_status_response(
         },
         "catalog": catalog,
         "science": science,
+        "egress_detail": egress,
         "last_error": last_error.unwrap_or(serde_json::Value::Null),
     })
 }
@@ -201,8 +232,8 @@ pub(crate) fn build_status_response(
 #[cfg(test)]
 mod tests {
     use super::{
-        build_status_response, config_last_error_json, science_diagnostics, status_lights,
-        ScienceDiagnosticsInput, StatusProbeInput,
+        build_status_response, config_last_error_json, egress_diagnostics, science_diagnostics,
+        status_lights, ScienceDiagnosticsInput, StatusProbeInput,
     };
     use serde_json::json;
 
@@ -212,19 +243,23 @@ mod tests {
             proxy_ok: true,
             sandbox_ok: true,
             upstream_ok: true,
+            egress_ok: true,
         });
         assert_eq!(all_green.proxy, "green");
         assert_eq!(all_green.sandbox, "green");
         assert_eq!(all_green.upstream, "green");
+        assert_eq!(all_green.egress, "green");
 
         let all_amber = status_lights(StatusProbeInput {
             proxy_ok: false,
             sandbox_ok: false,
             upstream_ok: false,
+            egress_ok: false,
         });
         assert_eq!(all_amber.proxy, "amber");
         assert_eq!(all_amber.sandbox, "amber");
         assert_eq!(all_amber.upstream, "amber");
+        assert_eq!(all_amber.egress, "amber");
     }
 
     #[test]
@@ -233,6 +268,7 @@ mod tests {
             proxy_ok: true,
             sandbox_ok: false,
             upstream_ok: true,
+            egress_ok: true,
         });
         let v = build_status_response(
             lights,
@@ -255,11 +291,18 @@ mod tests {
                 sandbox_port: 8990,
                 sandbox_ok: false,
             }),
+            egress_diagnostics(&crate::proc::EgressDnsProbe {
+                ok: true,
+                fake_ip: false,
+                host: String::new(),
+                sample: String::new(),
+            }),
             None,
         );
         assert_eq!(v["proxy"], "green");
         assert_eq!(v["sandbox"], "amber");
         assert_eq!(v["upstream"], "green");
+        assert_eq!(v["egress"], "green");
         assert_eq!(v["active_profile"]["template_id"], "glm");
         assert_eq!(v["runtime"]["gateway_kind"], "python");
         assert_eq!(v["runtime"]["shim_mode"], "off");
@@ -294,6 +337,7 @@ mod tests {
         assert_eq!(v["proxy"], "amber");
         assert_eq!(v["sandbox"], "amber");
         assert_eq!(v["upstream"], "amber");
+        assert_eq!(v["egress"], "amber");
         assert_eq!(v["active_profile"], serde_json::Value::Null);
         assert_eq!(v["science"]["sandbox"]["port"], 0);
         assert_eq!(v["last_error"]["type"], "config_error");
@@ -307,6 +351,7 @@ mod tests {
                 proxy_ok: false,
                 sandbox_ok: false,
                 upstream_ok: false,
+                egress_ok: false,
             }),
             serde_json::Value::Null,
             "python",
@@ -316,6 +361,12 @@ mod tests {
                 sandbox_port: 8990,
                 sandbox_ok: false,
             }),
+            egress_diagnostics(&crate::proc::EgressDnsProbe {
+                ok: false,
+                fake_ip: true,
+                host: "api.duckduckgo.com".into(),
+                sample: "198.18.0.141".into(),
+            }),
             Some(json!({
                 "type": "config_error",
                 "message": "config unreadable",
@@ -323,5 +374,8 @@ mod tests {
         );
         assert_eq!(v["last_error"]["type"], "config_error");
         assert_eq!(v["last_error"]["message"], "config unreadable");
+        assert_eq!(v["egress"], "amber");
+        assert_eq!(v["egress_detail"]["fake_ip"], true);
+        assert_eq!(v["egress_detail"]["sample"], "198.18.0.141");
     }
 }

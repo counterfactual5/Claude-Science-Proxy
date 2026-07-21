@@ -77,12 +77,14 @@ const I18N = {
     runStatusProxy: "代理运行中·Science 未启动",
     runStatusScience: "Science 运行中·代理未启动",
     runStatusBoth: "代理+Science 运行中",
+    runStatusBothEgress: "代理+Science 运行中（出网受阻）",
     runStatusStarting: "启动中",
     runStatusStopping: "停止中",
     runStatusTipOff: "代理与 Science 均未运行。",
     runStatusTipProxy: "本地代理在跑，但 Science 沙箱未启动。",
     runStatusTipScience: "Science 沙箱在跑，但代理未启动；需（重新）启动代理后才能作为代理使用。",
     runStatusTipBoth: "代理与 Science 沙箱均已就绪，可作为代理使用。",
+    runStatusTipBothEgress: "进程正常，但系统 DNS 返回了 Fake-IP/私网地址（如 198.18.x / fdfe:…）。Science Operon 会拒绝 web-search 等 CONNECT（403 private/reserved）。请关闭 Clash/Surge 等的 Fake-IP，或让 Claude Science 走真实 DNS，然后 Stop → Start。",
     runStatusTipStarting: "正在启动代理与 Science…",
     runStatusTipStopping: "正在停止代理与 Science…",
     proxyPort: "代理",
@@ -117,8 +119,9 @@ const I18N = {
     skillApplyHint: "启用/停用的改动会在下次点击「启动 Claude Science」时生效；若沙箱正在运行，会自动重启以应用。",
     skillEmptyTitle: "还没有 Skill。",
     skillEmptyHint: "点「导入」添加本地或网络 Skill，或在「⋯」里新建 / 扫描 / 同步 Science 技能库。",
+    skillSearch: "搜索名称或描述…",
+    skillSearchEmpty: "没有匹配的 Skill",
     skillDiscoverTitle: "扫描本地 Skill",
-    skillDiscoverHintHtml: "从其他 Agent 软件导入。",
     skillDiscoverEmpty: "没有扫描到可导入的 Skill。",
     skillDiscoverImport: "导入所选",
     skillImportTitle: "导入 Skill",
@@ -130,7 +133,12 @@ const I18N = {
     skillPathHintHtml: "需含 <code>SKILL.md</code>；支持公开 GitHub 目录链接。",
     skillInspPreviewTitle: "预览",
     skillImportPath: "导入",
-    skillAlreadyImported: "已导入",
+    skillAlreadyImported: "已有 · 默认保留",
+    skillDiscoverHintHtml: "从其他 Agent 软件导入。已有同名/同源 Skill 会标「已有 · 默认保留」——不勾选即保留现有；勾选才会覆盖重导。",
+    skillDiscoverKeepHint: "不勾选 = 保留 CSP 现有；勾选 = 覆盖导入",
+    skillDiscoverSearch: "搜索名称、描述或来源…",
+    skillDiscoverSearchEmpty: "没有匹配的 Skill",
+    skillDiscoverSearchCount: "显示 {shown} / {total}",
     skillScanning: "扫描中…",
     skillAdoptTitle: "同步 Science 技能库",
     skillAdoptHintHtml: "优先回收 <code>orgs/…/skills/</code> 中 Science 已改过的托管技能到 <code>~/.csp/skills/</code>；也可导入库中尚未入库的技能，或工作区未入库草稿。",
@@ -211,7 +219,26 @@ const I18N = {
     mcpBadgeSse: "SSE",
     mcpDiscoverImport: "导入所选",
     mcpScanning: "扫描中…",
-    mcpNetworkAllowlist: "网络授权配置",
+    mcpNetworkAllowlist: "网络授权配置（JSON）",
+    mcpNetworkPending: "待批准出网域名",
+    mcpNetworkPendingTitle: "待批准出网域名",
+    mcpNetworkPendingHint: "Science Operon 拒绝未授权主机的 CONNECT。批准后会停止沙箱并自动重启以使授权生效。",
+    mcpNetworkPendingEmpty: "当前没有待批准域名。也可在下方手动添加。",
+    mcpNetworkPendingInputLabel: "手动添加主机名",
+    mcpNetworkPendingAdd: "加入列表",
+    mcpNetworkPendingDismiss: "忽略所选",
+    mcpNetworkPendingApprove: "批准所选并重启",
+    mcpNetworkPendingSelectAll: "全选",
+    mcpNetworkPendingSelectNone: "全不选",
+    mcpNetworkPendingCount: "待批准 {n} 个",
+    mcpNetworkPendingHostHint: "批准后可 fetch / 搜索该主机",
+    mcpNetworkPendingNoneSelected: "请先勾选要处理的域名。",
+    mcpNetworkPendingInvalidHost: "主机名无效（只要 hostname，如 example.com）。",
+    mcpNetworkPendingApproved: "已批准 {n} 个域名。",
+    mcpNetworkPendingApprovedRestarting: "已批准 {n} 个域名；沙箱已停止，正在重新启动…",
+    mcpNetworkPendingApprovedRestarted: "已批准并重启完成。请在 Notebook 重试 fetch。",
+    mcpNetworkPendingApprovedRestartFail: "已批准，但重新启动失败：{err}",
+    mcpNetworkPendingDismissed: "已忽略所选域名。",
     mcpEditJson: "编辑 JSON",
     mcpImportPartialFail: "部分导入失败: {err}",
     mcpSavedRestarting: "已保存 MCP；沙箱已停止，正在重新启动…",
@@ -459,12 +486,14 @@ const I18N = {
     runStatusProxy: "Proxy on · Science off",
     runStatusScience: "Science on · proxy off",
     runStatusBoth: "Proxy + Science running",
+    runStatusBothEgress: "Proxy + Science running (egress blocked)",
     runStatusStarting: "Starting…",
     runStatusStopping: "Stopping…",
     runStatusTipOff: "Neither proxy nor Science is running.",
     runStatusTipProxy: "Local proxy is up, but the Science sandbox is not.",
     runStatusTipScience: "Science is running but the proxy is down. (Re)start the proxy before using CSP as a proxy.",
     runStatusTipBoth: "Proxy and Science sandbox are ready to use as a proxy.",
+    runStatusTipBothEgress: "Processes are healthy, but system DNS returns Fake-IP/private addresses (e.g. 198.18.x / fdfe:…). Science Operon denies CONNECT with 403 (private/reserved). Disable Clash/Surge Fake-IP (or bypass Claude Science), then Stop → Start.",
     runStatusTipStarting: "Starting proxy and Science…",
     runStatusTipStopping: "Stopping proxy and Science…",
     proxyPort: "Proxy",
@@ -499,8 +528,10 @@ const I18N = {
     skillApplyHint: "Enable/disable takes effect the next time you Start Claude Science; a running sandbox restarts automatically.",
     skillEmptyTitle: "No Skills yet.",
     skillEmptyHint: "Tap Import for a local or network Skill, or use ⋯ to create / scan / sync Science skill library.",
+    skillSearch: "Search name or description…",
+    skillSearchEmpty: "No matching Skills",
     skillDiscoverTitle: "Scan local Skills",
-    skillDiscoverHintHtml: "Import from other agent apps.",
+    skillDiscoverHintHtml: "Import from other agent apps. Skills you already own (same name or source) show 「Already owned · keep by default」 — leave unchecked to keep CSP's copy; check to overwrite.",
     skillDiscoverEmpty: "No importable Skills found.",
     skillDiscoverImport: "Import selected",
     skillImportTitle: "Import Skill",
@@ -512,7 +543,11 @@ const I18N = {
     skillPathHintHtml: "Must contain <code>SKILL.md</code>; public GitHub tree URLs work.",
     skillInspPreviewTitle: "Preview",
     skillImportPath: "Import",
-    skillAlreadyImported: "Imported",
+    skillAlreadyImported: "Already owned · keep by default",
+    skillDiscoverKeepHint: "Unchecked = keep existing CSP skill; checked = overwrite import",
+    skillDiscoverSearch: "Search name, description, or source…",
+    skillDiscoverSearchEmpty: "No matching Skills",
+    skillDiscoverSearchCount: "Showing {shown} / {total}",
     skillScanning: "Scanning…",
     skillAdoptTitle: "Sync Science skill library",
     skillAdoptHintHtml: "Primarily harvest Science edits under <code>orgs/…/skills/</code> back into <code>~/.csp/skills/</code>. Can also import library skills not yet in CSP, or unpublished workspace drafts.",
@@ -593,7 +628,26 @@ const I18N = {
     mcpBadgeSse: "SSE",
     mcpDiscoverImport: "Import selected",
     mcpScanning: "Scanning…",
-    mcpNetworkAllowlist: "Network allowlist",
+    mcpNetworkAllowlist: "Network allowlist (JSON)",
+    mcpNetworkPending: "Pending egress domains",
+    mcpNetworkPendingTitle: "Pending egress domains",
+    mcpNetworkPendingHint: "Science Operon denies CONNECT to ungated hosts. Approving stops the sandbox and auto-restarts so Operon reloads grants.",
+    mcpNetworkPendingEmpty: "No pending domains. You can also add a hostname below.",
+    mcpNetworkPendingInputLabel: "Add hostname manually",
+    mcpNetworkPendingAdd: "Add to list",
+    mcpNetworkPendingDismiss: "Dismiss selected",
+    mcpNetworkPendingApprove: "Approve selected & restart",
+    mcpNetworkPendingSelectAll: "Select all",
+    mcpNetworkPendingSelectNone: "Select none",
+    mcpNetworkPendingCount: "{n} pending",
+    mcpNetworkPendingHostHint: "After approval, fetch/search can reach this host",
+    mcpNetworkPendingNoneSelected: "Select at least one domain.",
+    mcpNetworkPendingInvalidHost: "Invalid hostname (hostname only, e.g. example.com).",
+    mcpNetworkPendingApproved: "Approved {n} domain(s).",
+    mcpNetworkPendingApprovedRestarting: "Approved {n} domain(s); sandbox stopped, restarting…",
+    mcpNetworkPendingApprovedRestarted: "Approved and restarted. Retry fetch in Notebook.",
+    mcpNetworkPendingApprovedRestartFail: "Approved, but restart failed: {err}",
+    mcpNetworkPendingDismissed: "Dismissed selected domains.",
     mcpEditJson: "Edit JSON",
     mcpImportPartialFail: "Some imports failed: {err}",
     mcpSavedRestarting: "MCP saved; sandbox stopped, restarting…",
@@ -928,7 +982,17 @@ function applyEditionUI() {
   if (els.skillAdoptBtn) els.skillAdoptBtn.textContent = t.adoptFromScience;
   if (els.mcpDiscoverBtn) els.mcpDiscoverBtn.textContent = t.mcpDiscoverBtn;
   if (els.mcpNetworkAllowlistBtn) els.mcpNetworkAllowlistBtn.textContent = t.mcpNetworkAllowlist;
+  if (els.mcpNetworkPendingBtn) els.mcpNetworkPendingBtn.textContent = t.mcpNetworkPending;
   if (els.mcpJsonBtn) els.mcpJsonBtn.textContent = t.mcpEditJson;
+  if (els.networkPendingTitle) els.networkPendingTitle.textContent = t.mcpNetworkPendingTitle;
+  if (els.networkPendingHint) els.networkPendingHint.textContent = t.mcpNetworkPendingHint;
+  if (els.networkPendingEmpty) els.networkPendingEmpty.textContent = t.mcpNetworkPendingEmpty;
+  if (els.networkPendingInputLabel) els.networkPendingInputLabel.textContent = t.mcpNetworkPendingInputLabel;
+  if (els.networkPendingAddBtn) els.networkPendingAddBtn.textContent = t.mcpNetworkPendingAdd;
+  if (els.networkPendingDismissBtn) els.networkPendingDismissBtn.textContent = t.mcpNetworkPendingDismiss;
+  if (els.networkPendingApproveBtn) els.networkPendingApproveBtn.textContent = t.mcpNetworkPendingApprove;
+  if (els.networkPendingSelectAllBtn) els.networkPendingSelectAllBtn.textContent = t.mcpNetworkPendingSelectAll;
+  if (els.networkPendingSelectNoneBtn) els.networkPendingSelectNoneBtn.textContent = t.mcpNetworkPendingSelectNone;
   if (els.skillMoreBtn) els.skillMoreBtn.title = t.menuMore;
   if (els.mcpMoreBtn) els.mcpMoreBtn.title = t.menuMore;
   const skillsTitle = document.querySelector("#skillListSec > .skill-hd > .sec-title");
@@ -936,11 +1000,15 @@ function applyEditionUI() {
   if (els.skillApplyHint) els.skillApplyHint.textContent = t.skillApplyHint;
   if (els.skillEmptyTitle) els.skillEmptyTitle.textContent = t.skillEmptyTitle;
   if (els.skillEmptyHint) els.skillEmptyHint.textContent = t.skillEmptyHint;
+  if (els.skillSearch) els.skillSearch.placeholder = t.skillSearch;
+  if (els.skillSearchEmpty) els.skillSearchEmpty.textContent = t.skillSearchEmpty;
   if (els.skillCreateTitle) els.skillCreateTitle.textContent = t.skillCreateTitle;
   if (els.skillCreateSaveBtn) els.skillCreateSaveBtn.textContent = t.save;
   if (els.skillCreateCancelBtn) els.skillCreateCancelBtn.textContent = t.cancel;
   if (els.skillDiscoverTitle) els.skillDiscoverTitle.textContent = t.skillDiscoverTitle;
   if (els.skillDiscoverHint) els.skillDiscoverHint.innerHTML = t.skillDiscoverHintHtml;
+  if (els.skillDiscoverSearch) els.skillDiscoverSearch.placeholder = t.skillDiscoverSearch;
+  if (els.skillDiscoverSearchEmpty) els.skillDiscoverSearchEmpty.textContent = t.skillDiscoverSearchEmpty;
   if (els.skillDiscoverEmptyText) els.skillDiscoverEmptyText.textContent = t.skillDiscoverEmpty;
   if (els.skillDiscoverImportBtn) els.skillDiscoverImportBtn.textContent = t.skillDiscoverImport;
   if (els.skillDiscoverCancelBtn) els.skillDiscoverCancelBtn.textContent = t.cancel;
@@ -1157,6 +1225,18 @@ function mockInvoke(cmd, args) {
       return Promise.resolve("~/.csp/mcp/inventory.json");
     case "open_network_allowlist_json":
       return Promise.resolve("~/.csp/network-allowlist.json");
+    case "list_network_pending":
+      return Promise.resolve({ domains: [] });
+    case "approve_network_domains":
+      return Promise.resolve({
+        approved: (args && args.body && args.body.domains) || [],
+        addedToAllowlist: (args && args.body && args.body.domains) || [],
+        pendingRemaining: [],
+        prefsChanged: true,
+        needsRestart: false,
+      });
+    case "dismiss_network_pending":
+      return Promise.resolve({ domains: [] });
     case "list_skills":
       return Promise.resolve(mockStore.skills.map((s) => ({ ...s })));
     case "discover_skills":
@@ -1759,7 +1839,7 @@ function setBusy(on, op) {
     els.skillMoreBtn, els.skillBrowseBtn, els.skillImportConfirmBtn, els.skillImportCancelBtn,
     els.skillImportBtn, els.skillDiscoverBtn, els.skillDiscoverImportBtn, els.skillDiscoverCancelBtn,
     els.skillAdoptBtn, els.skillAdoptConfirmBtn, els.skillAdoptCancelBtn,
-    els.mcpMoreBtn, els.mcpJsonBtn, els.mcpNetworkAllowlistBtn, els.mcpDiscoverBtn, els.mcpDiscoverImportBtn, els.mcpDiscoverCancelBtn,
+    els.mcpMoreBtn, els.mcpJsonBtn, els.mcpNetworkAllowlistBtn, els.mcpNetworkPendingBtn, els.mcpDiscoverBtn, els.mcpDiscoverImportBtn, els.mcpDiscoverCancelBtn,
     els.mcpAddBtn, els.mcpSaveBtn, els.mcpCancelBtn,
   ].forEach((b) => b && (b.disabled = on));
   syncProfileBusyState();
@@ -1769,7 +1849,7 @@ function setBusy(on, op) {
 }
 
 /** Last probed lights from get_runtime_status (`green` | `amber`). */
-let lastRuntimeLights = { proxy: "amber", sandbox: "amber" };
+let lastRuntimeLights = { proxy: "amber", sandbox: "amber", egress: "amber" };
 /** Transient UI phase while start/stop is in flight. */
 let runtimePhase = null; // "starting" | "stopping" | null
 let runtimeStatusTimer = null;
@@ -1779,7 +1859,8 @@ function runtimeStatusKind() {
   if (runtimePhase === "stopping") return "stopping";
   const proxyOn = lastRuntimeLights.proxy === "green";
   const scienceOn = lastRuntimeLights.sandbox === "green";
-  if (proxyOn && scienceOn) return "both";
+  const egressOk = lastRuntimeLights.egress === "green";
+  if (proxyOn && scienceOn) return egressOk ? "both" : "both_egress";
   if (proxyOn) return "proxy";
   if (scienceOn) return "science";
   return "off";
@@ -1791,6 +1872,7 @@ function runtimeStatusText(kind) {
     case "starting": return t.runStatusStarting;
     case "stopping": return t.runStatusStopping;
     case "both": return t.runStatusBoth;
+    case "both_egress": return t.runStatusBothEgress;
     case "proxy": return t.runStatusProxy;
     case "science": return t.runStatusScience;
     default: return t.runStatusOff;
@@ -1803,6 +1885,7 @@ function runtimeStatusTip(kind) {
     case "starting": return t.runStatusTipStarting;
     case "stopping": return t.runStatusTipStopping;
     case "both": return t.runStatusTipBoth;
+    case "both_egress": return t.runStatusTipBothEgress;
     case "proxy": return t.runStatusTipProxy;
     case "science": return t.runStatusTipScience;
     default: return t.runStatusTipOff;
@@ -1819,7 +1902,7 @@ function updateRuntimeStatusUI() {
   els.runtimeStatusText.setAttribute("aria-label", `${text}. ${tip}`);
   const busyPhase = kind === "starting" || kind === "stopping";
   const ready = kind === "both";
-  const warn = kind === "proxy" || kind === "science";
+  const warn = kind === "proxy" || kind === "science" || kind === "both_egress";
   els.runtimeStatusText.classList.toggle("is-busy", busyPhase);
   els.runtimeStatusText.classList.toggle("is-ready", ready);
   els.runtimeStatusText.classList.toggle("is-warn", warn);
@@ -1832,11 +1915,14 @@ async function refreshRuntimeStatus() {
     lastRuntimeLights = {
       proxy: st && st.proxy === "green" ? "green" : "amber",
       sandbox: st && st.sandbox === "green" ? "green" : "amber",
+      // Older backends omit egress → treat as green (don't false-alarm).
+      egress: st && st.egress === "amber" ? "amber" : "green",
     };
   } catch (_) {
     // Keep last known lights on probe failure.
   }
   updateRuntimeStatusUI();
+  refreshNetworkPendingBadge().catch(() => {});
 }
 
 function startRuntimeStatusPolling() {
@@ -3047,8 +3133,10 @@ function wire() {
     "skillCreateBody", "skillCreateInspection", "skillCreateErrors",
     "skillCreateSaveBtn", "skillCreateCancelBtn",
     "skillMoreBtn", "skillMenu", "skillEmpty", "skillEmptyTitle", "skillEmptyHint",
+    "skillSearchWrap", "skillSearch", "skillSearchEmpty",
     "skillApplyHint", "skillList", "skillMsg",
     "skillDiscoverBtn", "skillDiscoverSec", "skillDiscoverTitle", "skillDiscoverHint",
+    "skillDiscoverSearchWrap", "skillDiscoverSearch", "skillDiscoverSearchEmpty", "skillDiscoverSearchCount",
     "skillDiscoverList", "skillDiscoverEmpty", "skillDiscoverEmptyText",
     "skillDiscoverImportBtn", "skillDiscoverCancelBtn",
     "skillImportBtn", "skillImportSec", "skillImportTitle", "skillImportIntro",
@@ -3064,7 +3152,7 @@ function wire() {
     "previewOverlayFileSelect", "previewOverlayOpenBtn", "previewOverlayCloseBtn",
     "tabMcp", "mcpPane", "mcpListSec", "mcpAddBtn", "mcpMoreBtn", "mcpMenu", "mcpEmpty", "mcpEmptyTitle", "mcpEmptyHint",
     "mcpApplyHint", "mcpList", "mcpMsg",
-    "mcpJsonBtn", "mcpNetworkAllowlistBtn", "mcpDiscoverBtn", "mcpDiscoverSec", "mcpDiscoverTitle", "mcpDiscoverHint",
+    "mcpJsonBtn", "mcpNetworkAllowlistBtn", "mcpNetworkPendingBtn", "mcpDiscoverBtn", "mcpDiscoverSec", "mcpDiscoverTitle", "mcpDiscoverHint",
     "mcpDiscoverList", "mcpDiscoverEmpty", "mcpDiscoverEmptyText", "mcpDiscoverImportBtn", "mcpDiscoverCancelBtn",
     "mcpFormSec", "mcpFormTitle", "mcpName", "mcpNameHint", "mcpDesc",
     "mcpTransport", "mcpTransportLabel", "mcpTransportHint",
@@ -3075,6 +3163,10 @@ function wire() {
     "mcpUrl", "mcpUrlLabel", "mcpUrlHint",
     "mcpHeaders", "mcpHeadersLabel", "mcpHeadersHint",
     "mcpInspection", "mcpWarnings", "mcpErrors", "mcpSaveBtn", "mcpCancelBtn",
+    "networkPendingOverlay", "networkPendingTitle", "networkPendingHint", "networkPendingList",
+    "networkPendingEmpty", "networkPendingInput", "networkPendingInputLabel", "networkPendingAddBtn",
+    "networkPendingDismissBtn", "networkPendingApproveBtn", "networkPendingCloseBtn", "networkPendingMsg",
+    "networkPendingToolbar", "networkPendingCount", "networkPendingSelectAllBtn", "networkPendingSelectNoneBtn",
   ].forEach((id) => (els[id] = $(id)));
   els.panel = document.querySelector(".panel");
   els.panelBody = document.querySelector(".panel-body");
@@ -3268,6 +3360,31 @@ function wire() {
       }
     });
   }
+  if (els.mcpNetworkPendingBtn) {
+    els.mcpNetworkPendingBtn.addEventListener("click", () => {
+      closeMenu(els.mcpMenu, els.mcpMoreBtn);
+      if (busy) return;
+      openNetworkPendingOverlay();
+    });
+  }
+  if (els.networkPendingCloseBtn) {
+    els.networkPendingCloseBtn.addEventListener("click", closeNetworkPendingOverlay);
+  }
+  if (els.networkPendingAddBtn) {
+    els.networkPendingAddBtn.addEventListener("click", addManualNetworkPendingHost);
+  }
+  if (els.networkPendingApproveBtn) {
+    els.networkPendingApproveBtn.addEventListener("click", () => approveSelectedNetworkPending());
+  }
+  if (els.networkPendingDismissBtn) {
+    els.networkPendingDismissBtn.addEventListener("click", dismissSelectedNetworkPending);
+  }
+  if (els.networkPendingSelectAllBtn) {
+    els.networkPendingSelectAllBtn.addEventListener("click", () => setNetworkPendingSelection(true));
+  }
+  if (els.networkPendingSelectNoneBtn) {
+    els.networkPendingSelectNoneBtn.addEventListener("click", () => setNetworkPendingSelection(false));
+  }
   els.mcpDiscoverBtn.addEventListener("click", openMcpDiscover);
   els.mcpDiscoverCancelBtn.addEventListener("click", closeMcpDiscover);
   els.mcpDiscoverImportBtn.addEventListener("click", importDiscoveredMcpServers);
@@ -3344,7 +3461,13 @@ function wire() {
   els.skillImportConfirmBtn.addEventListener("click", importSkillConfirm);
   els.skillImportCancelBtn.addEventListener("click", closeSkillImport);
   els.skillImportBtn.addEventListener("click", openSkillImport);
+  if (els.skillSearch) {
+    els.skillSearch.addEventListener("input", applySkillSearchFilter);
+  }
   els.skillDiscoverBtn.addEventListener("click", openSkillDiscover);
+  if (els.skillDiscoverSearch) {
+    els.skillDiscoverSearch.addEventListener("input", applyDiscoverSearchFilter);
+  }
   els.skillDiscoverCancelBtn.addEventListener("click", closeSkillDiscover);
   els.skillDiscoverImportBtn.addEventListener("click", importDiscoveredSkills);
   els.skillAdoptBtn.addEventListener("click", openSkillAdopt);
@@ -3487,20 +3610,26 @@ function setSkillMsg(text, kind = "err") {
   els.skillMsg.parentElement.hidden = !t;
 }
 
+const SKILL_SEARCH_MIN = 6;
+
 function renderSkills(list) {
   if (!list.length) {
     els.skillEmpty.hidden = false;
     els.skillList.innerHTML = "";
+    if (els.skillSearchWrap) els.skillSearchWrap.hidden = true;
+    if (els.skillSearchEmpty) els.skillSearchEmpty.hidden = true;
     return;
   }
   els.skillEmpty.hidden = true;
+  if (els.skillSearchWrap) els.skillSearchWrap.hidden = list.length < SKILL_SEARCH_MIN;
   els.skillList.innerHTML = list.map((s) => {
     const enabledClass = s.enabled ? "" : " disabled";
     const checked = s.enabled ? " checked" : "";
     const reqTags = (s.requirements || []).map(r => `<span class="skill-req-tag" title="${escapeHtml(r)}">${escapeHtml(r)}</span>`).join("");
     const dateText = formatImportedAt(s.importedAt);
+    const desc = s.description || "";
     return `
-      <div class="skill-row${enabledClass}" data-id="${escapeHtml(s.id)}" data-name="${escapeHtml(s.name)}">
+      <div class="skill-row${enabledClass}" data-id="${escapeHtml(s.id)}" data-name="${escapeHtml(s.name)}" data-desc="${escapeHtml(desc)}">
         <div class="skill-row-top">
           <div class="skill-title-group">
             <input type="checkbox"${checked} />
@@ -3516,7 +3645,7 @@ function renderSkills(list) {
             </div>
           </div>
         </div>
-        ${skillDescHtml(s.description)}
+        ${skillDescHtml(desc)}
         <div class="skill-meta">
           <span>${escapeHtml(S().metaSize)}: ${escapeHtml(formatBytes(s.sizeBytes))}</span>
           ${dateText ? `<span>${escapeHtml(S().metaImported)}: ${escapeHtml(dateText)}</span>` : ""}
@@ -3526,6 +3655,25 @@ function renderSkills(list) {
     `;
   }).join("");
   refreshDescToggles(els.skillList);
+  applySkillSearchFilter();
+}
+
+function applySkillSearchFilter() {
+  if (!els.skillList) return;
+  const q = (els.skillSearch && !els.skillSearchWrap?.hidden
+    ? els.skillSearch.value
+    : "").trim().toLowerCase();
+  let visible = 0;
+  els.skillList.querySelectorAll(".skill-row").forEach((row) => {
+    const name = (row.getAttribute("data-name") || "").toLowerCase();
+    const desc = (row.getAttribute("data-desc") || "").toLowerCase();
+    const show = !q || name.includes(q) || desc.includes(q);
+    row.hidden = !show;
+    if (show) visible += 1;
+  });
+  if (els.skillSearchEmpty) {
+    els.skillSearchEmpty.hidden = !q || visible > 0 || !!els.skillSearchWrap?.hidden;
+  }
 }
 
 function skillDescHtml(description) {
@@ -3888,9 +4036,15 @@ async function importSkillConfirm() {
 }
 
 // ── Skill Discovery (scan → pick → import; same pattern as MCP) ──
+let discoveredSkillsCache = [];
+
 async function openSkillDiscover() {
   closeMenu(els.skillMenu, els.skillMoreBtn);
   if (busy) return;
+  discoveredSkillsCache = [];
+  if (els.skillDiscoverSearch) els.skillDiscoverSearch.value = "";
+  if (els.skillDiscoverSearchWrap) els.skillDiscoverSearchWrap.hidden = true;
+  if (els.skillDiscoverSearchEmpty) els.skillDiscoverSearchEmpty.hidden = true;
   els.skillDiscoverList.innerHTML = `<p class="hint">${escapeHtml(S().skillScanning)}</p>`;
   els.skillDiscoverEmpty.hidden = true;
   els.skillDiscoverImportBtn.disabled = true;
@@ -3899,50 +4053,116 @@ async function openSkillDiscover() {
     const found = (await call("discover_skills")) || [];
     renderDiscover(found);
   } catch (e) {
+    discoveredSkillsCache = [];
     els.skillDiscoverList.innerHTML = "";
     els.skillDiscoverEmpty.hidden = false;
+    if (els.skillDiscoverSearchWrap) els.skillDiscoverSearchWrap.hidden = true;
     setSkillMsg(resolveBackendErr(e));
   }
 }
 
 function closeSkillDiscover() {
+  discoveredSkillsCache = [];
+  if (els.skillDiscoverSearch) els.skillDiscoverSearch.value = "";
+  if (els.skillDiscoverSearchWrap) els.skillDiscoverSearchWrap.hidden = true;
+  if (els.skillDiscoverSearchEmpty) els.skillDiscoverSearchEmpty.hidden = true;
   showSkillView("list");
 }
 
 function renderDiscover(found) {
-  if (!found.length) {
+  discoveredSkillsCache = Array.isArray(found) ? found.slice() : [];
+  if (!discoveredSkillsCache.length) {
     els.skillDiscoverList.innerHTML = "";
     els.skillDiscoverEmpty.hidden = false;
+    if (els.skillDiscoverSearchWrap) els.skillDiscoverSearchWrap.hidden = true;
+    if (els.skillDiscoverSearchEmpty) els.skillDiscoverSearchEmpty.hidden = true;
     return;
   }
   els.skillDiscoverEmpty.hidden = true;
+  if (els.skillDiscoverSearchWrap) {
+    els.skillDiscoverSearchWrap.hidden = discoveredSkillsCache.length < 2;
+  }
   const importedBadge = S().skillAlreadyImported;
-  els.skillDiscoverList.innerHTML = found.map((d) => {
-    const disabled = d.alreadyImported ? " disabled" : "";
-    const badge = d.alreadyImported ? `<span class="skill-req-tag">${escapeHtml(importedBadge)}</span>` : "";
+  const keepHint = S().skillDiscoverKeepHint;
+  els.skillDiscoverList.innerHTML = discoveredSkillsCache.map((d) => {
+    const owned = !!d.alreadyImported;
+    const badge = owned
+      ? `<span class="skill-req-tag" title="${escapeHtml(keepHint)}">${escapeHtml(importedBadge)}</span>`
+      : "";
+    const rowClass = owned ? " skill-discover-row--owned" : "";
+    const name = d.name || "";
+    const desc = d.description || "";
+    const label = d.sourceLabel || "";
+    const path = d.sourcePath || "";
     return `
-      <label class="skill-discover-row${d.alreadyImported ? " disabled" : ""}">
-        <input type="checkbox" value="${escapeHtml(d.sourcePath)}"${disabled} />
+      <label class="skill-discover-row${rowClass}"
+        data-name="${escapeHtml(name)}"
+        data-desc="${escapeHtml(desc)}"
+        data-label="${escapeHtml(label)}"
+        data-path="${escapeHtml(path)}">
+        <input type="checkbox" value="${escapeHtml(path)}" data-owned="${owned ? "1" : "0"}" />
         <span class="skill-discover-main">
-          <span class="skill-name">${escapeHtml(d.name)} ${badge}</span>
-          ${skillDescHtml(d.description)}
-          <span class="skill-meta"><span>${escapeHtml(d.sourceLabel)}</span></span>
+          <span class="skill-name skill-name-flex"><span class="skill-name-text">${escapeHtml(name)}</span>${badge}</span>
+          ${skillDescHtml(desc)}
+          <span class="skill-meta"><span>${escapeHtml(label)}</span>${owned ? `<span>${escapeHtml(keepHint)}</span>` : ""}</span>
         </span>
       </label>
     `;
   }).join("");
   refreshDescToggles(els.skillDiscoverList);
+  applyDiscoverSearchFilter();
+  refreshDiscoverGate();
+}
+
+function applyDiscoverSearchFilter() {
+  if (!els.skillDiscoverList) return;
+  const q = (els.skillDiscoverSearch && !els.skillDiscoverSearchWrap?.hidden
+    ? els.skillDiscoverSearch.value
+    : "").trim().toLowerCase();
+  let visible = 0;
+  const rows = els.skillDiscoverList.querySelectorAll(".skill-discover-row");
+  rows.forEach((row) => {
+    const name = (row.getAttribute("data-name") || "").toLowerCase();
+    const desc = (row.getAttribute("data-desc") || "").toLowerCase();
+    const label = (row.getAttribute("data-label") || "").toLowerCase();
+    const path = (row.getAttribute("data-path") || "").toLowerCase();
+    const show = !q
+      || name.includes(q)
+      || desc.includes(q)
+      || label.includes(q)
+      || path.includes(q);
+    row.hidden = !show;
+    if (show) visible += 1;
+  });
+  const total = rows.length;
+  if (els.skillDiscoverSearchCount) {
+    const showCount = total > 0 && (!!q || total >= 2);
+    els.skillDiscoverSearchCount.hidden = !showCount;
+    if (showCount) {
+      els.skillDiscoverSearchCount.textContent = T("skillDiscoverSearchCount", {
+        shown: visible,
+        total,
+      });
+    }
+  }
+  if (els.skillDiscoverSearchEmpty) {
+    els.skillDiscoverSearchEmpty.hidden = !q || visible > 0 || !!els.skillDiscoverSearchWrap?.hidden;
+  }
   refreshDiscoverGate();
 }
 
 function refreshDiscoverGate() {
-  const checked = els.skillDiscoverList.querySelectorAll("input[type=checkbox]:checked");
+  const checked = els.skillDiscoverList.querySelectorAll(
+    ".skill-discover-row:not([hidden]) input[type=checkbox]:checked"
+  );
   els.skillDiscoverImportBtn.disabled = busy || checked.length === 0;
 }
 
 async function importDiscoveredSkills() {
   const paths = Array.from(
-    els.skillDiscoverList.querySelectorAll("input[type=checkbox]:checked")
+    els.skillDiscoverList.querySelectorAll(
+      ".skill-discover-row:not([hidden]) input[type=checkbox]:checked"
+    )
   ).map((el) => el.value);
   if (!paths.length) return;
   setBusy(true);
@@ -4363,6 +4583,164 @@ async function loadMcp() {
     renderMcp(mcpCache);
   } catch (e) {
     setMcpMsg(resolveBackendErr(e));
+  }
+}
+
+let networkPendingLocalExtra = [];
+
+function setNetworkPendingMsg(text, kind = "err") {
+  if (!els.networkPendingMsg) return;
+  const t = text ? String(text) : "";
+  const cls = kind === "ok" || kind === "info" || kind === "warn" ? kind : "err";
+  els.networkPendingMsg.textContent = t;
+  els.networkPendingMsg.className = "msg" + (t ? " " + cls : "");
+  els.networkPendingMsg.hidden = !t;
+}
+
+function validNetworkHostname(s) {
+  const h = String(s || "").trim().toLowerCase();
+  if (!h || h.length > 253) return "";
+  if (h.startsWith(".") || h.endsWith(".") || h.includes("..")) return "";
+  if (/[/:\\\s]/.test(h)) return "";
+  if (!/^[a-z0-9.-]+$/.test(h)) return "";
+  return h;
+}
+
+function selectedNetworkPendingHosts() {
+  if (!els.networkPendingList) return [];
+  return Array.from(els.networkPendingList.querySelectorAll("input[type=checkbox]:checked"))
+    .map((el) => el.getAttribute("data-host"))
+    .filter(Boolean);
+}
+
+async function refreshNetworkPendingBadge() {
+  if (!els.mcpNetworkPendingBtn) return;
+  try {
+    const res = await call("list_network_pending");
+    const n = (res && res.domains ? res.domains.length : 0);
+    const base = S().mcpNetworkPending;
+    els.mcpNetworkPendingBtn.textContent = n > 0 ? `${base} (${n})` : base;
+  } catch (_) {
+    /* ignore */
+  }
+}
+
+function renderNetworkPendingList(domains) {
+  const all = Array.from(new Set([...(domains || []), ...networkPendingLocalExtra])).sort();
+  if (els.networkPendingEmpty) els.networkPendingEmpty.hidden = all.length > 0;
+  if (els.networkPendingToolbar) els.networkPendingToolbar.hidden = all.length === 0;
+  if (els.networkPendingCount) {
+    els.networkPendingCount.textContent = all.length
+      ? T("mcpNetworkPendingCount", { n: all.length })
+      : "";
+  }
+  if (!els.networkPendingList) return;
+  if (!all.length) {
+    els.networkPendingList.innerHTML = "";
+    return;
+  }
+  const hint = escapeHtml(S().mcpNetworkPendingHostHint);
+  els.networkPendingList.innerHTML = all.map((h) => `
+    <label class="network-pending-item" title="${escapeHtml(h)}">
+      <input type="checkbox" checked data-host="${escapeHtml(h)}" />
+      <span class="network-pending-host">
+        <strong>${escapeHtml(h)}</strong>
+        <span>${hint}</span>
+      </span>
+    </label>
+  `).join("");
+}
+
+function setNetworkPendingSelection(checked) {
+  if (!els.networkPendingList) return;
+  els.networkPendingList.querySelectorAll("input[type=checkbox]").forEach((el) => {
+    el.checked = !!checked;
+  });
+}
+
+async function openNetworkPendingOverlay() {
+  if (!els.networkPendingOverlay) return;
+  setNetworkPendingMsg("");
+  networkPendingLocalExtra = [];
+  if (els.networkPendingInput) els.networkPendingInput.value = "";
+  els.networkPendingOverlay.hidden = false;
+  try {
+    const res = await call("list_network_pending");
+    renderNetworkPendingList(res && res.domains ? res.domains : []);
+  } catch (e) {
+    renderNetworkPendingList([]);
+    setNetworkPendingMsg(resolveBackendErr(e));
+  }
+}
+
+function closeNetworkPendingOverlay() {
+  if (els.networkPendingOverlay) els.networkPendingOverlay.hidden = true;
+  refreshNetworkPendingBadge().catch(() => {});
+}
+
+function addManualNetworkPendingHost() {
+  const host = validNetworkHostname(els.networkPendingInput && els.networkPendingInput.value);
+  if (!host) {
+    setNetworkPendingMsg(S().mcpNetworkPendingInvalidHost);
+    return;
+  }
+  if (!networkPendingLocalExtra.includes(host)) networkPendingLocalExtra.push(host);
+  if (els.networkPendingInput) els.networkPendingInput.value = "";
+  setNetworkPendingMsg("");
+  const existing = Array.from(els.networkPendingList.querySelectorAll("[data-host]"))
+    .map((el) => el.getAttribute("data-host"));
+  renderNetworkPendingList(existing);
+}
+
+async function approveSelectedNetworkPending() {
+  const domains = selectedNetworkPendingHosts();
+  if (!domains.length) {
+    setNetworkPendingMsg(S().mcpNetworkPendingNoneSelected);
+    return;
+  }
+  if (busy) return;
+  busy = true;
+  setNetworkPendingMsg("");
+  try {
+    const result = await call("approve_network_domains", { body: { domains } });
+    networkPendingLocalExtra = [];
+    const n = (result && result.approved ? result.approved.length : domains.length);
+    if (result && result.needsRestart) {
+      setNetworkPendingMsg(T("mcpNetworkPendingApprovedRestarting", { n }), "info");
+      try {
+        await call("one_click_login");
+        setNetworkPendingMsg(T("mcpNetworkPendingApprovedRestarted", { n }), "ok");
+        await refreshRuntimeStatus();
+      } catch (e) {
+        setNetworkPendingMsg(T("mcpNetworkPendingApprovedRestartFail", { err: resolveBackendErr(e) }));
+      }
+    } else {
+      setNetworkPendingMsg(T("mcpNetworkPendingApproved", { n }), "ok");
+    }
+    renderNetworkPendingList(result && result.pendingRemaining ? result.pendingRemaining : []);
+    await refreshNetworkPendingBadge();
+  } catch (e) {
+    setNetworkPendingMsg(resolveBackendErr(e));
+  } finally {
+    busy = false;
+  }
+}
+
+async function dismissSelectedNetworkPending() {
+  const domains = selectedNetworkPendingHosts();
+  if (!domains.length) {
+    setNetworkPendingMsg(S().mcpNetworkPendingNoneSelected);
+    return;
+  }
+  const remove = new Set(domains);
+  networkPendingLocalExtra = networkPendingLocalExtra.filter((h) => !remove.has(h));
+  try {
+    const res = await call("dismiss_network_pending", { body: { domains } });
+    renderNetworkPendingList(res && res.domains ? res.domains : []);
+    setNetworkPendingMsg(S().mcpNetworkPendingDismissed, "ok");
+    await refreshNetworkPendingBadge();
+  } catch (e) {
+    setNetworkPendingMsg(resolveBackendErr(e));
   }
 }
 

@@ -3,6 +3,24 @@
 All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.1.0] — 2026-07-21
+
+### Added
+- **Network pending approval UI**: When Operon denies CONNECT for an ungated host, `fetch_url` queues it; CSP → MCP →「待批准出网域名」lists pending hosts. Approve writes `~/.csp/network-allowlist.json`, merges org grants, and restarts Science so Operon reloads.
+- **Common egress pre-grants**: Start merges a curated news/finance/US-gov/crypto/GitHub host set (Yahoo, Reuters, GovInfo, CoinDesk, CoinGecko, …) so everyday `fetch_url` needs fewer one-off approvals.
+- **Fake-IP / egress status light**: Runtime status probes system DNS for Clash-style Fake-IP ranges and surfaces「出网受阻」when Operon would deny CONNECT.
+- **Skill discover search**:「扫描导入」filters by name / description / source; match count shown. Already-owned skills (same path or name) badge「已有 · 默认保留」and stay unchecked so Import keeps CSP copies unless overwritten.
+- **More Skill scan roots**: `~/.qoderworkcn/skills`, `~/.eigent/skills`, `~/.grok/skills`, `~/.mavis/skills`, `~/.stepfun/skills`, `~/.corust-agent/skills`.
+
+### Fixed
+- **CONNECT 403 messaging**: No longer always blames Fake-IP; prefers allowlist miss and points to CSP pending approval. Cloudflare challenge pages get a distinct hint.
+- **`alwaysOrigins` grant path**: Network allowlist writes provenance under `approvalGrants.alwaysOrigins` (Science’s real path), with migration of misplaced stubs.
+- **Skill discover `[hidden]` CSS**: `display:flex` no longer overrides filtered-out rows (search appeared broken).
+- **Science rolling-compact forks**: Proxy detects compact/summarizer requests and strips the full tool list so third-party models (e.g. GLM) stop endless tool_use retries during context compaction.
+
+### Changed
+- Version alignment (desktop bundle + built-in web-search `SERVER_VERSION`) → **2.1.0**.
+
 ## [2.0.0] — 2026-07-19
 
 ### Added

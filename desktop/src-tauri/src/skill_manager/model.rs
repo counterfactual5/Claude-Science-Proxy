@@ -123,7 +123,8 @@ pub struct DiscoveredSkill {
     pub source_path: String,
     /// Human-readable origin label (e.g. `~/.codex/skills`).
     pub source_label: String,
-    /// True when this source path is already in the CSP inventory.
+    /// True when CSP already owns this skill (same source path or same name).
+    /// Import UI keeps these unchecked by default (= preserve existing).
     pub already_imported: bool,
 }
 

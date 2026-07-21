@@ -163,6 +163,80 @@ pub fn tcp_reachable(host: &str, port: u16, timeout_ms: u64) -> bool {
     }
 }
 
+/// True if `ip` is in a range Science Operon treats as private/reserved for CONNECT
+/// SSRF protection — including common VPN/Clash **Fake-IP** pools (`198.18.0.0/15`,
+/// ULA `fd00::/8` such as `fdfe:dcba:9876::`).
+pub fn ip_is_operon_blocked_range(ip: std::net::IpAddr) -> bool {
+    use std::net::IpAddr;
+    match ip {
+        IpAddr::V4(v4) => {
+            let o = v4.octets();
+            // RFC1918 + loopback + link-local + CGNAT + Fake-IP benchmarking range
+            o[0] == 10
+                || o[0] == 127
+                || (o[0] == 169 && o[1] == 254)
+                || (o[0] == 172 && (16..=31).contains(&o[1]))
+                || (o[0] == 192 && o[1] == 168)
+                || (o[0] == 100 && (64..=127).contains(&o[1]))
+                || (o[0] == 198 && (18..=19).contains(&o[1]))
+        }
+        IpAddr::V6(v6) => {
+            let s = v6.segments();
+            v6.is_loopback()
+                || v6.is_unspecified()
+                // Unique-local fd00::/8 (covers Clash-style fdfe:dcba:… Fake-IP)
+                || (s[0] & 0xfe00) == 0xfc00
+                // Link-local fe80::/10
+                || (s[0] & 0xffc0) == 0xfe80
+        }
+    }
+}
+
+/// Resolve `host:0` and return the first address that looks like Fake-IP / private.
+/// `None` = resolved to public addresses only, or DNS failed (unknown — not a Fake-IP hit).
+pub fn resolve_fake_ip_sample(host: &str) -> Option<String> {
+    let addrs = (host, 0u16).to_socket_addrs().ok()?;
+    for a in addrs {
+        if ip_is_operon_blocked_range(a.ip()) {
+            return Some(a.ip().to_string());
+        }
+    }
+    None
+}
+
+/// Hosts Science MCP egress commonly needs. If system DNS returns Fake-IP for these,
+/// Operon logs `denied … (private/reserved range)` and CONNECT returns 403 — even when
+/// CSP proxy + Science HTTP health are green and network allowlist grants are present.
+const EGRESS_DNS_PROBE_HOSTS: &[&str] = &["api.duckduckgo.com", "arxiv.org"];
+
+/// Probe whether host DNS currently returns Fake-IP/private ranges that break Operon egress.
+pub fn egress_dns_probe() -> EgressDnsProbe {
+    for host in EGRESS_DNS_PROBE_HOSTS {
+        if let Some(sample) = resolve_fake_ip_sample(host) {
+            return EgressDnsProbe {
+                ok: false,
+                fake_ip: true,
+                host: (*host).to_string(),
+                sample,
+            };
+        }
+    }
+    EgressDnsProbe {
+        ok: true,
+        fake_ip: false,
+        host: String::new(),
+        sample: String::new(),
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EgressDnsProbe {
+    pub ok: bool,
+    pub fake_ip: bool,
+    pub host: String,
+    pub sample: String,
+}
+
 /// Find executable on PATH (simple which) with macOS GUI minimal-PATH fallback.
 ///
 /// GUI processes launched from Finder / .app get minimal PATH (`/usr/bin:/bin:/usr/sbin:/sbin`),
@@ -324,6 +398,28 @@ mod tests {
     fn get_body_none_when_nothing_listening() {
         // Nothing listening → cannot connect → None (same fail-closed semantics as http_health).
         assert!(http_get_body(59998, Some("secret"), "/v1/models", 300).is_none());
+    }
+
+    #[test]
+    fn operon_blocked_ranges_cover_fake_ip_pools() {
+        use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+        assert!(ip_is_operon_blocked_range(IpAddr::V4(Ipv4Addr::new(
+            198, 18, 0, 141
+        ))));
+        assert!(ip_is_operon_blocked_range(IpAddr::V4(Ipv4Addr::new(
+            198, 19, 1, 1
+        ))));
+        assert!(ip_is_operon_blocked_range(IpAddr::V4(Ipv4Addr::new(
+            10, 0, 0, 1
+        ))));
+        assert!(!ip_is_operon_blocked_range(IpAddr::V4(Ipv4Addr::new(
+            1, 1, 1, 1
+        ))));
+        // fdfe:dcba:9876::8c
+        let fake_v6: Ipv6Addr = "fdfe:dcba:9876::8c".parse().unwrap();
+        assert!(ip_is_operon_blocked_range(IpAddr::V6(fake_v6)));
+        let public_v6: Ipv6Addr = "2606:4700:4700::1111".parse().unwrap();
+        assert!(!ip_is_operon_blocked_range(IpAddr::V6(public_v6)));
     }
 
     #[test]

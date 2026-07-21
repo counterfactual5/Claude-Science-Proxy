@@ -1075,6 +1075,29 @@ select:focus-visible {
   font-size: 13px;
 }
 
+.skill-search {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 0 0 auto;
+  margin-bottom: 2px;
+}
+.skill-search input[type="search"] {
+  height: 30px;
+  font-size: 12.5px;
+  padding: 4px 10px;
+}
+.skill-search-empty {
+  font-size: 12px;
+  color: var(--text-muted);
+  padding: 2px 2px 0;
+}
+.skill-search-count {
+  font-size: 12px;
+  color: var(--text-muted);
+  padding: 2px 2px 0;
+}
+
 .skill-list {
   flex: 1 1 0;
   min-width: 0;
@@ -1101,6 +1124,11 @@ select:focus-visible {
      buries the row ⋯ menu (编辑 / 删除) under the next card. */
   overflow: visible;
   transition: border-color 0.15s, opacity 0.15s;
+}
+
+/* `display: flex` above beats the bare `hidden` attribute — force hide for search. */
+.skill-row[hidden] {
+  display: none !important;
 }
 
 .skill-row:hover {
@@ -1266,9 +1294,28 @@ select:focus-visible {
   background: var(--surface-2, rgba(255,255,255,0.03));
   cursor: pointer;
 }
+/* Same trap as .skill-row: author `display:flex` beats bare [hidden]. */
+.skill-discover-row[hidden] {
+  display: none !important;
+}
 .skill-discover-row.disabled {
   opacity: 0.55;
   cursor: default;
+}
+.skill-discover-row--owned {
+  border-style: dashed;
+}
+.skill-name-flex {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.skill-name-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .skill-discover-row input[type="checkbox"] {
   /* Override the global `input { width:100%; height:34px }` which otherwise
@@ -1316,6 +1363,16 @@ select:focus-visible {
   max-height: min(72vh, 460px);
   margin: 0;
 }
+.network-pending-overlay.preview-overlay--compact .preview-overlay-panel {
+  width: min(560px, calc(100% - 32px));
+  max-height: min(82vh, 560px);
+  padding: 14px 16px 16px;
+}
+.network-pending-overlay .preview-overlay-meta {
+  margin: 0 0 4px;
+  line-height: 1.45;
+  color: var(--text-secondary);
+}
 .preview-overlay--compact .preview-overlay-body {
   flex: 1 1 auto;
   min-height: 140px;
@@ -1323,6 +1380,116 @@ select:focus-visible {
 }
 .preview-overlay[hidden] {
   display: none !important;
+}
+.network-pending-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: min(240px, 36vh);
+  overflow: auto;
+  margin: 10px 0 4px;
+  padding: 2px;
+}
+.network-pending-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--text-muted, #9ca3af);
+}
+.network-pending-toolbar .btn {
+  height: 26px;
+  padding: 0 8px;
+  font-size: 11.5px;
+}
+.network-pending-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-2, rgba(255, 255, 255, 0.03));
+  cursor: pointer;
+}
+.network-pending-item:hover {
+  border-color: rgba(217, 119, 87, 0.35);
+  background: #2E2C29;
+}
+.network-pending-item input[type="checkbox"] {
+  /* Override global `input { width:100%; height:34px }` — otherwise the box
+     becomes a full-width bar and the hostname disappears. */
+  -webkit-appearance: checkbox;
+  appearance: checkbox;
+  width: 15px;
+  height: 15px;
+  margin: 2px 0 0;
+  padding: 0;
+  flex: 0 0 auto;
+  cursor: pointer;
+  accent-color: var(--accent);
+  box-shadow: none;
+  border: none;
+  background: transparent;
+}
+.network-pending-host {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.network-pending-host strong {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  word-break: break-all;
+  line-height: 1.35;
+}
+.network-pending-host span {
+  font-size: 11px;
+  color: var(--text-muted, #9ca3af);
+}
+.network-pending-add {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+.network-pending-add-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.network-pending-add-row input {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: auto;
+}
+.network-pending-add-row .btn {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+.network-pending-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  margin-top: 14px;
+}
+.network-pending-actions .hero {
+  flex: 0 1 auto;
+  min-width: 140px;
+}
+#networkPendingEmpty {
+  margin: 12px 0 4px;
+  padding: 12px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  text-align: center;
+  color: var(--text-muted, #9ca3af);
+  font-size: 12.5px;
 }
 .preview-overlay-panel {
   flex: 1 1 auto;

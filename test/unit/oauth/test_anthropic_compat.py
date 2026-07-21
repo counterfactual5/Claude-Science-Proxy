@@ -380,5 +380,90 @@ class InjectCspWebAccessGuidance(unittest.TestCase):
         self.assertEqual(body["system"], "operon")  # copy semantics
 
 
+class ScienceRollingCompactPrep(unittest.TestCase):
+    def test_detects_literals_system_marker(self):
+        body = {
+            "system": "… After the Literals: section, add Decisions: …",
+            "messages": [{"role": "user", "content": "fold"}],
+            "tools": [{"name": "bash", "input_schema": {"type": "object"}}],
+        }
+        self.assertTrue(ac.is_science_rolling_compact(body))
+
+    def test_detects_summarize_conversation_tool(self):
+        body = {
+            "system": "You are helpful.",
+            "messages": [],
+            "tools": [{"name": "summarize_conversation", "input_schema": {"type": "object"}}],
+        }
+        self.assertTrue(ac.is_science_rolling_compact(body))
+
+    def test_normal_request_not_compact(self):
+        body = {
+            "system": "You are OPERON.",
+            "messages": [{"role": "user", "content": "hi"}],
+            "tools": [{"name": "bash", "input_schema": {"type": "object"}}],
+        }
+        self.assertFalse(ac.is_science_rolling_compact(body))
+
+    def test_strip_removes_tools_and_forces_none(self):
+        body = {
+            "system": "Literals:\n- x",
+            "tools": [{"name": "bash", "input_schema": {"type": "object"}}],
+            "tool_choice": {"type": "auto"},
+            "messages": [],
+        }
+        out = ac.strip_tools_for_rolling_compact(body)
+        self.assertIsNot(out, body)
+        self.assertNotIn("tools", out)
+        self.assertEqual(out["tool_choice"], {"type": "none"})
+        self.assertEqual(body["tools"][0]["name"], "bash")  # original untouched
+
+    def test_prepare_skips_web_guidance_on_compact(self):
+        body = {
+            "system": "Wrap your summary in <summary></summary> tags.\nLiterals:",
+            "tools": [{"name": "bash", "input_schema": {"type": "object"}}],
+            "messages": [],
+        }
+        out = ac.prepare_inbound_messages_request(body)
+        self.assertNotIn("tools", out)
+        self.assertEqual(out["tool_choice"], {"type": "none"})
+        self.assertNotIn(ac.CSP_WEB_ACCESS_GUIDANCE_SENTINEL, out["system"])
+
+    def test_transform_request_strips_compact_tools(self):
+        st = _state(cs.PROVIDERS["deepseek"], "deepseek")
+        body = {
+            "model": "claude-opus-4-8",
+            "system": "Produce a structured summary. Literals:",
+            "messages": [{"role": "user", "content": "chunk"}],
+            "tools": [{"name": "bash", "input_schema": {"type": "object"}}],
+            "max_tokens": 100,
+        }
+        up, _ctx = ac.transform_request(body, st)
+        self.assertNotIn("tools", up)
+        self.assertEqual(up.get("tool_choice"), {"type": "none"})
+        self.assertNotIn(ac.CSP_WEB_ACCESS_GUIDANCE_SENTINEL, up.get("system") or "")
+
+
+class MapUpstreamHttpError(unittest.TestCase):
+    def test_glm_1261_maps_to_400_invalid_request(self):
+        status, typ, msg = cs._map_upstream_http_error(
+            400, '{"error":{"code":"1261","message":"Prompt 超长"}}')
+        self.assertEqual(status, 400)
+        self.assertEqual(typ, "invalid_request_error")
+        self.assertIn("1261", msg)
+        self.assertIn("new chat", msg)
+
+    def test_429_passthrough(self):
+        status, typ, msg = cs._map_upstream_http_error(429, "rate limited")
+        self.assertEqual(status, 429)
+        self.assertEqual(typ, "api_error")
+        self.assertIn("429", msg)
+
+    def test_500_maps_to_502(self):
+        status, typ, msg = cs._map_upstream_http_error(500, "boom")
+        self.assertEqual(status, 502)
+        self.assertEqual(typ, "api_error")
+
+
 if __name__ == "__main__":
     unittest.main()

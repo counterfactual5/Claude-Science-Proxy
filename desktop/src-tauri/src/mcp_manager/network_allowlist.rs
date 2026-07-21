@@ -8,11 +8,13 @@
 //! 1. **Built-in** domains for every `web-search` provider (DDG, Wikipedia,
 //!    Brave, Serper, Tavily) — so configuring an API key works without a
 //!    separate manual grant.
-//! 2. **User extensions** from `~/.csp/network-allowlist.json`.
+//! 2. **Built-in common egress** (news / finance / US gov / crypto market) so
+//!    typical `fetch_url` targets work without per-host approval.
+//! 3. **User extensions** from `~/.csp/network-allowlist.json`.
 //!
 //! into the active org's `preferences.json`
 //! (`userAllowedDomains` + `approvalGrants.always.allow.network` +
-//! `alwaysOrigins.network`). A restart is required for Operon to pick up
+//! `approvalGrants.alwaysOrigins.network`). A restart is required for Operon to pick up
 //! new grants (disk edits alone do not hot-reload).
 
 use std::collections::BTreeSet;
@@ -27,6 +29,9 @@ use serde_json::{json, Value};
 use crate::config;
 
 const ALLOWLIST_FILE: &str = "network-allowlist.json";
+const PENDING_FILE: &str = "network-pending.json";
+/// MCP Operon children can write `/private/tmp` even when `~/.csp` is not writable.
+pub const TMP_PENDING_FILE: &str = "/private/tmp/csp-network-pending.json";
 const ACTIVE_ORG_FILE: &str = "active-org.json";
 const PREFERENCES_FILE: &str = "preferences.json";
 
@@ -43,6 +48,79 @@ pub const WEB_SEARCH_PROVIDER_DOMAINS: &[&str] = &[
     "api.search.brave.com",
     "google.serper.dev",
     "api.tavily.com",
+];
+
+/// Curated general-web hosts pre-granted so everyday research/`fetch_url` does
+/// not require one-off approval. Still not "the whole internet" — niche sites
+/// go through pending approval or `~/.csp/network-allowlist.json`.
+pub const COMMON_EGRESS_DOMAINS: &[&str] = &[
+    // US government / legislation
+    "www.govinfo.gov",
+    "govinfo.gov",
+    "www.congress.gov",
+    "congress.gov",
+    "api.congress.gov",
+    "api.data.gov",
+    "www.senate.gov",
+    "www.house.gov",
+    "www.govtrack.us",
+    "govtrack.us",
+    "www.federalregister.gov",
+    "www.sec.gov",
+    "www.cftc.gov",
+    // News / wire
+    "www.reuters.com",
+    "reuters.com",
+    "apnews.com",
+    "www.apnews.com",
+    "www.bbc.com",
+    "bbc.com",
+    "www.bbc.co.uk",
+    "www.nytimes.com",
+    "www.theguardian.com",
+    "www.cnn.com",
+    "www.npr.org",
+    // Finance / markets
+    "finance.yahoo.com",
+    "yahoo.com",
+    "www.yahoo.com",
+    "s.yimg.com",
+    "www.bloomberg.com",
+    "bloomberg.com",
+    "www.cnbc.com",
+    "cnbc.com",
+    "www.wsj.com",
+    "www.ft.com",
+    "www.marketwatch.com",
+    "www.investing.com",
+    "www.forbes.com",
+    "www.businessinsider.com",
+    // Crypto news / venues (common research targets)
+    "www.coindesk.com",
+    "coindesk.com",
+    "www.cointelegraph.com",
+    "cointelegraph.com",
+    "decrypt.co",
+    "www.decrypt.co",
+    "www.theblock.co",
+    "theblock.co",
+    "www.coinspeaker.com",
+    "coinspeaker.com",
+    "phemex.com",
+    "www.phemex.com",
+    "polymarket.com",
+    "www.polymarket.com",
+    // Market data APIs often used alongside web-search
+    "api.coingecko.com",
+    "api.coincap.io",
+    "api.binance.com",
+    "api.alternative.me",
+    "api.llama.fi",
+    // Dev / docs mirrors frequently linked from search hits
+    "github.com",
+    "www.github.com",
+    "raw.githubusercontent.com",
+    "gist.githubusercontent.com",
 ];
 
 const CSP_ORIGIN_USER: &str = "csp-network-allowlist";
@@ -65,14 +143,16 @@ impl Default for NetworkAllowlistFile {
             version: 1,
             domains: Vec::new(),
             description: "Extra Science sandbox egress domains (hostnames only). \
-Merged with built-in web-search provider hosts on each Start Claude Science. \
-Edit this file, then Stop → Start Claude Science for Operon to reload grants."
+Merged on each Start with built-in web-search providers and a curated common \
+egress set (news/finance/US gov/crypto). Edit this file for niche hosts, then \
+Stop → Start Claude Science for Operon to reload grants."
                 .to_string(),
         }
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ApplyAllowlistResult {
     pub applied: Vec<String>,
     pub added: Vec<String>,
@@ -90,6 +170,26 @@ pub fn allowlist_path() -> PathBuf {
     config::default_dir().join(ALLOWLIST_FILE)
 }
 
+/// Absolute path to `~/.csp/network-pending.json` (CSP-side pending queue).
+pub fn pending_path() -> PathBuf {
+    config::default_dir().join(PENDING_FILE)
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct NetworkPendingFile {
+    #[serde(default = "pending_version")]
+    version: u32,
+    #[serde(default)]
+    domains: Vec<String>,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    updated_at: String,
+}
+
+fn pending_version() -> u32 {
+    1
+}
+
 /// Ensure the user extension file exists (creates a default empty list).
 pub fn ensure_user_file() -> Result<PathBuf, String> {
     let path = allowlist_path();
@@ -105,6 +205,116 @@ pub fn ensure_user_file() -> Result<PathBuf, String> {
     Ok(path)
 }
 
+fn read_pending_domains_from(path: &Path) -> Vec<String> {
+    if !path.is_file() {
+        return Vec::new();
+    }
+    let Ok(text) = fs::read_to_string(path) else {
+        return Vec::new();
+    };
+    let Ok(parsed) = serde_json::from_str::<NetworkPendingFile>(&text) else {
+        return Vec::new();
+    };
+    normalize_domains(&parsed.domains)
+}
+
+fn write_pending_domains(path: &Path, domains: &[String]) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|e| format!("create pending parent: {e}"))?;
+    }
+    let body = NetworkPendingFile {
+        version: 1,
+        domains: normalize_domains(domains),
+        updated_at: chrono_like_utc_now(),
+    };
+    let bytes =
+        serde_json::to_vec_pretty(&body).map_err(|e| format!("serialize pending: {e}"))?;
+    write_0600(path, &bytes)
+}
+
+fn chrono_like_utc_now() -> String {
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    format!("unix:{secs}")
+}
+
+/// Merge MCP tmp pending into `~/.csp/network-pending.json` and return the union.
+pub fn list_pending_domains() -> Result<Vec<String>, String> {
+    let mut set: BTreeSet<String> = BTreeSet::new();
+    for d in read_pending_domains_from(&pending_path()) {
+        set.insert(d);
+    }
+    for d in read_pending_domains_from(Path::new(TMP_PENDING_FILE)) {
+        set.insert(d);
+    }
+    let domains: Vec<String> = set.into_iter().collect();
+    let _ = write_pending_domains(&pending_path(), &domains);
+    Ok(domains)
+}
+
+/// Remove domains from both pending files (approve or dismiss).
+pub fn dismiss_pending_domains(domains: &[String]) -> Result<Vec<String>, String> {
+    let remove: BTreeSet<String> = normalize_domains(domains).into_iter().collect();
+    let mut remaining: BTreeSet<String> = list_pending_domains()?.into_iter().collect();
+    remaining.retain(|d| !remove.contains(d));
+    let left: Vec<String> = remaining.into_iter().collect();
+    write_pending_domains(&pending_path(), &left)?;
+    let _ = write_pending_domains(Path::new(TMP_PENDING_FILE), &left);
+    Ok(left)
+}
+
+/// Append hostnames to `~/.csp/network-allowlist.json` (creates file if needed).
+pub fn add_user_domains(domains: &[String]) -> Result<Vec<String>, String> {
+    let _ = ensure_user_file()?;
+    let path = allowlist_path();
+    let text = fs::read_to_string(&path).map_err(|e| format!("read allowlist: {e}"))?;
+    let mut parsed: NetworkAllowlistFile =
+        serde_json::from_str(&text).map_err(|e| format!("parse allowlist: {e}"))?;
+    let mut set: BTreeSet<String> = normalize_domains(&parsed.domains).into_iter().collect();
+    let mut added = Vec::new();
+    for d in normalize_domains(domains) {
+        if set.insert(d.clone()) {
+            added.push(d);
+        }
+    }
+    parsed.domains = set.into_iter().collect();
+    let body =
+        serde_json::to_vec_pretty(&parsed).map_err(|e| format!("serialize allowlist: {e}"))?;
+    write_0600(&path, &body)?;
+    Ok(added)
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApproveDomainsResult {
+    pub approved: Vec<String>,
+    pub added_to_allowlist: Vec<String>,
+    pub apply: ApplyAllowlistResult,
+    pub pending_remaining: Vec<String>,
+}
+
+/// Approve pending (or manually entered) domains: allowlist + org prefs + clear pending.
+pub fn approve_domains(
+    auth_dir: &Path,
+    domains: &[String],
+) -> Result<ApproveDomainsResult, String> {
+    let wanted = normalize_domains(domains);
+    if wanted.is_empty() {
+        return Err("no valid hostnames to approve".into());
+    }
+    let added_to_allowlist = add_user_domains(&wanted)?;
+    let apply = apply_to_active_org(auth_dir)?;
+    let pending_remaining = dismiss_pending_domains(&wanted)?;
+    Ok(ApproveDomainsResult {
+        approved: wanted,
+        added_to_allowlist,
+        apply,
+        pending_remaining,
+    })
+}
+
 /// Load user domains from disk (missing file → empty). Invalid entries skipped.
 pub fn load_user_domains() -> Result<Vec<String>, String> {
     let path = allowlist_path();
@@ -117,10 +327,11 @@ pub fn load_user_domains() -> Result<Vec<String>, String> {
     Ok(normalize_domains(&parsed.domains))
 }
 
-/// Built-in + user domains, de-duplicated, sorted.
+/// Built-in (search providers + common egress) + user domains, de-duplicated, sorted.
 pub fn merged_domains() -> Result<Vec<String>, String> {
     let mut set: BTreeSet<String> = WEB_SEARCH_PROVIDER_DOMAINS
         .iter()
+        .chain(COMMON_EGRESS_DOMAINS.iter())
         .map(|s| (*s).to_string())
         .collect();
     for d in load_user_domains()? {
@@ -261,13 +472,27 @@ fn merge_domains_into_preferences(
     network.dedup();
     allow_obj.insert("network".into(), json!(network));
 
+    // Science stores grant provenance at approvalGrants.alwaysOrigins (sibling of
+    // `always`), not nested under always. Older CSP builds wrote the wrong path;
+    // migrate any leftover stubs, then write the canonical location.
+    if let Some(misplaced) = always_obj.remove("alwaysOrigins") {
+        let grants_origins = grants_obj
+            .entry("alwaysOrigins")
+            .or_insert_with(|| json!({}));
+        if let (Some(dst), Some(src)) = (grants_origins.as_object_mut(), misplaced.as_object()) {
+            for (k, v) in src {
+                dst.entry(k.clone()).or_insert_with(|| v.clone());
+            }
+        }
+    }
+
     // alwaysOrigins.network stubs (Science merges these for grant provenance)
-    let origins = always_obj
+    let origins = grants_obj
         .entry("alwaysOrigins")
         .or_insert_with(|| json!({}));
     let origins_obj = origins
         .as_object_mut()
-        .ok_or_else(|| "alwaysOrigins must be an object".to_string())?;
+        .ok_or_else(|| "approvalGrants.alwaysOrigins must be an object".to_string())?;
     let net_origins = origins_obj.entry("network").or_insert_with(|| json!({}));
     let net_origins_obj = net_origins
         .as_object_mut()
@@ -388,14 +613,14 @@ mod tests {
                 "always": {
                     "allow": {
                         "network": ["api.coingecko.com"]
-                    },
-                    "alwaysOrigins": {
-                        "network": {
-                            "api.coingecko.com": {
-                                "userId": "local-dev",
-                                "rootFrameId": "x",
-                                "projectId": "y"
-                            }
+                    }
+                },
+                "alwaysOrigins": {
+                    "network": {
+                        "api.coingecko.com": {
+                            "userId": "local-dev",
+                            "rootFrameId": "x",
+                            "projectId": "y"
                         }
                     }
                 }
@@ -423,9 +648,51 @@ mod tests {
         assert!(user.contains(&"api.coingecko.com".to_string()));
         assert!(user.contains(&"api.duckduckgo.com".to_string()));
         assert!(user.contains(&"api.search.brave.com".to_string()));
+        assert!(
+            prefs["approvalGrants"]["alwaysOrigins"]["network"]["api.duckduckgo.com"].is_object()
+        );
+        assert!(prefs["approvalGrants"]["always"]
+            .get("alwaysOrigins")
+            .is_none());
 
         let added2 = merge_domains_into_preferences(&mut prefs, &domains).unwrap();
         assert!(added2.is_empty());
+    }
+
+    #[test]
+    fn merge_migrates_misplaced_always_origins() {
+        let mut prefs = json!({
+            "userAllowedDomains": [],
+            "approvalGrants": {
+                "always": {
+                    "allow": { "network": [] },
+                    "alwaysOrigins": {
+                        "network": {
+                            "html.duckduckgo.com": {
+                                "userId": "csp-network-allowlist",
+                                "rootFrameId": "csp-network-allowlist",
+                                "projectId": "csp-network-allowlist"
+                            }
+                        }
+                    }
+                }
+            }
+        });
+        let added = merge_domains_into_preferences(
+            &mut prefs,
+            &["html.duckduckgo.com".into(), "api.duckduckgo.com".into()],
+        )
+        .unwrap();
+        assert!(added.contains(&"api.duckduckgo.com".to_string()));
+        assert!(
+            prefs["approvalGrants"]["alwaysOrigins"]["network"]["html.duckduckgo.com"].is_object()
+        );
+        assert!(
+            prefs["approvalGrants"]["alwaysOrigins"]["network"]["api.duckduckgo.com"].is_object()
+        );
+        assert!(prefs["approvalGrants"]["always"]
+            .get("alwaysOrigins")
+            .is_none());
     }
 
     #[test]
@@ -442,7 +709,7 @@ mod tests {
         .unwrap();
         fs::write(
             org_dir.join("preferences.json"),
-            r#"{"userAllowedDomains":[],"approvalGrants":{"always":{"allow":{"network":[]},"alwaysOrigins":{"network":{}}}}}"#,
+            r#"{"userAllowedDomains":[],"approvalGrants":{"always":{"allow":{"network":[]}},"alwaysOrigins":{"network":{}}}}"#,
         )
         .unwrap();
 
@@ -474,5 +741,32 @@ mod tests {
         assert!(joined.contains("serper"));
         assert!(joined.contains("tavily"));
         assert!(joined.contains("wikipedia"));
+    }
+
+    #[test]
+    fn common_egress_covers_news_finance_gov() {
+        let joined = COMMON_EGRESS_DOMAINS.join(" ");
+        assert!(joined.contains("govinfo.gov"));
+        assert!(joined.contains("finance.yahoo.com"));
+        assert!(joined.contains("reuters.com"));
+        assert!(joined.contains("coindesk.com"));
+        assert!(joined.contains("api.coingecko.com"));
+        for d in COMMON_EGRESS_DOMAINS {
+            assert!(valid_hostname(d), "invalid common host: {d}");
+        }
+    }
+
+    #[test]
+    fn pending_file_roundtrip_normalizes_hosts() {
+        let dir = tmp_dir("pending-rt");
+        let path = dir.join("pending.json");
+        write_pending_domains(
+            &path,
+            &["Phemex.com".into(), "bad/host".into(), "govinfo.gov".into()],
+        )
+        .unwrap();
+        let got = read_pending_domains_from(&path);
+        assert_eq!(got, vec!["govinfo.gov".to_string(), "phemex.com".to_string()]);
+        let _ = fs::remove_dir_all(&dir);
     }
 }

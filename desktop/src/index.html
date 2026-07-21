@@ -138,6 +138,10 @@
             <p class="hint" id="skillEmptyHint">点「导入」添加本地或网络 Skill，或在「⋯」里新建 / 扫描 / 同步 Science 技能库。</p>
           </div>
 
+          <div class="skill-search" id="skillSearchWrap" hidden>
+            <input type="search" id="skillSearch" placeholder="搜索名称或描述…" autocomplete="off" spellcheck="false" />
+            <span class="skill-search-empty" id="skillSearchEmpty" hidden>没有匹配的 Skill</span>
+          </div>
           <div id="skillList" class="skill-list"></div>
         </div>
 
@@ -168,7 +172,12 @@
 
         <div class="sec form-sec" id="skillDiscoverSec" hidden>
           <label id="skillDiscoverTitle">扫描本地 Skill</label>
-          <p class="hint" id="skillDiscoverHint">从其他 Agent 软件导入。</p>
+          <p class="hint" id="skillDiscoverHint">从其他 Agent 软件导入。已有同名/同源 Skill 会标「已有 · 默认保留」——不勾选即保留现有；勾选才会覆盖重导。</p>
+          <div class="skill-search" id="skillDiscoverSearchWrap" hidden>
+            <input type="search" id="skillDiscoverSearch" placeholder="搜索名称、描述或来源…" autocomplete="off" spellcheck="false" />
+            <span class="skill-search-count" id="skillDiscoverSearchCount" hidden></span>
+            <span class="skill-search-empty" id="skillDiscoverSearchEmpty" hidden>没有匹配的 Skill</span>
+          </div>
           <div id="skillDiscoverList" class="skill-discover-list"></div>
           <div id="skillDiscoverEmpty" class="skill-empty" hidden>
             <p id="skillDiscoverEmptyText">没有扫描到可导入的 Skill。</p>
@@ -235,7 +244,8 @@
                   <button type="button" class="btn small listhd-more-btn" id="mcpMoreBtn" aria-haspopup="true" aria-expanded="false" title="更多">⋯</button>
                   <div class="pmenu listhd-menu" id="mcpMenu" hidden role="menu">
                     <button type="button" class="pmenu-item" id="mcpDiscoverBtn" role="menuitem">扫描导入</button>
-                    <button type="button" class="pmenu-item" id="mcpNetworkAllowlistBtn" role="menuitem">网络授权配置</button>
+                    <button type="button" class="pmenu-item" id="mcpNetworkPendingBtn" role="menuitem">待批准出网域名</button>
+                    <button type="button" class="pmenu-item" id="mcpNetworkAllowlistBtn" role="menuitem">网络授权配置（JSON）</button>
                     <button type="button" class="pmenu-item" id="mcpJsonBtn" role="menuitem" title="编辑 ~/.csp/mcp/inventory.json">编辑 JSON</button>
                   </div>
                 </div>
@@ -352,6 +362,39 @@
           <div class="subbtns">
             <button class="btn" id="stopBtn" title="停止本地代理与 Science 沙箱">停止</button>
           </div>
+        </div>
+      </div>
+
+      <div class="preview-overlay preview-overlay--compact network-pending-overlay" id="networkPendingOverlay" hidden role="dialog" aria-modal="true" aria-labelledby="networkPendingTitle">
+        <div class="preview-overlay-panel">
+          <div class="preview-overlay-hd">
+            <div class="preview-overlay-hd-main">
+              <h2 class="preview-overlay-title" id="networkPendingTitle">待批准出网域名</h2>
+            </div>
+            <button type="button" class="preview-overlay-close" id="networkPendingCloseBtn" aria-label="关闭" title="关闭">×</button>
+          </div>
+          <p class="preview-overlay-meta" id="networkPendingHint">Science Operon 拒绝未授权主机的 CONNECT。批准后会停止沙箱并自动重启以使授权生效。</p>
+          <div class="network-pending-toolbar" id="networkPendingToolbar" hidden>
+            <span id="networkPendingCount"></span>
+            <div>
+              <button type="button" class="btn small" id="networkPendingSelectAllBtn">全选</button>
+              <button type="button" class="btn small" id="networkPendingSelectNoneBtn">全不选</button>
+            </div>
+          </div>
+          <div id="networkPendingList" class="network-pending-list"></div>
+          <p class="hint" id="networkPendingEmpty" hidden>当前没有待批准域名。也可在下方手动添加。</p>
+          <div class="form-group network-pending-add">
+            <label for="networkPendingInput" id="networkPendingInputLabel">手动添加主机名</label>
+            <div class="network-pending-add-row">
+              <input id="networkPendingInput" type="text" placeholder="example.com" autocomplete="off" spellcheck="false" />
+              <button type="button" class="btn small" id="networkPendingAddBtn">加入列表</button>
+            </div>
+          </div>
+          <div class="form-actions network-pending-actions">
+            <button type="button" class="btn" id="networkPendingDismissBtn">忽略所选</button>
+            <button type="button" class="hero" id="networkPendingApproveBtn">批准所选并重启</button>
+          </div>
+          <p class="msg" id="networkPendingMsg" hidden></p>
         </div>
       </div>
 

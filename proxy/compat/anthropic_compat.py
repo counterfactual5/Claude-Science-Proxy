@@ -99,6 +99,112 @@ def build_csp_web_access_guidance(now=None):
 # ``build_csp_web_access_guidance()`` so the date is request-fresh.
 CSP_WEB_ACCESS_GUIDANCE = build_csp_web_access_guidance()
 
+# Claude Science rolling-compact / summarizer forks (see operon binary
+# callSite rc_fold_l1/l2, summarize_conversation, Literals: section). When these
+# requests still advertise the session's full tool list, third-party models
+# (esp. GLM) often answer with tool_use + empty text — Science then retries
+# forever while the main turn is already over the upstream context limit.
+_ROLLING_COMPACT_SYSTEM_MARKERS = (
+    "Literals:",
+    "Wrap your summary in <summary>",
+    "summarize_conversation",
+    "[rolling-summary",
+    "OUTPUT FORMAT OVERRIDE",
+    "Completionist means breadth",
+    "RECORD_SUMMARY",
+    "structured summary of the conversation",
+    "Produce a structured summary",
+)
+_ROLLING_COMPACT_TOOL_NAMES = frozenset({
+    "summarize_conversation",
+    "record_summary",
+    "emit_summary",
+})
+
+
+def _system_text_blob(system):
+    """Flatten Anthropic ``system`` (str | list blocks) to one searchable string."""
+    if isinstance(system, str):
+        return system
+    if isinstance(system, list):
+        parts = []
+        for blk in system:
+            if isinstance(blk, str):
+                parts.append(blk)
+            elif isinstance(blk, dict):
+                parts.append(blk.get("text") or "")
+        return "\n".join(parts)
+    return ""
+
+
+def is_science_rolling_compact(body):
+    """True when the Anthropic-shaped request looks like a Science compact fork."""
+    if not isinstance(body, dict):
+        return False
+    blob = _system_text_blob(body.get("system"))
+    if blob and any(m in blob for m in _ROLLING_COMPACT_SYSTEM_MARKERS):
+        return True
+    tools = body.get("tools")
+    if isinstance(tools, list) and tools:
+        names = {
+            t.get("name") for t in tools
+            if isinstance(t, dict) and isinstance(t.get("name"), str)
+        }
+        if names & _ROLLING_COMPACT_TOOL_NAMES:
+            return True
+        # Schema summarizer often ships a single record/summary tool.
+        if len(names) == 1:
+            only = next(iter(names)).lower()
+            if "summary" in only or only.startswith("record_"):
+                return True
+    # User/harness text can also carry the Literals contract on retries.
+    for msg in body.get("messages") or []:
+        if not isinstance(msg, dict):
+            continue
+        content = msg.get("content")
+        if isinstance(content, str):
+            text = content
+        elif isinstance(content, list):
+            text = "\n".join(
+                (b.get("text") or "") if isinstance(b, dict) else (b if isinstance(b, str) else "")
+                for b in content
+            )
+        else:
+            continue
+        if "Literals:" in text and ("summary" in text.lower() or "<summary" in text.lower()):
+            return True
+    return False
+
+
+def strip_tools_for_rolling_compact(body):
+    """Force a text-only summarizer turn: no tools, tool_choice=none.
+
+    Returns a shallow copy when a mutation is needed; otherwise ``body``.
+    """
+    if not isinstance(body, dict):
+        return body
+    tools = body.get("tools")
+    tc = body.get("tool_choice")
+    need = bool(tools) or tc not in (None, {"type": "none"}, "none")
+    if not need:
+        return body
+    out = dict(body)
+    out.pop("tools", None)
+    out["tool_choice"] = {"type": "none"}
+    return out
+
+
+def prepare_inbound_messages_request(body, now=None):
+    """Inbound Anthropic ``/v1/messages`` prep shared by Anthropic + OpenAI paths.
+
+    - Science rolling-compact / summarizer: strip tools (do **not** inject the
+      standing web-access guidance — it pollutes the Literals contract).
+    - Normal turns: idempotent CSP web-access guidance inject.
+    """
+    if is_science_rolling_compact(body):
+        return strip_tools_for_rolling_compact(body)
+    return inject_csp_web_access_guidance(body, now=now)
+
 
 @dataclass
 class Ctx:
@@ -306,7 +412,7 @@ def _filter_upstream_tools(upstream, target_model, provider, rule_ids=None):
 def transform_request(body, state):
     """(body, ProviderState) -> (upstream_body, Ctx). Pure function: no network, no global reads.
     Equivalent to legacy _handle_anthropic :695-702 + :714-718."""
-    body = inject_csp_web_access_guidance(body)
+    body = prepare_inbound_messages_request(body)
     src = body.get("model", "?")
     target = provider_policy.resolve_model(src, state)
     rule_ids = []
