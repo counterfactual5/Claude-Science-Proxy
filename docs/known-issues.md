@@ -41,6 +41,21 @@ Some DeepSeek responses leak `tool_use` as plain text (`<｜｜DSML｜｜>` etc.
 
 Science only accepts `claude-*` model IDs. With `CSP_MODEL_REGISTRY`, CSP maps up to eight shell IDs to real upstream models; without it, relay/OpenAI paths fall back to a single `claude-opus` shell with force-overridden outbound routing. See `proxy/registry/model_registry.py` and `proxy/registry/model_discovery.py`.
 
+**Strict routing (v2.2.0+).** When the platter is active (registry + credentials present) and Science sends an unknown shell ID that is neither a registered route nor a known `FALLBACK_SHELL`, the proxy now returns HTTP 400 with a clear error message instead of silently falling back to `default_model`. This prevents the user from unknowingly using the wrong model after a Science update adds new shell IDs. To restore the old behavior, add the shell to the platter editor or `FALLBACK_SHELLS`.
+
+---
+
+<a id="ssh-config-bridge"></a>
+
+## SSH config Include bridge (v2.2.0+)
+
+Sandbox Science runs under an isolated HOME, so `~/.ssh/config` is not visible by default — git clone over SSH, MCP via SSH, etc. fail. CSP now creates `$SANDBOX_HOME/.ssh/config` (mode `0600`) with a single `Include <real_HOME>/.ssh/config` directive on each **Start Claude Science**. This lets the sandbox resolve SSH hosts / identity files exactly as the real user would, **without copying keys or config** — the Include is read-only at the OS level.
+
+- **Fail-soft:** if the real `~/.ssh/config` does not exist or the sandbox `.ssh/` directory cannot be created, the step is skipped (non-fatal). SSH-dependent features just won't work.
+- **Permissions:** sandbox `.ssh/` is `0700`, `config` is `0600`.
+- **No key copy:** private keys, `known_hosts`, and `authorized_keys` are never duplicated into the sandbox; they are resolved through the Include at SSH runtime.
+- **Not a SSH server / tunnel:** this feature does not start an SSH server, do port forwarding, or expose anything to the public network.
+
 ---
 
 <a id="custom-endpoint-scratch"></a>
@@ -67,11 +82,36 @@ Some custom relay / OpenAI endpoints work in user `curl` but fail panel scratch 
 
 ---
 
+<a id="kimi-relay-orphan"></a>
+
+## Kimi K3 relay orphan tool_use/tool_result (v2.2.0+)
+
+When Science replays multi-turn history after a failed tool call (e.g. Kimi K3 multi-turn reasoning + tool_use failure), orphan `tool_use` blocks (no matching `tool_result` in a subsequent user turn) and orphan `tool_result` blocks (no matching `tool_use` in any preceding assistant turn) can pollute the context. Sending these orphans to Kimi on the relay path causes repeated `temporarily unavailable` because the model sees an incomplete tool-call sequence.
+
+CSP now cleans up orphan blocks before forwarding on the **relay (Anthropic-native) path** (`proxy/compat/anthropic_compat.py` → `_strip_orphan_tool_blocks`):
+
+- **Orphan `tool_result`** (no matching `tool_use` in history): downgraded to a text block `[tool_result for <id> (orphaned, omitted from replay)]: <content>` so content is not lost.
+- **Trailing orphan `tool_use`** (last assistant message has `tool_use` with no following `tool_result`): removed entirely so the model does not try to continue from a phantom tool call.
+
+This mirrors the OpenAI-compat path's orphan handling. The cleanup is **relay-only**; the OpenAI translation path already had its own orphan handling in `openai_chat_compat.py`.
+
+---
+
 <a id="science-version-drift"></a>
 
 ## Science version drift
 
 Claude Science binary updates can change virtual OAuth, routing, and package-proxy behavior. The capability catalog records known version boundaries; if something breaks after upgrading Science, report **Science version + CSP version**.
+
+---
+
+<a id="gemini-grok-compat"></a>
+
+## Gemini / Grok edge-case compatibility (v2.2.0+)
+
+**Gemini `role: "model"` normalization.** Gemini sometimes returns `role: "model"` in assistant messages instead of the OpenAI-standard `"assistant"`. Strict OpenAI-compat endpoints that validate role values would return HTTP 400. CSP's `anthropic_to_openai` translation now normalizes `role: "model"` → `"assistant"` before forwarding.
+
+**Gemini/Grok safety finish_reason.** Non-standard `finish_reason` values — Gemini's `"safety"` / `"recitation"` / `"other"`, Grok's `"content_filter"` — were previously silently mapped to `end_turn`, making it look like a normal completion. CSP now appends a visible `[Content filtered by upstream: <reason>]` marker to the response text so the user knows the upstream filtered or truncated the response. The `stop` reason is still mapped to `end_turn` for protocol compatibility.
 
 ---
 

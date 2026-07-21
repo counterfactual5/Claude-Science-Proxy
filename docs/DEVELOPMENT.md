@@ -113,7 +113,7 @@ Successful profile changes return `{ committed: true, active_id }` without any s
 CSP consists of the following layers:
 1. **Local Proxy (Python)**: A translation proxy running `csp_proxy.py` that intercepts outbound `/v1/messages` requests, strips Science's virtual OAuth token, injects your configured API keys, and translates Anthropic ↔ OpenAI protocol.
 2. **Virtual OAuth Forger (Rust)**: A native Rust module (`src-tauri/src/oauth_forge.rs`) that writes sandbox-compliant fake token files under `.sandbox/` so that Science starts logged in. Node.js is **not** required to run the app.
-3. **Sandbox Controller (Shell)**: Helper shell scripts to launch and stop the sandboxed Science client under an isolated `$HOME`.
+3. **Sandbox Controller (Shell)**: Helper shell scripts to launch and stop the sandboxed Science client under an isolated `$HOME`. Since v2.2.0, the sandbox HOME's `.ssh/config` is bridged to the real `~/.ssh/config` via an `Include` directive (see `sandbox_session.rs`), enabling git/MCP over SSH without copying keys.
 4. **Desktop App (Tauri/Rust)**: A normal window wrapper (340×700) that manages the lifecycle of the proxy and sandbox sub-processes, validates configuration profiles, and monitors loopback health.
 
 ---
@@ -130,7 +130,7 @@ CSP consists of the following layers:
 
 | Path | Providers | Upstream | Downstream to Science |
 |------|-----------|----------|------------------------|
-| Anthropic passthrough | `deepseek`, `relay` | Real SSE stream | Passthrough (optional DSML rewrite) |
+| Anthropic passthrough | `deepseek`, `relay` | Real SSE stream | Passthrough (optional DSML rewrite; relay path strips orphan tool_use/tool_result since v2.2.0) |
 | Buffered OpenAI replay | `openai-custom`, `openai-responses` | Single JSON completion (`stream: false`) | Replayed Anthropic SSE |
 
 For the **buffered OpenAI** path, Science's 120s stream-idle watchdog requires **counted** SSE events while waiting for upstream TTFT. Since v1.7.1 the proxy opens `message_start` + an empty text block, then sends empty `content_block_delta` keepalives every second (`http_transport._COUNTED_TEXT_DELTA_KEEPALIVE`). SSE comments and `ping` do **not** reset the watchdog. See [`docs/known-issues.md`](known-issues.md#openai-custom-streaming).
@@ -151,6 +151,9 @@ desktop/src-tauri/src/           Rust Backend
   scratch.rs       Temporary scratch proxy to validate credentials before switching
   oauth_forge.rs   Native Rust implementation of the virtual OAuth ticket generator
   proc.rs          Helper utilities for TCP health probes, URIs, and subprocess execution
+  runtime/
+    sandbox_session.rs  Sandbox launch orchestrator: skills/MCP deploy, SSH config bridge (v2.2.0+), health polling
+    science.rs     Science binary discovery, sandbox HOME management, status checks
   main.rs          Entry point
   tauri.conf.json  Tauri build settings and bundle resources whitelists
 ```

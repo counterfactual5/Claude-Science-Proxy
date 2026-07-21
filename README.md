@@ -4,7 +4,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License">
-  <img src="https://img.shields.io/badge/version-2.1.0-brightgreen.svg" alt="v2.1.0">
+  <img src="https://img.shields.io/badge/version-2.2.0-brightgreen.svg" alt="v2.2.0">
   <img src="https://img.shields.io/badge/platform-macOS%20Apple%20Silicon-1d1d1f.svg" alt="macOS Apple Silicon">
   <img src="https://img.shields.io/badge/built%20with-Tauri%202-C25A34.svg" alt="Tauri 2">
 </p>
@@ -25,7 +25,7 @@ CSP is a **macOS desktop app** (Tauri) that:
 4. Verifies API keys **before** switching the active profile
 5. Manages local **Skills** and **MCP connectors** (stdio + remote), deploying enabled ones into the sandbox on launch
 
-> **v2.1.0** — Network pending approval + common egress pre-grants; Fake-IP egress status; Skill discover search & more scan roots; Science rolling-compact tool strip. See [Releases](https://github.com/counterfactual5/Claude-Science-Proxy/releases/tag/v2.1.0) · [Changelog](./CHANGELOG.md).
+> **v2.2.0** — SSH config Include bridge for sandbox; strict model routing (unknown shells fail explicit); Kimi K3 relay orphan tool_use/tool_result cleanup; Gemini `role:"model"` normalization + safety finish_reason visible marker. See [Changelog](./CHANGELOG.md).
 
 > **Platform:** macOS **Apple Silicon** today. The app is **not notarized** yet; on first launch, right-click → **Open**.
 
@@ -41,7 +41,7 @@ Claude Science is Anthropic’s research-oriented agent app (literature review, 
 
 | Layer | What CSP does |
 |-------|----------------|
-| Sandbox | Separate HOME, ports, and data under `~/.csp/sandbox` |
+| Sandbox | Separate HOME, ports, and data under `~/.csp/sandbox`; SSH config `Include` bridge to real `~/.ssh/config` (v2.2.0+) |
 | Launch ticket | Locally forged OAuth-shaped ticket so Science can start without your real Claude credentials |
 | Proxy | Forwards `/v1/messages` (and related) to your chosen provider |
 | Translation | Anthropic ↔ OpenAI Chat / Responses when the upstream is not native Anthropic |
@@ -66,7 +66,7 @@ Claude Science (sandbox)
 - **Verify before switch** — invalid keys are rejected; CSP does not silently activate a broken profile
 - **One-click start** — launches proxy, prepares sandbox, opens Science
 - **Real model names** in Science’s selector (not a generic `claude` / `opus` label)
-- **Multi-model per profile** — virtual registry maps up to **8** `claude-*` shell IDs to real upstream models
+- **Multi-model per profile** — virtual registry maps up to **8** `claude-*` shell IDs to real upstream models; strict routing rejects unknown shells when platter is active (v2.2.0+)
 - **Local Skills manager** — create; import from folder, zip, or URL; enable/disable; scan-and-import from other agents (**searchable** list; already-owned skills keep-by-default); sync Science skill library (harvest edits, full-screen preview); built-in **`csp-environment`** handbook; enabled Skills deploy into the sandbox on launch
 - **Local MCP manager** — add/edit **stdio** or **remote** (sse / streamable_http) connectors; scan-and-import from other AI clients with JSON/TOML config preview; enabled connectors deploy into the sandbox on launch
 - **Built-in web-search MCP** — no key required for the free path: GENERAL (`csp_web_search` → DuckDuckGo IA/Lite) and LITERATURE (`search_literature` → Wikipedia / Crossref / arXiv / PubMed); optional Brave/Serper/Tavily keys; Start auto-grants search providers **plus a curated common-egress set**; extras via MCP **待批准出网域名** or `~/.csp/network-allowlist.json`
