@@ -3,6 +3,26 @@
 All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.2.1] — 2026-07-22
+
+### Fixed
+- **One-click relaunch no longer ignores sandbox stop failures**: Restart paths (broken virtual login / Skill·MCP redeploy) now fail closed if the old sandbox cannot be stopped, instead of racing a second launch on the same port.
+- **Status sandbox light is identity-aware**: Uses `sandbox_running_ours` (Science `status` + health for our data-dir) instead of bare port `/health`, so a foreign process on the sandbox port no longer lights green.
+- **Platter status no longer blank**: When the multi-provider platter is active, `active_profile` surfaces the host profile + model count instead of `null` (upstream probe uses the first platter entry's endpoint).
+- **Platter credential fail-closed**: Missing/empty/unknown per-profile credentials no longer fall back to the host process key/url (wrong-account risk). Returns HTTP 400 with a clear message; invalid `CSP_PROFILE_CREDENTIALS` JSON is logged.
+- **Missing platter i18n**: Frontend now has copy for `errPlatterTooMany` / `errPlatterMissingModel` (and the new stop-before-relaunch error).
+- **Rolling backup no longer retains rotated keys**: After a successful API-key change (connection edit / active switch-edit), `CSP.json.bak` is dropped so the previous secret is not recoverable from the rolling backup.
+- **SSH Include bridge hardened**: Sandbox `~/.ssh/config` now uses a **canonicalized, double-quoted** `Include` path (spaces/special chars safe); missing/non-file targets are skipped.
+- **Relay model cache race**: `RELAY_MODELS` updates/reads are mutex-guarded under `ThreadingHTTPServer`.
+- **Upstream error body redaction**: Key-shaped tokens (`sk-…`, `Bearer …`, labeled api_key fields) are stripped from proxy logs and client-facing upstream error messages.
+
+### Changed
+- **Virtual-login org recovery simplified**: If `active-org.json` and the token are gone but `orgs/` still has history, adopt the sole org (or the first sorted UUID when multiple remain). Dropped the multi-org abort path and `{org_list}` UX — that edge case is effectively unreachable under CSP virtual login.
+- **Removed legacy logged-out sandbox launcher**: `scripts/sandbox/launch-science-sandbox.sh` (manual Anthropic sign-in path) is gone; the only supported chain is virtual OAuth via `launch-virtual-sandbox.sh` / the desktop app.
+- **Dead `AppState.sandbox` Child field removed**: Sandbox is always detached via shell scripts; stop is script + data-dir based only.
+- Docs: iron rules emphasize virtual OAuth only (no standard Anthropic login path); `oauth_forge` is virtual forger not PKCE; Node `make-virtual-oauth.mjs` marked CLI/parity-only.
+- Version alignment (desktop bundle + Cargo + built-in web-search `SERVER_VERSION`) → **2.2.1**.
+
 ## [2.2.0] — 2026-07-21
 
 ### Added
@@ -15,7 +35,6 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 - **Strict model routing**: When the platter is active (registry + credentials present) and Science sends an unknown shell ID that is neither a registered route nor a known `FALLBACK_SHELL`, the proxy now returns HTTP 400 with a clear error message instead of silently falling back to `default_model`. This prevents the user from unknowingly using the wrong model after a Science update adds new shell IDs. To restore the old behavior, add the shell to the platter editor or `FALLBACK_SHELLS`.
-- **Orphan org recovery UX**: When Science sign-out leaves multiple historical orgs with no `active-org.json`, the error message now lists the available org UUIDs ( `{org_list}`) so the user can manually write the desired one back without guessing.
 - Version alignment (desktop bundle + Cargo + built-in web-search `SERVER_VERSION`) → **2.2.0**.
 
 ## [2.1.0] — 2026-07-21

@@ -152,13 +152,12 @@ desktop/
 │   │   ├── lib.rs            # asset_root(), sandbox paths
 │   │   ├── config.rs         # Config schema + migrations
 │   │   ├── commands/         # Tauri command modules
-│   │   ├── runtime/          # Proxy process management
-│   │   ├── oauth_forge.rs    # OAuth PKCE flow
+│   │   ├── runtime/          # Proxy / sandbox lifecycle, status, platter
+│   │   ├── oauth_forge.rs    # Virtual OAuth forger (sandbox ticket; not Anthropic PKCE)
 │   │   └── templates.rs      # Provider templates
 │   ├── Cargo.toml
 │   └── tauri.conf.json
 ├── package.json
-├── vite.config.js
 └── README.md          # ← This file
 ```
 

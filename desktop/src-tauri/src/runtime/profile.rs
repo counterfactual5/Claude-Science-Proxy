@@ -255,6 +255,8 @@ pub(crate) fn update_profile_connection_inner(
     {
         return Err(i18n_err("errProfileNotFound", json!({ "id": id })));
     }
+    // Non-empty key means a real rotation (empty/None keeps the stored key).
+    let key_rotated = key.map(|k| !k.is_empty()).unwrap_or(false);
     config::write_rolling_backup(dir).ok(); // rolling backup before overwrite
     config::update(dir, |c| {
         if let Some(p) = c.profile_by_id_mut(id) {
@@ -287,6 +289,11 @@ pub(crate) fn update_profile_connection_inner(
         }
     })
     .map_err(|e| e.to_string())?;
+    // Pre-write bak still holds the previous key; drop it after a successful rotation
+    // so a rotated secret is not recoverable from CSP.json.bak on a shared machine.
+    if key_rotated {
+        config::drop_rolling_backup(dir);
+    }
     Ok(())
 }
 
@@ -376,6 +383,11 @@ impl ConnectionEdit {
             }
         }
         p.normalize_model_selection();
+    }
+
+    /// True when this edit will overwrite the stored API key (non-empty replacement).
+    pub(crate) fn rotates_key(&self) -> bool {
+        self.key.as_ref().is_some_and(|k| !k.is_empty())
     }
 }
 
@@ -624,6 +636,64 @@ mod tests {
         );
         assert!(e.is_err(), "unknown id should error, not silent success");
         assert!(e.unwrap_err().contains("errProfileNotFound"));
+    }
+
+    #[test]
+    fn key_rotation_drops_rolling_backup_with_previous_secret() {
+        let d = tmpdir_profile();
+        let id = create_profile_inner(
+            &d,
+            "glm",
+            "GLM",
+            Some("sk-OLD-SECRET-0001"),
+            None,
+            Some("glm-5.2"),
+        )
+        .unwrap();
+        // Simulate a pre-existing bak that still holds the old secret.
+        config::write_rolling_backup(&d).unwrap();
+        let bak = d.join("CSP.json.bak");
+        assert!(std::fs::read_to_string(&bak)
+            .unwrap()
+            .contains("sk-OLD-SECRET-0001"));
+
+        update_profile_connection_inner(
+            &d,
+            &id,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some("sk-NEW-SECRET-9999"),
+        )
+        .unwrap();
+
+        assert!(
+            !bak.exists(),
+            "rotated key must drop CSP.json.bak so the previous secret is not recoverable"
+        );
+        let cfg = config::load_from(&d).unwrap();
+        assert_eq!(
+            cfg.profile_by_id(&id).unwrap().api_key,
+            "sk-NEW-SECRET-9999"
+        );
+    }
+
+    #[test]
+    fn non_key_edit_keeps_rolling_backup() {
+        let d = tmpdir_profile();
+        let id =
+            create_profile_inner(&d, "glm", "GLM", Some("sk-keep"), None, Some("glm-5.2")).unwrap();
+        config::write_rolling_backup(&d).unwrap();
+        let bak = d.join("CSP.json.bak");
+        assert!(bak.exists());
+
+        // Model-only edit (key = None) must not wipe the bak (still useful for non-secret rollback).
+        update_profile_connection_inner(&d, &id, None, None, Some("glm-4.5"), None, None, None)
+            .unwrap();
+        // write_rolling_backup rewrote bak from current file; it should still exist.
+        assert!(bak.exists());
     }
 
     // ---------- B5: build_get_config / build_list_templates ----------

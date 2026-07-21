@@ -9,7 +9,7 @@
 # Iron-rule safeguards (see AGENT.md):
 #   - Separate HOME + data-dir + port; never modify/delete real ~/.claude-science; never use port 8765
 #   - Read-only APFS clone of runtime assets from real ~/.claude-science (bin/conda/runtime/seed-assets); never copy real login credentials or user data
-#   - Sandbox gets [forged fake credentials] (make-virtual-oauth.mjs), unrelated to real OAuth
+#   - Sandbox gets [forged fake credentials] (app: Rust oauth_forge; CLI: make-virtual-oauth.mjs), unrelated to real OAuth
 #   - encryption.key keychain mirror account is derived by [path hash]; sandbox and real are naturally isolated
 #
 # Usage:

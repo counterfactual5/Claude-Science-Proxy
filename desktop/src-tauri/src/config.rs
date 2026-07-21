@@ -7,7 +7,7 @@
 //!
 //! Migrations: v1 fixed slots → v2 profiles → v3 `active_models` → v4 `active_ids` → v5 `model_platter`.
 //! Backups: `CSP.json.v1.bak` on v1 migration; rolling `CSP.json.bak` before overwrite; rolling
-//! backup sanitized after key clear / profile delete.
+//! backup dropped after successful API-key rotation or profile delete (so old keys are not left recoverable).
 //!
 //! All APIs take an explicit `dir` for tests; production uses [`default_dir`] (`$HOME/.csp`).
 

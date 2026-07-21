@@ -655,28 +655,20 @@ fn ensure_virtual_login_guarded(
     if let Some(fr) = read_intact_login(&resolved, email) {
         return Ok((fr, LoginAction::Reused));
     }
-    // Org source priority (P1a, never silently mint new): active-org.json → decryptable token → orgs/ dirs.
-    // Reuse any located historical org (preserve old conversations); multiple orgs with no active → error and abort.
+    // Org source priority (P1a, never silently mint when history exists):
+    // active-org.json → decryptable token → orgs/ dirs (first UUID when multiple).
+    // Virtual login almost never has multiple orphan orgs; prefer first over erroring.
     let (prior_org, action) = if let Some(o) = read_active_org(&resolved) {
         (Some(o), LoginAction::Repaired)
     } else if let Some(o) = read_token_org(&resolved) {
         (Some(o), LoginAction::Repaired)
     } else {
-        let dirs = scan_org_dirs(&resolved);
-        match dirs.len() {
-            0 => (None, LoginAction::Created), // True first run: no history
-            1 => (Some(dirs[0].clone()), LoginAction::Repaired), // Adopt sole historical org
-            _ => {
-                return Err(i18n_err(
-                    "errOauthOrphanOrgs",
-                    json!({
-                        "count": dirs.len(),
-                        "orgs_dir": format!("{}/orgs/", resolved.display()),
-                        "active_org_path": format!("{}/active-org.json", resolved.display()),
-                        "org_list": dirs.join(", "),
-                    }),
-                ));
-            }
+        let mut dirs = scan_org_dirs(&resolved);
+        if dirs.is_empty() {
+            (None, LoginAction::Created) // True first run: no history
+        } else {
+            dirs.sort(); // stable pick when multiple historical orgs remain
+            (Some(dirs[0].clone()), LoginAction::Repaired)
         }
     };
     let prior_account = read_prior_account(&resolved);
@@ -1139,29 +1131,29 @@ mod tests {
     }
 
     #[test]
-    fn ensure_errors_on_ambiguous_multi_org() {
-        // P1a: no active-org, no decryptable token, multiple orgs under orgs/ → error, never silently mint.
+    fn ensure_adopts_first_org_dir_when_multi_org_history() {
+        // Virtual-login path: no active-org, no decryptable token, multiple orgs/ → pick first (sorted).
         let dir = tmpdir("multi-org");
         let fake_real = tmpdir("realcred-mo");
         let email = "virtual@localhost.invalid";
         forge_guarded(&dir, email, &dir, &fake_real).unwrap();
-        let a = uuid_v4().unwrap();
-        let b = uuid_v4().unwrap();
-        std::fs::create_dir_all(dir.join("orgs").join(&a)).unwrap();
-        std::fs::create_dir_all(dir.join("orgs").join(&b)).unwrap();
+        let a = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+        let b = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+        std::fs::create_dir_all(dir.join("orgs").join(a)).unwrap();
+        std::fs::create_dir_all(dir.join("orgs").join(b)).unwrap();
         std::fs::remove_file(the_enc_file(&dir)).unwrap();
         std::fs::remove_file(dir.join("active-org.json")).unwrap();
-        let r = ensure_virtual_login_guarded(&dir, email, &dir, &fake_real);
-        assert!(r.is_err(), "ambiguous multi-org history should error");
-        assert!(r.unwrap_err().contains("errOauthOrphanOrgs"));
-        assert!(
-            !dir.join("active-org.json").exists(),
-            "error path must not write active-org.json"
+        let (r, action) = ensure_virtual_login_guarded(&dir, email, &dir, &fake_real).unwrap();
+        assert_eq!(action, LoginAction::Repaired);
+        assert_eq!(
+            r.org_uuid, a,
+            "stable sorted first org when multiple remain"
         );
+        assert_eq!(read_active_org_uuid(&dir), a);
         assert_eq!(
             scan_org_dirs(&dir).len(),
             2,
-            "must not silently mint new org"
+            "must not delete sibling org dirs"
         );
         for d in [dir, fake_real] {
             let _ = std::fs::remove_dir_all(&d);

@@ -62,8 +62,11 @@ pub(crate) fn runtime_status_snapshot(state: &SharedAppState) -> serde_json::Val
         } else {
             cfg.sandbox_port
         };
-        let (adapter, base_url, active_profile, catalog_profile) = match cfg.active_profile() {
-            Some(p) => {
+        // Profile mode: the exclusive active profile.
+        // Platter mode: active_profile() is None by design; surface the first platter
+        // host profile so status/upstream lights still reflect a real endpoint.
+        let (adapter, base_url, active_profile, catalog_profile) =
+            if let Some(p) = cfg.active_profile() {
                 let adapter = adapter_for_profile(p).to_string();
                 (
                     adapter,
@@ -78,9 +81,49 @@ pub(crate) fn runtime_status_snapshot(state: &SharedAppState) -> serde_json::Val
                     }),
                     Some(p.clone()),
                 )
-            }
-            None => (String::new(), String::new(), serde_json::Value::Null, None),
-        };
+            } else if cfg.is_platter_active() {
+                let host = cfg
+                    .model_platter
+                    .entries
+                    .first()
+                    .and_then(|e| cfg.profile_by_id(&e.profile_id));
+                match host {
+                    Some(p) => {
+                        let entry_model = cfg
+                            .model_platter
+                            .entries
+                            .first()
+                            .map(|e| e.model.as_str())
+                            .unwrap_or(p.model.as_str());
+                        let n = cfg.model_platter.entries.len();
+                        let providers = cfg
+                            .model_platter
+                            .entries
+                            .iter()
+                            .map(|e| e.profile_id.as_str())
+                            .collect::<std::collections::BTreeSet<_>>()
+                            .len();
+                        (
+                            adapter_for_profile(p).to_string(),
+                            p.base_url.clone(),
+                            json!({
+                                "id": config::PLATTER_ACTIVE_ID,
+                                "name": format!("Platter ({n} models · {providers} providers)"),
+                                "template_id": p.template_id,
+                                "api_format": p.api_format,
+                                "model": entry_model,
+                                "capabilities": profile_capabilities(p),
+                                "mode": "platter",
+                                "host_profile_id": p.id,
+                            }),
+                            Some(p.clone()),
+                        )
+                    }
+                    None => (String::new(), String::new(), serde_json::Value::Null, None),
+                }
+            } else {
+                (String::new(), String::new(), serde_json::Value::Null, None)
+            };
         (
             pport,
             st.secret.clone(),
@@ -94,7 +137,8 @@ pub(crate) fn runtime_status_snapshot(state: &SharedAppState) -> serde_json::Val
     let upstream = upstream_endpoint(&adapter, &base_url);
     let proxy_ok = !secret.is_empty()
         && proc::http_health(pport, Some(&secret), operation::STATUS_HEALTH_TIMEOUT_MS);
-    let sandbox_ok = proc::http_health(sport, None, operation::STATUS_HEALTH_TIMEOUT_MS);
+    // Identity-aware: bare /health on the port can be a foreign process.
+    let sandbox_ok = crate::runtime::science::sandbox_running_ours(sport);
     let upstream_ok = upstream
         .as_ref()
         .map(|e| proc::tcp_reachable(&e.host, e.port, operation::STATUS_UPSTREAM_TIMEOUT_MS))
@@ -329,6 +373,49 @@ mod tests {
             err.get("message").and_then(|v| v.as_str()),
             Some("bad config")
         );
+    }
+
+    #[test]
+    fn platter_active_profile_json_uses_host_profile() {
+        // Pure helper contract: platter status surfaces a non-null active_profile
+        // with mode=platter and the host profile's template/model (not empty).
+        let lights = status_lights(StatusProbeInput {
+            proxy_ok: true,
+            sandbox_ok: true,
+            upstream_ok: true,
+            egress_ok: true,
+        });
+        let active = json!({
+            "id": "__platter__",
+            "name": "Platter (2 models · 1 providers)",
+            "template_id": "glm",
+            "api_format": "anthropic",
+            "model": "glm-5.2",
+            "mode": "platter",
+            "host_profile_id": "p1",
+        });
+        let v = build_status_response(
+            lights,
+            active,
+            "python",
+            "off",
+            json!({"schema_version": 1}),
+            science_diagnostics(ScienceDiagnosticsInput {
+                sandbox_port: 8990,
+                sandbox_ok: true,
+            }),
+            egress_diagnostics(&crate::proc::EgressDnsProbe {
+                ok: true,
+                fake_ip: false,
+                host: String::new(),
+                sample: String::new(),
+            }),
+            None,
+        );
+        assert_eq!(v["active_profile"]["id"], "__platter__");
+        assert_eq!(v["active_profile"]["mode"], "platter");
+        assert_eq!(v["active_profile"]["model"], "glm-5.2");
+        assert_eq!(v["science"]["sandbox"]["health"], "green");
     }
 
     #[test]

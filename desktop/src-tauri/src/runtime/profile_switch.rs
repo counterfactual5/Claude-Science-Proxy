@@ -4,12 +4,12 @@ use serde_json::{json, Value};
 
 use crate::runtime::i18n::{hint_payload, i18n_err};
 use crate::runtime::operation::{OperationKind, OperationStage, OperationTrace};
+use crate::runtime::platter::{proxy_args_for_platter, validate_platter_entries};
 use crate::runtime::profile::{nonactive_probe_verdict, probe_kind_for, ConnectionEdit};
 use crate::runtime::provider::{
     assert_format_supported, is_native_adapter, proxy_args_for,
     reject_openai_custom_anthropic_base, relay_missing_profile_models, should_scratch_candidate,
 };
-use crate::runtime::platter::{validate_platter_entries, proxy_args_for_platter};
 use crate::runtime::proxy_lifecycle::{start_proxy_for_platter, start_proxy_for_profiles};
 use crate::runtime::system::asset_root;
 use crate::runtime::transaction::{
@@ -192,6 +192,7 @@ pub(crate) fn set_active_profile_txn(
             if is_edit {
                 config::write_rolling_backup(&dir).ok();
             }
+            let key_rotated = conn_edit.as_ref().is_some_and(|e| e.rotates_key());
             if let Err(e) = config::update(&dir, |c| {
                 c.set_exclusive_active(id);
                 if let Some(edit) = conn_edit {
@@ -211,6 +212,10 @@ pub(crate) fn set_active_profile_txn(
                         "rollback_key": rollback_status_key(restored),
                     }),
                 ));
+            }
+            // Pre-write bak still holds the previous key after a rotation.
+            if key_rotated {
+                config::drop_rolling_backup(&dir);
             }
             trace.stage(OperationStage::Commit, "ok");
             trace.finish("committed=true");

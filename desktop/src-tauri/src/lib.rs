@@ -42,7 +42,8 @@ pub(crate) struct AppState {
     /// Non-cryptographic fingerprint of the proxy's current key (memory only, never persisted/logged).
     /// Key/upstream change → fingerprint changes → triggers restart to avoid reusing a proxy with stale config.
     pub(crate) key_fp: u64,
-    pub(crate) sandbox: Option<Child>,
+    /// Sandbox Science is started detached via shell script (no long-lived Child handle).
+    /// Stop always goes through `stop-science-sandbox.sh` + data-dir identity checks.
     pub(crate) sandbox_port: u16,
     pub(crate) sandbox_url: Option<String>,
 }

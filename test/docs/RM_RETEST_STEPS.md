@@ -12,7 +12,7 @@
 
 - 全程**不读、不改、不删**真实 `~/.claude-science`（登录凭证在里面）。
 - 真实 Science 跑在端口 **8765**，本测试只用 `lsof` 观察它的监听 PID，绝不动它。
-- 沙箱 Science 要**你手动**在沙箱里独立登录，Claude 不代做登录。
+- 沙箱只用**虚拟 OAuth**（本地伪造登录门票）；禁止复制真实 OAuth / 标准 Anthropic 登录进沙箱。
 - 测试用独立 HOME、独立 `~/.csp`（沙箱数据在 `~/.csp/sandbox/home`）、独立 Science data-dir、独立测试端口（默认 18991/8990）。
 - 任一步若 8765 的 PID 变了，或发现真实 `~/.csp` / `~/.claude-science` 被动过，**立即停止**。
 

@@ -8,7 +8,7 @@ use crate::runtime::settings::validate_runtime_ports;
 use crate::{config, lock, run_blocking, AppState, SharedAppState, SharedLifecycle};
 
 fn stop_sandbox_state(app: &tauri::AppHandle, st: &mut AppState) -> Result<(), String> {
-    stop_sandbox(app, &mut st.sandbox, &mut st.sandbox_url)
+    stop_sandbox(app, &mut st.sandbox_url)
 }
 
 #[derive(Deserialize)]
@@ -495,12 +495,7 @@ esac
 
         {
             let mut st = lock(&state);
-            let AppState {
-                sandbox,
-                sandbox_url,
-                ..
-            } = &mut *st;
-            let _ = science::stop_sandbox(&handle, sandbox, sandbox_url);
+            let _ = science::stop_sandbox(&handle, &mut st.sandbox_url);
             st.stop_proxy();
         }
         let _ = fs::remove_dir_all(&tmp);

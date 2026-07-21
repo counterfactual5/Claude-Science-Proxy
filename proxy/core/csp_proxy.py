@@ -34,6 +34,7 @@ import select
 import socket
 import ssl
 import sys
+import threading
 import time
 import urllib.error
 from dataclasses import dataclass
@@ -140,7 +141,9 @@ LOG = None
 PROV_NAME = None  # runtime; defined at import time for unit tests
 AUTH_SECRET = None  # unset → no path-secret auth (legacy behavior)
 # Relay: last upstream model ids from /v1/models; used to align bare Science ids with dated upstream ids.
+# Guarded by _RELAY_MODELS_LOCK: ThreadingHTTPServer can race concurrent /v1/models + /v1/messages.
 RELAY_MODELS = []
+_RELAY_MODELS_LOCK = threading.Lock()
 # Force-model override from panel (CSP_RELAY_MODEL / CSP_OPENAI_MODEL); None when unset.
 RELAY_FORCE_MODEL = None
 # Relay thinking policy from template (CSP_RELAY_THINKING): None/adaptive vs enabled (e.g. Kimi).
@@ -169,12 +172,14 @@ def current_runtime():
     Tests still patch the legacy globals directly; this thin boundary keeps those tests
     working while reducing how far global state leaks through the request path.
     """
+    with _RELAY_MODELS_LOCK:
+        relay_models = list(RELAY_MODELS)
     return RuntimeState(
         prov=PROV,
         prov_name=PROV_NAME,
         key=KEY,
         auth_secret=AUTH_SECRET,
-        relay_models=RELAY_MODELS,
+        relay_models=relay_models,
         relay_force_model=RELAY_FORCE_MODEL,
         relay_thinking=RELAY_THINKING,
         shim_mode=SHIM_MODE,
@@ -182,39 +187,66 @@ def current_runtime():
     )
 
 
-def _runtime_from_cred(cred: dict, base_runtime: RuntimeState) -> RuntimeState:
-    adapter = (cred.get("adapter") or "relay").strip()
-    prov = dict(PROVIDERS.get(adapter, PROVIDERS["relay"]))
+class PlatterCredentialError(Exception):
+    """Platter route resolved but credentials are missing/invalid; fail closed."""
+
+    def __init__(self, message: str):
+        super().__init__(message)
+        self.message = message
+
+
+def _runtime_from_cred(cred: dict, base_runtime: RuntimeState, profile_id: str = "") -> RuntimeState:
+    adapter = (cred.get("adapter") or "").strip()
+    if not adapter:
+        raise PlatterCredentialError(
+            f"platter profile '{profile_id or '?'}' is missing adapter"
+        )
+    if adapter not in PROVIDERS:
+        raise PlatterCredentialError(
+            f"platter profile '{profile_id or '?'}' has unknown adapter '{adapter}'"
+        )
+    prov = dict(PROVIDERS[adapter])
     key = (cred.get("key") or "").strip()
+    if not key:
+        raise PlatterCredentialError(
+            f"platter profile '{profile_id or '?'}' has empty API key"
+        )
     thinking = (cred.get("thinking_policy") or "").strip() or None
     if adapter == "relay":
         base_url = normalize_relay_base(cred.get("base_url") or "")
-        if base_url:
-            prov["url"] = base_url + "/v1/messages"
-            prov["models_url"] = base_url + "/v1/models"
+        if not base_url:
+            raise PlatterCredentialError(
+                f"platter profile '{profile_id or '?'}' (relay) is missing base_url"
+            )
+        prov["url"] = base_url + "/v1/messages"
+        prov["models_url"] = base_url + "/v1/models"
     elif adapter == "deepseek":
         # Fixed DeepSeek Anthropic endpoint (ignore empty/custom base).
         pass
     elif adapter in ("openai-custom", "openai-responses"):
         base_url = normalize_openai_base(cred.get("base_url") or "")
+        if not base_url:
+            raise PlatterCredentialError(
+                f"platter profile '{profile_id or '?'}' ({adapter}) is missing base_url"
+            )
         suffix = "/responses" if prov.get("api_format") == "openai_responses" else "/chat/completions"
-        if base_url:
-            prov["url"] = openai_endpoint(base_url, suffix)
-            prov["models_url"] = openai_endpoint(base_url, "/models")
+        prov["url"] = openai_endpoint(base_url, suffix)
+        prov["models_url"] = openai_endpoint(base_url, "/models")
     shim = base_runtime.shim_mode
     if adapter == "deepseek":
         try:
             shim = dsml_shim.shim_mode(adapter, prov)
         except Exception:
             shim = "off"
-    elif adapter != "deepseek":
+    else:
         shim = "off"
     return RuntimeState(
         prov=prov,
         prov_name=adapter,
         key=key,
         auth_secret=base_runtime.auth_secret,
-        relay_models=base_runtime.relay_models,
+        # Do not share the host process catalog with other platter providers.
+        relay_models=[],
         relay_force_model=None,
         relay_thinking=thinking,
         shim_mode=shim,
@@ -223,6 +255,12 @@ def _runtime_from_cred(cred: dict, base_runtime: RuntimeState) -> RuntimeState:
 
 
 def runtime_for_model(base_runtime: RuntimeState, model_name: str) -> RuntimeState:
+    """Resolve per-request runtime for a Science shell id.
+
+    When the multi-provider platter is active (registry + credentials), a routed
+    shell *must* resolve to that profile's own credentials. Falling back to the
+    host process key/url would silently bill the wrong provider.
+    """
     registry = base_runtime.model_registry
     if not registry or not PROFILE_CREDENTIALS:
         return base_runtime
@@ -231,11 +269,17 @@ def runtime_for_model(base_runtime: RuntimeState, model_name: str) -> RuntimeSta
         return base_runtime
     _real_id, profile_id = route
     if not profile_id:
-        return base_runtime
+        # Registry entry without an owner profile: cannot safely pick a key.
+        raise PlatterCredentialError(
+            f"model '{model_name}' is routed without a profile_id"
+        )
     cred = PROFILE_CREDENTIALS.get(profile_id)
     if not isinstance(cred, dict):
-        return base_runtime
-    return _runtime_from_cred(cred, base_runtime)
+        raise PlatterCredentialError(
+            f"no credentials for platter profile '{profile_id}' "
+            f"(model '{model_name}')"
+        )
+    return _runtime_from_cred(cred, base_runtime, profile_id=profile_id)
 
 
 def load_profile_credentials():
@@ -246,10 +290,15 @@ def load_profile_credentials():
         return
     try:
         parsed = json.loads(raw)
-    except json.JSONDecodeError:
+    except json.JSONDecodeError as e:
+        log(f"CSP_PROFILE_CREDENTIALS invalid JSON ({e}); platter credentials disabled")
         PROFILE_CREDENTIALS = {}
         return
-    PROFILE_CREDENTIALS = parsed if isinstance(parsed, dict) else {}
+    if not isinstance(parsed, dict):
+        log("CSP_PROFILE_CREDENTIALS is not a JSON object; platter credentials disabled")
+        PROFILE_CREDENTIALS = {}
+        return
+    PROFILE_CREDENTIALS = parsed
 
 # ---------- CONNECT fast-fail for sandbox "Switching organization" hang ----------
 # Sandbox Science blocks on claude.ai/api/oauth/profile when the network cannot reach claude.ai.
@@ -395,7 +444,8 @@ def fetch_relay_models(runtime=None):
     raw = http_get_json(murl, headers)
     out, ids = model_discovery.normalize_models_response(raw)
     if ids and runtime.prov_name == "relay":
-        RELAY_MODELS = ids
+        with _RELAY_MODELS_LOCK:
+            RELAY_MODELS = list(ids)
     return out
 
 
@@ -418,12 +468,13 @@ def build_models_response(runtime=None):
         except urllib.error.HTTPError as e:
             detail = ""
             try:
-                detail = e.read().decode("utf-8", "replace")[:200]
+                detail = e.read().decode("utf-8", "replace")[:400]
             except Exception:
                 pass
+            safe = redact_upstream_detail(detail, max_len=200)
             log(f"GET /v1/models -> {runtime.prov_name} 回源 HTTP {e.code}（保留状态码，不回静态）")
             return e.code, {"error_kind": "upstream", "upstream_status": e.code,
-                            "message": f"upstream {e.code}: {detail}"}
+                            "message": f"upstream {e.code}: {safe}"}
         except Exception as e:
             log(f"GET /v1/models -> {runtime.prov_name} 回源网络异常，本地回 502: {e}")
             return 502, {"error_kind": "network", "upstream_status": None, "message": str(e)}
@@ -468,16 +519,39 @@ def anthropic_to_openai_responses_with_metadata(req, runtime=None):
     )
 
 
+# Key-shaped tokens that must never land in logs or Science-facing error messages.
+_RE_SK = re.compile(r"\bsk-[A-Za-z0-9_\-]{8,}\b")
+_RE_BEARER = re.compile(r"(?i)\bBearer\s+[A-Za-z0-9._\-+=/]{8,}")
+_RE_LABELED_SECRET = re.compile(
+    r"(?i)((?:api[_-]?key|authorization|access[_-]?token|x-api-key)\s*[\"']?\s*[:=]\s*[\"']?)"
+    r"([A-Za-z0-9._\-+=/]{8,})"
+)
+
+
+def redact_upstream_detail(detail, max_len=240):
+    """Strip key-shaped tokens from upstream error bodies before log/client echo."""
+    if not detail:
+        return ""
+    text = str(detail)
+    text = _RE_BEARER.sub("Bearer [redacted]", text)
+    text = _RE_SK.sub("sk-[redacted]", text)
+    text = _RE_LABELED_SECRET.sub(r"\1[redacted]", text)
+    if len(text) > max_len:
+        text = text[:max_len] + "…"
+    return text
+
+
 def _map_upstream_http_error(code, detail):
     """Map upstream HTTP failures to a Science-facing status + Anthropic error body.
 
     GLM ``code 1261`` / Prompt-too-long is a permanent request rejection — return
     HTTP 400 ``invalid_request_error`` so Science is less likely to treat it as a
     transient 502 and spin empty retries. Auth / rate-limit codes stay passthrough.
+    Upstream bodies are redacted so provider keys do not leak into logs/clients.
     """
-    detail = detail or ""
-    compact = detail.replace(" ", "")
-    lowered = detail.lower()
+    safe = redact_upstream_detail(detail or "", max_len=240)
+    compact = safe.replace(" ", "")
+    lowered = safe.lower()
     prompt_too_long = (
         '"code":"1261"' in compact
         or '"code":1261' in compact
@@ -486,19 +560,19 @@ def _map_upstream_http_error(code, detail):
         or "maximum context length" in lowered
         or "prompt is too long" in lowered
         or "prompt too long" in lowered
-        or ("1261" in detail and ("超长" in detail or "prompt" in lowered))
+        or ("1261" in safe and ("超长" in safe or "prompt" in lowered))
     )
     if prompt_too_long:
         msg = (
             "Upstream rejected the request: prompt/context too long "
             "(e.g. GLM code 1261). Claude Science rolling-compact may still be "
             "running or may have failed to apply a summary — start a new chat if "
-            f"retries continue. Upstream detail: {detail[:240]}"
+            f"retries continue. Upstream detail: {safe}"
         )
         return 400, "invalid_request_error", msg
     if code in (401, 403, 429):
-        return code, "api_error", f"upstream {code}: {detail}"
-    return 502, "api_error", f"upstream {code}: {detail}"
+        return code, "api_error", f"upstream {code}: {safe}"
+    return 502, "api_error", f"upstream {code}: {safe}"
 
 
 def openai_to_anthropic(resp, model_id):
@@ -753,7 +827,14 @@ class H(BaseHTTPRequestHandler):
                         "message": f"Model '{shell_id}' is not configured in the active platter. "
                                    f"Add it via the platter editor, or use a configured model."}})
                     return
-        runtime = runtime_for_model(runtime, shell_id)
+        try:
+            runtime = runtime_for_model(runtime, shell_id)
+        except PlatterCredentialError as e:
+            log(f"POST /v1/messages  REJECT platter credentials: {e.message}")
+            self._send_json(400, {"type": "error", "error": {
+                "type": "invalid_request_error",
+                "message": e.message}})
+            return
         if runtime.prov["mode"] == "anthropic":
             self._handle_anthropic(areq, runtime)
         else:
@@ -921,7 +1002,7 @@ class H(BaseHTTPRequestHandler):
                     log(f"  <- {runtime.prov_name} 非流式透传 OK")
         except urllib.error.HTTPError as e:
             detail = e.read().decode("utf-8", "replace")[:400]
-            log(f"  !! 上游 HTTP {e.code}: {detail}")
+            log(f"  !! 上游 HTTP {e.code}: {redact_upstream_detail(detail)}")
             status, err_type, msg = _map_upstream_http_error(e.code, detail)
             if not headers_sent:
                 self._send_json(status, {"type": "error", "error": {
@@ -1014,7 +1095,7 @@ class H(BaseHTTPRequestHandler):
             log(f"  <- {runtime.prov_name} OK (blocks={len(aresp['content'])} stop={aresp['stop_reason']})")
         except urllib.error.HTTPError as e:
             detail = e.read().decode("utf-8", "replace")[:400]
-            log(f"  !! 上游 HTTP {e.code}: {detail}")
+            log(f"  !! 上游 HTTP {e.code}: {redact_upstream_detail(detail)}")
             status, err_type, msg = _map_upstream_http_error(e.code, detail)
             if headers_sent:
                 try:

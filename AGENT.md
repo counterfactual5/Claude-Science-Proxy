@@ -14,9 +14,9 @@
    `active-org.json`、`encryption.key`、`orgs/`、`.key-backups/`。
    这些文件**只读都要谨慎，绝不复制、绝不修改、绝不删除**。
 2. **绝不把真实 OAuth token 复制进任何沙箱。** 复制后两个实例共享同一 token，
-   刷新时 Anthropic 可能轮换刷新令牌，导致用户真实实例被登出。要给沙箱登录，
-   只能在沙箱里**全新独立登录**（另一套会话 token，对真实登录零影响），且由用户
-   手动完成，Claude 不代做登录。
+   刷新时 Anthropic 可能轮换刷新令牌，导致用户真实实例被登出。沙箱登录只用
+   **本地伪造的虚拟 OAuth**（`virtual@localhost.invalid`，零真实凭证、不走
+   Anthropic 登录流程）；**不提供、不引导**标准 Claude Science / Anthropic 账号登录。
 3. **绝不用改过的环境变量去启动用户的真实实例。** 真实实例跑在端口 8765。
    所有实验用的沙箱必须用**独立 data-dir + 独立端口 + 独立 HOME**，与 8765 完全隔开。
 4. **测试默认不碰 Science。** 能用「代理↔上游」单独验证的，就不启动 Science
@@ -71,8 +71,9 @@ DeepSeek 原生 Anthropic 端点          --provider deepseek
 
 ```
 proxy/core/csp_proxy.py                provider 可切代理（deepseek 默认）【主入口】
-scripts/oauth/make-virtual-oauth.mjs    虚拟 OAuth 伪造器（Node，字节级一致；只写沙箱，护栏拒真实目录）
-scripts/sandbox/launch-virtual-sandbox.sh 起沙箱 Science + 写虚拟登录 + 指向代理（推荐整链入口）
+desktop/src-tauri/src/oauth_forge.rs   虚拟 OAuth 伪造器（生产路径；Rust 进程内写入沙箱）
+scripts/oauth/make-virtual-oauth.mjs    同上 Node 对照（CLI/parity 测试；打包 app 不依赖）
+scripts/sandbox/launch-virtual-sandbox.sh 起沙箱 Science + 虚拟登录 + 指向代理（推荐整链入口）
 scripts/sandbox/stop-science-sandbox.sh   停沙箱（按 data-dir，绝不影响真实 8765）
 scripts/maintenance/doctor.sh                 只读环境诊断（依赖/key 有无/端口/权限/铁律自检）
 scripts/ci/verify-proxy.sh           校验运行中的代理（/health + /v1/models，零上游花费）
@@ -136,8 +137,10 @@ scripts/sandbox/stop-science-sandbox.sh
    etc.) must **never be read carelessly, copied, modified, or deleted**.
 2. **Never copy a real OAuth token into any sandbox.** Sharing a token between
    two instances risks Anthropic rotating the refresh token, logging out the
-   real instance. Sandbox login must be done via a fresh independent login inside
-   the sandbox—never automated by the AI.
+   real instance. Sandbox login uses **locally forged virtual OAuth only**
+   (`virtual@localhost.invalid`, zero real credentials, no Anthropic sign-in
+   flow). CSP does **not** offer or guide standard Claude Science / Anthropic
+   account login.
 3. **Never start the real Science instance with modified env vars.** The real
    instance runs on port 8765. All sandboxes must use an **independent
    data-dir + port + HOME**, fully isolated from 8765.

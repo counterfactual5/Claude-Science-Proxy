@@ -464,6 +464,24 @@ class MapUpstreamHttpError(unittest.TestCase):
         self.assertEqual(status, 502)
         self.assertEqual(typ, "api_error")
 
+    def test_redacts_key_shaped_tokens_in_upstream_detail(self):
+        status, typ, msg = cs._map_upstream_http_error(
+            401,
+            'invalid_api_key: sk-live-ABCDEFghijklmnop and Bearer eyJhbGciOiJIUzI1NiJ9.payload.sig',
+        )
+        self.assertEqual(status, 401)
+        self.assertEqual(typ, "api_error")
+        self.assertNotIn("sk-live-ABCDEFghijklmnop", msg)
+        self.assertNotIn("eyJhbGciOiJIUzI1NiJ9", msg)
+        self.assertIn("sk-[redacted]", msg)
+        self.assertIn("Bearer [redacted]", msg)
+
+    def test_redact_upstream_detail_truncates(self):
+        long = "x" * 500
+        out = cs.redact_upstream_detail(long, max_len=40)
+        self.assertTrue(len(out) <= 41)  # 40 + ellipsis
+        self.assertTrue(out.endswith("…"))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,7 +1,7 @@
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Output, Stdio};
+use std::process::{Command, Output, Stdio};
 
 use tauri::Runtime;
 
@@ -9,7 +9,7 @@ use crate::runtime::i18n::i18n_err;
 use crate::{config, proc};
 use serde_json::json;
 
-use super::system::{asset_root, kill_child};
+use super::system::asset_root;
 
 pub(crate) const SCIENCE_BIN: &str =
     "/Applications/Claude Science.app/Contents/Resources/bin/claude-science";
@@ -171,7 +171,6 @@ pub(crate) fn sandbox_running_ours(port: u16) -> bool {
 /// can report that Science may not have stopped cleanly.
 pub(crate) fn stop_sandbox<R: Runtime>(
     app: &tauri::AppHandle<R>,
-    sandbox: &mut Option<Child>,
     sandbox_url: &mut Option<String>,
 ) -> Result<(), String> {
     let mut err = None;
@@ -211,7 +210,6 @@ pub(crate) fn stop_sandbox<R: Runtime>(
             err = Some(i18n_err("errStopSandboxAssetRootMissing", json!({})));
         }
     }
-    kill_child(sandbox);
     *sandbox_url = None;
     match err {
         Some(e) => Err(e),

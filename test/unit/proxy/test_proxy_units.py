@@ -658,5 +658,93 @@ class OpenAIStreamPlaceholderReplay(unittest.TestCase):
         self.assertIn(b'"text": ""', ht._COUNTED_TEXT_DELTA_KEEPALIVE)
 
 
+class PlatterCredentialsFailClosed(unittest.TestCase):
+    """Platter must never fall back to host process key/url for a routed shell."""
+
+    def setUp(self):
+        self._prev_creds = cs.PROFILE_CREDENTIALS
+        self._prev_reg = cs.MODEL_REGISTRY
+        reg = mr.ModelRegistry.from_payload({
+            "platter": True,
+            "default_model": "glm-5.2",
+            "fast_model": "deepseek-v4-flash",
+            "entries": [
+                {"profile_id": "p-glm", "model": "glm-5.2", "display_prefix": "GLM"},
+                {"profile_id": "p-ds", "model": "deepseek-v4-pro", "display_prefix": "DS"},
+            ],
+        })
+        self.base = cs.RuntimeState(
+            prov=dict(cs.PROVIDERS["relay"]),
+            prov_name="relay",
+            key="host-key-must-not-leak",
+            auth_secret="s",
+            relay_models=[{"id": "host-model"}],
+            relay_force_model=None,
+            relay_thinking=None,
+            shim_mode="off",
+            model_registry=reg,
+        )
+        # First platter entry maps to main shell claude-opus-4-8.
+        self.shell_glm = next(
+            e.shell_id for e in reg.entries if e.profile_id == "p-glm"
+        )
+
+    def tearDown(self):
+        cs.PROFILE_CREDENTIALS = self._prev_creds
+        cs.MODEL_REGISTRY = self._prev_reg
+
+    def test_switches_to_profile_credentials(self):
+        cs.PROFILE_CREDENTIALS = {
+            "p-glm": {
+                "adapter": "relay",
+                "key": "gk-glm",
+                "base_url": "https://open.bigmodel.cn/api/anthropic",
+            },
+        }
+        rt = cs.runtime_for_model(self.base, self.shell_glm)
+        self.assertEqual(rt.key, "gk-glm")
+        self.assertEqual(rt.prov_name, "relay")
+        self.assertIn("open.bigmodel.cn", rt.prov["url"])
+        self.assertEqual(rt.relay_models, [])  # no shared host catalog
+
+    def test_missing_profile_credentials_raises(self):
+        cs.PROFILE_CREDENTIALS = {
+            "p-other": {"adapter": "relay", "key": "x", "base_url": "https://example.com"},
+        }
+        with self.assertRaises(cs.PlatterCredentialError) as ctx:
+            cs.runtime_for_model(self.base, self.shell_glm)
+        self.assertIn("p-glm", str(ctx.exception))
+
+    def test_empty_key_raises(self):
+        cs.PROFILE_CREDENTIALS = {
+            "p-glm": {
+                "adapter": "relay",
+                "key": "",
+                "base_url": "https://open.bigmodel.cn/api/anthropic",
+            },
+        }
+        with self.assertRaises(cs.PlatterCredentialError) as ctx:
+            cs.runtime_for_model(self.base, self.shell_glm)
+        self.assertIn("empty API key", str(ctx.exception))
+
+    def test_unknown_adapter_raises(self):
+        cs.PROFILE_CREDENTIALS = {
+            "p-glm": {
+                "adapter": "not-a-provider",
+                "key": "k",
+                "base_url": "https://example.com",
+            },
+        }
+        with self.assertRaises(cs.PlatterCredentialError) as ctx:
+            cs.runtime_for_model(self.base, self.shell_glm)
+        self.assertIn("unknown adapter", str(ctx.exception))
+
+    def test_no_platter_credentials_returns_host(self):
+        cs.PROFILE_CREDENTIALS = {}
+        rt = cs.runtime_for_model(self.base, self.shell_glm)
+        self.assertIs(rt, self.base)
+        self.assertEqual(rt.key, "host-key-must-not-leak")
+
+
 if __name__ == "__main__":
     unittest.main()
