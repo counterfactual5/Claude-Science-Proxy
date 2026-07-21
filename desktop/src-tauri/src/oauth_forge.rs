@@ -673,6 +673,7 @@ fn ensure_virtual_login_guarded(
                         "count": dirs.len(),
                         "orgs_dir": format!("{}/orgs/", resolved.display()),
                         "active_org_path": format!("{}/active-org.json", resolved.display()),
+                        "org_list": dirs.join(", "),
                     }),
                 ));
             }

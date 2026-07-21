@@ -468,31 +468,23 @@ def _strip_orphan_tool_blocks(messages):
                 new_blocks.append(blk)
         msg["content"] = new_blocks
 
-    # Second pass: remove trailing tool_use blocks in the last assistant message
-    # that have no matching tool_result in any subsequent user message.
-    # (Already-processed tool_results are now text, so any remaining tool_use
-    # IDs in the last message with no follower are orphans.)
+    # Second pass: remove trailing tool_use blocks in the last assistant message.
+    # If the last message is an assistant turn containing tool_use blocks, those
+    # blocks have no following tool_result (there are no messages after the last
+    # one), so they are orphans — the model would try to continue from a phantom
+    # tool call. Strip them; keep non-tool_use blocks. If everything was stripped
+    # (edge case: the message was only tool_use), leave a minimal text block so
+    # the message content is never empty.
     if messages:
         last = messages[-1]
         if isinstance(last, dict) and last.get("role") == "assistant":
             content = last.get("content")
             if isinstance(content, list):
-                # Collect tool_use IDs in the last message
-                last_tool_ids = {
-                    blk.get("id") for blk in content
-                    if isinstance(blk, dict) and blk.get("type") == "tool_use"
-                }
-                if last_tool_ids:
-                    # Check if any subsequent message has a matching tool_result
-                    # (there are none after the last message, so all are orphans)
-                    has_result = False
-                    # If there are messages after this one (there shouldn't be
-                    # if it's truly the last), check them; otherwise strip.
-                    last["content"] = [
-                        blk for blk in content
-                        if not (isinstance(blk, dict) and blk.get("type") == "tool_use"
-                                and blk.get("id") in last_tool_ids)
-                    ] or [{"type": "text", "text": ""}]
+                filtered = [
+                    blk for blk in content
+                    if not (isinstance(blk, dict) and blk.get("type") == "tool_use")
+                ]
+                last["content"] = filtered or [{"type": "text", "text": ""}]
     return messages
 
 

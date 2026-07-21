@@ -15,6 +15,7 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 - **Strict model routing**: When the platter is active (registry + credentials present) and Science sends an unknown shell ID that is neither a registered route nor a known `FALLBACK_SHELL`, the proxy now returns HTTP 400 with a clear error message instead of silently falling back to `default_model`. This prevents the user from unknowingly using the wrong model after a Science update adds new shell IDs. To restore the old behavior, add the shell to the platter editor or `FALLBACK_SHELLS`.
+- **Orphan org recovery UX**: When Science sign-out leaves multiple historical orgs with no `active-org.json`, the error message now lists the available org UUIDs ( `{org_list}`) so the user can manually write the desired one back without guessing.
 - Version alignment (desktop bundle + Cargo + built-in web-search `SERVER_VERSION`) → **2.2.0**.
 
 ## [2.1.0] — 2026-07-21
