@@ -37,11 +37,12 @@ CASES = {
                       "thinking": {"type": "auto"},
                       "messages": [{"role": "user", "content": "hi"}]},
 }
-# Upstream error matrix: mock returns status:NNN; proxy maps (401/429 passthrough, 500→502).
+# Upstream error matrix: mock returns status:NNN; proxy preserves distinguishable
+# upstream classes (401/429/500 passthrough — not flattened to a catch-all 502).
 ERROR_CASES = {
     "upstream_401": ("status:401", 401),
     "upstream_429": ("status:429", 429),
-    "upstream_500_maps_502": ("status:500", 502),
+    "upstream_500_passthrough": ("status:500", 500),
 }
 
 

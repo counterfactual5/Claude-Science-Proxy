@@ -3,7 +3,7 @@
 
 Providers:
   deepseek (default): native Anthropic at api.deepseek.com — passthrough, rename model, swap auth,
-                   clamp max_tokens, retry; thinking/tool_use stay native.
+                   clamp max_tokens; thinking/tool_use stay native.
   openai-custom / openai-responses: arbitrary OpenAI-compatible roots (base + key + model).
   relay: arbitrary Anthropic-compatible relay (CSP_RELAY_BASE_URL + CSP_RELAY_KEY); passthrough model
          names; /v1/models fetched from upstream for the Science selector.
@@ -11,6 +11,7 @@ Providers:
 Security:
   - Strip inbound Science Authorization / x-api-key; never log or forward them.
   - Upstream uses provider keys from env only (memory-resident).
+  - Inference POSTs are single-shot (no auto-resend); upstream HTTP classes preserved.
   - Listen on loopback only.
 
 Usage:
@@ -119,7 +120,7 @@ PROVIDERS = {
     "relay": {
         # Relay: arbitrary Anthropic-compatible base (CSP_RELAY_BASE_URL + token). Passthrough model names.
         # urls assembled in __main__: base + /v1/messages, base + /v1/models.
-        "mode": "anthropic",       # reuse native anthropic handler (stream/non-stream/retry)
+        "mode": "anthropic",       # reuse native anthropic handler (stream/non-stream)
         "url": None,               # set in __main__
         "models_url": None,        # when set, /v1/models is fetched from upstream
         "key_env": "CSP_RELAY_KEY",
@@ -363,13 +364,13 @@ def _provider_state(areq, runtime=None):
     )
 
 
-def http_post(url, data, headers, attempts=4, timeout=300):
-    """POST upstream with retries on connection/body read; no retry on explicit HTTPError responses."""
+def http_post(url, data, headers, attempts=1, timeout=300):
+    """POST upstream once for inference; no auto-resend on connection wobble."""
     return http_transport.post(url, data, headers, log, attempts, timeout)
 
 
-def open_stream(url, data, headers, attempts=4, timeout=300):
-    """Open streaming upstream connection and pre-read first line (retries early empty 200)."""
+def open_stream(url, data, headers, attempts=1, timeout=300):
+    """Open streaming upstream connection and pre-read first line (no auto-resend)."""
     return http_transport.open_stream(url, data, headers, log, attempts, timeout)
 
 
@@ -546,8 +547,10 @@ def _map_upstream_http_error(code, detail):
 
     GLM ``code 1261`` / Prompt-too-long is a permanent request rejection — return
     HTTP 400 ``invalid_request_error`` so Science is less likely to treat it as a
-    transient 502 and spin empty retries. Auth / rate-limit codes stay passthrough.
-    Upstream bodies are redacted so provider keys do not leak into logs/clients.
+    transient failure and spin empty retries. Auth / rate-limit / client errors and
+    upstream 5xx stay as distinguishable statuses (not flattened to a catch-all
+    502). Upstream bodies are redacted so provider keys do not leak into
+    logs/clients.
     """
     safe = redact_upstream_detail(detail or "", max_len=240)
     compact = safe.replace(" ", "")
@@ -570,9 +573,68 @@ def _map_upstream_http_error(code, detail):
             f"retries continue. Upstream detail: {safe}"
         )
         return 400, "invalid_request_error", msg
-    if code in (401, 403, 429):
-        return code, "api_error", f"upstream {code}: {safe}"
+    # CPA / NewAPI-style gateways often wrap a provider blip as HTTP 400
+    # ``Upstream request failed``. Treat as invalid_request so Science is less
+    # likely to spin "temporarily unavailable" forever on the same payload;
+    # a manual resend / new chat / other model usually works when the channel
+    # recovers (same history has been confirmed replayable).
+    console_upstream_failed = (
+        "upstream request failed" in lowered
+        and ("error from provider" in lowered or "(console)" in lowered)
+    )
+    if console_upstream_failed:
+        msg = (
+            "Upstream provider/console failed this request (opaque gateway 400). "
+            "Often transient on multi-provider relays — cancel the Science retry "
+            "loop, resend once, or start a new chat / switch model. "
+            f"Upstream detail: {safe}"
+        )
+        return 400, "invalid_request_error", msg
+    # Preserve distinguishable upstream classes (incl. 5xx) instead of flattening
+    # everything into a generic 502 that Science treats as "retry forever".
+    if code in (400, 401, 403, 404, 408, 409, 422, 429) or 500 <= int(code) <= 599:
+        err_type = "invalid_request_error" if code in (400, 404, 422) else "api_error"
+        return int(code), err_type, f"upstream {code}: {safe}"
     return 502, "api_error", f"upstream {code}: {safe}"
+
+
+class _SseTerminalTracker:
+    """Observe forwarded SSE for a terminal ``message_stop`` or ``error`` event.
+
+    Truncated upstream streams must end with an SSE error frame — never a
+    synthetic ``message_stop`` that would look like a successful completion.
+    """
+
+    def __init__(self, inner=None):
+        self._inner = inner
+        self.saw_terminal = False
+
+    def feed(self, chunk):
+        out = self._inner.feed(chunk) if self._inner is not None else chunk
+        self._observe(out)
+        return out
+
+    def finalize(self):
+        out = self._inner.finalize() if self._inner is not None else b""
+        self._observe(out)
+        return out
+
+    def stats(self):
+        if self._inner is not None and hasattr(self._inner, "stats"):
+            return self._inner.stats()
+        return {}
+
+    def _observe(self, data):
+        if not data or self.saw_terminal:
+            return
+        # Match event lines; also tolerate data-only frames.
+        if (
+            b"event: message_stop" in data
+            or b"event: error" in data
+            or b'"type":"message_stop"' in data
+            or b'"type": "message_stop"' in data
+        ):
+            self.saw_terminal = True
 
 
 def openai_to_anthropic(resp, model_id):
@@ -611,9 +673,13 @@ class H(BaseHTTPRequestHandler):
         if flush:
             self.wfile.flush()
 
-    def _sse_error_and_terminate(self, msg):
+    def _sse_error_and_terminate(self, msg, err_type="api_error"):
+        # openai-custom opens SSE (HTTP 200) before the buffered upstream POST
+        # returns. Permanent client errors must keep their Anthropic error type
+        # here — hardcoding ``api_error`` makes Science treat GLM/CPA 400s as
+        # transient "temporarily unavailable" and retry forever.
         frame = ("event: error\ndata: " + json.dumps(
-            {"type": "error", "error": {"type": "api_error", "message": msg}},
+            {"type": "error", "error": {"type": err_type or "api_error", "message": msg}},
             ensure_ascii=False) + "\n\n").encode()
         self.wfile.write(hex(len(frame))[2:].encode() + b"\r\n" + frame + b"\r\n")
         self.wfile.write(b"0\r\n\r\n")
@@ -919,7 +985,13 @@ class H(BaseHTTPRequestHandler):
         if anthropic_compat.is_science_rolling_compact(areq):
             log(f"  .. Science rolling-compact/summarizer: strip tools "
                 f"(had {len(areq.get('tools') or [])}) tool_choice=none")
-        upstream_body, ctx = anthropic_compat.transform_request(areq, state)
+        try:
+            upstream_body, ctx = anthropic_compat.transform_request(areq, state)
+        except anthropic_compat.RelayHistoryError as e:
+            log(f"  !! relay history rejected (fail-closed): {e}")
+            self._send_json(400, {"type": "error", "error": {
+                "type": "invalid_request_error", "message": str(e)}})
+            return
         stream = bool(upstream_body.get("stream"))
         n_tools = len(upstream_body.get("tools") or [])
         rules = ",".join(ctx.rule_ids) if ctx.rule_ids else "-"
@@ -955,27 +1027,36 @@ class H(BaseHTTPRequestHandler):
                 r, first, _ct = _open_stream_with_keepalive(_wc, runtime.prov["url"], data, headers)
                 with r:
                     # off / no tools → passthrough; detect/rewrite → DSML filter from byte 0.
-                    f = anthropic_compat.make_stream_rewriter(ctx)
+                    # Always wrap with a terminal tracker so truncated streams never look
+                    # like a clean message_stop completion.
+                    try:
+                        f = _SseTerminalTracker(anthropic_compat.make_stream_rewriter(ctx))
+                    except anthropic_compat.RelayHistoryError as e:
+                        self._sse_error_and_terminate(str(e))
+                        return
                     # First upstream bytes must go through the filter in order.
-                    if f is not None:
+                    try:
                         _wc(f.feed(first))
-                    else:
-                        _wc(first)
-                    while True:
-                        try:
-                            chunk = r.readline(65536)
-                        except Exception as e:
-                            log(f"  !! 流中断（头已发），SSE error 收尾: {e}")
-                            self._sse_error_and_terminate(str(e))
-                            return
-                        if not chunk:
-                            break
-                        if f is not None:
+                        while True:
+                            try:
+                                chunk = r.readline(65536)
+                            except Exception as e:
+                                log(f"  !! 流中断（头已发），SSE error 收尾: {e}")
+                                self._sse_error_and_terminate(str(e))
+                                return
+                            if not chunk:
+                                break
                             _wc(f.feed(chunk))
-                        else:
-                            _wc(chunk)
-                    if f is not None:
                         _wc(f.finalize())
+                    except anthropic_compat.RelayHistoryError as e:
+                        log(f"  !! kimi stream rejected (fail-closed): {e}")
+                        self._sse_error_and_terminate(str(e))
+                        return
+                    if not f.saw_terminal:
+                        log("  !! 上游流在 message_stop 前结束，SSE error 收尾（不伪造 message_stop）")
+                        self._sse_error_and_terminate(
+                            "Upstream stream truncated before message_stop")
+                        return
                     self.wfile.write(b"0\r\n\r\n")
                     self.wfile.flush()
                 st = f.stats() if f is not None else {}
@@ -987,7 +1068,13 @@ class H(BaseHTTPRequestHandler):
                     log(f"  <- {runtime.prov_name} 流式透传 OK")
             else:
                 body_bytes, ct = http_post(runtime.prov["url"], data, headers)
-                body_bytes, stats = anthropic_compat.rewrite_nonstream(body_bytes, ctx)
+                try:
+                    body_bytes, stats = anthropic_compat.rewrite_nonstream(body_bytes, ctx)
+                except anthropic_compat.RelayHistoryError as e:
+                    log(f"  !! kimi nonstream rejected (fail-closed): {e}")
+                    self._send_json(400, {"type": "error", "error": {
+                        "type": "invalid_request_error", "message": str(e)}})
+                    return
                 if stats.get("rewritten"):
                     log(f"  <- {runtime.prov_name} 非流式 DSML 改写 OK（展开 tool_use）")
                 elif stats.get("found"):
@@ -1009,7 +1096,7 @@ class H(BaseHTTPRequestHandler):
                     "type": err_type, "message": msg}})
             else:
                 try:
-                    self._sse_error_and_terminate(msg)
+                    self._sse_error_and_terminate(msg, err_type=err_type)
                 except Exception:
                     pass
         except Exception as e:
@@ -1099,7 +1186,7 @@ class H(BaseHTTPRequestHandler):
             status, err_type, msg = _map_upstream_http_error(e.code, detail)
             if headers_sent:
                 try:
-                    self._sse_error_and_terminate(msg)
+                    self._sse_error_and_terminate(msg, err_type=err_type)
                 except BrokenPipeError:
                     pass
             else:

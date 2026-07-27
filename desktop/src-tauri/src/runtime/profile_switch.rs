@@ -10,7 +10,9 @@ use crate::runtime::provider::{
     assert_format_supported, is_native_adapter, proxy_args_for,
     reject_openai_custom_anthropic_base, relay_missing_profile_models, should_scratch_candidate,
 };
-use crate::runtime::proxy_lifecycle::{start_proxy_for_platter, start_proxy_for_profiles};
+use crate::runtime::proxy_lifecycle::{
+    stack_hot, start_proxy_for_platter, start_proxy_for_profiles,
+};
 use crate::runtime::system::asset_root;
 use crate::runtime::transaction::{
     decide_switch, rollback_status_key, skip_scratch_verify, SwitchOutcome,
@@ -73,7 +75,12 @@ pub(crate) fn scratch_validate_candidate(
     nonactive_probe_verdict(&outcome)
 }
 
-/// Switch the active profile transactionally: scratch validate, start real proxy, then commit.
+/// Switch the active profile transactionally.
+///
+/// - Always scratch-verifies the candidate (unless `skip_verify`), even when cold.
+/// - **Cold stack** (proxy+Science not both running): config-only after verify —
+///   no formal proxy start. Runtime picks this up on next「启动 Claude Science」.
+/// - **Hot stack**: after verify, restart formal proxy then commit.
 ///
 /// Callers must hold the command serializer lock.
 pub(crate) fn set_active_profile_txn(
@@ -112,6 +119,7 @@ pub(crate) fn set_active_profile_txn(
         return Err(i18n_err("errMissingModel", json!({})));
     }
 
+    let hot = stack_hot(state);
     let trace = OperationTrace::start(
         if is_edit {
             OperationKind::UpdateActiveConnection
@@ -119,11 +127,17 @@ pub(crate) fn set_active_profile_txn(
             OperationKind::ActivateProfile
         },
         format!(
-            "profile_id={} template_id={} adapter={} skip_verify={}",
-            candidate.id, candidate.template_id, launch.adapter, skip_verify
+            "profile_id={} template_id={} adapter={} skip_verify={} stack={}",
+            candidate.id,
+            candidate.template_id,
+            launch.adapter,
+            skip_verify,
+            if hot { "hot" } else { "cold" }
         ),
     );
 
+    // Always scratch-verify unless the user skips. Cold stack still probes with a
+    // temporary proxy, but does not start the formal proxy until「启动 Claude Science」.
     let scratch_ok = if skip_scratch_verify(native, skip_verify) {
         trace.stage(OperationStage::ScratchUpstreamProbe, "skipped_by_user");
         true
@@ -182,10 +196,19 @@ pub(crate) fn set_active_profile_txn(
         }
     };
 
-    lifecycle.bump_generation();
-    let profiles_after: Vec<config::Profile> = vec![candidate.clone()];
-    let real_healthy = scratch_ok
-        && start_proxy_for_profiles(app, state, lifecycle, &profiles_after, Some(&trace)).is_ok();
+    let mut proxy_reloaded = false;
+    let real_healthy = if hot {
+        lifecycle.bump_generation();
+        let profiles_after: Vec<config::Profile> = vec![candidate.clone()];
+        let ok = scratch_ok
+            && start_proxy_for_profiles(app, state, lifecycle, &profiles_after, Some(&trace))
+                .is_ok();
+        proxy_reloaded = ok;
+        ok
+    } else {
+        // Config-only commit; formal proxy stays down until one-click start.
+        true
+    };
 
     match decide_switch(scratch_ok, real_healthy) {
         SwitchOutcome::Commit => {
@@ -202,8 +225,11 @@ pub(crate) fn set_active_profile_txn(
                 }
             }) {
                 trace.stage(OperationStage::Rollback, "reason=config_write_failed");
-                let restored =
-                    restore_proxy_for_active_profile(app, state, lifecycle, &cfg, Some(&trace));
+                let restored = if hot {
+                    restore_proxy_for_active_profile(app, state, lifecycle, &cfg, Some(&trace))
+                } else {
+                    true
+                };
                 trace.finish(format!("error=config_write_failed restored={restored}"));
                 return Err(i18n_err(
                     "errConfigWriteFailed",
@@ -213,15 +239,26 @@ pub(crate) fn set_active_profile_txn(
                     }),
                 ));
             }
-            // Pre-write bak still holds the previous key after a rotation.
             if key_rotated {
                 config::drop_rolling_backup(&dir);
             }
-            trace.stage(OperationStage::Commit, "ok");
-            trace.finish("committed=true");
+            trace.stage(
+                OperationStage::Commit,
+                if hot {
+                    "ok hot_reload"
+                } else {
+                    "ok config_only"
+                },
+            );
+            trace.finish(format!(
+                "committed=true proxy_reloaded={proxy_reloaded} runtime={}",
+                if hot { "hot" } else { "cold" }
+            ));
             Ok(json!({
                 "committed": true,
                 "active_id": id,
+                "proxy_reloaded": proxy_reloaded,
+                "runtime": if hot { "hot" } else { "cold" },
             }))
         }
         SwitchOutcome::RollbackToOld => {
@@ -248,6 +285,10 @@ fn restore_proxy_for_active_profile(
     cfg: &config::Config,
     trace: Option<&OperationTrace>,
 ) -> bool {
+    // Never cold-start a formal proxy during rollback — only undo a hot reload.
+    if lock(state).proxy.is_none() {
+        return true;
+    }
     if cfg.is_platter_active() && !cfg.model_platter.entries.is_empty() {
         lifecycle.bump_generation();
         return start_proxy_for_platter(app, state, lifecycle, cfg, trace).is_ok();
@@ -259,8 +300,8 @@ fn restore_proxy_for_active_profile(
     start_proxy_for_profiles(app, state, lifecycle, std::slice::from_ref(p), trace).is_ok()
 }
 
-/// If platter is active and a formal proxy is running, bump generation and restart
-/// with the current on-disk platter (registry + credentials). Returns whether a
+/// If platter is active **and** the full stack is hot (proxy+Science), bump
+/// generation and restart with the current on-disk platter. Returns whether a
 /// reload was attempted and succeeded.
 pub(crate) fn reload_active_platter_proxy(
     app: &tauri::AppHandle,
@@ -271,8 +312,7 @@ pub(crate) fn reload_active_platter_proxy(
     if !cfg.is_platter_active() || cfg.model_platter.entries.is_empty() {
         return Ok(false);
     }
-    let proxy_running = lock(state).proxy.is_some();
-    if !proxy_running {
+    if !stack_hot(state) {
         return Ok(false);
     }
     validate_platter_entries(&cfg, &cfg.model_platter.entries)?;
@@ -281,7 +321,8 @@ pub(crate) fn reload_active_platter_proxy(
     Ok(true)
 }
 
-/// Activate the multi-provider model platter (transactional proxy switch).
+/// Activate the multi-provider model platter (transactional).
+/// Always scratch-verifies (unless skip). Cold → config-only; hot → formal proxy reload.
 pub(crate) fn set_active_platter_txn(
     app: &tauri::AppHandle,
     state: &SharedAppState,
@@ -301,14 +342,16 @@ pub(crate) fn set_active_platter_txn(
     let probe_launch = proxy_args_for(&first_profile);
     let probe_model = cfg.model_platter.entries[0].model.clone();
 
+    let hot = stack_hot(state);
     let trace = OperationTrace::start(
         OperationKind::ActivateProfile,
         format!(
-            "platter models={} host={} probe_adapter={} skip_verify={}",
+            "platter models={} host={} probe_adapter={} skip_verify={} stack={}",
             cfg.model_platter.entries.len(),
             launch.adapter,
             probe_launch.adapter,
-            skip_verify
+            skip_verify,
+            if hot { "hot" } else { "cold" }
         ),
     );
 
@@ -368,9 +411,16 @@ pub(crate) fn set_active_platter_txn(
         }
     };
 
-    lifecycle.bump_generation();
-    let real_healthy =
-        scratch_ok && start_proxy_for_platter(app, state, lifecycle, &cfg, Some(&trace)).is_ok();
+    let mut proxy_reloaded = false;
+    let real_healthy = if hot {
+        lifecycle.bump_generation();
+        let ok =
+            scratch_ok && start_proxy_for_platter(app, state, lifecycle, &cfg, Some(&trace)).is_ok();
+        proxy_reloaded = ok;
+        ok
+    } else {
+        true
+    };
 
     match decide_switch(scratch_ok, real_healthy) {
         SwitchOutcome::Commit => {
@@ -378,8 +428,11 @@ pub(crate) fn set_active_platter_txn(
                 c.set_active_platter();
             }) {
                 trace.stage(OperationStage::Rollback, "reason=config_write_failed");
-                let restored =
-                    restore_proxy_for_active_profile(app, state, lifecycle, &cfg, Some(&trace));
+                let restored = if hot {
+                    restore_proxy_for_active_profile(app, state, lifecycle, &cfg, Some(&trace))
+                } else {
+                    true
+                };
                 trace.finish(format!("error=config_write_failed restored={restored}"));
                 return Err(i18n_err(
                     "errConfigWriteFailed",
@@ -389,11 +442,23 @@ pub(crate) fn set_active_platter_txn(
                     }),
                 ));
             }
-            trace.stage(OperationStage::Commit, "ok");
-            trace.finish("committed=true");
+            trace.stage(
+                OperationStage::Commit,
+                if hot {
+                    "ok hot_reload"
+                } else {
+                    "ok config_only"
+                },
+            );
+            trace.finish(format!(
+                "committed=true proxy_reloaded={proxy_reloaded} runtime={}",
+                if hot { "hot" } else { "cold" }
+            ));
             Ok(json!({
                 "committed": true,
                 "active_id": config::PLATTER_ACTIVE_ID,
+                "proxy_reloaded": proxy_reloaded,
+                "runtime": if hot { "hot" } else { "cold" },
             }))
         }
         SwitchOutcome::RollbackToOld => {

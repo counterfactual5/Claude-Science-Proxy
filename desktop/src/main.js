@@ -326,6 +326,8 @@ const I18N = {
     switchUpstreamModelSwitch: "上游拒绝该模型（{code}），未切换。请换一个模型或核对 base_url。",
     switchUpstreamAmbiguousEdit: "无法确认（网络/上游繁忙），未保存。可重试，或用「跳过验证」。",
     switchUpstreamAmbiguousSwitch: "无法确认（网络/上游繁忙），未切换。可重试，或用「跳过验证」。",
+    switchConfigOnly: "已切换，下次启动时生效。",
+    switchHotReloaded: "已切换并重载代理。",
     switchProxyRollbackEdit: "连接已校验通过，但正式代理启动/探活失败，连接未保存，{rollback}。",
     switchProxyRollbackSwitch: "候选配置校验通过，但正式代理启动/探活失败，{rollback}。",
     switchAbortBeforeStartEdit: "连接上游校验失败（key/base_url/网络？），连接未保存。",
@@ -348,6 +350,7 @@ const I18N = {
     errProxyStartSuperseded: "代理启动期间配置已变更（被更晚的操作取代），本次启动未生效。",
     errProxyPortOccupied: "端口 {port} 已被占用，换个端口或先停掉占用进程后重试。",
     errProxyHealthTimeout: "代理起后探活超时（端口 {port}）：多为 python 依赖缺失或代理脚本异常，请查看代理日志。",
+    errProxyRegistryCap: "正式代理启动失败：启用模型超过 Science 上限（最多 {max} 个）。请减少勾选后再保存。",
     errSandboxScriptMissing: "找不到 scripts/sandbox/launch-virtual-sandbox.sh。",
     errSandboxVirtualLoginFailed: "写虚拟登录失败：{error}",
     errSandboxLogOpenFailed: "建沙箱日志失败：{error}",
@@ -736,6 +739,8 @@ const I18N = {
     switchUpstreamModelSwitch: "Upstream rejected model ({code}); not switched. Try another model or check base_url.",
     switchUpstreamAmbiguousEdit: "Could not verify (network/upstream busy); connection not saved. Retry or use Skip verify.",
     switchUpstreamAmbiguousSwitch: "Could not verify (network/upstream busy); not switched. Retry or use Skip verify.",
+    switchConfigOnly: "Switched. Takes effect on next start.",
+    switchHotReloaded: "Switched and reloaded the proxy.",
     switchProxyRollbackEdit: "Connection verified but formal proxy failed; connection not saved. {rollback}",
     switchProxyRollbackSwitch: "Candidate verified but formal proxy failed. {rollback}",
     switchAbortBeforeStartEdit: "Upstream verify failed (key/base_url/network?); connection not saved.",
@@ -758,6 +763,7 @@ const I18N = {
     errProxyStartSuperseded: "Config changed while starting proxy; this start was superseded and did not apply.",
     errProxyPortOccupied: "Port {port} is already in use. Pick another port or stop the process using it.",
     errProxyHealthTimeout: "Proxy health check timed out (port {port}). Often missing python deps or a proxy script error—check proxy logs.",
+    errProxyRegistryCap: "Formal proxy failed to start: more than {max} models enabled (Science shell cap). Uncheck some models and save again.",
     errSandboxScriptMissing: "Sandbox script scripts/sandbox/launch-virtual-sandbox.sh not found.",
     errSandboxVirtualLoginFailed: "Virtual login write failed: {error}",
     errSandboxLogOpenFailed: "Failed to open sandbox log: {error}",
@@ -1662,7 +1668,7 @@ function renderModelPick(container, builtin, selected, onChange, opts) {
         const n = container.querySelectorAll('input[type="checkbox"]:checked').length;
         if (n > max) {
           cb.checked = false;
-          setMsg(T("errScienceModelCap", { max }));
+          flashModelCapHint(opts.capHint || siblingModelHint(container), max);
           return;
         }
       }
@@ -1710,22 +1716,92 @@ function applyModelCapability(t, ui, profileOrModel) {
   ui.hint.textContent = hints.fixed;
   if (ui.modelLabel) ui.modelLabel.textContent = S().models;
   if (ui.pick) {
-    renderModelPick(ui.pick, builtin, selected, onPickChange, { max: MAX_SCIENCE_MODELS });
+    let sel = selected.slice();
+    if (sel.length > MAX_SCIENCE_MODELS) {
+      sel = sel.slice(0, MAX_SCIENCE_MODELS);
+      flashModelCapHint(ui.hint, MAX_SCIENCE_MODELS);
+    }
+    renderModelPick(ui.pick, builtin, sel, onPickChange, {
+      max: MAX_SCIENCE_MODELS,
+      capHint: ui.hint || null,
+    });
   }
   return cap;
 }
 
-function setMsg(text, kind = "err") {
+/** Hint immediately under a model-pick list (connection form). */
+function siblingModelHint(container) {
+  if (!container || !container.nextElementSibling) return null;
+  const next = container.nextElementSibling;
+  return next.classList.contains("hint") ? next : null;
+}
+
+/**
+ * Cap feedback stays next to the picker — do not use bottom `#msg` +
+ * scrollIntoView (that yanks the viewport while the user is still clicking).
+ */
+function flashModelCapHint(hintEl, max) {
+  const text = T("errScienceModelCap", { max });
+  if (!hintEl) {
+    setMsg(text, "err", { scroll: false });
+    return;
+  }
+  if (hintEl.dataset.capRestore === undefined) {
+    hintEl.dataset.capRestore = hintEl.textContent || "";
+  }
+  hintEl.textContent = text;
+  hintEl.classList.add("hint-cap-warn");
+  clearTimeout(hintEl._capWarnTimer);
+  hintEl._capWarnTimer = setTimeout(() => {
+    if (hintEl.dataset.capRestore !== undefined) {
+      hintEl.textContent = hintEl.dataset.capRestore;
+      delete hintEl.dataset.capRestore;
+    }
+    hintEl.classList.remove("hint-cap-warn");
+    // Platter counter may have changed while the warn was showing.
+    if (hintEl === els.platterCapHint) {
+      hintEl.textContent = T("platterCapHint", {
+        n: platterDraft.length,
+        max: MAX_SCIENCE_MODELS,
+      });
+    }
+  }, 2400);
+}
+
+let msgClearTimer = null;
+
+function setMsg(text, kind = "err", opts = {}) {
+  if (msgClearTimer) {
+    clearTimeout(msgClearTimer);
+    msgClearTimer = null;
+  }
   const t = text ? String(text) : "";
   els.msg.textContent = t;
   els.msg.className = "msg" + (t ? ` ${kind}` : "");
   els.msg.hidden = !t;
   // Keep the section visible while the "activate anyway" escape hatch is shown.
   els.msg.parentElement.hidden = !t && els.skipActivateBtn.hidden;
-  // Only yank the viewport for errors — info/ok toasts must not jump the form
-  // (e.g. platter catalog picks already show their result in the selected list).
-  if (t && kind === "err" && els.panel && els.panel.classList.contains("view-form")) {
+  // Only yank the viewport for submit-style errors — not for picker cap flashes
+  // (those use flashModelCapHint). Callers can pass { scroll: false } to opt out.
+  if (
+    t &&
+    kind === "err" &&
+    opts.scroll !== false &&
+    els.panel &&
+    els.panel.classList.contains("view-form")
+  ) {
     els.msg.scrollIntoView({ block: "nearest" });
+  }
+  // Success / info toasts are ephemeral; errors stay until the next action.
+  const autoMs = opts.autoClearMs != null
+    ? opts.autoClearMs
+    : (kind === "ok" || kind === "info" ? 3000 : 0);
+  if (t && autoMs > 0) {
+    const shown = t;
+    msgClearTimer = setTimeout(() => {
+      msgClearTimer = null;
+      if (els.msg.textContent === shown) setMsg("");
+    }, autoMs);
   }
 }
 
@@ -2407,7 +2483,7 @@ function renderPlatterProviders() {
       }
       if (platterDraft.length >= MAX_SCIENCE_MODELS) {
         cb.checked = false;
-        setMsg(T("errScienceModelCap", { max: MAX_SCIENCE_MODELS }));
+        flashModelCapHint(els.platterCapHint, MAX_SCIENCE_MODELS);
         return;
       }
       // Catalog picks and enabled models behave the same: selection only touches
@@ -2526,7 +2602,7 @@ function enablePlatterCatalogModel(pid, model) {
   if (!p || !model) return;
   if (!platterModelSelected(pid, model)) {
     if (platterDraft.length >= MAX_SCIENCE_MODELS) {
-      setMsg(T("errScienceModelCap", { max: MAX_SCIENCE_MODELS }));
+      flashModelCapHint(els.platterCapHint, MAX_SCIENCE_MODELS);
       renderPlatterProviders();
       return;
     }
@@ -2594,8 +2670,8 @@ async function activatePlatter(skipVerify) {
     }
     const r = await call("set_active_platter", { skipVerify: !!skipVerify });
     if (r && r.committed) {
-      setMsg("");
       await loadConfig();
+      setMsg(r.runtime === "hot" ? T("switchHotReloaded") : T("switchConfigOnly"), "ok");
     } else {
       await loadConfig();
       setMsg(resolveHint(r, "switchRejected"));
@@ -2706,8 +2782,19 @@ function applyFetchToPick(r, pickUi, selected) {
   const models = (r && r.models) || [];
   const ids = models.map((m) => m.id).filter(Boolean);
   const candidates = ids.length ? ids : (pickUi.builtin || []);
-  const sel = (selected && selected.length) ? selected : candidates;
-  if (pickUi.pick) renderModelPick(pickUi.pick, candidates, sel, pickUi.onPickChange);
+  // Never default-check the whole catalog — only previously enabled models (or none).
+  let sel = (selected && selected.length) ? selected.slice() : [];
+  const max = MAX_SCIENCE_MODELS;
+  if (sel.length > max) {
+    sel = sel.slice(0, max);
+    flashModelCapHint(pickUi.capHint || siblingModelHint(pickUi.pick), max);
+  }
+  if (pickUi.pick) {
+    renderModelPick(pickUi.pick, candidates, sel, pickUi.onPickChange, {
+      max,
+      capHint: pickUi.capHint || siblingModelHint(pickUi.pick),
+    });
+  }
   return ids.length;
 }
 
@@ -2983,6 +3070,7 @@ async function autoFetchConnModels() {
       pick: els.connModelPick,
       builtin: ((t && t.builtin_models) || []).slice(),
       onPickChange: refreshConnGate,
+      capHint: els.connModelHint,
     }, profileModels(p));
   } catch (e) {
     setMsg(T("modelsFetchFail", { err: resolveBackendErr(e) }));
@@ -3013,6 +3101,11 @@ async function connSave() {
   const cap = capSrc ? modelCapability(capSrc) : CAP.FIXED;
   const resolved = resolvedConnectionModels(cap, els.connModelPick);
   if (req && !resolved.models.length) { setMsg(T("needModel")); return; }
+  // Science shell cap — reject before scratch probe so "upstream busy" is never a stand-in.
+  if (resolved.models.length > MAX_SCIENCE_MODELS) {
+    setMsg(T("errScienceModelCap", { max: MAX_SCIENCE_MODELS }));
+    return;
+  }
   const model = resolved.defaultModel || resolved.models[0] || "";
   const editable = t ? t.base_url_editable : true;
   const base = editable ? els.connBase.value.trim() : (t ? t.base_url : els.connBase.value.trim());
@@ -3032,13 +3125,15 @@ async function connSave() {
   };
   setBusy(true, { kind: "saveConnection", id: p.id });
   try {
-    await call("update_profile_connection", args);
+    const r = await call("update_profile_connection", args);
     if (name !== p.name) {
       await call("update_profile_metadata", { id: p.id, name, notes: p.notes || "" });
     }
     els.connKey.value = "";
-    setMsg("");
     await loadConfig();
+    if (r && r.proxy_reloaded) setMsg(T("switchHotReloaded"), "ok");
+    else if (r && r.deferred_runtime) setMsg(T("switchConfigOnly"), "ok");
+    else setMsg("");
   } catch (e) {
     setMsg(T("saveConnFail", { err: resolveBackendErr(e) }));
   } finally {
@@ -3067,8 +3162,8 @@ async function activate(id, skipVerify) {
   try {
     const r = await call("set_active_profile", { id, skipVerify: !!skipVerify });
     if (r && r.committed) {
-      setMsg("");
       await loadConfig();
+      setMsg(r.runtime === "hot" ? T("switchHotReloaded") : T("switchConfigOnly"), "ok");
     } else {
       await loadConfig();
       setMsg(resolveHint(r, "switchRejected"));

@@ -157,6 +157,12 @@ class ModelRegistryTests(unittest.TestCase):
         dated = reg.resolve_route("claude-haiku-4-5-20251001")
         self.assertEqual(dated, ("kimi-k2", "p-moon"))
 
+    def test_from_models_truncates_beyond_shell_pool(self):
+        models = [f"m{i}" for i in range(9)]
+        reg = mr.ModelRegistry.from_models(models, default_model="m0", fast_model="m8")
+        self.assertEqual(len(reg.entries), len(mr.SHELL_POOL))
+        self.assertLessEqual(len(reg.routes), len(mr.SHELL_POOL))
+
 
 if __name__ == "__main__":
     unittest.main()

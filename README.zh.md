@@ -4,7 +4,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License">
-  <img src="https://img.shields.io/badge/version-2.2.1-brightgreen.svg" alt="v2.2.1">
+  <img src="https://img.shields.io/badge/version-2.2.2-brightgreen.svg" alt="v2.2.2">
   <img src="https://img.shields.io/badge/platform-macOS%20Apple%20Silicon-1d1d1f.svg" alt="macOS Apple Silicon">
   <img src="https://img.shields.io/badge/built%20with-Tauri%202-C25A34.svg" alt="Tauri 2">
 </p>
@@ -20,7 +20,7 @@ Claude Science Proxy（CSP）是一个给 Claude Science 使用的本地模型�
 
 它面向的不只是开发者：你只需要准备 Claude Science、一个第三方 API Key，然后在桌面面板里新建配置、点击一条切换为当前生效，再点「启动 Claude Science」。
 
-> **v2.2.1** — 审计加固：一键重启 stop 失败即中止、沙箱状态灯按身份识别、拼盘凭证 fail-closed、换 key 清理 bak、SSH Include 路径引用、上游错误脱敏；虚拟登录路径清理。详见 [更新日志](./CHANGELOG.md)。
+> **v2.2.2** — 可靠性与体验：热态才重载代理、上游/SSE 错误契约、Kimi 历史 fail-closed、8 模型上限 UX、CPA Console 400 提示、SSH Host 白名单桥接。详见 [更新日志](./CHANGELOG.md)。
 
 > 当前版本主要支持 macOS Apple Silicon。首次打开未公证的 `.dmg` 应用时，macOS 可能需要你右键选择「打开」。
 
@@ -47,7 +47,7 @@ Claude Science 是 Anthropic 面向科研与分析场景的 AI Agent 应用，�
 
 CSP 做的是本地运行控制：
 
-- 在隔离环境里启动 Claude Science；沙箱 HOME 的 `.ssh/config` 通过 `Include` 指令桥接到真实 `~/.ssh/config`（v2.2.0+），无需复制密钥即可在沙箱内使用 git/MCP over SSH。
+- 在隔离环境里启动 Claude Science；沙箱 HOME 的 `.ssh/config` 通过 `Include` 桥接真实配置，并把具体 Host 别名写入 Science `ssh_hosts`（v2.2.0+ / Unreleased），无需复制密钥即可在沙箱内使用 git/MCP over SSH。
 - 为 Science 准备一份本地生成的启动门票，不复制你的真实 Claude 登录信息。
 - 把 Science 的模型请求转发到你选择的第三方 provider。
 - 在需要时把 Anthropic Messages API 和 OpenAI 兼容接口互相转换。

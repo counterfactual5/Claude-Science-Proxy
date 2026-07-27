@@ -254,12 +254,35 @@ class MakeStreamRewriter(unittest.TestCase):
         out = f.feed(sse) + f.finalize()
         self.assertNotIn(b"server_tool_use", out)
         self.assertNotIn(b"web_search_tool_result", out)
-        self.assertIn(b'"type":"thinking","thinking":"","signature":""', out)
-        self.assertIn(b'"index":1', out)
-        self.assertIn(b'"index":2', out)
+        # Empty thinking without a signature is zero-information — drop it.
+        self.assertNotIn(b'"type":"thinking"', out)
         self.assertIn(b'"text":"OK"', out)
+        # text@0 kept as 0; server/web_search/empty-thinking dropped; OK text → 1
+        self.assertIn(b'"index":1', out)
         self.assertEqual(f.stats()["dropped_kimi_server_tool_blocks"], 2)
+        self.assertEqual(f.stats()["dropped_kimi_empty_thinking"], 1)
         self.assertEqual(f.stats()["rule_ids"], [pp.RULE_TOOL_KIMI_WEB_SEARCH_SERVER_TOOL_FILTER])
+
+    def test_kimi_filter_preserves_signed_thinking(self):
+        f = ac.make_stream_rewriter(_ctx(provider="relay", target_model="kimi-k3"))
+        sse = b"".join([
+            b'event: content_block_start\ndata: {"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":"plan","signature":"opaque"}}\n\n',
+            b'event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"!"}}\n\n',
+            b'event: content_block_stop\ndata: {"type":"content_block_stop","index":0}\n\n',
+        ])
+        out = f.feed(sse) + f.finalize()
+        self.assertIn(b'"thinking":"plan"', out)
+        self.assertIn(b'"signature":"opaque"', out)
+        self.assertIn(b'"thinking":"!"', out)
+
+    def test_kimi_filter_rejects_nonempty_unsigned_thinking(self):
+        f = ac.make_stream_rewriter(_ctx(provider="relay", target_model="kimi-k3"))
+        sse = b"".join([
+            b'event: content_block_start\ndata: {"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":"secret","signature":""}}\n\n',
+            b'event: content_block_stop\ndata: {"type":"content_block_stop","index":0}\n\n',
+        ])
+        with self.assertRaises(ac.RelayHistoryError):
+            f.feed(sse)
 
     def test_rewrite_filter_synthesizes_tool_use(self):
         f = ac.make_stream_rewriter(
@@ -459,9 +482,31 @@ class MapUpstreamHttpError(unittest.TestCase):
         self.assertEqual(typ, "api_error")
         self.assertIn("429", msg)
 
-    def test_500_maps_to_502(self):
+    def test_400_passthrough(self):
+        status, typ, msg = cs._map_upstream_http_error(400, "bad request")
+        self.assertEqual(status, 400)
+        self.assertEqual(typ, "invalid_request_error")
+
+    def test_console_upstream_failed_maps_to_invalid_request(self):
+        status, typ, msg = cs._map_upstream_http_error(
+            400,
+            '{"error":{"message":"Error from provider (Console): Upstream request failed",'
+            '"type":"invalid_request_error"}}',
+        )
+        self.assertEqual(status, 400)
+        self.assertEqual(typ, "invalid_request_error")
+        self.assertIn("provider/console failed", msg)
+        self.assertIn("new chat", msg)
+
+    def test_500_passthrough_not_flattened_to_502(self):
         status, typ, msg = cs._map_upstream_http_error(500, "boom")
-        self.assertEqual(status, 502)
+        self.assertEqual(status, 500)
+        self.assertEqual(typ, "api_error")
+        self.assertIn("500", msg)
+
+    def test_503_passthrough(self):
+        status, typ, msg = cs._map_upstream_http_error(503, "unavailable")
+        self.assertEqual(status, 503)
         self.assertEqual(typ, "api_error")
 
     def test_redacts_key_shaped_tokens_in_upstream_detail(self):

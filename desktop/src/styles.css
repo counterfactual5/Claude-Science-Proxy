@@ -844,6 +844,13 @@ select:focus {
   padding: 2px 2px 0;
 }
 
+/* Inline 8-model cap — stays by the picker; no scroll-to-bottom `#msg`. */
+.hint.hint-cap-warn,
+#platterCapHint.hint-cap-warn {
+  color: var(--red);
+  font-weight: 500;
+}
+
 /* `display: flex` below beats the bare `hidden` attribute (UA sheet), which
    would leave search-filtered items visible. Force `hidden` to win. */
 .model-pick-item[hidden] {

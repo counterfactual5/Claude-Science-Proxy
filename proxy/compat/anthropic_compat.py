@@ -11,6 +11,10 @@ from datetime import datetime
 
 from proxy.dsml import dsml_shim
 from proxy.policy import provider_policy
+from proxy.compat import kimi_history
+
+# Re-export for proxy handlers / tests.
+RelayHistoryError = kimi_history.RelayHistoryError
 
 _EMPTY_OBJECT_SCHEMA = {"type": "object", "properties": {}}
 
@@ -410,82 +414,8 @@ def _filter_upstream_tools(upstream, target_model, provider, rule_ids=None):
 
 
 def _strip_orphan_tool_blocks(messages):
-    """Remove orphan tool_use/tool_result blocks from relay (Anthropic-native) messages.
-
-    After a failed tool call (e.g. Kimi K3 multi-turn reasoning + tool_use failure),
-    Science may replay history with a tool_use block whose tool_result was never
-    produced, or a tool_result whose tool_use fell outside the replayed window.
-    Sending these orphans to Kimi/relay causes repeated `temporarily unavailable`
-    because the model sees an incomplete tool-call sequence.
-
-    Strategy: track tool_use IDs declared in each assistant turn. A tool_result
-    whose tool_use_id is not in any preceding turn is downgraded to a text block
-    (preserving its content as context). A trailing tool_use with no matching
-    tool_result in a subsequent user turn is removed entirely — the model would
-    try to continue from a phantom tool call.
-    """
-    if not isinstance(messages, list):
-        return messages
-    known_tool_ids = set()
-    for msg in messages:
-        if not isinstance(msg, dict):
-            continue
-        content = msg.get("content")
-        if not isinstance(content, list):
-            continue
-        new_blocks = []
-        for blk in content:
-            if not isinstance(blk, dict):
-                new_blocks.append(blk)
-                continue
-            t = blk.get("type")
-            if t == "tool_use":
-                new_blocks.append(blk)
-                known_tool_ids.add(blk.get("id"))
-            elif t == "tool_result":
-                call_id = blk.get("tool_use_id")
-                if call_id and call_id in known_tool_ids:
-                    new_blocks.append(blk)
-                else:
-                    # Orphan tool_result: downgrade to text so content is not lost
-                    raw = blk.get("content")
-                    if isinstance(raw, str):
-                        text = raw
-                    elif isinstance(raw, list):
-                        text = " ".join(
-                            b.get("text", "") if isinstance(b, dict) else str(b)
-                            for b in raw
-                        )
-                    else:
-                        text = str(raw) if raw else ""
-                    label = call_id or "unknown"
-                    new_blocks.append({
-                        "type": "text",
-                        "text": f"[tool_result for {label} (orphaned, "
-                                f"omitted from replay)]: {text}",
-                    })
-            else:
-                new_blocks.append(blk)
-        msg["content"] = new_blocks
-
-    # Second pass: remove trailing tool_use blocks in the last assistant message.
-    # If the last message is an assistant turn containing tool_use blocks, those
-    # blocks have no following tool_result (there are no messages after the last
-    # one), so they are orphans — the model would try to continue from a phantom
-    # tool call. Strip them; keep non-tool_use blocks. If everything was stripped
-    # (edge case: the message was only tool_use), leave a minimal text block so
-    # the message content is never empty.
-    if messages:
-        last = messages[-1]
-        if isinstance(last, dict) and last.get("role") == "assistant":
-            content = last.get("content")
-            if isinstance(content, list):
-                filtered = [
-                    blk for blk in content
-                    if not (isinstance(blk, dict) and blk.get("type") == "tool_use")
-                ]
-                last["content"] = filtered or [{"type": "text", "text": ""}]
-    return messages
+    """Backward-compatible alias — prefer ``kimi_history.strip_orphan_tool_blocks``."""
+    return kimi_history.strip_orphan_tool_blocks(messages)
 
 
 def transform_request(body, state):
@@ -511,10 +441,11 @@ def transform_request(body, state):
         _append_rule_id(rule_ids, provider_policy.RULE_PROVIDER_KIMI_RELAY_THINKING_ENABLED)
     upstream = dict(body)
     upstream["model"] = target
-    # Relay (Anthropic-native) path: strip orphan tool_use/tool_result blocks
-    # that pollute multi-turn conversations after failed tool calls (Kimi K3 fix).
+    # Relay (Anthropic-native): soft-repair orphans, then fail-closed validate
+    # (Kimi thinking signatures + tool pairing) so broken history never hits upstream.
     if state.prov_name == "relay":
-        upstream["messages"] = _strip_orphan_tool_blocks(upstream.get("messages", []))
+        upstream["messages"] = kimi_history.prepare_relay_messages(
+            upstream.get("messages", []), target, rule_ids)
     if upstream.get("max_tokens"):
         upstream["max_tokens"] = provider_policy.clamp_max_tokens(
             upstream["max_tokens"], target, state)
@@ -542,14 +473,23 @@ def rewrite_nonstream(body_bytes, ctx):
     """(body_bytes, Ctx) -> (body_bytes, stats). Equivalent to legacy :771-780.
     off / no tools: (original bytes, {}); detect: (original bytes, {"found": bool});
     rewrite: (rewritten bytes, {"rewritten": bool})."""
-    if not _shim_on(ctx):
-        return body_bytes, {}
-    if ctx.shim_mode == "rewrite":
-        new = dsml_shim.rewrite_nonstream_body(body_bytes, ctx.known_tools, nonce=ctx.nonce)
-        return new, {"rewritten": new != body_bytes}
-    det = dsml_shim.DsmlDetector()
-    det.feed(body_bytes)
-    return body_bytes, {"found": det.found}
+    stats = {}
+    out = body_bytes
+    if _shim_on(ctx):
+        if ctx.shim_mode == "rewrite":
+            new = dsml_shim.rewrite_nonstream_body(body_bytes, ctx.known_tools, nonce=ctx.nonce)
+            stats = {"rewritten": new != body_bytes}
+            out = new
+        else:
+            det = dsml_shim.DsmlDetector()
+            det.feed(body_bytes)
+            stats = {"found": det.found}
+            out = body_bytes
+    if ctx.provider == "relay" and "kimi" in (ctx.target_model or "").lower():
+        out = kimi_history.filter_kimi_nonstream_response(out)
+        stats = dict(stats)
+        stats["kimi_thinking_filtered"] = True
+    return out, stats
 
 
 class _RewriteFilter:
@@ -586,11 +526,13 @@ class _DetectFilter:
 
 
 class _KimiServerToolFilter:
-    """Drop Kimi server-tool SSE blocks that the local client cannot consume.
+    """Drop Kimi server-tool SSE blocks and zero-info thinking; fail-closed on unsigned content.
 
     Kimi may emit Anthropic server-tool blocks (currently web search) even when CSP
-    does not advertise that tool upstream. The client-tool path expects ordinary
-    content blocks with contiguous indexes, so we remove those blocks and compact indexes.
+    does not advertise that tool upstream. Empty thinking without a signature is
+    dropped; nonempty thinking without a structurally valid signature raises
+    ``RelayHistoryError`` so the proxy emits a terminal SSE error instead of
+    forwarding a corrupted round-trip.
     """
 
     _DROP_TYPES = {"server_tool_use", "web_search_tool_result"}
@@ -601,6 +543,9 @@ class _KimiServerToolFilter:
         self._index_map = {}
         self._next_index = 0
         self._dropped = 0
+        self._dropped_empty_thinking = 0
+        # idx -> {frames: [(event,obj)], thinking_bytes, signature, sig_ok}
+        self._thinking = {}
 
     @staticmethod
     def _split_frame(buf):
@@ -635,6 +580,15 @@ class _KimiServerToolFilter:
             self._next_index += 1
         return self._index_map[idx]
 
+    def _emit_thinking_frames(self, frames):
+        out = []
+        for event, obj in frames:
+            idx = obj.get("index")
+            obj = dict(obj)
+            obj["index"] = self._mapped_index(idx)
+            out.append(self._render(event, obj))
+        return b"".join(out)
+
     def _rewrite_frame(self, frame, sep):
         event, data = self._event_and_data(frame)
         if not data:
@@ -650,21 +604,81 @@ class _KimiServerToolFilter:
         if t == "content_block_start":
             idx = obj.get("index")
             block = obj.get("content_block") if isinstance(obj.get("content_block"), dict) else {}
-            if block.get("type") in self._DROP_TYPES:
+            btype = block.get("type")
+            if btype in self._DROP_TYPES:
                 self._skip.add(idx)
                 self._dropped += 1
+                return b""
+            if btype == "thinking":
+                thinking = block.get("thinking") or ""
+                signature = block.get("signature") or ""
+                if not isinstance(thinking, str) or not isinstance(signature, str):
+                    raise RelayHistoryError("Kimi thinking block start is invalid")
+                sig_ok = kimi_history.kimi_signature_structurally_valid(signature)
+                # Defer emit until content_block_stop so empty unsigned thinking can drop.
+                self._thinking[idx] = {
+                    "frames": [(event, obj)],
+                    "thinking_bytes": len(thinking),
+                    "signature": signature,
+                    "sig_ok": sig_ok,
+                }
                 return b""
             obj = dict(obj)
             obj["index"] = self._mapped_index(idx)
             return self._render(event, obj)
-        if t in ("content_block_delta", "content_block_stop"):
+
+        if t == "content_block_delta":
             idx = obj.get("index")
             if idx in self._skip:
+                return b""
+            if idx in self._thinking:
+                th = self._thinking[idx]
+                delta = obj.get("delta") if isinstance(obj.get("delta"), dict) else {}
+                dtype = delta.get("type")
+                if dtype == "thinking_delta":
+                    part = delta.get("thinking") or ""
+                    if not isinstance(part, str):
+                        raise RelayHistoryError("Kimi thinking delta content is invalid")
+                    th["thinking_bytes"] += len(part)
+                elif dtype == "signature_delta":
+                    part = delta.get("signature") or ""
+                    if not isinstance(part, str):
+                        raise RelayHistoryError("Kimi thinking signature delta is invalid")
+                    th["signature"] += part
+                    th["sig_ok"] = kimi_history.kimi_signature_structurally_valid(th["signature"])
+                else:
+                    raise RelayHistoryError("Kimi thinking delta type is unsupported")
+                th["frames"].append((event, obj))
                 return b""
             if idx in self._index_map:
                 obj = dict(obj)
                 obj["index"] = self._index_map[idx]
                 return self._render(event, obj)
+            return frame + sep
+
+        if t == "content_block_stop":
+            idx = obj.get("index")
+            if idx in self._skip:
+                return b""
+            if idx in self._thinking:
+                th = self._thinking.pop(idx)
+                th["frames"].append((event, obj))
+                has_sig = th["sig_ok"] and bool(th["signature"])
+                if th["thinking_bytes"] == 0 and not has_sig:
+                    self._dropped_empty_thinking += 1
+                    self._skip.add(idx)
+                    return b""
+                if th["thinking_bytes"] > 0 and not has_sig:
+                    raise RelayHistoryError(
+                        "Kimi nonempty thinking has no valid signature"
+                    )
+                return self._emit_thinking_frames(th["frames"])
+            if idx in self._index_map:
+                obj = dict(obj)
+                obj["index"] = self._index_map[idx]
+                return self._render(event, obj)
+            return frame + sep
+
         return frame + sep
 
     def feed(self, chunk):
@@ -679,6 +693,10 @@ class _KimiServerToolFilter:
         return b"".join(out)
 
     def finalize(self):
+        if self._thinking:
+            raise RelayHistoryError(
+                "Kimi thinking block ended before content_block_stop"
+            )
         if not self._buf:
             return b""
         frame = self._buf
@@ -686,8 +704,11 @@ class _KimiServerToolFilter:
         return self._rewrite_frame(frame, b"\n\n")
 
     def stats(self):
-        out = {"dropped_kimi_server_tool_blocks": self._dropped}
-        if self._dropped:
+        out = {
+            "dropped_kimi_server_tool_blocks": self._dropped,
+            "dropped_kimi_empty_thinking": self._dropped_empty_thinking,
+        }
+        if self._dropped or self._dropped_empty_thinking:
             out["rule_ids"] = [provider_policy.RULE_TOOL_KIMI_WEB_SEARCH_SERVER_TOOL_FILTER]
         return out
 

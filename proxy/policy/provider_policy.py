@@ -14,6 +14,7 @@ RULE_PROVIDER_VIRTUAL_MODEL_REGISTRY = "provider.virtual-model-registry"
 RULE_PROVIDER_RELAY_FORCE_MODEL_SHELL = "provider.relay.force-model-shell"
 RULE_PROVIDER_KIMI_RELAY_THINKING_ENABLED = "provider.kimi.relay-thinking-enabled"
 RULE_TOOL_KIMI_WEB_SEARCH_SERVER_TOOL_FILTER = "tool.kimi.web_search.server-tool-filter"
+RULE_HISTORY_KIMI_FAILED_TAIL_NORMALIZE = "history.kimi.failed-tail-normalize"
 RULE_TOOL_RELAY_INPUT_SCHEMA_NORMALIZE = "tool.relay.input-schema-normalize"
 RULE_TOOL_DEEPSEEK_FORCED_TOOL_CHOICE_DISABLE_THINKING = (
     "tool.deepseek.forced-tool-choice-disable-thinking"

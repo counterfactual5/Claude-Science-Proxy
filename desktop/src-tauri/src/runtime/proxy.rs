@@ -37,10 +37,16 @@ pub(crate) fn health_timeout_reason(port: u16, tail: &str) -> String {
         || tail.contains("Errno 48") // macOS EADDRINUSE
         || tail.contains("Errno 98"); // Linux EADDRINUSE
     if occupied {
-        i18n_err("errProxyPortOccupied", json!({ "port": port }))
-    } else {
-        i18n_err("errProxyHealthTimeout", json!({ "port": port }))
+        return i18n_err("errProxyPortOccupied", json!({ "port": port }));
     }
+    // Over-cap model registry used to crash formal proxy after scratch passed.
+    if tail.contains("shell pool exhausted") || tail.contains("shell pool cap") {
+        return i18n_err(
+            "errProxyRegistryCap",
+            json!({ "max": crate::config::MAX_PLATTER_MODELS }),
+        );
+    }
+    i18n_err("errProxyHealthTimeout", json!({ "port": port }))
 }
 
 /// Escape ERE metacharacters so a path can be matched literally by `pkill -f`.
@@ -83,6 +89,11 @@ mod tests {
         assert!(
             generic.contains("errProxyHealthTimeout"),
             "generic timeout must not blame key validity: {generic}"
+        );
+        let cap = health_timeout_reason(18991, "ValueError: shell pool exhausted");
+        assert!(
+            cap.contains("errProxyRegistryCap"),
+            "over-cap registry crash must be explicit: {cap}"
         );
     }
 

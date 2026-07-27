@@ -178,6 +178,15 @@ class ModelRegistry:
         entries_raw = payload.get("entries") or []
         if not isinstance(entries_raw, list):
             return reg
+        if len(entries_raw) > len(SHELL_POOL):
+            import sys
+            print(
+                f"[csp] platter registry truncated: {len(entries_raw)} → {len(SHELL_POOL)} "
+                f"(Science shell pool cap)",
+                file=sys.stderr,
+                flush=True,
+            )
+            entries_raw = entries_raw[: len(SHELL_POOL)]
         used_shells: set[str] = set()
         pool_iter = iter(SHELL_POOL)
         entries: list[RegistryEntry] = []
@@ -362,7 +371,17 @@ def _pair_overflow_models(
     shells = _sort_shells_desc(shells)
     models = model_sort.sort_model_ids(models)
     if len(models) > len(shells):
-        raise ValueError("shell pool exhausted")
+        # Fail-soft: never crash the formal proxy. Scratch probes only the
+        # default model, so an over-cap registry used to look like "proxy
+        # health failed" after a green upstream check.
+        import sys
+        print(
+            f"[csp] model registry truncated: {len(models)} → {len(shells)} "
+            f"(Science shell pool cap)",
+            file=sys.stderr,
+            flush=True,
+        )
+        models = models[: len(shells)]
     pairs: list[tuple[str, str, str]] = [
         (shell_id, tier, real_id)
         for (shell_id, tier), real_id in zip(shells, models)

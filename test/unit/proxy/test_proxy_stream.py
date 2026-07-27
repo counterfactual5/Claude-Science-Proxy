@@ -319,7 +319,50 @@ class StreamUpstreamStatusAfterHeaders(unittest.TestCase):
         self.assertIn(b"Content-Type: text/event-stream", head)
         self.assertIn(b"event: error", tail)
         self.assertIn(b"upstream 401", tail)
+        self.assertIn(b"api_error", tail)
         self.assertNotIn(b"HTTP/1.1 401", raw)
+
+
+@unittest.skipUnless(loopback_available(), "env-blocked: loopback bind/connect not permitted")
+class StreamUpstream400KeepsInvalidRequestType(unittest.TestCase):
+    """openai-custom/deepseek stream path opens SSE before upstream returns.
+
+    A gateway 400 must stay ``invalid_request_error`` in the SSE error frame —
+    hardcoding ``api_error`` makes Science retry as 'temporarily unavailable'.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        body = (
+            b'{"error":{"message":"Error from provider (Console): Upstream request failed",'
+            b'"type":"invalid_request_error"}}'
+        )
+        cls.up_url, cls.up_sock = start_status_upstream(400, body)
+        cls.port = 18977  # S0 globally unique port: StreamUpstream400KeepsInvalidRequestType
+        env = dict(os.environ, DEEPSEEK_API_KEY="fake",
+                   CSP_UPSTREAM_URL=cls.up_url,
+                   PYTHONPATH=str(ROOT))
+        cls.proc = subprocess.Popen(
+            [sys.executable, PROXY, "--provider", "deepseek",
+             "--port", str(cls.port), "--auth-token", SEC],
+            env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        time.sleep(1.0)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.proc.terminate()
+        cls.proc.wait(timeout=5)
+        cls.up_sock.close()
+
+    def test_stream_upstream_400_sse_uses_invalid_request_error(self):
+        body = b'{"model":"claude-opus-4-8","max_tokens":10,"stream":true,' \
+               b'"messages":[{"role":"user","content":"hi"}]}'
+        raw = raw_post("127.0.0.1", self.port, f"/{SEC}/v1/messages", body)
+        head, _, tail = raw.partition(b"\r\n\r\n")
+        self.assertIn(b"HTTP/1.1 200", head)
+        self.assertIn(b"event: error", tail)
+        self.assertIn(b"invalid_request_error", tail)
+        self.assertNotIn(b'"type": "api_error"', tail)
 
 
 if __name__ == "__main__":

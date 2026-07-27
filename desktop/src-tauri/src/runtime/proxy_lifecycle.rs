@@ -11,6 +11,7 @@ use crate::runtime::provider::{
     proxy_args_for_active_profiles, proxy_fingerprint, ProxyLaunch,
 };
 use crate::runtime::proxy::{ere_escape, health_timeout_reason, should_write_back, ProxyAction};
+use crate::runtime::science::sandbox_running_ours;
 use crate::runtime::system::{asset_root, log_path, open_log, redact, tail_file};
 use crate::{config, lifecycle, lock, proc, SharedAppState};
 use serde_json::json;
@@ -70,6 +71,37 @@ fn validate_profiles_for_proxy(profiles: &[config::Profile]) -> Result<(), Strin
         }
     }
     Ok(())
+}
+
+/// True when the formal CSP proxy is healthy **and** our sandbox Science is up.
+///
+/// Provider / connection / platter switches only hot-reload the proxy in this
+/// state. Otherwise they are config-only (no auto-start of proxy or Science).
+pub(crate) fn stack_hot(state: &SharedAppState) -> bool {
+    let cfg = config::load_from(&config::default_dir()).ok();
+    let (proxy_ok, sport) = {
+        let st = lock(state);
+        let pport = if st.proxy_port != 0 {
+            st.proxy_port
+        } else {
+            cfg.as_ref().map(|c| c.proxy_port).unwrap_or(0)
+        };
+        let sport = if st.sandbox_port != 0 {
+            st.sandbox_port
+        } else {
+            cfg.as_ref().map(|c| c.sandbox_port).unwrap_or(8990)
+        };
+        let ok = st.proxy.is_some()
+            && pport != 0
+            && !st.secret.is_empty()
+            && proc::http_health(
+                pport,
+                Some(&st.secret),
+                operation::PROXY_REUSE_HEALTH_TIMEOUT_MS,
+            );
+        (ok, sport)
+    };
+    proxy_ok && sandbox_running_ours(sport)
 }
 
 /// Ensure active profile or platter proxy is running and healthy.
@@ -153,7 +185,7 @@ fn start_proxy_with_launch<R: Runtime>(
 
     let gen = lifecycle.current_generation();
 
-    let child = {
+    let mut child = {
         let mut st = lock(state);
         if st.proxy.is_some()
             && st.proxy_port == port
@@ -210,10 +242,16 @@ fn start_proxy_with_launch<R: Runtime>(
     };
 
     let mut ok = false;
+    let mut early_exit = None;
     for _ in 0..(operation::PROXY_HEALTH_BUDGET_MS / POLL_INTERVAL_MS) {
         std::thread::sleep(Duration::from_millis(POLL_INTERVAL_MS));
         if proc::http_health(port, Some(&secret), operation::LOCAL_HEALTH_TIMEOUT_MS) {
             ok = true;
+            break;
+        }
+        // Dead child (registry crash, bind failure) → stop waiting on a corpse.
+        if let Ok(Some(status)) = child.try_wait() {
+            early_exit = Some(status);
             break;
         }
     }
@@ -224,19 +262,27 @@ fn start_proxy_with_launch<R: Runtime>(
         );
     }
     if !ok {
-        let mut c = child;
-        let _ = c.kill();
-        let _ = c.wait();
+        let exit = early_exit.or_else(|| child.try_wait().ok().flatten());
+        let _ = child.kill();
+        let _ = child.wait();
         let tail = redact(&tail_file(&log_path("proxy.log"), 500), &secret);
+        if let Some(t) = trace {
+            t.stage(
+                OperationStage::ProxyHealth,
+                format!(
+                    "spawn_failed exit={exit:?} hint={}",
+                    sanitize_proxy_fail_hint(&tail)
+                ),
+            );
+        }
         return Err(format!("{}\n{tail}", health_timeout_reason(port, &tail)));
     }
 
     {
         let mut st = lock(state);
         if !should_write_back(gen, lifecycle.current_generation(), &st.secret, &secret) {
-            let mut c = child;
-            let _ = c.kill();
-            let _ = c.wait();
+            let _ = child.kill();
+            let _ = child.wait();
             return Err(i18n_err("errProxyStartSuperseded", json!({})));
         }
         st.proxy = Some(child);
@@ -246,6 +292,25 @@ fn start_proxy_with_launch<R: Runtime>(
         st.key_fp = key_fp;
     }
     Ok((port, secret, ProxyAction::Restarted))
+}
+
+/// Compact, secret-free one-liner for operation.log when formal proxy dies on spawn.
+fn sanitize_proxy_fail_hint(tail: &str) -> String {
+    let lower = tail.to_ascii_lowercase();
+    if lower.contains("shell pool exhausted") {
+        return "shell_pool_exhausted".into();
+    }
+    if lower.contains("address already in use")
+        || lower.contains("eaddrinuse")
+        || lower.contains("errno 48")
+        || lower.contains("errno 98")
+    {
+        return "port_occupied".into();
+    }
+    if lower.contains("traceback") {
+        return "python_traceback".into();
+    }
+    "see_proxy_log".into()
 }
 
 #[cfg(test)]

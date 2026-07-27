@@ -4,7 +4,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License">
-  <img src="https://img.shields.io/badge/version-2.2.1-brightgreen.svg" alt="v2.2.1">
+  <img src="https://img.shields.io/badge/version-2.2.2-brightgreen.svg" alt="v2.2.2">
   <img src="https://img.shields.io/badge/platform-macOS%20Apple%20Silicon-1d1d1f.svg" alt="macOS Apple Silicon">
   <img src="https://img.shields.io/badge/built%20with-Tauri%202-C25A34.svg" alt="Tauri 2">
 </p>
@@ -25,7 +25,7 @@ CSP is a **macOS desktop app** (Tauri) that:
 4. Verifies API keys **before** switching the active profile
 5. Manages local **Skills** and **MCP connectors** (stdio + remote), deploying enabled ones into the sandbox on launch
 
-> **v2.2.1** — Audit hardening: one-click stop fail-closed, identity-aware sandbox status, platter credential fail-closed, key-rotation bak cleanup, SSH Include quotes, upstream error redaction; virtual-login cleanup. See [Changelog](./CHANGELOG.md).
+> **v2.2.2** — Reliability & UX: stack-hot config switch, upstream/SSE error contract, Kimi history fail-closed, 8-model cap UX, CPA Console 400 clarity, SSH host allowlist bridge. See [Changelog](./CHANGELOG.md).
 
 > **Platform:** macOS **Apple Silicon** today. The app is **not notarized** yet; on first launch, right-click → **Open**.
 
@@ -41,7 +41,7 @@ Claude Science is Anthropic’s research-oriented agent app (literature review, 
 
 | Layer | What CSP does |
 |-------|----------------|
-| Sandbox | Separate HOME, ports, and data under `~/.csp/sandbox`; SSH config `Include` bridge to real `~/.ssh/config` (v2.2.0+) |
+| Sandbox | Separate HOME, ports, and data under `~/.csp/sandbox`; SSH `Include` + Science `ssh_hosts` Host-alias bridge to real `~/.ssh/config` (v2.2.0+ / Unreleased) |
 | Launch ticket | Locally forged OAuth-shaped ticket so Science can start without your real Claude credentials |
 | Proxy | Forwards `/v1/messages` (and related) to your chosen provider |
 | Translation | Anthropic ↔ OpenAI Chat / Responses when the upstream is not native Anthropic |

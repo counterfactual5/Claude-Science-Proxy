@@ -241,6 +241,12 @@ pub(crate) fn build_model_registry_json(p: &config::Profile) -> Option<String> {
     if models.is_empty() {
         return None;
     }
+    // Science shell pool is hard-capped at 8. Truncate here so a buggy UI
+    // over-select cannot crash the formal proxy with "shell pool exhausted"
+    // after scratch (single-model) already passed.
+    if models.len() > crate::config::MAX_PLATTER_MODELS {
+        models.truncate(crate::config::MAX_PLATTER_MODELS);
+    }
     model_sort::sort_model_ids(&mut models);
     let default_model = models[0].clone();
     let fast_model = models
@@ -591,5 +597,24 @@ mod tests {
         let v: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert_eq!(v["default_model"], "glm-5.2");
         assert_eq!(v["models"][0], "glm-5.2");
+    }
+
+    #[test]
+    fn build_model_registry_json_truncates_beyond_science_cap() {
+        let models: Vec<String> = (0..9).map(|i| format!("m{i}")).collect();
+        let p = Profile {
+            template_id: "custom-openai".into(),
+            api_format: "openai_chat".into(),
+            active_models: models,
+            default_model: "m0".into(),
+            model: "m0".into(),
+            ..Default::default()
+        };
+        let json = build_model_registry_json(&p).expect("registry json");
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(
+            v["models"].as_array().map(|a| a.len()),
+            Some(crate::config::MAX_PLATTER_MODELS)
+        );
     }
 }

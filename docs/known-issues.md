@@ -47,14 +47,19 @@ Science only accepts `claude-*` model IDs. With `CSP_MODEL_REGISTRY`, CSP maps u
 
 <a id="ssh-config-bridge"></a>
 
-## SSH config Include bridge (v2.2.0+)
+## SSH config bridge (v2.2.0+) / Science `ssh_hosts` (Unreleased)
 
-Sandbox Science runs under an isolated HOME, so `~/.ssh/config` is not visible by default — git clone over SSH, MCP via SSH, etc. fail. CSP now creates `$SANDBOX_HOME/.ssh/config` (mode `0600`) with a single `Include <real_HOME>/.ssh/config` directive on each **Start Claude Science**. This lets the sandbox resolve SSH hosts / identity files exactly as the real user would, **without copying keys or config** — the Include is read-only at the OS level.
+Sandbox Science runs under an isolated HOME, so the real `~/.ssh/config` is not visible by default — git clone over SSH, MCP via SSH, etc. fail.
 
-- **Fail-soft:** if the real `~/.ssh/config` does not exist or the sandbox `.ssh/` directory cannot be created, the step is skipped (non-fatal). SSH-dependent features just won't work.
+CSP does **two** things on each Start / relaunch (fail-soft; no key copy):
+
+1. **OpenSSH Include**: writes `$SANDBOX_HOME/.ssh/config` (`0600`) with `Include "<real_HOME>/.ssh/config"` so system `ssh` resolves Host / IdentityFile as the real user would.
+2. **Science `ssh_hosts` allowlist**: enumerates **concrete** Host aliases from the real config (follows `Include`s; skips `Host *` wildcards) and merges them into `$SANDBOX_HOME/.claude-science/config.toml` as `ssh_hosts = [...]`. Science’s own Host preflight **skips cross-HOME Include**, so the allowlist must list aliases explicitly (same lesson as CSSwitch 0.8.2). State sidecar: `csp-ssh-bridge.v1.json`.
+
 - **Permissions:** sandbox `.ssh/` is `0700`, `config` is `0600`.
-- **No key copy:** private keys, `known_hosts`, and `authorized_keys` are never duplicated into the sandbox; they are resolved through the Include at SSH runtime.
-- **Not a SSH server / tunnel:** this feature does not start an SSH server, do port forwarding, or expose anything to the public network.
+- **No key copy:** private keys are never duplicated; OpenSSH still reads them via Include / agent.
+- **Not a SSH server / tunnel.**
+- If `ssh_hosts` was edited outside CSP while a bridge state exists, CSP leaves it untouched and logs a warning.
 
 ---
 
@@ -63,6 +68,8 @@ Sandbox Science runs under an isolated HOME, so `~/.ssh/config` is not visible b
 ## Custom endpoint scratch probe (needs repro)
 
 Some custom relay / OpenAI endpoints work in user `curl` but fail panel scratch probe with “network/upstream busy”. Needs concrete `base_url`, model, and probe logs to diagnose.
+
+**Not the same as over-selecting models.** Selecting more than 8 Science shells must fail with “Science 最多同时启用 8 个模型” / `errScienceModelCap` before any upstream probe. A related bug (fixed in Unreleased): scratch could still pass on the default model while the formal proxy crashed on `shell pool exhausted` for 9+ models, which looked like “正式代理启动/探活失败”. If you still see Ambiguous after fixing that, then it is a real probe/network issue.
 
 ---
 
@@ -82,18 +89,36 @@ Some custom relay / OpenAI endpoints work in user `curl` but fail panel scratch 
 
 ---
 
+<a id="cpa-console-upstream-failed"></a>
+
+## CPA / Console `Upstream request failed` → Science “temporarily unavailable”
+
+Multi-provider OpenAI gateways (e.g. `cpa.llm.christmas`) sometimes return HTTP **400** with a vague body like `Error from provider (Console): Upstream request failed` even when the **same conversation history succeeds on a later try**. This is usually a **provider/console blip**, not a permanently corrupted CSP transcript (confirmed by replaying the Science session’s stored messages through CSP).
+
+Science then shows **“Claude is temporarily unavailable — retrying…”** and can climb to attempt 10+. Two CSP behaviors made that worse before the Unreleased fix:
+
+1. openai-custom **opens SSE with HTTP 200** before the buffered upstream POST returns (keepalive).
+2. Mid-stream errors were hardcoded as SSE **`api_error`**, which Science treats as transient.
+
+**Mitigation (Unreleased):** mid-stream upstream 400s keep Anthropic type **`invalid_request_error`**, and Console “Upstream request failed” gets an explicit cancel/resend/new-chat message. If it still loops, **cancel the retry**, resend once, switch model, or open a new chat — do not leave overlapping auto-retries hammering the gateway.
+
+---
+
 <a id="kimi-relay-orphan"></a>
 
 ## Kimi K3 relay orphan tool_use/tool_result (v2.2.0+)
 
 When Science replays multi-turn history after a failed tool call (e.g. Kimi K3 multi-turn reasoning + tool_use failure), orphan `tool_use` blocks (no matching `tool_result` in a subsequent user turn) and orphan `tool_result` blocks (no matching `tool_use` in any preceding assistant turn) can pollute the context. Sending these orphans to Kimi on the relay path causes repeated `temporarily unavailable` because the model sees an incomplete tool-call sequence.
 
-CSP now cleans up orphan blocks before forwarding on the **relay (Anthropic-native) path** (`proxy/compat/anthropic_compat.py` → `_strip_orphan_tool_blocks`):
+CSP cleans up and then **fail-closes** on the **relay (Anthropic-native) path** (`proxy/compat/kimi_history.py`):
 
-- **Orphan `tool_result`** (no matching `tool_use` in history): downgraded to a text block `[tool_result for <id> (orphaned, omitted from replay)]: <content>` so content is not lost.
-- **Trailing orphan `tool_use`** (last assistant message has `tool_use` with no following `tool_result`): removed entirely so the model does not try to continue from a phantom tool call.
+- **Orphan `tool_result`** → downgraded to text (content preserved).
+- **Unresolved / trailing `tool_use`** → stripped so the model does not continue a phantom call.
+- **Zero-info placeholders** (empty thinking without signature, empty failed assistant tails, leftover server-tool blocks in history) → dropped.
+- **Nonempty thinking without a structurally valid signature** → HTTP 400, no upstream POST (treat as tampered / incomplete round-trip).
+- Stream / non-stream responses similarly drop empty unsigned thinking and refuse nonempty unsigned thinking.
 
-This mirrors the OpenAI-compat path's orphan handling. The cleanup is **relay-only**; the OpenAI translation path already had its own orphan handling in `openai_chat_compat.py`.
+This mirrors the OpenAI-compat path's orphan handling. Soft repair runs first; remaining inconsistencies refuse the request instead of looping on Kimi errors.
 
 ---
 

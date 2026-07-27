@@ -14,6 +14,7 @@ use crate::runtime::provider::{
     adapter_for_profile, reject_openai_custom_anthropic_base, relay_missing_base_url,
     relay_missing_profile_models,
 };
+use crate::runtime::proxy_lifecycle::stack_hot;
 use crate::{config, lock, run_blocking, SharedAppState, SharedLifecycle};
 
 #[tauri::command]
@@ -152,8 +153,17 @@ fn update_profile_connection_inner_cmd(
         if relay_missing_profile_models(adapter, &candidate) {
             return Err(i18n_err("errRelayMissingModel", serde_json::json!({})));
         }
+        // Science exposes at most eight virtual shells — reject before scratch so
+        // over-cap never surfaces as Ambiguous "network/upstream busy".
+        if candidate.effective_models().len() > config::MAX_PLATTER_MODELS {
+            return Err(i18n_err(
+                "errScienceModelCap",
+                serde_json::json!({ "max": config::MAX_PLATTER_MODELS }),
+            ));
+        }
         if cfg.is_profile_active(&id) {
             // Active profile: validate-before-persist via switch transaction; disk unchanged on failure.
+            // Cold stack → config-only inside the txn (no formal proxy start).
             let v =
                 set_active_profile_txn(&app, &state, lifecycle.as_ref(), &id, false, Some(&edit))?;
             // Surface scratch/health failure as error; disk and proxy stay on previous connection.
@@ -167,10 +177,16 @@ fn update_profile_connection_inner_cmd(
                 }
                 return Err(i18n_err("errConnValidateFailed", serde_json::json!({})));
             }
-            Ok(json!({ "validated": true }))
+            Ok(json!({
+                "validated": true,
+                "proxy_reloaded": v.get("proxy_reloaded").and_then(|b| b.as_bool()).unwrap_or(false),
+                "runtime": v.get("runtime").cloned().unwrap_or(json!("cold")),
+                "deferred_runtime": v.get("runtime").and_then(|r| r.as_str()) == Some("cold"),
+            }))
         } else if cfg.uses_platter_profile(&id) {
-            // Platter member while platter is active: persist then reload proxy.
-            // Auth/ModelError already Err from scratch; Ambiguous → save unverified + reload.
+            // Platter member while platter is active — always scratch-verify;
+            // formal proxy reload only when stack_hot.
+            let hot = stack_hot(&state);
             let validated = scratch_validate_candidate(&app, &candidate)?;
             update_profile_connection_inner(
                 &dir,
@@ -184,9 +200,14 @@ fn update_profile_connection_inner_cmd(
             )?;
             let proxy_reloaded =
                 reload_active_platter_proxy(&app, &state, lifecycle.as_ref())?;
-            Ok(json!({ "validated": validated, "proxy_reloaded": proxy_reloaded }))
+            Ok(json!({
+                "validated": validated,
+                "proxy_reloaded": proxy_reloaded,
+                "runtime": if hot { "hot" } else { "cold" },
+                "deferred_runtime": !hot,
+            }))
         } else {
-            // Non-active: scratch upstream verify; explicit reject blocks, else best-effort save + validated flag.
+            // Non-active: scratch verify; never starts the formal proxy.
             let validated = scratch_validate_candidate(&app, &candidate)?;
             update_profile_connection_inner(
                 &dir,
@@ -198,7 +219,12 @@ fn update_profile_connection_inner_cmd(
                 default_model.as_deref(),
                 key.as_deref(),
             )?;
-            Ok(json!({ "validated": validated }))
+            Ok(json!({
+                "validated": validated,
+                "proxy_reloaded": false,
+                "runtime": "cold",
+                "deferred_runtime": false,
+            }))
         }
     })
 }

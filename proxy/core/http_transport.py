@@ -19,11 +19,12 @@ def _with_user_agent(headers):
     return {"User-Agent": UPSTREAM_UA, **headers}
 
 
-def post(url, data, headers, log_fn, attempts=4, timeout=300):
+def post(url, data, headers, log_fn, attempts=1, timeout=300):
     """POST upstream and return ``(body_bytes, content_type)``.
 
-    Retries cover connection setup and full body reads; explicit upstream HTTP
-    status responses are surfaced without retry so callers can preserve status.
+    Inference POSTs default to a single attempt (no auto-resend). Callers that
+    want connection-level retry (rare) must pass ``attempts`` explicitly.
+    Explicit upstream HTTP status responses are never retried.
     """
     headers = _with_user_agent(headers)
     for i in range(attempts):
@@ -41,12 +42,12 @@ def post(url, data, headers, log_fn, attempts=4, timeout=300):
             raise
 
 
-def open_stream(url, data, headers, log_fn, attempts=4, timeout=300):
+def open_stream(url, data, headers, log_fn, attempts=1, timeout=300):
     """Open upstream stream and pre-read the first line.
 
-    A 200 with immediate empty body is treated as a retryable transport wobble.
-    Once the first byte is received, the caller owns the stream and no retry is
-    attempted.
+    Inference streams default to a single attempt. A 200 with immediate empty
+    body is only retried when ``attempts > 1``. Once the first byte is received,
+    the caller owns the stream and no retry is attempted.
     """
     headers = _with_user_agent(headers)
     for i in range(attempts):
@@ -86,13 +87,13 @@ _COUNTED_TEXT_DELTA_KEEPALIVE = (
 )
 
 
-def open_stream_with_keepalive(write_chunk, url, data, headers, log_fn):
+def open_stream_with_keepalive(write_chunk, url, data, headers, log_fn, attempts=1):
     """Wait for upstream first frame while sending downstream SSE wire keepalives."""
     q = queue.Queue(maxsize=1)
 
     def _open():
         try:
-            q.put(("ok", open_stream(url, data, headers, log_fn)))
+            q.put(("ok", open_stream(url, data, headers, log_fn, attempts=attempts)))
         except BaseException as e:
             q.put(("err", e))
 
@@ -107,14 +108,14 @@ def open_stream_with_keepalive(write_chunk, url, data, headers, log_fn):
             write_chunk(_WIRE_KEEPALIVE_COMMENT)
 
 
-def post_with_keepalive(write_chunk, url, data, headers, log_fn, attempts=4, timeout=300,
+def post_with_keepalive(write_chunk, url, data, headers, log_fn, attempts=1, timeout=300,
                         keepalive=None):
     """Buffered POST while emitting downstream SSE keepalives (OpenAI-compat path).
 
     openai-custom forces ``stream: false`` upstream then replays as SSE. Default
     keepalive is an empty ``content_block_delta`` that Science counts toward its
     idle watchdog — the caller must already have emitted ``message_start`` and
-    opened text block index 0.
+    opened text block index 0. Inference POSTs do not auto-resend.
     """
     if keepalive is None:
         keepalive = _COUNTED_TEXT_DELTA_KEEPALIVE

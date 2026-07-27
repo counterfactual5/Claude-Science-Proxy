@@ -3,6 +3,27 @@
 All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+## [2.2.2] — 2026-07-27
+
+### Fixed
+- **SSH Science preflight**: In addition to the sandbox `.ssh/config` `Include` bridge, CSP now enumerates concrete Host aliases from the real `~/.ssh/config` (following `Include`s) and merges them into the sandbox Science `config.toml` `ssh_hosts` allowlist. Science skips cross-HOME `Include` during its own Host check — listing aliases explicitly unblocks git/MCP over SSH. Fail-soft; Stop→Start / relaunch picks up changes.
+- **Upstream HTTP classes preserved**: Client and 5xx upstream statuses (400/401/403/404/429/500/503/…) are no longer flattened into a catch-all 502, so Science can distinguish permanent vs transient failures.
+- **SSE mid-stream errors keep Anthropic error types**: After openai-custom opens SSE (HTTP 200) for keepalives, an upstream 400 is emitted as SSE `invalid_request_error` (not hardcoded `api_error`), and CPA/Console `Upstream request failed` gets a clearer “cancel retry / resend / new chat” message — stops Science’s “temporarily unavailable” infinite retry on opaque gateway 400s.
+- **Truncated SSE no longer looks successful**: If an Anthropic upstream stream ends without `message_stop`, CSP emits a terminal SSE `error` instead of forging `message_stop`.
+- **Inference POST is single-shot**: Proxy no longer auto-retries connection wobbles on `/v1/messages` inference (explicit next user request recovers). `/v1/models` GET may still retry.
+- **Kimi K3 multi-turn fail-closed**: Soft-repair orphan tool blocks, drop zero-info thinking / failed empty assistant tails, then refuse upstream POST when nonempty thinking lacks a structurally valid signature or tool pairing remains inconsistent — stops `temporarily unavailable` loops from tampered / incomplete history.
+- **Connection model cap before probe**: After `GET /v1/models`, the edit checkbox list no longer drops the Science 8-model cap (so a 9th check is blocked). Save / activate now reject over-cap with `errScienceModelCap` **before** scratch upstream verify — over-selection no longer looks like “network/upstream busy”.
+- **Model-cap UX**: Checking a 9th model flashes the limit inline next to the picker / platter counter instead of scrolling the form to the bottom `#msg`.
+- **Success toast auto-clear**: Profile switch / save OK messages (e.g.「已切换并重载代理。」) clear after ~3s instead of sticking until the next action.
+- **Formal proxy no longer dies on 9th model**: Selecting >8 models used to pass scratch (default model only) then crash the formal proxy with `shell pool exhausted`, surfacing as “正式代理启动/探活失败”. Registry build now truncates to 8 (Rust + Python fail-soft); health failures log exit/hint; over-cap crashes map to `errProxyRegistryCap`.
+- **Bundle includes `kimi_history.py`**: Desktop `tauri.conf.json` resources omitted the new Kimi history module, so packaged scratch/formal proxy crashed on `ImportError` and connection auto-fetch fell back to the already-enabled list only.
+- **Config switch no longer cold-starts the proxy**: Switching the active provider / platter, or editing the active connection, still **scratch-verifies** with a one-shot probe, but only **hot-reloads the formal proxy** when **both** the proxy and Claude Science are already running (`stack_hot`). Cold switches are config-only after verify. 「启动 Claude Science」 remains the only path that starts the stack from idle. Skill/MCP/network-grant flows still only auto-restart Science when a sandbox was already running.
+
+### Changed
+- Version alignment (desktop bundle + Cargo + built-in web-search `SERVER_VERSION`) → **2.2.2**.
+
 ## [2.2.1] — 2026-07-22
 
 ### Fixed

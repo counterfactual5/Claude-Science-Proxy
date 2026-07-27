@@ -1,5 +1,3 @@
-use std::fs;
-use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::Duration;
@@ -24,54 +22,6 @@ fn stop_sandbox_state<R: Runtime>(
     st: &mut AppState,
 ) -> Result<(), String> {
     stop_sandbox(app, &mut st.sandbox_url)
-}
-
-/// Build an OpenSSH `Include` line for the real user's `~/.ssh/config`.
-///
-/// Returns `None` when the path cannot be safely bridged (missing, not a file,
-/// unresolvable, or contains control characters). Path is canonicalized and
-/// double-quoted so spaces / special characters do not break OpenSSH parsing.
-pub(crate) fn ssh_include_line_for(real_config: &Path) -> Option<String> {
-    if !real_config.is_file() {
-        return None;
-    }
-    let canonical = real_config.canonicalize().ok()?;
-    if !canonical.is_file() {
-        return None;
-    }
-    let path_str = canonical.to_string_lossy();
-    if path_str.contains('\n') || path_str.contains('\r') || path_str.contains('\0') {
-        return None;
-    }
-    // Escape embedded double-quotes; OpenSSH Include accepts "…" paths with spaces.
-    let escaped = path_str.replace('\\', "\\\\").replace('"', "\\\"");
-    Some(format!("Include \"{escaped}\"\n"))
-}
-
-/// Write sandbox `~/.ssh/config` with Include → real user config (fail-soft).
-fn ensure_ssh_config_bridge(sbx_home: &Path) {
-    let Some(home) = std::env::var_os("HOME").map(PathBuf::from) else {
-        return;
-    };
-    let real_config = home.join(".ssh").join("config");
-    let Some(include_line) = ssh_include_line_for(&real_config) else {
-        return;
-    };
-    let sbx_ssh_dir = sbx_home.join(".ssh");
-    let sbx_ssh_config = sbx_ssh_dir.join("config");
-    if let Err(e) = fs::create_dir_all(&sbx_ssh_dir) {
-        eprintln!("SSH config bridge skipped (non-fatal): mkdir .ssh: {e}");
-        return;
-    }
-    match fs::write(&sbx_ssh_config, include_line) {
-        Ok(_) => {
-            let _ = fs::set_permissions(&sbx_ssh_config, fs::Permissions::from_mode(0o600));
-            let _ = fs::set_permissions(&sbx_ssh_dir, fs::Permissions::from_mode(0o700));
-        }
-        Err(e) => {
-            eprintln!("SSH config bridge skipped (non-fatal): {e}");
-        }
-    }
 }
 
 /// One-click session startup: active proxy, virtual login, sandbox, browser.
@@ -104,7 +54,9 @@ pub(crate) fn one_click_login<R: Runtime>(
             let (_, skill_changed) =
                 deploy_sandbox_skills(&auth_dir, &sbx_home, org_uuid.as_deref());
             let (_, mcp_changed) = deploy_sandbox_mcp(&auth_dir, &sbx_home, org_uuid.as_deref());
-            if !skill_changed && !mcp_changed {
+            // Refresh SSH bridge too — Science only reloads ssh_hosts at launch.
+            let ssh_changed = crate::runtime::ssh_bridge::ensure_ssh_bridge(&sbx_home);
+            if !skill_changed && !mcp_changed && !ssh_changed {
                 let url = sandbox_url(sport);
                 {
                     let mut st = lock(&state);
@@ -161,9 +113,10 @@ pub(crate) fn one_click_login<R: Runtime>(
     // the real `~/.claude-science`.
     let (mcp_report, _) = deploy_sandbox_mcp(&auth_dir, &sbx_home, Some(&forged.org_uuid));
 
-    // SSH config bridge (canonical path + quoted Include). Still opt-in by presence
-    // of real ~/.ssh/config; does not copy keys. Fail-soft on any write error.
-    ensure_ssh_config_bridge(&sbx_home);
+    // SSH bridge: sandbox `.ssh/config` Include (OpenSSH) + Science `ssh_hosts`
+    // concrete Host aliases (Science preflight skips cross-HOME Include).
+    // Opt-in by presence of real ~/.ssh/config; does not copy keys. Fail-soft.
+    crate::runtime::ssh_bridge::ensure_ssh_bridge(&sbx_home);
 
     let launch = root.join("scripts/sandbox/launch-virtual-sandbox.sh");
     if !launch.is_file() {
@@ -514,64 +467,4 @@ pub(crate) fn stop_running_sandbox_for_redeploy<R: Runtime>(
     let mut st = lock(state);
     stop_sandbox_state(app, &mut st)?;
     Ok(true)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::ssh_include_line_for;
-    use std::fs;
-    use std::os::unix::fs::PermissionsExt;
-    use std::path::PathBuf;
-    use std::sync::atomic::{AtomicU32, Ordering};
-
-    static CTR: AtomicU32 = AtomicU32::new(0);
-
-    fn tmpdir(tag: &str) -> PathBuf {
-        let n = CTR.fetch_add(1, Ordering::SeqCst);
-        let d = std::env::temp_dir().join(format!("csp-ssh-{}-{}-{}", std::process::id(), tag, n));
-        let _ = fs::remove_dir_all(&d);
-        fs::create_dir_all(&d).unwrap();
-        d
-    }
-
-    #[test]
-    fn ssh_include_quotes_and_canonicalizes_path() {
-        let d = tmpdir("ok");
-        // Path with a space — unquoted Include would break OpenSSH parsing.
-        let spaced = d.join("user dir");
-        fs::create_dir_all(&spaced).unwrap();
-        let cfg = spaced.join("config");
-        fs::write(&cfg, "Host *\n").unwrap();
-        let line = ssh_include_line_for(&cfg).expect("should bridge real file");
-        assert!(line.starts_with("Include \""), "must quote path: {line}");
-        assert!(line.ends_with("\"\n"), "must close quote + newline: {line}");
-        assert!(line.contains("user dir"), "preserves space in path: {line}");
-        let _ = fs::remove_dir_all(&d);
-    }
-
-    #[test]
-    fn ssh_include_skips_missing_file() {
-        let d = tmpdir("miss");
-        let missing = d.join(".ssh").join("config");
-        assert!(ssh_include_line_for(&missing).is_none());
-        let _ = fs::remove_dir_all(&d);
-    }
-
-    #[test]
-    fn ssh_include_skips_directory() {
-        let d = tmpdir("dir");
-        assert!(ssh_include_line_for(&d).is_none());
-        let _ = fs::remove_dir_all(&d);
-    }
-
-    #[test]
-    fn ssh_include_mode_not_required_for_line() {
-        // Line builder only cares about path shape; permissions are applied at write time.
-        let d = tmpdir("mode");
-        let cfg = d.join("config");
-        fs::write(&cfg, "Host *\n").unwrap();
-        let _ = fs::set_permissions(&cfg, fs::Permissions::from_mode(0o644));
-        assert!(ssh_include_line_for(&cfg).is_some());
-        let _ = fs::remove_dir_all(&d);
-    }
 }
